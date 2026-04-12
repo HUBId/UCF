@@ -609,6 +609,7 @@ impl CanonicalComputeEntryPoint {
             completion_class_match,
             failure_kind_match,
         );
+        let deterministic_subset = mismatch_view.deterministic_subset.clone();
         Ok(ComputeReplayOutcome::Completed(ComputeReplayReport {
             source_job_id: source.job_id,
             replay_job_id: replay_id,
@@ -625,6 +626,7 @@ impl CanonicalComputeEntryPoint {
             failure_kind_match,
             replay_failure,
             mismatch_view,
+            deterministic_subset,
         }))
     }
 
@@ -677,6 +679,22 @@ impl CanonicalComputeEntryPoint {
                     outcome_comparison: Some(
                         ReplayOutcomeComparison::ReplayFailedBeforeMeaningfulComparison,
                     ),
+                    deterministic_subset: DeterministicSubsetAssessment {
+                        class: DeterministicSubsetClass::ExcludedFromDeterministicSubset,
+                        eligibility: DeterministicSubsetEligibility::StableSubsetExcludedWithReason,
+                        reasons: vec![
+                            DeterministicSubsetReasonCode::IncompleteSnapshotOrContext,
+                            DeterministicSubsetReasonCode::MissingSignalForClassification,
+                        ],
+                    },
+                },
+                deterministic_subset: DeterministicSubsetAssessment {
+                    class: DeterministicSubsetClass::ExcludedFromDeterministicSubset,
+                    eligibility: DeterministicSubsetEligibility::StableSubsetExcludedWithReason,
+                    reasons: vec![
+                        DeterministicSubsetReasonCode::IncompleteSnapshotOrContext,
+                        DeterministicSubsetReasonCode::MissingSignalForClassification,
+                    ],
                 },
             };
         };
@@ -851,6 +869,7 @@ impl CanonicalComputeEntryPoint {
 
         let mismatch_view =
             classify_preflight_mismatch_view(replayability, &issues, has_caveat, &rollout_context);
+        let deterministic_subset = mismatch_view.deterministic_subset.clone();
         ComputeReplayPreflight {
             source_job_id: source.job_id,
             replayability,
@@ -864,6 +883,7 @@ impl CanonicalComputeEntryPoint {
             fidelity_equivalent_possible,
             issues,
             mismatch_view,
+            deterministic_subset,
         }
     }
 
@@ -1617,6 +1637,39 @@ pub struct ReplayMismatchReason {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeterministicSubsetClass {
+    DeterministicSubsetCandidate,
+    StableReplaySubset,
+    ReplayableButNotDeterministicSubset,
+    ExcludedFromDeterministicSubset,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeterministicSubsetEligibility {
+    StableSubsetEligible,
+    StableSubsetExcludedWithReason,
+    StableSubsetUncertainDueToMissingSignal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeterministicSubsetReasonCode {
+    ChangedRemoteWorkerContext,
+    ChangedBackendDeviceRuntimeMode,
+    RolloutBoundaryRelevant,
+    IncompleteSnapshotOrContext,
+    DegradedFallbackRetryRedispatchContext,
+    MissingSignalForClassification,
+    ReplayOutcomeChangedOrDiverged,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeterministicSubsetAssessment {
+    pub class: DeterministicSubsetClass,
+    pub eligibility: DeterministicSubsetEligibility,
+    pub reasons: Vec<DeterministicSubsetReasonCode>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplayMismatchClass {
     ExactOrCloseReplayContext,
     ContextChangedWithCaveat,
@@ -1642,6 +1695,7 @@ pub struct ReplayMismatchView {
     pub primary_reasons: Vec<ReplayMismatchReasonCode>,
     pub reasons: Vec<ReplayMismatchReason>,
     pub outcome_comparison: Option<ReplayOutcomeComparison>,
+    pub deterministic_subset: DeterministicSubsetAssessment,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1697,6 +1751,7 @@ pub struct ComputeReplayPreflight {
     pub fidelity_equivalent_possible: bool,
     pub issues: Vec<ReplayPreflightIssue>,
     pub mismatch_view: ReplayMismatchView,
+    pub deterministic_subset: DeterministicSubsetAssessment,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1726,6 +1781,7 @@ pub struct ComputeReplayReport {
     pub failure_kind_match: bool,
     pub replay_failure: Option<ReplayFailureCode>,
     pub mismatch_view: ReplayMismatchView,
+    pub deterministic_subset: DeterministicSubsetAssessment,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2558,6 +2614,12 @@ fn classify_preflight_mismatch_view(
     } else {
         ReplayMismatchClass::ExactOrCloseReplayContext
     };
+    let deterministic_subset = classify_preflight_deterministic_subset(
+        replayability,
+        issues,
+        has_snapshot_caveat,
+        rollout_context,
+    );
     ReplayMismatchView {
         class,
         blocked_before_execution: blocked,
@@ -2569,6 +2631,7 @@ fn classify_preflight_mismatch_view(
         } else {
             None
         },
+        deterministic_subset,
     }
 }
 
@@ -2659,6 +2722,14 @@ fn classify_replay_mismatch_view(
     } else {
         Some(ReplayOutcomeComparison::DifferentOutcomeUnderChangedContext)
     };
+    let deterministic_subset = classify_replay_deterministic_subset(
+        preflight,
+        diff,
+        rollout_context,
+        replay_succeeded,
+        completion_class_match,
+        failure_kind_match,
+    );
     ReplayMismatchView {
         class,
         blocked_before_execution: false,
@@ -2668,6 +2739,218 @@ fn classify_replay_mismatch_view(
         primary_reasons: reasons.iter().take(3).map(|r| r.code).collect(),
         reasons,
         outcome_comparison,
+        deterministic_subset,
+    }
+}
+
+fn classify_preflight_deterministic_subset(
+    replayability: ReplayabilityClass,
+    issues: &[ReplayPreflightIssue],
+    has_snapshot_caveat: bool,
+    rollout_context: &RolloutReplayComparisonContext,
+) -> DeterministicSubsetAssessment {
+    let mut reasons = Vec::new();
+    for issue in issues {
+        match issue.code {
+            ReplayPreflightIssueCode::MissingRemoteExecutionContext
+            | ReplayPreflightIssueCode::OriginalContextUnavailable
+            | ReplayPreflightIssueCode::LocalRemoteConstraintMismatch
+            | ReplayPreflightIssueCode::AlternativeContextWithCaveats
+            | ReplayPreflightIssueCode::ContextBridgeTooLossy => push_subset_reason(
+                &mut reasons,
+                DeterministicSubsetReasonCode::ChangedRemoteWorkerContext,
+            ),
+            ReplayPreflightIssueCode::ChangedBackendDeviceWorkerContext => push_subset_reason(
+                &mut reasons,
+                DeterministicSubsetReasonCode::ChangedBackendDeviceRuntimeMode,
+            ),
+            ReplayPreflightIssueCode::RolloutContextChangedTooMuch => push_subset_reason(
+                &mut reasons,
+                DeterministicSubsetReasonCode::RolloutBoundaryRelevant,
+            ),
+            ReplayPreflightIssueCode::SnapshotIncomplete
+            | ReplayPreflightIssueCode::CanonicalRequestMissing
+            | ReplayPreflightIssueCode::RecordMissing => push_subset_reason(
+                &mut reasons,
+                DeterministicSubsetReasonCode::IncompleteSnapshotOrContext,
+            ),
+            ReplayPreflightIssueCode::ReplayNotFidelityEquivalent => push_subset_reason(
+                &mut reasons,
+                DeterministicSubsetReasonCode::MissingSignalForClassification,
+            ),
+            ReplayPreflightIssueCode::MissingArtifactOrSlot => push_subset_reason(
+                &mut reasons,
+                DeterministicSubsetReasonCode::ChangedBackendDeviceRuntimeMode,
+            ),
+        }
+    }
+    if has_snapshot_caveat {
+        push_subset_reason(
+            &mut reasons,
+            DeterministicSubsetReasonCode::IncompleteSnapshotOrContext,
+        );
+    }
+    if matches!(
+        rollout_context.comparability,
+        RolloutReplayComparability::NotMeaningfullyComparableAcrossRolloutBoundary
+            | RolloutReplayComparability::ComparableWithRolloutCaveat
+            | RolloutReplayComparability::BlockedInsufficientRolloutContext
+    ) {
+        push_subset_reason(
+            &mut reasons,
+            DeterministicSubsetReasonCode::RolloutBoundaryRelevant,
+        );
+    }
+
+    if matches!(
+        replayability,
+        ReplayabilityClass::BlockedForReplay | ReplayabilityClass::InsufficientForReplay
+    ) {
+        return DeterministicSubsetAssessment {
+            class: DeterministicSubsetClass::ExcludedFromDeterministicSubset,
+            eligibility: DeterministicSubsetEligibility::StableSubsetExcludedWithReason,
+            reasons,
+        };
+    }
+
+    if replayability == ReplayabilityClass::ReplayReady
+        && matches!(
+            rollout_context.comparability,
+            RolloutReplayComparability::BlockedInsufficientRolloutContext
+        )
+    {
+        push_subset_reason(
+            &mut reasons,
+            DeterministicSubsetReasonCode::MissingSignalForClassification,
+        );
+        return DeterministicSubsetAssessment {
+            class: DeterministicSubsetClass::DeterministicSubsetCandidate,
+            eligibility: DeterministicSubsetEligibility::StableSubsetUncertainDueToMissingSignal,
+            reasons,
+        };
+    }
+
+    if replayability == ReplayabilityClass::ReplayReady
+        && !has_snapshot_caveat
+        && matches!(
+            rollout_context.comparability,
+            RolloutReplayComparability::ComparableAcrossRolloutBoundary
+        )
+    {
+        DeterministicSubsetAssessment {
+            class: DeterministicSubsetClass::DeterministicSubsetCandidate,
+            eligibility: DeterministicSubsetEligibility::StableSubsetEligible,
+            reasons,
+        }
+    } else {
+        DeterministicSubsetAssessment {
+            class: DeterministicSubsetClass::ReplayableButNotDeterministicSubset,
+            eligibility: DeterministicSubsetEligibility::StableSubsetExcludedWithReason,
+            reasons,
+        }
+    }
+}
+
+fn classify_replay_deterministic_subset(
+    preflight: &ComputeReplayPreflight,
+    diff: &ReplayConfigurationDiff,
+    rollout_context: &RolloutReplayComparisonContext,
+    replay_succeeded: bool,
+    completion_class_match: bool,
+    failure_kind_match: bool,
+) -> DeterministicSubsetAssessment {
+    let mut reasons = preflight.deterministic_subset.reasons.clone();
+    if !diff.execution_path_match || !diff.execution_lane_match {
+        push_subset_reason(
+            &mut reasons,
+            DeterministicSubsetReasonCode::ChangedRemoteWorkerContext,
+        );
+    }
+    if !diff.backend_route_match || !diff.resource_class_match || !diff.capacity_pressure_match {
+        push_subset_reason(
+            &mut reasons,
+            DeterministicSubsetReasonCode::ChangedBackendDeviceRuntimeMode,
+        );
+    }
+    if !diff.model_slots_match {
+        push_subset_reason(
+            &mut reasons,
+            DeterministicSubsetReasonCode::RolloutBoundaryRelevant,
+        );
+    }
+    if matches!(
+        rollout_context.comparability,
+        RolloutReplayComparability::ComparableWithRolloutCaveat
+            | RolloutReplayComparability::NotMeaningfullyComparableAcrossRolloutBoundary
+            | RolloutReplayComparability::BlockedInsufficientRolloutContext
+    ) {
+        push_subset_reason(
+            &mut reasons,
+            DeterministicSubsetReasonCode::RolloutBoundaryRelevant,
+        );
+    }
+    if !replay_succeeded || !completion_class_match || !failure_kind_match {
+        push_subset_reason(
+            &mut reasons,
+            DeterministicSubsetReasonCode::ReplayOutcomeChangedOrDiverged,
+        );
+    }
+    if matches!(
+        preflight.replayability,
+        ReplayabilityClass::ReplayableOnlyUnderChangedContext
+            | ReplayabilityClass::ReplayableWithCaveats
+    ) {
+        push_subset_reason(
+            &mut reasons,
+            DeterministicSubsetReasonCode::DegradedFallbackRetryRedispatchContext,
+        );
+    }
+
+    if !replay_succeeded
+        || !completion_class_match
+        || !failure_kind_match
+        || preflight.replayability == ReplayabilityClass::BlockedForReplay
+        || preflight.replayability == ReplayabilityClass::InsufficientForReplay
+    {
+        return DeterministicSubsetAssessment {
+            class: DeterministicSubsetClass::ExcludedFromDeterministicSubset,
+            eligibility: DeterministicSubsetEligibility::StableSubsetExcludedWithReason,
+            reasons,
+        };
+    }
+
+    if preflight.replayability == ReplayabilityClass::ReplayReady
+        && diff.execution_path_match
+        && diff.execution_lane_match
+        && diff.backend_route_match
+        && diff.model_slots_match
+        && diff.resource_class_match
+        && diff.capacity_pressure_match
+        && matches!(
+            rollout_context.comparability,
+            RolloutReplayComparability::ComparableAcrossRolloutBoundary
+        )
+    {
+        DeterministicSubsetAssessment {
+            class: DeterministicSubsetClass::StableReplaySubset,
+            eligibility: DeterministicSubsetEligibility::StableSubsetEligible,
+            reasons,
+        }
+    } else {
+        DeterministicSubsetAssessment {
+            class: DeterministicSubsetClass::ReplayableButNotDeterministicSubset,
+            eligibility: DeterministicSubsetEligibility::StableSubsetExcludedWithReason,
+            reasons,
+        }
+    }
+}
+
+fn push_subset_reason(
+    reasons: &mut Vec<DeterministicSubsetReasonCode>,
+    reason: DeterministicSubsetReasonCode,
+) {
+    if !reasons.contains(&reason) {
+        reasons.push(reason);
     }
 }
 
@@ -2768,11 +3051,12 @@ mod tests {
         BaselineReference, CanonicalComputeEntryPoint, ComputeExecutionMode,
         ComputeHistoryLookupError, ComputeJobHandle, ComputeJobHistoryLookup, ComputeReplayOutcome,
         ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
-        RecoveryDisposition, ReplayContextConsistencyClass, ReplayContextTransition,
-        ReplayDeterminismClass, ReplayExecutionMode, ReplayFailureCode, ReplayMismatchClass,
-        ReplayPreflightIssueCode, ReplayRemoteContextReproducibility, ReplayabilityClass,
-        RolloutReplayComparability, RuntimeOperation, RuntimeOperationCode, RuntimeOpsState,
-        RuntimeSignalState, RuntimeWarmupState,
+        DeterministicSubsetClass, DeterministicSubsetEligibility, RecoveryDisposition,
+        ReplayContextConsistencyClass, ReplayContextTransition, ReplayDeterminismClass,
+        ReplayExecutionMode, ReplayFailureCode, ReplayMismatchClass, ReplayPreflightIssueCode,
+        ReplayRemoteContextReproducibility, ReplayabilityClass, RolloutReplayComparability,
+        RuntimeOperation, RuntimeOperationCode, RuntimeOpsState, RuntimeSignalState,
+        RuntimeWarmupState,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{
@@ -3174,6 +3458,12 @@ mod tests {
                         | ReplayDeterminismClass::NotReplayableUnderCurrentRuntimeState
                 ));
                 assert!(matches!(
+                    report.deterministic_subset.class,
+                    DeterministicSubsetClass::StableReplaySubset
+                        | DeterministicSubsetClass::ReplayableButNotDeterministicSubset
+                        | DeterministicSubsetClass::ExcludedFromDeterministicSubset
+                ));
+                assert!(matches!(
                     report.mismatch_view.class,
                     ReplayMismatchClass::ExactOrCloseReplayContext
                         | ReplayMismatchClass::MeaningfulReplayButMismatchedExecutionContext
@@ -3218,6 +3508,14 @@ mod tests {
         );
         assert!(preflight.fidelity_equivalent_possible);
         assert!(preflight.issues.is_empty());
+        assert_eq!(
+            preflight.deterministic_subset.class,
+            DeterministicSubsetClass::DeterministicSubsetCandidate
+        );
+        assert_eq!(
+            preflight.deterministic_subset.eligibility,
+            DeterministicSubsetEligibility::StableSubsetEligible
+        );
     }
 
     #[test]
@@ -3257,6 +3555,10 @@ mod tests {
         assert_eq!(
             preflight.context_consistency_class,
             ReplayContextConsistencyClass::ChangedComparableExecutionContext
+        );
+        assert_eq!(
+            preflight.deterministic_subset.class,
+            DeterministicSubsetClass::ReplayableButNotDeterministicSubset
         );
     }
 
@@ -3409,6 +3711,10 @@ mod tests {
         assert!(preflight.issues.iter().any(|issue| {
             issue.code == ReplayPreflightIssueCode::MissingRemoteExecutionContext
         }));
+        assert_eq!(
+            preflight.deterministic_subset.class,
+            DeterministicSubsetClass::ExcludedFromDeterministicSubset
+        );
         let replay = entry
             .replay(ComputeJobHandle { job_id: JobId(33) })
             .expect("replay");
@@ -3448,6 +3754,10 @@ mod tests {
         assert_eq!(
             preflight.mismatch_view.class,
             ReplayMismatchClass::ContextChangedWithCaveat
+        );
+        assert_eq!(
+            preflight.deterministic_subset.class,
+            DeterministicSubsetClass::ReplayableButNotDeterministicSubset
         );
         assert!(preflight
             .issues

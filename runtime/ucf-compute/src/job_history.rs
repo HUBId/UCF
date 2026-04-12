@@ -14,7 +14,7 @@ use crate::pipeline::{
     CanonicalIsolationDisposition, CanonicalPipelineState,
 };
 
-const JOB_HISTORY_SCHEMA_VERSION: u16 = 12;
+const JOB_HISTORY_SCHEMA_VERSION: u16 = 13;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRequestIdentity {
@@ -205,6 +205,10 @@ pub struct PersistedExecutionSnapshot {
     pub rollout: PersistedRolloutContextSummary,
     pub result: PersistedExecutionResultSummary,
     pub readiness: PersistedSnapshotReadiness,
+    #[serde(default)]
+    pub deterministic_subset_class: Option<String>,
+    #[serde(default)]
+    pub deterministic_subset_reasons: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -622,6 +626,16 @@ fn build_execution_snapshot(record: &JobRecord) -> PersistedExecutionSnapshot {
     let (active_or_warm_slots, candidate_or_guarded_slots, stale_or_blocked_slots) =
         classify_rollout_slots(&record.accounting.model_slots);
     let readiness = derive_snapshot_readiness(record, was_remote);
+    let (deterministic_subset_class, deterministic_subset_reasons) =
+        classify_deterministic_subset_snapshot(
+            readiness,
+            was_remote,
+            redispatched_to_local,
+            retry_attempts,
+            record.accounting.work_cost_summary.as_ref(),
+            candidate_or_guarded_slots,
+            stale_or_blocked_slots,
+        );
     PersistedExecutionSnapshot {
         request: PersistedJobRequestIdentity {
             frame_id: request.frame_id.0,
@@ -664,6 +678,55 @@ fn build_execution_snapshot(record: &JobRecord) -> PersistedExecutionSnapshot {
                 .map(|kind| failure_kind_name(kind).to_string()),
         },
         readiness,
+        deterministic_subset_class: Some(deterministic_subset_class),
+        deterministic_subset_reasons,
+    }
+}
+
+fn classify_deterministic_subset_snapshot(
+    readiness: PersistedSnapshotReadiness,
+    was_remote: bool,
+    redispatched_to_local: bool,
+    retry_attempts: u8,
+    work_cost: Option<&crate::compute_service::ConsolidatedWorkCostSummary>,
+    candidate_or_guarded_slots: usize,
+    stale_or_blocked_slots: usize,
+) -> (String, Vec<String>) {
+    let mut reasons = Vec::new();
+    if matches!(
+        readiness,
+        PersistedSnapshotReadiness::Insufficient | PersistedSnapshotReadiness::StaleOrIncomplete
+    ) {
+        reasons.push("incomplete_snapshot".to_string());
+        return ("excluded_from_deterministic_subset".to_string(), reasons);
+    }
+    if readiness == PersistedSnapshotReadiness::Partial {
+        reasons.push("insufficient_snapshot_signal".to_string());
+        return ("deterministic_subset_uncertain".to_string(), reasons);
+    }
+    if was_remote {
+        reasons.push("remote_worker_context".to_string());
+    }
+    if candidate_or_guarded_slots > 0 || stale_or_blocked_slots > 0 {
+        reasons.push("rollout_boundary_relevant".to_string());
+    }
+    if redispatched_to_local || retry_attempts > 0 {
+        reasons.push("retry_or_redispatch_path".to_string());
+    }
+    if work_cost.is_some_and(|summary| {
+        summary.degraded_stage_count > 0
+            || summary.fallback_stage.is_some()
+            || summary.queue_deferred_by_capacity
+    }) {
+        reasons.push("degraded_or_fallback_context".to_string());
+    }
+    if reasons.is_empty() {
+        ("deterministic_subset_candidate".to_string(), Vec::new())
+    } else {
+        (
+            "replayable_but_not_deterministic_subset".to_string(),
+            reasons,
+        )
     }
 }
 
@@ -1036,6 +1099,11 @@ mod tests {
             .expect("execution snapshot should exist");
         assert_eq!(snapshot.readiness, PersistedSnapshotReadiness::ReplayReady);
         assert!(snapshot.canonical_request_available);
+        assert!(matches!(
+            snapshot.deterministic_subset_class.as_deref(),
+            Some("deterministic_subset_candidate")
+                | Some("replayable_but_not_deterministic_subset")
+        ));
     }
 
     #[test]
