@@ -420,6 +420,7 @@ impl CanonicalComputeEntryPoint {
                 source_job_id: preflight.source_job_id,
                 code,
                 detail,
+                mismatch_view: preflight.mismatch_view.clone(),
             });
         }
         let source = match self.replay_source(preflight.source_job_id) {
@@ -429,6 +430,7 @@ impl CanonicalComputeEntryPoint {
                     source_job_id: preflight.source_job_id,
                     code: ReplayFailureCode::RecordMissing,
                     detail: "replay record missing".to_string(),
+                    mismatch_view: preflight.mismatch_view.clone(),
                 })
             }
         };
@@ -439,6 +441,7 @@ impl CanonicalComputeEntryPoint {
                 code: ReplayFailureCode::ConfigurationIncomplete,
                 detail: "replay configuration incomplete (canonical request unavailable)"
                     .to_string(),
+                mismatch_view: preflight.mismatch_view.clone(),
             });
         };
         let admission = self.service.technical_admission(&request);
@@ -471,6 +474,7 @@ impl CanonicalComputeEntryPoint {
                 source_job_id: source.job_id,
                 code,
                 detail,
+                mismatch_view: preflight.mismatch_view.clone(),
             });
         }
 
@@ -597,6 +601,14 @@ impl CanonicalComputeEntryPoint {
             }
             _ => ReplayRemoteContextReproducibility::Missing,
         };
+        let mismatch_view = classify_replay_mismatch_view(
+            &preflight,
+            &diff,
+            &rollout_context,
+            replay_succeeded,
+            completion_class_match,
+            failure_kind_match,
+        );
         Ok(ComputeReplayOutcome::Completed(ComputeReplayReport {
             source_job_id: source.job_id,
             replay_job_id: replay_id,
@@ -612,6 +624,7 @@ impl CanonicalComputeEntryPoint {
             completion_class_match,
             failure_kind_match,
             replay_failure,
+            mismatch_view,
         }))
     }
 
@@ -651,6 +664,20 @@ impl CanonicalComputeEntryPoint {
                     code: ReplayPreflightIssueCode::RecordMissing,
                     detail: "replay record missing".to_string(),
                 }],
+                mismatch_view: ReplayMismatchView {
+                    class: ReplayMismatchClass::BlockedByMissingPrerequisites,
+                    blocked_before_execution: true,
+                    divergence_observed_after_execution: false,
+                    primary_reasons: vec![ReplayMismatchReasonCode::MissingReplayPrerequisites],
+                    reasons: vec![ReplayMismatchReason {
+                        code: ReplayMismatchReasonCode::MissingReplayPrerequisites,
+                        category: ReplayMismatchCategory::SnapshotCompleteness,
+                        detail: "replay record missing".to_string(),
+                    }],
+                    outcome_comparison: Some(
+                        ReplayOutcomeComparison::ReplayFailedBeforeMeaningfulComparison,
+                    ),
+                },
             };
         };
 
@@ -822,6 +849,8 @@ impl CanonicalComputeEntryPoint {
             insufficient,
         );
 
+        let mismatch_view =
+            classify_preflight_mismatch_view(replayability, &issues, has_caveat, &rollout_context);
         ComputeReplayPreflight {
             source_job_id: source.job_id,
             replayability,
@@ -834,6 +863,7 @@ impl CanonicalComputeEntryPoint {
             rollout_context,
             fidelity_equivalent_possible,
             issues,
+            mismatch_view,
         }
     }
 
@@ -1557,6 +1587,64 @@ pub struct ReplayContextBridgeSummary {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayMismatchCategory {
+    SnapshotCompleteness,
+    ArtifactOrSlot,
+    BackendDeviceWorkerPlacement,
+    RolloutActivationContext,
+    LocalRemoteContext,
+    ResultOrFault,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayMismatchReasonCode {
+    OriginalArtifactNoLongerAvailable,
+    RemoteWorkerPathChanged,
+    RolloutBoundaryCrossed,
+    BackendOrDeviceContextChanged,
+    ReplayFellBackOrDegradedDifferently,
+    SnapshotIncompleteOrStale,
+    MissingReplayPrerequisites,
+    ReplayExecutionDivergedTechnically,
+    OutcomeChangedUnderContextShift,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplayMismatchReason {
+    pub code: ReplayMismatchReasonCode,
+    pub category: ReplayMismatchCategory,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayMismatchClass {
+    ExactOrCloseReplayContext,
+    ContextChangedWithCaveat,
+    MeaningfulReplayButMismatchedExecutionContext,
+    InsufficientlyComparable,
+    BlockedByMissingPrerequisites,
+    ReplayExecutionDivergedTechnically,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayOutcomeComparison {
+    SameEffectiveOutcome,
+    DifferentOutcomeUnderChangedContext,
+    ReplayFailedBeforeMeaningfulComparison,
+    ReplayTechnicallyDiverged,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplayMismatchView {
+    pub class: ReplayMismatchClass,
+    pub blocked_before_execution: bool,
+    pub divergence_observed_after_execution: bool,
+    pub primary_reasons: Vec<ReplayMismatchReasonCode>,
+    pub reasons: Vec<ReplayMismatchReason>,
+    pub outcome_comparison: Option<ReplayOutcomeComparison>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplayabilityClass {
     ReplayReady,
     ReplayableWithCaveats,
@@ -1608,6 +1696,7 @@ pub struct ComputeReplayPreflight {
     pub rollout_context: RolloutReplayComparisonContext,
     pub fidelity_equivalent_possible: bool,
     pub issues: Vec<ReplayPreflightIssue>,
+    pub mismatch_view: ReplayMismatchView,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1636,6 +1725,7 @@ pub struct ComputeReplayReport {
     pub completion_class_match: bool,
     pub failure_kind_match: bool,
     pub replay_failure: Option<ReplayFailureCode>,
+    pub mismatch_view: ReplayMismatchView,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1646,6 +1736,7 @@ pub enum ComputeReplayOutcome {
         source_job_id: JobId,
         code: ReplayFailureCode,
         detail: String,
+        mismatch_view: ReplayMismatchView,
     },
 }
 
@@ -2437,6 +2528,193 @@ fn classify_context_consistency(
     ReplayContextConsistencyClass::ChangedComparableExecutionContext
 }
 
+fn classify_preflight_mismatch_view(
+    replayability: ReplayabilityClass,
+    issues: &[ReplayPreflightIssue],
+    has_snapshot_caveat: bool,
+    rollout_context: &RolloutReplayComparisonContext,
+) -> ReplayMismatchView {
+    let reasons = issues
+        .iter()
+        .map(|issue| mismatch_reason_from_issue(issue.code, issue.detail.clone()))
+        .collect::<Vec<_>>();
+    let blocked = matches!(
+        replayability,
+        ReplayabilityClass::BlockedForReplay | ReplayabilityClass::InsufficientForReplay
+    );
+    let class = if blocked {
+        ReplayMismatchClass::BlockedByMissingPrerequisites
+    } else if has_snapshot_caveat {
+        ReplayMismatchClass::ContextChangedWithCaveat
+    } else if matches!(
+        rollout_context.comparability,
+        RolloutReplayComparability::NotMeaningfullyComparableAcrossRolloutBoundary
+            | RolloutReplayComparability::BlockedInsufficientRolloutContext
+            | RolloutReplayComparability::BlockedChangedExecutionContextBeyondUsefulComparison
+    ) {
+        ReplayMismatchClass::InsufficientlyComparable
+    } else if replayability == ReplayabilityClass::ReplayableOnlyUnderChangedContext {
+        ReplayMismatchClass::MeaningfulReplayButMismatchedExecutionContext
+    } else {
+        ReplayMismatchClass::ExactOrCloseReplayContext
+    };
+    ReplayMismatchView {
+        class,
+        blocked_before_execution: blocked,
+        divergence_observed_after_execution: false,
+        primary_reasons: reasons.iter().take(3).map(|r| r.code).collect(),
+        reasons,
+        outcome_comparison: if blocked {
+            Some(ReplayOutcomeComparison::ReplayFailedBeforeMeaningfulComparison)
+        } else {
+            None
+        },
+    }
+}
+
+fn classify_replay_mismatch_view(
+    preflight: &ComputeReplayPreflight,
+    diff: &ReplayConfigurationDiff,
+    rollout_context: &RolloutReplayComparisonContext,
+    replay_succeeded: bool,
+    completion_class_match: bool,
+    failure_kind_match: bool,
+) -> ReplayMismatchView {
+    let mut reasons = preflight.mismatch_view.reasons.clone();
+    if !diff.backend_route_match || !diff.resource_class_match || !diff.capacity_pressure_match {
+        reasons.push(ReplayMismatchReason {
+            code: ReplayMismatchReasonCode::BackendOrDeviceContextChanged,
+            category: ReplayMismatchCategory::BackendDeviceWorkerPlacement,
+            detail: "backend/device/resource context changed between source and replay".to_string(),
+        });
+    }
+    if !diff.execution_path_match || !diff.execution_lane_match {
+        reasons.push(ReplayMismatchReason {
+            code: ReplayMismatchReasonCode::RemoteWorkerPathChanged,
+            category: ReplayMismatchCategory::LocalRemoteContext,
+            detail: "execution path or worker lane changed between source and replay".to_string(),
+        });
+    }
+    if !diff.model_slots_match {
+        reasons.push(ReplayMismatchReason {
+            code: ReplayMismatchReasonCode::OriginalArtifactNoLongerAvailable,
+            category: ReplayMismatchCategory::ArtifactOrSlot,
+            detail: "model slot/artifact context differs from original execution".to_string(),
+        });
+    }
+    if matches!(
+        rollout_context.comparability,
+        RolloutReplayComparability::NotMeaningfullyComparableAcrossRolloutBoundary
+    ) {
+        reasons.push(ReplayMismatchReason {
+            code: ReplayMismatchReasonCode::RolloutBoundaryCrossed,
+            category: ReplayMismatchCategory::RolloutActivationContext,
+            detail: "rollout boundary crossed between source and replay".to_string(),
+        });
+    }
+    if replay_succeeded && (!completion_class_match || !failure_kind_match) {
+        reasons.push(ReplayMismatchReason {
+            code: ReplayMismatchReasonCode::OutcomeChangedUnderContextShift,
+            category: ReplayMismatchCategory::ResultOrFault,
+            detail: "top-level completion/fault outcome changed under replay".to_string(),
+        });
+    }
+    if !replay_succeeded {
+        reasons.push(ReplayMismatchReason {
+            code: ReplayMismatchReasonCode::ReplayExecutionDivergedTechnically,
+            category: ReplayMismatchCategory::ResultOrFault,
+            detail: "replay execution diverged before meaningful comparison".to_string(),
+        });
+    }
+    let class = if !replay_succeeded {
+        ReplayMismatchClass::ReplayExecutionDivergedTechnically
+    } else if preflight.replayability == ReplayabilityClass::ReplayableWithCaveats {
+        ReplayMismatchClass::ContextChangedWithCaveat
+    } else if preflight.replayability == ReplayabilityClass::ReplayableOnlyUnderChangedContext {
+        ReplayMismatchClass::MeaningfulReplayButMismatchedExecutionContext
+    } else if matches!(
+        rollout_context.comparability,
+        RolloutReplayComparability::NotMeaningfullyComparableAcrossRolloutBoundary
+            | RolloutReplayComparability::BlockedInsufficientRolloutContext
+            | RolloutReplayComparability::BlockedChangedExecutionContextBeyondUsefulComparison
+    ) {
+        ReplayMismatchClass::InsufficientlyComparable
+    } else if diff.execution_path_match
+        && diff.execution_lane_match
+        && diff.backend_route_match
+        && diff.model_slots_match
+        && diff.resource_class_match
+        && diff.capacity_pressure_match
+        && completion_class_match
+        && failure_kind_match
+    {
+        ReplayMismatchClass::ExactOrCloseReplayContext
+    } else {
+        ReplayMismatchClass::MeaningfulReplayButMismatchedExecutionContext
+    };
+    let outcome_comparison = if !replay_succeeded {
+        Some(ReplayOutcomeComparison::ReplayTechnicallyDiverged)
+    } else if completion_class_match && failure_kind_match {
+        Some(ReplayOutcomeComparison::SameEffectiveOutcome)
+    } else {
+        Some(ReplayOutcomeComparison::DifferentOutcomeUnderChangedContext)
+    };
+    ReplayMismatchView {
+        class,
+        blocked_before_execution: false,
+        divergence_observed_after_execution: !replay_succeeded
+            || !completion_class_match
+            || !failure_kind_match,
+        primary_reasons: reasons.iter().take(3).map(|r| r.code).collect(),
+        reasons,
+        outcome_comparison,
+    }
+}
+
+fn mismatch_reason_from_issue(
+    code: ReplayPreflightIssueCode,
+    detail: String,
+) -> ReplayMismatchReason {
+    match code {
+        ReplayPreflightIssueCode::RecordMissing
+        | ReplayPreflightIssueCode::CanonicalRequestMissing => ReplayMismatchReason {
+            code: ReplayMismatchReasonCode::MissingReplayPrerequisites,
+            category: ReplayMismatchCategory::SnapshotCompleteness,
+            detail,
+        },
+        ReplayPreflightIssueCode::SnapshotIncomplete
+        | ReplayPreflightIssueCode::ReplayNotFidelityEquivalent => ReplayMismatchReason {
+            code: ReplayMismatchReasonCode::SnapshotIncompleteOrStale,
+            category: ReplayMismatchCategory::SnapshotCompleteness,
+            detail,
+        },
+        ReplayPreflightIssueCode::MissingArtifactOrSlot => ReplayMismatchReason {
+            code: ReplayMismatchReasonCode::OriginalArtifactNoLongerAvailable,
+            category: ReplayMismatchCategory::ArtifactOrSlot,
+            detail,
+        },
+        ReplayPreflightIssueCode::ChangedBackendDeviceWorkerContext => ReplayMismatchReason {
+            code: ReplayMismatchReasonCode::BackendOrDeviceContextChanged,
+            category: ReplayMismatchCategory::BackendDeviceWorkerPlacement,
+            detail,
+        },
+        ReplayPreflightIssueCode::MissingRemoteExecutionContext
+        | ReplayPreflightIssueCode::OriginalContextUnavailable
+        | ReplayPreflightIssueCode::LocalRemoteConstraintMismatch
+        | ReplayPreflightIssueCode::AlternativeContextWithCaveats
+        | ReplayPreflightIssueCode::ContextBridgeTooLossy => ReplayMismatchReason {
+            code: ReplayMismatchReasonCode::RemoteWorkerPathChanged,
+            category: ReplayMismatchCategory::LocalRemoteContext,
+            detail,
+        },
+        ReplayPreflightIssueCode::RolloutContextChangedTooMuch => ReplayMismatchReason {
+            code: ReplayMismatchReasonCode::RolloutBoundaryCrossed,
+            category: ReplayMismatchCategory::RolloutActivationContext,
+            detail,
+        },
+    }
+}
+
 fn replay_preflight_failure(preflight: &ComputeReplayPreflight) -> (ReplayFailureCode, String) {
     for issue in &preflight.issues {
         let code = match issue.code {
@@ -2491,10 +2769,10 @@ mod tests {
         ComputeHistoryLookupError, ComputeJobHandle, ComputeJobHistoryLookup, ComputeReplayOutcome,
         ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
         RecoveryDisposition, ReplayContextConsistencyClass, ReplayContextTransition,
-        ReplayDeterminismClass, ReplayExecutionMode, ReplayFailureCode, ReplayPreflightIssueCode,
-        ReplayRemoteContextReproducibility, ReplayabilityClass, RolloutReplayComparability,
-        RuntimeOperation, RuntimeOperationCode, RuntimeOpsState, RuntimeSignalState,
-        RuntimeWarmupState,
+        ReplayDeterminismClass, ReplayExecutionMode, ReplayFailureCode, ReplayMismatchClass,
+        ReplayPreflightIssueCode, ReplayRemoteContextReproducibility, ReplayabilityClass,
+        RolloutReplayComparability, RuntimeOperation, RuntimeOperationCode, RuntimeOpsState,
+        RuntimeSignalState, RuntimeWarmupState,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{
@@ -2895,6 +3173,13 @@ mod tests {
                         | ReplayDeterminismClass::ReplayableNotStrictlyDeterministic
                         | ReplayDeterminismClass::NotReplayableUnderCurrentRuntimeState
                 ));
+                assert!(matches!(
+                    report.mismatch_view.class,
+                    ReplayMismatchClass::ExactOrCloseReplayContext
+                        | ReplayMismatchClass::MeaningfulReplayButMismatchedExecutionContext
+                        | ReplayMismatchClass::ContextChangedWithCaveat
+                        | ReplayMismatchClass::ReplayExecutionDivergedTechnically
+                ));
             }
             other => panic!("expected completed replay, got {other:?}"),
         }
@@ -2919,6 +3204,10 @@ mod tests {
         };
         let preflight = entry.replay_preflight(source);
         assert_eq!(preflight.replayability, ReplayabilityClass::ReplayReady);
+        assert_eq!(
+            preflight.mismatch_view.class,
+            ReplayMismatchClass::ExactOrCloseReplayContext
+        );
         assert_eq!(
             preflight.context_consistency_class,
             ReplayContextConsistencyClass::SameEffectiveExecutionContext
@@ -2956,6 +3245,11 @@ mod tests {
             preflight.replayability,
             ReplayabilityClass::ReplayableOnlyUnderChangedContext
         );
+        assert!(matches!(
+            preflight.mismatch_view.class,
+            ReplayMismatchClass::MeaningfulReplayButMismatchedExecutionContext
+                | ReplayMismatchClass::InsufficientlyComparable
+        ));
         assert_eq!(
             preflight.context_bridge.transition,
             ReplayContextTransition::LocalToRemote
@@ -3026,6 +3320,10 @@ mod tests {
             preflight.replayability,
             ReplayabilityClass::BlockedForReplay
         );
+        assert_eq!(
+            preflight.mismatch_view.class,
+            ReplayMismatchClass::BlockedByMissingPrerequisites
+        );
         assert!(preflight
             .issues
             .iter()
@@ -3034,8 +3332,16 @@ mod tests {
             .replay(ComputeJobHandle { job_id: JobId(42) })
             .expect("replay");
         match replay {
-            ComputeReplayOutcome::NotReplayable { code, .. } => {
+            ComputeReplayOutcome::NotReplayable {
+                code,
+                mismatch_view,
+                ..
+            } => {
                 assert_eq!(code, ReplayFailureCode::RecordMissing);
+                assert_eq!(
+                    mismatch_view.class,
+                    ReplayMismatchClass::BlockedByMissingPrerequisites
+                );
             }
             other => panic!("expected non-replayable, got {other:?}"),
         }
@@ -3138,6 +3444,10 @@ mod tests {
         assert_eq!(
             preflight.replayability,
             ReplayabilityClass::ReplayableWithCaveats
+        );
+        assert_eq!(
+            preflight.mismatch_view.class,
+            ReplayMismatchClass::ContextChangedWithCaveat
         );
         assert!(preflight
             .issues
