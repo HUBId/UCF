@@ -413,6 +413,33 @@ path mismatch, and non-fidelity-equivalent caveats.
 
 This remains technical preflight only (no certification/governance workflow).
 
+### Consolidated replay mismatch view (v1)
+
+Preflight and replay reports now share one compact `ReplayMismatchView` instead of separate
+diagnostic worlds.
+
+Canonical mismatch classes:
+
+- `exact_or_close_replay_context`
+- `context_changed_with_caveat`
+- `meaningful_replay_but_mismatched_execution_context`
+- `insufficiently_comparable`
+- `blocked_by_missing_prerequisites`
+- `replay_execution_diverged_technically`
+
+Canonical mismatch categories/reasoning remain bounded to load-bearing replay context:
+
+- snapshot completeness (`snapshot completeness mismatch`)
+- artifact/slot state (`artifact/slot/hash mismatch` in effective slot provenance)
+- backend/device/worker/placement context
+- rollout/activation context
+- local-vs-remote context bridge
+- top-level result/fault divergence
+
+`ReplayMismatchView.primary_reasons` is intentionally capped to the first 1-3 dominant reasons so
+ops/history/replay views can explain why a replay is clean, caveated, mismatched, blocked, or
+diverged without adding a full diff/audit platform.
+
 ### Replay outcome determinism classes
 
 Replay outcomes are explicitly classified:
