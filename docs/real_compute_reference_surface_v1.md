@@ -118,3 +118,36 @@ Boundaries kept intentionally:
 - no deterministic equivalence guarantee across local/remote boundaries
 - no forensic diff platform or distributed reconciliation matrix
 - only load-bearing mismatch summaries for replay diagnostics and ops/history views
+
+## 8) Replay-driven regression-check semantics (narrow technical layer)
+
+Replay diagnostics now expose a small regression-check signal class for load-bearing paths:
+
+- `no_regression_signal`
+- `possible_regression_signal`
+- `strong_regression_signal`
+- `inconclusive_due_to_context_mismatch`
+- `not_suitable_for_regression_checking`
+
+The signal is only considered regression-check suitable when the replay run is both:
+
+- meaningfully same-context (`same_effective_execution_context` plus rollout comparability), and
+- stable-subset eligible (`stable_replay_subset`/eligible deterministic subset without low-fidelity caveats).
+
+Canonical reason codes include:
+
+- `same_effective_context_worse_outcome`
+- `same_effective_context_degraded_path_emerged`
+- `same_effective_context_significant_mismatch_remained`
+- `changed_context_therefore_inconclusive`
+- `low_fidelity_replay`
+- `blocked_or_incomplete_replay`
+
+Provenance is intentionally narrow and technical: each assessment carries compared source/replay job ids
+and influence flags for rollout, remote-context, backend-context, and snapshot-fidelity factors.
+
+Explicit boundaries:
+
+- changed execution context is **not** auto-regression (`inconclusive`),
+- low-fidelity or blocked/incomplete replay is **not** a regression verdict (`not_suitable`),
+- these are informative diagnostics only (no governance/approval/release gating semantics).
