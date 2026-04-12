@@ -97,6 +97,22 @@ Preflight reuses the same replay path and explicitly marks context-bridge caveat
 - `alternative_context_with_caveats` (e.g. local↔remote bridge required)
 - `context_bridge_too_lossy` (bridge would be too lossy for meaningful replay)
 
+Replay preflight + diagnostics also expose one shared deterministic-subset lens:
+
+- class:
+  - `deterministic_subset_candidate`
+  - `stable_replay_subset`
+  - `replayable_but_not_deterministic_subset`
+  - `excluded_from_deterministic_subset`
+- eligibility:
+  - `stable_subset_eligible`
+  - `stable_subset_excluded_with_reason`
+  - `stable_subset_uncertain_due_to_missing_signal`
+
+Job-history execution snapshots carry a narrow deterministic-subset hint and reason list, so
+ops/history/replay views can distinguish general replayability from the tighter stable subset
+without introducing a second replay framework.
+
 Boundaries kept intentionally:
 
 - no deterministic equivalence guarantee across local/remote boundaries

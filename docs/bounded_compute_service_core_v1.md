@@ -450,6 +450,39 @@ Replay outcomes are explicitly classified:
 
 No global strict determinism promise is made.
 
+### Deterministic-subset classification (narrow and explicit)
+
+Replayability and deterministic-subset semantics are intentionally separate:
+
+- replayability answers: can replay run at all (possibly caveated)?
+- deterministic-subset answers: does this run belong to the narrower stable-replay subset?
+
+Canonical deterministic-subset classes:
+
+- `deterministic_subset_candidate` (preflight-ready candidate)
+- `stable_replay_subset` (completed replay under same effective context/config)
+- `replayable_but_not_deterministic_subset`
+- `excluded_from_deterministic_subset`
+
+Canonical eligibility states shared by preflight and replay diagnostics:
+
+- `stable_subset_eligible`
+- `stable_subset_excluded_with_reason`
+- `stable_subset_uncertain_due_to_missing_signal`
+
+Bounded reason codes (non-exhaustive, load-bearing only):
+
+- changed remote/worker context
+- changed backend/device/runtime mode context
+- rollout boundary relevance
+- incomplete snapshot/context
+- degraded/fallback/retry/redispatch execution context
+- missing signal for stable classification
+- replay outcome changed/diverged
+
+This is a technical replay hardening layer only; it is not a determinism guarantee,
+formal verification claim, or certification workflow.
+
 ### Structured replay failure semantics
 
 The replay surface uses one bounded failure taxonomy:
