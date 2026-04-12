@@ -192,6 +192,7 @@ pub struct RuntimeOpsSnapshot {
     pub repeated_hotspot_runs: usize,
     pub optimization_view: RuntimeOptimizationOpsView,
     pub replay_snapshot_coverage: ReplaySnapshotCoverage,
+    pub latest_replay_regression: Option<ReplayRegressionAssessment>,
     pub recovery: Option<ComputeRecoverySnapshot>,
 }
 
@@ -253,6 +254,7 @@ pub struct CanonicalComputeEntryPoint {
     history_store: Option<JobHistoryStore>,
     last_history_error: Option<JobHistoryStoreError>,
     latest_baseline_comparison: Option<BaselineComparisonSummary>,
+    latest_replay_regression: Option<ReplayRegressionAssessment>,
     recovery_by_job: BTreeMap<JobId, RecoveredJobStatus>,
     recovery_snapshot: Option<ComputeRecoverySnapshot>,
 }
@@ -264,6 +266,7 @@ impl CanonicalComputeEntryPoint {
             history_store: None,
             last_history_error: None,
             latest_baseline_comparison: None,
+            latest_replay_regression: None,
             recovery_by_job: BTreeMap::new(),
             recovery_snapshot: None,
         }
@@ -278,6 +281,7 @@ impl CanonicalComputeEntryPoint {
             history_store: Some(history_store),
             last_history_error: None,
             latest_baseline_comparison: None,
+            latest_replay_regression: None,
             recovery_by_job: BTreeMap::new(),
             recovery_snapshot: None,
         };
@@ -416,32 +420,56 @@ impl CanonicalComputeEntryPoint {
             ReplayabilityClass::BlockedForReplay | ReplayabilityClass::InsufficientForReplay
         ) {
             let (code, detail) = replay_preflight_failure(&preflight);
+            let regression = regression_for_not_replayable(
+                preflight.source_job_id,
+                preflight.replayability,
+                preflight.snapshot_readiness,
+                &preflight.context_bridge,
+            );
+            self.latest_replay_regression = Some(regression.clone());
             return Ok(ComputeReplayOutcome::NotReplayable {
                 source_job_id: preflight.source_job_id,
                 code,
                 detail,
                 mismatch_view: preflight.mismatch_view.clone(),
+                regression,
             });
         }
         let source = match self.replay_source(preflight.source_job_id) {
             Some(source) => source,
             None => {
+                let regression = regression_for_not_replayable(
+                    preflight.source_job_id,
+                    ReplayabilityClass::BlockedForReplay,
+                    preflight.snapshot_readiness,
+                    &preflight.context_bridge,
+                );
+                self.latest_replay_regression = Some(regression.clone());
                 return Ok(ComputeReplayOutcome::NotReplayable {
                     source_job_id: preflight.source_job_id,
                     code: ReplayFailureCode::RecordMissing,
                     detail: "replay record missing".to_string(),
                     mismatch_view: preflight.mismatch_view.clone(),
-                })
+                    regression,
+                });
             }
         };
         let source_execution_mode = source.execution_mode();
         let Some(request) = source.request.clone() else {
+            let regression = regression_for_not_replayable(
+                source.job_id,
+                ReplayabilityClass::InsufficientForReplay,
+                preflight.snapshot_readiness,
+                &preflight.context_bridge,
+            );
+            self.latest_replay_regression = Some(regression.clone());
             return Ok(ComputeReplayOutcome::NotReplayable {
                 source_job_id: source.job_id,
                 code: ReplayFailureCode::ConfigurationIncomplete,
                 detail: "replay configuration incomplete (canonical request unavailable)"
                     .to_string(),
                 mismatch_view: preflight.mismatch_view.clone(),
+                regression,
             });
         };
         let admission = self.service.technical_admission(&request);
@@ -470,11 +498,19 @@ impl CanonicalComputeEntryPoint {
                     format!("replay configuration incomplete: {}", failure.detail),
                 ),
             };
+            let regression = regression_for_not_replayable(
+                source.job_id,
+                ReplayabilityClass::InsufficientForReplay,
+                preflight.snapshot_readiness,
+                &preflight.context_bridge,
+            );
+            self.latest_replay_regression = Some(regression.clone());
             return Ok(ComputeReplayOutcome::NotReplayable {
                 source_job_id: source.job_id,
                 code,
                 detail,
                 mismatch_view: preflight.mismatch_view.clone(),
+                regression,
             });
         }
 
@@ -610,6 +646,19 @@ impl CanonicalComputeEntryPoint {
             failure_kind_match,
         );
         let deterministic_subset = mismatch_view.deterministic_subset.clone();
+        let regression = classify_replay_regression_assessment(
+            source.job_id,
+            replay_id,
+            &preflight,
+            &mismatch_view,
+            &diff,
+            replay_succeeded,
+            source.completion_class.as_deref(),
+            Some(completion_class_name(replayed.accounting.completion_class)),
+            source.pipeline_state.as_deref(),
+            replayed.accounting.pipeline_state.map(pipeline_state_name),
+        );
+        self.latest_replay_regression = Some(regression.clone());
         Ok(ComputeReplayOutcome::Completed(ComputeReplayReport {
             source_job_id: source.job_id,
             replay_job_id: replay_id,
@@ -627,6 +676,7 @@ impl CanonicalComputeEntryPoint {
             replay_failure,
             mismatch_view,
             deterministic_subset,
+            regression,
         }))
     }
 
@@ -1271,6 +1321,7 @@ impl CanonicalComputeEntryPoint {
                 insufficient,
                 stale_or_incomplete,
             },
+            latest_replay_regression: self.latest_replay_regression.clone(),
             recovery: self.recovery_snapshot.clone(),
         }
     }
@@ -1699,6 +1750,37 @@ pub struct ReplayMismatchView {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayRegressionSignal {
+    NoRegressionSignal,
+    PossibleRegressionSignal,
+    StrongRegressionSignal,
+    InconclusiveDueToContextMismatch,
+    NotSuitableForRegressionChecking,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayRegressionReasonCode {
+    SameEffectiveContextWorseOutcome,
+    SameEffectiveContextDegradedPathEmerged,
+    SameEffectiveContextSignificantMismatchRemained,
+    ChangedContextThereforeInconclusive,
+    LowFidelityReplay,
+    BlockedOrIncompleteReplay,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplayRegressionAssessment {
+    pub source_job_id: JobId,
+    pub replay_job_id: Option<JobId>,
+    pub signal: ReplayRegressionSignal,
+    pub reason_codes: Vec<ReplayRegressionReasonCode>,
+    pub influenced_by_rollout_context: bool,
+    pub influenced_by_remote_context: bool,
+    pub influenced_by_backend_context: bool,
+    pub influenced_by_snapshot_fidelity: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplayabilityClass {
     ReplayReady,
     ReplayableWithCaveats,
@@ -1782,6 +1864,7 @@ pub struct ComputeReplayReport {
     pub replay_failure: Option<ReplayFailureCode>,
     pub mismatch_view: ReplayMismatchView,
     pub deterministic_subset: DeterministicSubsetAssessment,
+    pub regression: ReplayRegressionAssessment,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1793,6 +1876,7 @@ pub enum ComputeReplayOutcome {
         code: ReplayFailureCode,
         detail: String,
         mismatch_view: ReplayMismatchView,
+        regression: ReplayRegressionAssessment,
     },
 }
 
@@ -2954,6 +3038,134 @@ fn push_subset_reason(
     }
 }
 
+fn regression_for_not_replayable(
+    source_job_id: JobId,
+    replayability: ReplayabilityClass,
+    snapshot_readiness: Option<PersistedSnapshotReadiness>,
+    bridge: &ReplayContextBridgeSummary,
+) -> ReplayRegressionAssessment {
+    let mut reasons = vec![ReplayRegressionReasonCode::BlockedOrIncompleteReplay];
+    if matches!(
+        snapshot_readiness,
+        Some(PersistedSnapshotReadiness::Partial)
+    ) {
+        reasons.push(ReplayRegressionReasonCode::LowFidelityReplay);
+    }
+    ReplayRegressionAssessment {
+        source_job_id,
+        replay_job_id: None,
+        signal: match replayability {
+            ReplayabilityClass::BlockedForReplay | ReplayabilityClass::InsufficientForReplay => {
+                ReplayRegressionSignal::NotSuitableForRegressionChecking
+            }
+            _ => ReplayRegressionSignal::InconclusiveDueToContextMismatch,
+        },
+        reason_codes: reasons,
+        influenced_by_rollout_context: false,
+        influenced_by_remote_context: !bridge.major_mismatches.is_empty(),
+        influenced_by_backend_context: false,
+        influenced_by_snapshot_fidelity: matches!(
+            snapshot_readiness,
+            Some(PersistedSnapshotReadiness::Partial | PersistedSnapshotReadiness::Insufficient)
+                | None
+        ),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn classify_replay_regression_assessment(
+    source_job_id: JobId,
+    replay_job_id: JobId,
+    preflight: &ComputeReplayPreflight,
+    mismatch_view: &ReplayMismatchView,
+    diff: &ReplayConfigurationDiff,
+    replay_succeeded: bool,
+    source_completion: Option<&str>,
+    replay_completion: Option<&str>,
+    source_pipeline_state: Option<&str>,
+    replay_pipeline_state: Option<&str>,
+) -> ReplayRegressionAssessment {
+    let changed_context = !matches!(
+        preflight.context_consistency_class,
+        ReplayContextConsistencyClass::SameEffectiveExecutionContext
+    ) || !matches!(
+        preflight.rollout_context.comparability,
+        RolloutReplayComparability::ComparableAcrossRolloutBoundary
+    );
+    let low_fidelity = matches!(
+        preflight.snapshot_readiness,
+        Some(PersistedSnapshotReadiness::Partial)
+    ) || preflight.replayability == ReplayabilityClass::ReplayableWithCaveats;
+    let suitable_for_regression = !changed_context
+        && !low_fidelity
+        && matches!(
+            mismatch_view.deterministic_subset.class,
+            DeterministicSubsetClass::StableReplaySubset
+                | DeterministicSubsetClass::DeterministicSubsetCandidate
+        )
+        && mismatch_view.deterministic_subset.eligibility
+            == DeterministicSubsetEligibility::StableSubsetEligible;
+
+    let mut reason_codes = Vec::new();
+    let signal = if !suitable_for_regression {
+        if changed_context {
+            reason_codes.push(ReplayRegressionReasonCode::ChangedContextThereforeInconclusive);
+            ReplayRegressionSignal::InconclusiveDueToContextMismatch
+        } else {
+            reason_codes.push(ReplayRegressionReasonCode::LowFidelityReplay);
+            ReplayRegressionSignal::NotSuitableForRegressionChecking
+        }
+    } else {
+        let source_rank = completion_rank(source_completion);
+        let replay_rank = completion_rank(replay_completion);
+        let worse_outcome = replay_rank.zip(source_rank).is_some_and(|(r, s)| r < s)
+            || !replay_succeeded
+            || mismatch_view.outcome_comparison
+                == Some(ReplayOutcomeComparison::ReplayTechnicallyDiverged);
+        let degraded_path_emerged =
+            source_pipeline_state != Some("degraded") && replay_pipeline_state == Some("degraded");
+        let significant_mismatch_remained = !diff.execution_path_match
+            || !diff.execution_lane_match
+            || !diff.backend_route_match
+            || !diff.model_slots_match
+            || !diff.resource_class_match
+            || !diff.capacity_pressure_match;
+
+        if worse_outcome {
+            reason_codes.push(ReplayRegressionReasonCode::SameEffectiveContextWorseOutcome);
+            ReplayRegressionSignal::StrongRegressionSignal
+        } else if degraded_path_emerged {
+            reason_codes.push(ReplayRegressionReasonCode::SameEffectiveContextDegradedPathEmerged);
+            ReplayRegressionSignal::PossibleRegressionSignal
+        } else if significant_mismatch_remained {
+            reason_codes
+                .push(ReplayRegressionReasonCode::SameEffectiveContextSignificantMismatchRemained);
+            ReplayRegressionSignal::PossibleRegressionSignal
+        } else {
+            ReplayRegressionSignal::NoRegressionSignal
+        }
+    };
+
+    ReplayRegressionAssessment {
+        source_job_id,
+        replay_job_id: Some(replay_job_id),
+        signal,
+        reason_codes,
+        influenced_by_rollout_context: matches!(
+            preflight.rollout_context.comparability,
+            RolloutReplayComparability::ComparableWithRolloutCaveat
+                | RolloutReplayComparability::NotMeaningfullyComparableAcrossRolloutBoundary
+                | RolloutReplayComparability::BlockedInsufficientRolloutContext
+                | RolloutReplayComparability::BlockedChangedExecutionContextBeyondUsefulComparison
+        ),
+        influenced_by_remote_context: !diff.execution_path_match || !diff.execution_lane_match,
+        influenced_by_backend_context: !diff.backend_route_match
+            || !diff.resource_class_match
+            || !diff.capacity_pressure_match,
+        influenced_by_snapshot_fidelity: low_fidelity,
+    }
+}
+
 fn mismatch_reason_from_issue(
     code: ReplayPreflightIssueCode,
     detail: String,
@@ -3050,13 +3262,14 @@ mod tests {
         parse_warmup_state, BaselineComparisonFailureCode, BaselineComparisonResult,
         BaselineReference, CanonicalComputeEntryPoint, ComputeExecutionMode,
         ComputeHistoryLookupError, ComputeJobHandle, ComputeJobHistoryLookup, ComputeReplayOutcome,
-        ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
-        DeterministicSubsetClass, DeterministicSubsetEligibility, RecoveryDisposition,
-        ReplayContextConsistencyClass, ReplayContextTransition, ReplayDeterminismClass,
-        ReplayExecutionMode, ReplayFailureCode, ReplayMismatchClass, ReplayPreflightIssueCode,
-        ReplayRemoteContextReproducibility, ReplayabilityClass, RolloutReplayComparability,
-        RuntimeOperation, RuntimeOperationCode, RuntimeOpsState, RuntimeSignalState,
-        RuntimeWarmupState,
+        ComputeReplayPreflight, ComputeRequestValidationCode, ComputeSubmitOutcome,
+        ComputeSubmitRequest, DeterministicSubsetClass, DeterministicSubsetEligibility,
+        PersistedSnapshotReadiness, RecoveryDisposition, ReplayContextConsistencyClass,
+        ReplayContextTransition, ReplayDeterminismClass, ReplayExecutionMode, ReplayFailureCode,
+        ReplayMismatchClass, ReplayPreflightIssueCode, ReplayRegressionReasonCode,
+        ReplayRegressionSignal, ReplayRemoteContextReproducibility, ReplayabilityClass,
+        RolloutReplayComparability, RuntimeOperation, RuntimeOperationCode, RuntimeOpsState,
+        RuntimeSignalState, RuntimeWarmupState,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{
@@ -3470,9 +3683,24 @@ mod tests {
                         | ReplayMismatchClass::ContextChangedWithCaveat
                         | ReplayMismatchClass::ReplayExecutionDivergedTechnically
                 ));
+                assert!(matches!(
+                    report.regression.signal,
+                    ReplayRegressionSignal::NoRegressionSignal
+                        | ReplayRegressionSignal::NotSuitableForRegressionChecking
+                ));
+                assert_eq!(report.regression.source_job_id, source.job_id);
             }
             other => panic!("expected completed replay, got {other:?}"),
         }
+        let snapshot = entry.operations_snapshot();
+        assert!(matches!(
+            snapshot
+                .latest_replay_regression
+                .expect("regression assessment should be visible in ops")
+                .signal,
+            ReplayRegressionSignal::NoRegressionSignal
+                | ReplayRegressionSignal::NotSuitableForRegressionChecking
+        ));
     }
 
     #[test]
@@ -3563,6 +3791,44 @@ mod tests {
     }
 
     #[test]
+    fn replay_marks_changed_context_as_inconclusive_for_regression_checks() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":8,"job_id":81,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"standard","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[]}"#,
+        )
+        .expect("history fixture");
+        let mut entry = CanonicalComputeEntryPoint::with_history_path(
+            InMemoryComputeService::with_scheduler(
+                crate::pipeline::ComputePipelineBackend::stub(),
+                SchedulerConfig {
+                    max_concurrent_jobs: 1,
+                    execution_path: JobExecutionPath::WorkerIpc,
+                },
+            ),
+            &history_path,
+        )
+        .expect("entry with history");
+        let replay = entry
+            .replay(ComputeJobHandle { job_id: JobId(81) })
+            .expect("replay");
+        match replay {
+            ComputeReplayOutcome::Completed(report) => {
+                assert_eq!(
+                    report.regression.signal,
+                    ReplayRegressionSignal::InconclusiveDueToContextMismatch
+                );
+                assert!(report
+                    .regression
+                    .reason_codes
+                    .contains(&ReplayRegressionReasonCode::ChangedContextThereforeInconclusive));
+            }
+            other => panic!("expected completed replay, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn replay_preflight_classifies_remote_to_local_with_bridge_signals() {
         let dir = tempfile::tempdir().expect("tempdir");
         let history_path = dir.path().join("job_history.jsonl");
@@ -3615,6 +3881,129 @@ mod tests {
     }
 
     #[test]
+    fn replay_regression_signal_classes_cover_strong_possible_and_no_signal() {
+        let base_preflight = ComputeReplayPreflight {
+            source_job_id: JobId(1),
+            replayability: ReplayabilityClass::ReplayReady,
+            source_execution_mode: ReplayExecutionMode::Local,
+            current_execution_mode: ReplayExecutionMode::Local,
+            snapshot_readiness: Some(PersistedSnapshotReadiness::ReplayReady),
+            locality: super::ReplayPreflightLocality::LocalOnly,
+            context_consistency_class: ReplayContextConsistencyClass::SameEffectiveExecutionContext,
+            context_bridge: super::ReplayContextBridgeSummary {
+                transition: ReplayContextTransition::LocalToLocal,
+                source: super::ReplayExecutionContextDescriptor {
+                    execution_mode: ReplayExecutionMode::Local,
+                    execution_path: "LocalCanonical".to_string(),
+                    execution_lane: Some("Standard".to_string()),
+                    resource_class: Some("Standard".to_string()),
+                    capacity_pressure: Some("Nominal".to_string()),
+                    has_backend_route: true,
+                    remote_context_completeness: "not_applicable".to_string(),
+                },
+                replay: super::ReplayExecutionContextDescriptor {
+                    execution_mode: ReplayExecutionMode::Local,
+                    execution_path: "LocalCanonical".to_string(),
+                    execution_lane: Some("Standard".to_string()),
+                    resource_class: Some("Standard".to_string()),
+                    capacity_pressure: Some("Nominal".to_string()),
+                    has_backend_route: true,
+                    remote_context_completeness: "not_applicable".to_string(),
+                },
+                major_mismatches: Vec::new(),
+            },
+            rollout_context: super::RolloutReplayComparisonContext {
+                source: super::RolloutReplayContextClass::ActiveOrWarm,
+                replay: super::RolloutReplayContextClass::ActiveOrWarm,
+                source_hint: Some("active_or_warm".to_string()),
+                replay_hint: Some("active_or_warm".to_string()),
+                comparability: RolloutReplayComparability::ComparableAcrossRolloutBoundary,
+            },
+            fidelity_equivalent_possible: true,
+            issues: Vec::new(),
+            mismatch_view: super::ReplayMismatchView {
+                class: ReplayMismatchClass::ExactOrCloseReplayContext,
+                blocked_before_execution: false,
+                divergence_observed_after_execution: false,
+                primary_reasons: Vec::new(),
+                reasons: Vec::new(),
+                outcome_comparison: Some(super::ReplayOutcomeComparison::SameEffectiveOutcome),
+                deterministic_subset: super::DeterministicSubsetAssessment {
+                    class: DeterministicSubsetClass::StableReplaySubset,
+                    eligibility: DeterministicSubsetEligibility::StableSubsetEligible,
+                    reasons: Vec::new(),
+                },
+            },
+            deterministic_subset: super::DeterministicSubsetAssessment {
+                class: DeterministicSubsetClass::StableReplaySubset,
+                eligibility: DeterministicSubsetEligibility::StableSubsetEligible,
+                reasons: Vec::new(),
+            },
+        };
+        let all_match = super::ReplayConfigurationDiff {
+            execution_path_match: true,
+            execution_lane_match: true,
+            backend_route_match: true,
+            model_slots_match: true,
+            resource_class_match: true,
+            capacity_pressure_match: true,
+        };
+        let no_signal = super::classify_replay_regression_assessment(
+            JobId(1),
+            JobId(2),
+            &base_preflight,
+            &base_preflight.mismatch_view,
+            &all_match,
+            true,
+            Some("completed"),
+            Some("completed"),
+            Some("ok"),
+            Some("ok"),
+        );
+        assert_eq!(no_signal.signal, ReplayRegressionSignal::NoRegressionSignal);
+
+        let possible = super::classify_replay_regression_assessment(
+            JobId(1),
+            JobId(3),
+            &base_preflight,
+            &base_preflight.mismatch_view,
+            &all_match,
+            true,
+            Some("completed"),
+            Some("completed"),
+            Some("ok"),
+            Some("degraded"),
+        );
+        assert_eq!(
+            possible.signal,
+            ReplayRegressionSignal::PossibleRegressionSignal
+        );
+        assert!(possible
+            .reason_codes
+            .contains(&ReplayRegressionReasonCode::SameEffectiveContextDegradedPathEmerged));
+
+        let strong = super::classify_replay_regression_assessment(
+            JobId(1),
+            JobId(4),
+            &base_preflight,
+            &base_preflight.mismatch_view,
+            &all_match,
+            true,
+            Some("completed"),
+            Some("failed_during_execution"),
+            Some("ok"),
+            Some("degraded"),
+        );
+        assert_eq!(
+            strong.signal,
+            ReplayRegressionSignal::StrongRegressionSignal
+        );
+        assert!(strong
+            .reason_codes
+            .contains(&ReplayRegressionReasonCode::SameEffectiveContextWorseOutcome));
+    }
+
+    #[test]
     fn replay_reports_missing_record() {
         let mut entry = service();
         let preflight = entry.replay_preflight(ComputeJobHandle { job_id: JobId(42) });
@@ -3637,6 +4026,7 @@ mod tests {
             ComputeReplayOutcome::NotReplayable {
                 code,
                 mismatch_view,
+                regression,
                 ..
             } => {
                 assert_eq!(code, ReplayFailureCode::RecordMissing);
@@ -3644,6 +4034,13 @@ mod tests {
                     mismatch_view.class,
                     ReplayMismatchClass::BlockedByMissingPrerequisites
                 );
+                assert_eq!(
+                    regression.signal,
+                    ReplayRegressionSignal::NotSuitableForRegressionChecking
+                );
+                assert!(regression
+                    .reason_codes
+                    .contains(&ReplayRegressionReasonCode::BlockedOrIncompleteReplay));
             }
             other => panic!("expected non-replayable, got {other:?}"),
         }
