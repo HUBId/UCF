@@ -206,6 +206,10 @@ pub struct PersistedExecutionSnapshot {
     pub result: PersistedExecutionResultSummary,
     pub readiness: PersistedSnapshotReadiness,
     #[serde(default)]
+    pub backend_device_readiness_context: Option<String>,
+    #[serde(default)]
+    pub replay_readiness_caveat: Option<String>,
+    #[serde(default)]
     pub deterministic_subset_class: Option<String>,
     #[serde(default)]
     pub deterministic_subset_reasons: Vec<String>,
@@ -626,6 +630,15 @@ fn build_execution_snapshot(record: &JobRecord) -> PersistedExecutionSnapshot {
     let (active_or_warm_slots, candidate_or_guarded_slots, stale_or_blocked_slots) =
         classify_rollout_slots(&record.accounting.model_slots);
     let readiness = derive_snapshot_readiness(record, was_remote);
+    let backend_device_readiness_context = derive_backend_device_readiness_context(
+        record.accounting.execution_lane,
+        &record.accounting.model_slots,
+    );
+    let replay_readiness_caveat = derive_replay_readiness_caveat(
+        &backend_device_readiness_context,
+        candidate_or_guarded_slots,
+        stale_or_blocked_slots,
+    );
     let (deterministic_subset_class, deterministic_subset_reasons) =
         classify_deterministic_subset_snapshot(
             readiness,
@@ -635,6 +648,7 @@ fn build_execution_snapshot(record: &JobRecord) -> PersistedExecutionSnapshot {
             record.accounting.work_cost_summary.as_ref(),
             candidate_or_guarded_slots,
             stale_or_blocked_slots,
+            replay_readiness_caveat.as_deref(),
         );
     PersistedExecutionSnapshot {
         request: PersistedJobRequestIdentity {
@@ -678,11 +692,14 @@ fn build_execution_snapshot(record: &JobRecord) -> PersistedExecutionSnapshot {
                 .map(|kind| failure_kind_name(kind).to_string()),
         },
         readiness,
+        backend_device_readiness_context: Some(backend_device_readiness_context),
+        replay_readiness_caveat,
         deterministic_subset_class: Some(deterministic_subset_class),
         deterministic_subset_reasons,
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn classify_deterministic_subset_snapshot(
     readiness: PersistedSnapshotReadiness,
     was_remote: bool,
@@ -691,6 +708,7 @@ fn classify_deterministic_subset_snapshot(
     work_cost: Option<&crate::compute_service::ConsolidatedWorkCostSummary>,
     candidate_or_guarded_slots: usize,
     stale_or_blocked_slots: usize,
+    replay_readiness_caveat: Option<&str>,
 ) -> (String, Vec<String>) {
     let mut reasons = Vec::new();
     if matches!(
@@ -713,6 +731,9 @@ fn classify_deterministic_subset_snapshot(
     if redispatched_to_local || retry_attempts > 0 {
         reasons.push("retry_or_redispatch_path".to_string());
     }
+    if replay_readiness_caveat.is_some() {
+        reasons.push("backend_device_readiness_context_shift".to_string());
+    }
     if work_cost.is_some_and(|summary| {
         summary.degraded_stage_count > 0
             || summary.fallback_stage.is_some()
@@ -728,6 +749,65 @@ fn classify_deterministic_subset_snapshot(
             reasons,
         )
     }
+}
+
+fn derive_backend_device_readiness_context(
+    lane: crate::pipeline::BackendExecutionLane,
+    slots: &[crate::backend_pack::ModelSlotProvenance],
+) -> String {
+    let warmup = if slots.iter().any(|slot| {
+        slot.required_for_pack
+            && slot
+                .detail
+                .as_deref()
+                .unwrap_or_default()
+                .contains("blocked:")
+    }) {
+        "blocked"
+    } else if slots.iter().any(|slot| {
+        slot.required_for_pack
+            && slot
+                .detail
+                .as_deref()
+                .unwrap_or_default()
+                .contains("stale:")
+    }) {
+        "stale"
+    } else if slots.iter().any(|slot| {
+        slot.required_for_pack && slot.detail.as_deref().unwrap_or_default().contains("warm:")
+    }) {
+        "warm_ready"
+    } else if slots.iter().any(|slot| {
+        slot.required_for_pack
+            && slot
+                .detail
+                .as_deref()
+                .unwrap_or_default()
+                .contains("prepared:")
+    }) {
+        "prepared"
+    } else {
+        "cold"
+    };
+    format!("{:?}:cpu:{warmup}", lane).to_ascii_lowercase()
+}
+
+fn derive_replay_readiness_caveat(
+    backend_device_readiness_context: &str,
+    candidate_or_guarded_slots: usize,
+    stale_or_blocked_slots: usize,
+) -> Option<String> {
+    if backend_device_readiness_context.ends_with(":cold") && candidate_or_guarded_slots > 0 {
+        return Some(
+            "candidate promotable but currently cold on selected backend/device path".to_string(),
+        );
+    }
+    if backend_device_readiness_context.ends_with(":stale") || stale_or_blocked_slots > 0 {
+        return Some(
+            "replay caveat: stale/blocked readiness on selected backend/device path".to_string(),
+        );
+    }
+    None
 }
 
 fn derive_snapshot_readiness(record: &JobRecord, was_remote: bool) -> PersistedSnapshotReadiness {
@@ -1099,6 +1179,7 @@ mod tests {
             .expect("execution snapshot should exist");
         assert_eq!(snapshot.readiness, PersistedSnapshotReadiness::ReplayReady);
         assert!(snapshot.canonical_request_available);
+        assert!(snapshot.backend_device_readiness_context.is_some());
         assert!(matches!(
             snapshot.deterministic_subset_class.as_deref(),
             Some("deterministic_subset_candidate")
