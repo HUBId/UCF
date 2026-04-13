@@ -104,7 +104,8 @@ pub use compute_service::{
     WorkerRegistryRole, WorkerRetrySummary, WorkerRuntimeStatus,
 };
 pub use contracts::{
-    CapabilityConstraint, CapabilitySupportLevel, StageContractVersion, StageKind, ValidationStatus,
+    CapabilityConstraint, CapabilitySupportLevel, StageContractVersion, StageKind,
+    StagePathCapability, StagePathSupportLevel, ValidationStatus,
 };
 pub use enablement::{
     EnablementComputeBackend, EnablementConfig, RealEnablementMode, SlotEnablement, SlotMode,

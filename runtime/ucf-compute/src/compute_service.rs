@@ -12,7 +12,10 @@ use crate::pipeline::{
     FusionConfig, LimitsConfig,
 };
 use crate::ComputeError;
-use crate::{CapabilityConstraint, CapabilitySupportLevel, StageKind};
+use crate::{
+    CapabilityConstraint, CapabilitySupportLevel, StageKind, StagePathCapability,
+    StagePathSupportLevel,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct JobId(pub u64);
@@ -839,6 +842,8 @@ pub struct ExecutionPlacement {
     pub suitability: PlacementSuitability,
     pub capability_support: CapabilitySupportLevel,
     pub capability_constraints: Vec<CapabilityConstraint>,
+    pub stage_path_capabilities: Vec<StagePathCapability>,
+    pub dominant_stage_constraint: Option<StageKind>,
     pub device_suitability: DeviceSuitability,
     pub device_preference: Option<ExecutionDeviceClass>,
     pub device_preference_met: bool,
@@ -948,6 +953,8 @@ pub struct PlacementCandidateAssessment {
     pub backend_suitability: PlacementSuitability,
     pub capability_support: CapabilitySupportLevel,
     pub capability_constraints: Vec<CapabilityConstraint>,
+    pub stage_path_capabilities: Vec<StagePathCapability>,
+    pub dominant_stage_constraint: Option<StageKind>,
     pub device_suitability: DeviceSuitability,
     pub suitability: PlacementSuitability,
     pub warmup: PlacementWarmupState,
@@ -2011,6 +2018,13 @@ impl MultiWorkerComputeService {
                         .as_ref()
                         .map(|entry| entry.capability_constraints.clone())
                         .unwrap_or_default(),
+                    stage_path_capabilities: candidate
+                        .as_ref()
+                        .map(|entry| entry.stage_path_capabilities.clone())
+                        .unwrap_or_default(),
+                    dominant_stage_constraint: candidate
+                        .as_ref()
+                        .and_then(|entry| entry.dominant_stage_constraint),
                     device_suitability,
                     device_preference: Some(ExecutionDeviceClass::Worker),
                     device_preference_met: candidate
@@ -2092,6 +2106,8 @@ impl MultiWorkerComputeService {
                 suitability: PlacementSuitability::Unavailable,
                 capability_support: CapabilitySupportLevel::Unsupported,
                 capability_constraints: Vec::new(),
+                stage_path_capabilities: Vec::new(),
+                dominant_stage_constraint: None,
                 device_suitability: DeviceSuitability::Unavailable,
                 device_preference: None,
                 device_preference_met: true,
@@ -2222,14 +2238,22 @@ impl MultiWorkerComputeService {
                     .as_ref()
                     .map(|failure| suitability_for_failure(failure.kind))
                     .unwrap_or(PlacementSuitability::Suitable);
-                let (capability_support, capability_constraints) = derive_capability_contract(
+                let stage_path_capabilities = derive_stage_path_capabilities(
                     unit.kind,
                     lane,
-                    status,
                     warmup,
                     backend_suitability,
                     device_suitability,
                     admission.failure.as_ref(),
+                );
+                let dominant_stage_constraint =
+                    dominant_stage_constraint(stage_path_capabilities.as_slice());
+                let (capability_support, capability_constraints) = derive_capability_contract(
+                    stage_path_capabilities.as_slice(),
+                    unit.kind,
+                    status,
+                    backend_suitability,
+                    device_suitability,
                 );
                 if !unit.can_accept_dispatch() {
                     return PlacementCandidateAssessment {
@@ -2243,6 +2267,8 @@ impl MultiWorkerComputeService {
                         backend_suitability,
                         capability_support,
                         capability_constraints: capability_constraints.clone(),
+                        stage_path_capabilities: stage_path_capabilities.clone(),
+                        dominant_stage_constraint,
                         device_suitability,
                         suitability: combine_suitability(
                             PlacementSuitability::Unavailable,
@@ -2275,6 +2301,8 @@ impl MultiWorkerComputeService {
                         backend_suitability,
                         capability_support,
                         capability_constraints: capability_constraints.clone(),
+                        stage_path_capabilities: stage_path_capabilities.clone(),
+                        dominant_stage_constraint,
                         device_suitability,
                         suitability: combine_suitability(
                             PlacementSuitability::Unavailable,
@@ -2309,6 +2337,8 @@ impl MultiWorkerComputeService {
                         backend_suitability,
                         capability_support,
                         capability_constraints: capability_constraints.clone(),
+                        stage_path_capabilities: stage_path_capabilities.clone(),
+                        dominant_stage_constraint,
                         device_suitability,
                         suitability,
                         warmup,
@@ -2334,6 +2364,8 @@ impl MultiWorkerComputeService {
                         backend_suitability,
                         capability_support,
                         capability_constraints: capability_constraints.clone(),
+                        stage_path_capabilities: stage_path_capabilities.clone(),
+                        dominant_stage_constraint,
                         device_suitability,
                         suitability,
                         warmup,
@@ -2559,6 +2591,8 @@ impl MultiWorkerComputeService {
                     suitability: selected.suitability,
                     capability_support: selected.capability_support,
                     capability_constraints: selected.capability_constraints.clone(),
+                    stage_path_capabilities: selected.stage_path_capabilities.clone(),
+                    dominant_stage_constraint: selected.dominant_stage_constraint,
                     device_suitability: selected.device_suitability,
                     device_preference: Some(unit_device_class(selected.unit_kind)),
                     device_preference_met: true,
@@ -2674,6 +2708,8 @@ impl MultiWorkerComputeService {
                 suitability: selected.suitability,
                 capability_support: selected.capability_support,
                 capability_constraints: selected.capability_constraints.clone(),
+                stage_path_capabilities: selected.stage_path_capabilities.clone(),
+                dominant_stage_constraint: selected.dominant_stage_constraint,
                 device_suitability: selected.device_suitability,
                 device_preference: None,
                 device_preference_met: true,
@@ -3150,6 +3186,8 @@ impl MultiWorkerComputeService {
                         suitability: PlacementSuitability::Suitable,
                         capability_support: CapabilitySupportLevel::SupportedWithConstraints,
                         capability_constraints: vec![CapabilityConstraint::GuardedDegradedUsage],
+                        stage_path_capabilities: original_placement.stage_path_capabilities.clone(),
+                        dominant_stage_constraint: original_placement.dominant_stage_constraint,
                         device_suitability: DeviceSuitability::Suitable,
                         device_preference: Some(ExecutionDeviceClass::Worker),
                         device_preference_met: false,
@@ -3467,35 +3505,19 @@ fn combine_suitability(
 }
 
 fn derive_capability_contract(
+    stage_path_capabilities: &[StagePathCapability],
     unit_kind: ExecutionUnitKind,
-    lane: BackendExecutionLane,
     runtime_status: WorkerRuntimeStatus,
-    warmup: PlacementWarmupState,
     backend_suitability: PlacementSuitability,
     device_suitability: DeviceSuitability,
-    admission_failure: Option<&CanonicalPipelineFailure>,
 ) -> (CapabilitySupportLevel, Vec<CapabilityConstraint>) {
     let mut constraints = Vec::new();
     match unit_kind {
         ExecutionUnitKind::Local => constraints.push(CapabilityConstraint::OnlyLocal),
         ExecutionUnitKind::Worker => constraints.push(CapabilityConstraint::OnlyRemoteWorker),
     }
-    if matches!(
-        warmup,
-        PlacementWarmupState::Prepared
-            | PlacementWarmupState::ColdRunnable
-            | PlacementWarmupState::StalePrepared
-    ) {
-        constraints.push(CapabilityConstraint::WarmReadyPreferred);
-    }
-    if matches!(
-        warmup,
-        PlacementWarmupState::ColdRunnable | PlacementWarmupState::StalePrepared
-    ) {
-        constraints.push(CapabilityConstraint::CapacityOrColdStartCaveat);
-    }
-    if lane == BackendExecutionLane::Candle {
-        constraints.push(CapabilityConstraint::GuardedDegradedUsage);
+    for stage in stage_path_capabilities {
+        constraints.extend(stage.constraints.iter().copied());
     }
     if matches!(
         runtime_status,
@@ -3506,15 +3528,14 @@ fn derive_capability_contract(
     ) {
         constraints.push(CapabilityConstraint::CapacityOrColdStartCaveat);
     }
-    if admission_failure
-        .as_ref()
-        .is_some_and(|failure| stage_from_failure(failure).is_some())
-    {
-        constraints.push(CapabilityConstraint::GuardedDegradedUsage);
-    }
-    let blocked = !matches!(backend_suitability, PlacementSuitability::Suitable)
+    constraints.sort_unstable_by_key(|item| *item as u8);
+    constraints.dedup();
+    let stage_blocked = stage_path_capabilities
+        .iter()
+        .any(|entry| entry.support == StagePathSupportLevel::Unsupported);
+    let blocked = stage_blocked
+        || !matches!(backend_suitability, PlacementSuitability::Suitable)
         || !matches!(device_suitability, DeviceSuitability::Suitable)
-        || warmup == PlacementWarmupState::BlockedUnavailable
         || matches!(
             runtime_status,
             WorkerRuntimeStatus::Unavailable
@@ -3525,9 +3546,13 @@ fn derive_capability_contract(
     if blocked {
         return (CapabilitySupportLevel::Unsupported, constraints);
     }
-    if constraints
-        .iter()
-        .any(|constraint| *constraint != CapabilityConstraint::OnlyLocal)
+    let has_stage_constraint = stage_path_capabilities.iter().any(|entry| {
+        entry.support != StagePathSupportLevel::Supported || !entry.constraints.is_empty()
+    });
+    if has_stage_constraint
+        || constraints
+            .iter()
+            .any(|constraint| *constraint != CapabilityConstraint::OnlyLocal)
     {
         return (
             CapabilitySupportLevel::SupportedWithConstraints,
@@ -3535,6 +3560,126 @@ fn derive_capability_contract(
         );
     }
     (CapabilitySupportLevel::Supported, constraints)
+}
+
+fn derive_stage_path_capabilities(
+    unit_kind: ExecutionUnitKind,
+    lane: BackendExecutionLane,
+    warmup: PlacementWarmupState,
+    backend_suitability: PlacementSuitability,
+    device_suitability: DeviceSuitability,
+    admission_failure: Option<&CanonicalPipelineFailure>,
+) -> Vec<StagePathCapability> {
+    let mut out = vec![
+        StagePathCapability {
+            stage: StageKind::World,
+            path_segment: "world",
+            support: StagePathSupportLevel::Supported,
+            constraints: Vec::new(),
+            detail: None,
+        },
+        StagePathCapability {
+            stage: StageKind::Sae,
+            path_segment: "sae",
+            support: StagePathSupportLevel::Supported,
+            constraints: Vec::new(),
+            detail: None,
+        },
+        StagePathCapability {
+            stage: StageKind::Ssm,
+            path_segment: "ssm",
+            support: StagePathSupportLevel::Supported,
+            constraints: Vec::new(),
+            detail: None,
+        },
+        StagePathCapability {
+            stage: StageKind::Lfm,
+            path_segment: "lfm",
+            support: StagePathSupportLevel::Supported,
+            constraints: Vec::new(),
+            detail: None,
+        },
+    ];
+    let locality = match unit_kind {
+        ExecutionUnitKind::Local => CapabilityConstraint::OnlyLocal,
+        ExecutionUnitKind::Worker => CapabilityConstraint::OnlyRemoteWorker,
+    };
+    for entry in &mut out {
+        entry.constraints.push(locality);
+    }
+    if matches!(
+        warmup,
+        PlacementWarmupState::Prepared
+            | PlacementWarmupState::ColdRunnable
+            | PlacementWarmupState::StalePrepared
+    ) {
+        out[0]
+            .constraints
+            .push(CapabilityConstraint::WarmReadyPreferred);
+        if out[0].support == StagePathSupportLevel::Supported {
+            out[0].support = StagePathSupportLevel::SupportedWithConstraints;
+        }
+    }
+    if matches!(
+        warmup,
+        PlacementWarmupState::ColdRunnable | PlacementWarmupState::StalePrepared
+    ) {
+        out[0]
+            .constraints
+            .push(CapabilityConstraint::CapacityOrColdStartCaveat);
+    }
+    if lane == BackendExecutionLane::Candle {
+        out[3].support = StagePathSupportLevel::DegradedOnly;
+        out[3]
+            .constraints
+            .push(CapabilityConstraint::GuardedDegradedUsage);
+        out[3].detail = Some("lfm candle path is guarded/degraded-only".to_string());
+    }
+    if let Some(stage) = admission_failure
+        .as_ref()
+        .and_then(|failure| stage_from_failure(failure))
+    {
+        if let Some(entry) = out.iter_mut().find(|entry| entry.stage == stage) {
+            entry.support = StagePathSupportLevel::Unsupported;
+            entry
+                .constraints
+                .push(CapabilityConstraint::GuardedDegradedUsage);
+            entry.detail = admission_failure.map(|failure| failure.detail.clone());
+        }
+    }
+    if !matches!(backend_suitability, PlacementSuitability::Suitable)
+        || !matches!(device_suitability, DeviceSuitability::Suitable)
+        || warmup == PlacementWarmupState::BlockedUnavailable
+    {
+        for entry in &mut out {
+            entry.support = StagePathSupportLevel::Unsupported;
+        }
+    }
+    for entry in &mut out {
+        entry.constraints.sort_unstable_by_key(|item| *item as u8);
+        entry.constraints.dedup();
+    }
+    out
+}
+
+fn dominant_stage_constraint(capabilities: &[StagePathCapability]) -> Option<StageKind> {
+    capabilities
+        .iter()
+        .find(|entry| entry.support == StagePathSupportLevel::Unsupported)
+        .or_else(|| {
+            capabilities.iter().find(|entry| {
+                matches!(
+                    entry.support,
+                    StagePathSupportLevel::DegradedOnly | StagePathSupportLevel::FallbackOnly
+                )
+            })
+        })
+        .or_else(|| {
+            capabilities
+                .iter()
+                .find(|entry| entry.support == StagePathSupportLevel::SupportedWithConstraints)
+        })
+        .map(|entry| entry.stage)
 }
 
 fn stage_from_failure(failure: &CanonicalPipelineFailure) -> Option<StageKind> {
@@ -3850,8 +3995,42 @@ fn decisive_signals_for_selection(
     if feedback.warm_reference_path_underselected {
         out.push("warm_reference_path_underselected=true".to_string());
     }
+    if let Some(stage) = selected.dominant_stage_constraint {
+        out.push(format!("dominant_stage_constraint={stage:?}").to_lowercase());
+    }
+    if let Some(stage_entry) = selected
+        .stage_path_capabilities
+        .iter()
+        .find(|entry| entry.support != StagePathSupportLevel::Supported)
+    {
+        out.push(
+            format!(
+                "stage_path_support={:?}:{:?}",
+                stage_entry.stage, stage_entry.support
+            )
+            .to_lowercase(),
+        );
+    }
+    if let Some(hotspot) = feedback.repeated_hotspot_stage {
+        if selected
+            .stage_path_capabilities
+            .iter()
+            .any(|entry| entry.stage == stage_kind_from_canonical(hotspot))
+        {
+            out.push(format!("hotspot_stage_on_selected_path={hotspot:?}").to_lowercase());
+        }
+    }
     out.truncate(10);
     out
+}
+
+fn stage_kind_from_canonical(stage: CanonicalStageId) -> StageKind {
+    match stage {
+        CanonicalStageId::World => StageKind::World,
+        CanonicalStageId::Sae => StageKind::Sae,
+        CanonicalStageId::Ssm => StageKind::Ssm,
+        CanonicalStageId::Lfm => StageKind::Lfm,
+    }
 }
 
 fn backend_device_readiness_context(
@@ -4089,6 +4268,7 @@ mod tests {
     use crate::world_model::MockJepaPredictor;
     use crate::{
         CapabilitySupportLevel, ComputeBudget, ComputeError, ComputeInput, FrameId, ModelSlot,
+        StageKind, StagePathSupportLevel,
     };
 
     use super::{
@@ -5686,6 +5866,68 @@ mod tests {
         );
         assert!(record.placement.considered.iter().all(|entry| {
             entry.warmup == PlacementWarmupState::BlockedUnavailable
+                && entry.capability_support == CapabilitySupportLevel::Unsupported
+        }));
+    }
+
+    #[test]
+    fn candle_lane_marks_lfm_stage_as_degraded_only() {
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::CandleJepaV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        let job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 65,
+                submitted_by: Some("candle-stage-path".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job).expect("record");
+        let lfm = record
+            .placement
+            .stage_path_capabilities
+            .iter()
+            .find(|entry| entry.stage == StageKind::Lfm)
+            .expect("lfm stage capability");
+        assert_eq!(lfm.support, StagePathSupportLevel::DegradedOnly);
+        assert_eq!(
+            record.placement.dominant_stage_constraint,
+            Some(StageKind::Lfm)
+        );
+    }
+
+    #[test]
+    fn stage_contract_blocker_is_surface_as_stage_path_unsupported() {
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::Disabled, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        let job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 67,
+                submitted_by: Some("stage-blocked".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job).expect("record");
+        assert_eq!(
+            record.placement_failure,
+            Some(PlacementFailureKind::NoSuitableBackend)
+        );
+        assert!(record.placement.considered.iter().all(|entry| {
+            entry
+                .stage_path_capabilities
+                .iter()
+                .any(|stage| stage.support == StagePathSupportLevel::Unsupported)
                 && entry.capability_support == CapabilitySupportLevel::Unsupported
         }));
     }
