@@ -86,6 +86,11 @@ Placement candidate diagnostics now include the runtime worker health state used
 so skipped workers are visible with an explicit reason (for example `unit not dispatchable (Stale)` or
 `unit not dispatchable (Degraded)`).
 
+Warmup/readiness is now also emitted as a backend/device path context token
+(`backend_device_readiness=<lane>:<device>:<state>`), where state is one of:
+`cold`, `prepared`, `warm_ready`, `stale`, `blocked`.
+This keeps warm-vs-cold decisions load-bearing per backend/device path instead of as a global flag.
+
 The resulting `ExecutionPlacement` now carries provenance fields:
 
 - selected lane + suitability,
@@ -389,6 +394,8 @@ load-bearing replay fields:
 - rollout hint (`active` vs `guarded/candidate` vs `fallback_or_stale`) derived from slot status,
 - top-level execution result summary (lifecycle/completion/failure/pipeline state),
 - snapshot readiness class: `replay_ready`, `partial`, `insufficient`, `stale_or_incomplete`.
+- backend/device readiness context and replay caveat fields when source run used
+  cold/stale/blocked backend-device readiness.
 
 This keeps replay tied to the same history layer used by normal jobs.
 
@@ -410,6 +417,10 @@ Preflight classifies a source run before replay execution:
 Preflight surfaces bounded reasons (`ReplayPreflightIssueCode`) for missing artifacts/slots,
 changed backend/device/worker context, incomplete snapshots, changed rollout context, local/remote
 path mismatch, and non-fidelity-equivalent caveats.
+
+Replay preflight now also treats a changed backend/device readiness context
+(e.g. source warm-ready path vs current cold/stale path) as a load-bearing
+backend/device context shift rather than a generic warm/cold mismatch.
 
 This remains technical preflight only (no certification/governance workflow).
 

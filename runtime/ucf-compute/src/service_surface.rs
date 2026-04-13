@@ -807,6 +807,22 @@ impl CanonicalComputeEntryPoint {
                 });
             }
         }
+        let current_readiness_context = current_backend_device_readiness_context(
+            current_mode,
+            self.operations_snapshot().available_slots.as_slice(),
+        );
+        if let Some(source_readiness_context) = source.backend_device_readiness_context.as_deref() {
+            if readiness_state_token(source_readiness_context)
+                != readiness_state_token(&current_readiness_context)
+            {
+                issues.push(ReplayPreflightIssue {
+                    code: ReplayPreflightIssueCode::ChangedBackendDeviceWorkerContext,
+                    detail: format!(
+                        "backend/device readiness context changed from `{source_readiness_context}` to `{current_readiness_context}`"
+                    ),
+                });
+            }
+        }
 
         if let Some(request) = source.request.clone() {
             let admission = self.service.technical_admission(&request);
@@ -1949,6 +1965,7 @@ struct ReplaySourceRecord {
     work_summary: Option<CanonicalWorkSummary>,
     snapshot_readiness: PersistedSnapshotReadiness,
     rollout_context_hint: Option<String>,
+    backend_device_readiness_context: Option<String>,
     remote_context_completeness: Option<String>,
 }
 
@@ -2006,6 +2023,10 @@ impl ReplaySourceRecord {
             work_summary: record.accounting.work_summary,
             snapshot_readiness: derive_live_snapshot_readiness(record),
             rollout_context_hint: derive_live_rollout_context_hint(record),
+            backend_device_readiness_context: Some(derive_live_backend_device_readiness_context(
+                record.accounting.execution_lane,
+                record.accounting.model_slots.as_slice(),
+            )),
             remote_context_completeness: Some(
                 if matches!(record.execution_path, JobExecutionPath::WorkerIpc)
                     && record.result.is_some()
@@ -2095,6 +2116,10 @@ impl ReplaySourceRecord {
                 .execution_snapshot
                 .as_ref()
                 .map(|snapshot| snapshot.rollout.rollout_context_hint.clone()),
+            backend_device_readiness_context: persisted
+                .execution_snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.backend_device_readiness_context.clone()),
             remote_context_completeness: persisted
                 .remote_execution_context
                 .as_ref()
@@ -2461,6 +2486,85 @@ fn current_rollout_context_hint(slots: &[RuntimeSlotSnapshot]) -> Option<&'stati
         .map(|slot| slot.warmup_state)
         .collect::<Vec<_>>();
     classify_rollout_context_hint(states.as_slice())
+}
+
+fn current_backend_device_readiness_context(
+    mode: ReplayExecutionMode,
+    slots: &[RuntimeSlotSnapshot],
+) -> String {
+    let warmup = if slots
+        .iter()
+        .any(|slot| matches!(slot.warmup_state, RuntimeWarmupState::Blocked))
+    {
+        "blocked"
+    } else if slots
+        .iter()
+        .any(|slot| matches!(slot.warmup_state, RuntimeWarmupState::Stale))
+    {
+        "stale"
+    } else if slots
+        .iter()
+        .any(|slot| matches!(slot.warmup_state, RuntimeWarmupState::Preparing))
+    {
+        "prepared"
+    } else if slots
+        .iter()
+        .all(|slot| matches!(slot.warmup_state, RuntimeWarmupState::Ready))
+    {
+        "warm_ready"
+    } else {
+        "cold"
+    };
+    let lane = match mode {
+        ReplayExecutionMode::Local => "local",
+        ReplayExecutionMode::RemoteWorkerIpc => "worker",
+    };
+    format!("{lane}:cpu:{warmup}")
+}
+
+fn derive_live_backend_device_readiness_context(
+    lane: crate::pipeline::BackendExecutionLane,
+    slots: &[crate::backend_pack::ModelSlotProvenance],
+) -> String {
+    let warmup = if slots.iter().any(|slot| {
+        slot.required_for_pack
+            && slot
+                .detail
+                .as_deref()
+                .unwrap_or_default()
+                .contains("blocked:")
+    }) {
+        "blocked"
+    } else if slots.iter().any(|slot| {
+        slot.required_for_pack
+            && slot
+                .detail
+                .as_deref()
+                .unwrap_or_default()
+                .contains("stale:")
+    }) {
+        "stale"
+    } else if slots.iter().any(|slot| {
+        slot.required_for_pack && slot.detail.as_deref().unwrap_or_default().contains("warm:")
+    }) {
+        "warm_ready"
+    } else if slots.iter().any(|slot| {
+        slot.required_for_pack
+            && slot
+                .detail
+                .as_deref()
+                .unwrap_or_default()
+                .contains("prepared:")
+    }) {
+        "prepared"
+    } else {
+        "cold"
+    };
+    format!("{:?}:cpu:{warmup}", lane).to_ascii_lowercase()
+}
+
+fn readiness_state_token(context: &str) -> &str {
+    context.rsplit(':').next().unwrap_or(context)
 }
 
 fn classify_rollout_context_hint(states: &[RuntimeWarmupState]) -> Option<&'static str> {

@@ -2254,7 +2254,8 @@ impl MultiWorkerComputeService {
                         reference_path_class,
                         cold_start_sensitive,
                         detail: format!(
-                            "unit not dispatchable ({status:?}); warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}"
+                            "unit not dispatchable ({status:?}); warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}; backend_device_readiness={}",
+                            backend_device_readiness_context(lane, device_class, warmup)
                         ),
                     };
                 }
@@ -2285,7 +2286,8 @@ impl MultiWorkerComputeService {
                         reference_path_class,
                         cold_start_sensitive,
                         detail: format!(
-                            "insufficient capacity units required={required_units} free={free_units}; warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}"
+                            "insufficient capacity units required={required_units} free={free_units}; warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}; backend_device_readiness={}",
+                            backend_device_readiness_context(lane, device_class, warmup)
                         ),
                     };
                 }
@@ -2315,8 +2317,9 @@ impl MultiWorkerComputeService {
                         reference_path_class,
                         cold_start_sensitive,
                         detail: format!(
-                            "{}; warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}",
-                            failure.detail
+                            "{}; warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}; backend_device_readiness={}",
+                            failure.detail,
+                            backend_device_readiness_context(lane, device_class, warmup)
                         ),
                     }
                 } else {
@@ -2339,7 +2342,8 @@ impl MultiWorkerComputeService {
                         reference_path_class,
                         cold_start_sensitive,
                         detail: format!(
-                            "admitted; warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}"
+                            "admitted; warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}; backend_device_readiness={}",
+                            backend_device_readiness_context(lane, device_class, warmup)
                         ),
                     }
                 }
@@ -2684,12 +2688,42 @@ impl MultiWorkerComputeService {
                 decisive_signals,
                 reason: if selected.lane == BackendExecutionLane::Burn {
                     if selected.warmup == PlacementWarmupState::WarmReady {
-                        "selected burn-capable warm unit".to_string()
+                        format!(
+                            "selected burn-capable warm unit ({})",
+                            backend_device_readiness_context(
+                                selected.lane,
+                                selected.device_class,
+                                selected.warmup
+                            )
+                        )
+                    } else if selected.warmup == PlacementWarmupState::ColdRunnable {
+                        format!(
+                            "selected technically stronger burn path despite cold start ({})",
+                            backend_device_readiness_context(
+                                selected.lane,
+                                selected.device_class,
+                                selected.warmup
+                            )
+                        )
                     } else {
-                        "selected burn-capable unit (no warm-ready alternative)".to_string()
+                        format!(
+                            "selected burn-capable unit (no warm-ready alternative) ({})",
+                            backend_device_readiness_context(
+                                selected.lane,
+                                selected.device_class,
+                                selected.warmup
+                            )
+                        )
                     }
                 } else if selected.lane == BackendExecutionLane::Candle {
-                    "burn unavailable; selected candle fallback".to_string()
+                    format!(
+                        "burn unavailable; selected candle fallback ({})",
+                        backend_device_readiness_context(
+                            selected.lane,
+                            selected.device_class,
+                            selected.warmup
+                        )
+                    )
                 } else if !warm_placeable_exists {
                     "selected available non-burn unit (cold/prepared path required by current capacity/readiness)"
                         .to_string()
@@ -3775,7 +3809,11 @@ fn decisive_signals_for_selection(
     view: PlacementInputView,
     feedback: &PlacementOptimizationFeedbackView,
 ) -> Vec<String> {
-    let mut out = Vec::with_capacity(8);
+    let mut out = Vec::with_capacity(10);
+    out.push(format!(
+        "backend_device_readiness={}",
+        backend_device_readiness_context(selected.lane, selected.device_class, selected.warmup)
+    ));
     out.push(format!("warmup={:?}", selected.warmup).to_lowercase());
     out.push(format!("runtime_status={:?}", selected.runtime_status).to_lowercase());
     out.push(format!("capability_support={:?}", selected.capability_support).to_lowercase());
@@ -3812,8 +3850,28 @@ fn decisive_signals_for_selection(
     if feedback.warm_reference_path_underselected {
         out.push("warm_reference_path_underselected=true".to_string());
     }
-    out.truncate(8);
+    out.truncate(10);
     out
+}
+
+fn backend_device_readiness_context(
+    lane: BackendExecutionLane,
+    device: ExecutionDeviceClass,
+    warmup: PlacementWarmupState,
+) -> String {
+    format!(
+        "{:?}:{:?}:{}",
+        lane,
+        device,
+        match warmup {
+            PlacementWarmupState::WarmReady => "warm_ready",
+            PlacementWarmupState::Prepared => "prepared",
+            PlacementWarmupState::ColdRunnable => "cold",
+            PlacementWarmupState::StalePrepared => "stale",
+            PlacementWarmupState::BlockedUnavailable => "blocked",
+        }
+    )
+    .to_ascii_lowercase()
 }
 
 fn cold_path_decision_for_selected(
@@ -5581,6 +5639,11 @@ mod tests {
             && entry.warmup == PlacementWarmupState::ColdRunnable
             && entry.cold_start_penalty_units > 0
             && entry.capability_support == CapabilitySupportLevel::SupportedWithConstraints));
+        assert!(record
+            .placement
+            .considered
+            .iter()
+            .any(|entry| entry.detail.contains("backend_device_readiness=")));
     }
 
     #[test]
