@@ -19,6 +19,36 @@ The top-level runtime contract stays `AiComputeBackend`, but concrete backends a
 
 `ComputePipelineBackend` orchestrates these capabilities with bounded deterministic degradation.
 
+### Backend-/Device-capability contracts (Serie E hardening)
+
+Die Runtime führt jetzt eine schmale, pfadnahe Capability-Contract-Sicht:
+
+- `supported`
+- `constrained`
+- `unsupported`
+
+Pro kanonischem Stage-Pfad (`world|sae|ssm|lfm`) wird ein
+`StageCapabilityContract` mit Runtime-Kontext (Mode + Local/Worker-Pfad)
+abgeleitet und in Admission-/Result-/History-Sichten gespiegelt.
+
+Wichtige Constraint-Typen bleiben bewusst klein und technisch:
+
+- `only_local` / `only_remote_worker`
+- `warm_ready_preferred`
+- `guarded_usage_recommended`
+- `capacity_or_cold_start_caveat`
+
+Abgrenzung:
+
+- `supported`: tragfähiger produktiver Pfad ohne zusätzliche Caveats.
+- `constrained`: technisch lauffähig, aber mit explizitem Caveat
+  (z. B. Warmup-/Guarded-/Cold-Start-Kontext).
+- `unsupported`: im aktuellen Backend-/Device-/Runtime-Kontext blockiert.
+
+Placement/Warmup/Rollout/Replay nutzen weiterhin dieselbe Entscheidungswelt;
+die Contracts liefern nur die explizitere Support-Semantik und Provenance
+(keine neue Hardware-Inventar-, Treiber- oder Governance-Schicht).
+
 ## Profile mapping (factory)
 
 `build_backend` wires `ComputeBackendKind` into runtime packs:

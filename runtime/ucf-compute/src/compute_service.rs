@@ -4,6 +4,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use crate::backend_pack::{
     BackendPackConfig, BackendPackFactory, BackendPackKind, ModelSlotProvenance,
 };
+use crate::contracts::{CapabilityConstraint, CapabilitySupport};
 use crate::pipeline::{
     BackendExecutionLane, CanonicalAdmissionDecision, CanonicalFailureKind,
     CanonicalHotspotSummary, CanonicalPipelineFailure, CanonicalPipelineRequest,
@@ -945,6 +946,8 @@ pub struct PlacementCandidateAssessment {
     pub backend_suitability: PlacementSuitability,
     pub device_suitability: DeviceSuitability,
     pub suitability: PlacementSuitability,
+    pub capability_support: CapabilitySupport,
+    pub capability_constraints: Vec<CapabilityConstraint>,
     pub warmup: PlacementWarmupState,
     pub cold_start_penalty_units: u16,
     pub effective_reference_path: String,
@@ -2202,12 +2205,35 @@ impl MultiWorkerComputeService {
                         | PlacementWarmupState::BlockedUnavailable
                 );
                 let admission = unit.service.technical_admission(request);
+                let admission_support = admission
+                    .stage_capability_contracts
+                    .iter()
+                    .map(|entry| entry.contract.support)
+                    .max_by_key(|support| match support {
+                        CapabilitySupport::Supported => 0,
+                        CapabilitySupport::Constrained => 1,
+                        CapabilitySupport::Unsupported => 2,
+                    })
+                    .unwrap_or(CapabilitySupport::Supported);
+                let admission_constraints = admission
+                    .stage_capability_contracts
+                    .iter()
+                    .flat_map(|entry| entry.contract.constraints.iter().copied())
+                    .collect::<Vec<_>>();
                 let backend_suitability = admission
                     .failure
                     .as_ref()
                     .map(|failure| suitability_for_failure(failure.kind))
                     .unwrap_or(PlacementSuitability::Suitable);
                 if !unit.can_accept_dispatch() {
+                    let (capability_support, mut capability_constraints) =
+                        aggregate_capability_support(
+                            admission_support,
+                            PlacementSuitability::Unavailable,
+                            warmup,
+                            false,
+                        );
+                    capability_constraints.extend_from_slice(&admission_constraints);
                     return PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
                         unit_kind: unit.kind,
@@ -2222,6 +2248,8 @@ impl MultiWorkerComputeService {
                             PlacementSuitability::Unavailable,
                             device_suitability,
                         ),
+                        capability_support,
+                        capability_constraints,
                         warmup,
                         cold_start_penalty_units,
                         effective_reference_path,
@@ -2237,6 +2265,14 @@ impl MultiWorkerComputeService {
                     .capacity_limit_units()
                     .saturating_sub(unit.used_capacity_units);
                 if required_units > free_units {
+                    let (capability_support, mut capability_constraints) =
+                        aggregate_capability_support(
+                            admission_support,
+                            PlacementSuitability::Unavailable,
+                            warmup,
+                            true,
+                        );
+                    capability_constraints.extend_from_slice(&admission_constraints);
                     return PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
                         unit_kind: unit.kind,
@@ -2251,6 +2287,8 @@ impl MultiWorkerComputeService {
                             PlacementSuitability::Unavailable,
                             device_suitability,
                         ),
+                        capability_support,
+                        capability_constraints,
                         warmup,
                         cold_start_penalty_units,
                         effective_reference_path,
@@ -2267,6 +2305,13 @@ impl MultiWorkerComputeService {
                     backend_suitability
                 };
                 let suitability = combine_suitability(backend_suitability, device_suitability);
+                let (capability_support, mut capability_constraints) = aggregate_capability_support(
+                    admission_support,
+                    suitability,
+                    warmup,
+                    false,
+                );
+                capability_constraints.extend_from_slice(&admission_constraints);
                 if let Some(failure) = admission.failure {
                     PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
@@ -2279,6 +2324,8 @@ impl MultiWorkerComputeService {
                         backend_suitability,
                         device_suitability,
                         suitability,
+                        capability_support,
+                        capability_constraints,
                         warmup,
                         cold_start_penalty_units,
                         effective_reference_path,
@@ -2301,6 +2348,8 @@ impl MultiWorkerComputeService {
                         backend_suitability,
                         device_suitability,
                         suitability,
+                        capability_support,
+                        capability_constraints,
                         warmup,
                         cold_start_penalty_units,
                         effective_reference_path,
@@ -3384,6 +3433,36 @@ fn combine_suitability(
     }
 }
 
+fn aggregate_capability_support(
+    admission_support: CapabilitySupport,
+    suitability: PlacementSuitability,
+    warmup: PlacementWarmupState,
+    constrained_by_capacity: bool,
+) -> (CapabilitySupport, Vec<CapabilityConstraint>) {
+    let mut constraints = Vec::new();
+    let mut support = admission_support;
+    if warmup != PlacementWarmupState::WarmReady {
+        constraints.push(CapabilityConstraint::WarmReadyPreferred);
+    }
+    if matches!(
+        warmup,
+        PlacementWarmupState::ColdRunnable
+            | PlacementWarmupState::StalePrepared
+            | PlacementWarmupState::BlockedUnavailable
+    ) {
+        constraints.push(CapabilityConstraint::CapacityOrColdStartCaveat);
+    }
+    if constrained_by_capacity {
+        constraints.push(CapabilityConstraint::CapacityOrColdStartCaveat);
+    }
+    if suitability != PlacementSuitability::Suitable {
+        support = CapabilitySupport::Unsupported;
+    } else if support == CapabilitySupport::Supported && !constraints.is_empty() {
+        support = CapabilitySupport::Constrained;
+    }
+    (support, constraints)
+}
+
 fn capacity_pressure_for(
     used_units: usize,
     limit_units: usize,
@@ -3654,6 +3733,7 @@ fn decisive_signals_for_selection(
         "reference_path={}",
         selected.effective_reference_path
     ));
+    out.push(format!("capability_support={:?}", selected.capability_support).to_lowercase());
     out.push(format!("reference_path_class={:?}", selected.reference_path_class).to_lowercase());
     out.push(format!(
         "cold_path_decision={}",
@@ -3888,6 +3968,7 @@ mod tests {
     use crate::capabilities::{
         LlmInference, LlmRequest, LlmResponse, SaeExtractor, WorldModelPredictor,
     };
+    use crate::contracts::CapabilitySupport;
     use crate::feature_extractor::ToySaeExtractor;
     use crate::lfm::{LfmKernel, ToyLfmKernel};
     use crate::pipeline::{
@@ -5439,10 +5520,12 @@ mod tests {
             .iter()
             .any(|entry| entry.unit_id == worker_id
                 && entry.warmup == PlacementWarmupState::WarmReady
+                && entry.capability_support != CapabilitySupport::Unsupported
                 && entry.cold_start_penalty_units == 0));
         assert!(record.placement.considered.iter().any(|entry| entry.unit_id
             == ExecutionUnitId("local".to_string())
             && entry.warmup == PlacementWarmupState::ColdRunnable
+            && entry.capability_support == CapabilitySupport::Constrained
             && entry.cold_start_penalty_units > 0));
     }
 
@@ -5484,11 +5567,10 @@ mod tests {
             record.placement_failure,
             Some(PlacementFailureKind::CurrentlyUnschedulable)
         );
-        assert!(record
-            .placement
-            .considered
-            .iter()
-            .all(|entry| entry.warmup == PlacementWarmupState::BlockedUnavailable));
+        assert!(record.placement.considered.iter().all(|entry| {
+            entry.warmup == PlacementWarmupState::BlockedUnavailable
+                && entry.capability_support == CapabilitySupport::Unsupported
+        }));
     }
 
     #[test]
