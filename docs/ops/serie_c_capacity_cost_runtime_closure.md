@@ -48,6 +48,8 @@ Weiterführende Arbeit an diesen Punkten ist ab jetzt **neue Vertiefungsserie** 
 
 **Start als Nächstes: Serie D (Replay / Reproducibility Hardening).**
 
+Status-Update: Abschlussdokumentation liegt jetzt in `docs/ops/serie_d_replay_repro_closure.md`.
+
 Kurzbegründung:
 - Höchster unmittelbarer Hebel auf technische Vertrauenswürdigkeit der bereits gebauten Serie-C-Optimierung.
 - Reduziert Streitfälle bei "warum genau wurde so platziert/deferred/fallback gewählt?" durch bessere Reproduzierbarkeit.
