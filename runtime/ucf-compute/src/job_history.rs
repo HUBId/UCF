@@ -14,7 +14,7 @@ use crate::pipeline::{
     CanonicalIsolationDisposition, CanonicalPipelineState,
 };
 
-const JOB_HISTORY_SCHEMA_VERSION: u16 = 13;
+const JOB_HISTORY_SCHEMA_VERSION: u16 = 14;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRequestIdentity {
@@ -217,6 +217,30 @@ pub struct PersistedExecutionSnapshot {
     pub deterministic_subset_class: Option<String>,
     #[serde(default)]
     pub deterministic_subset_reasons: Vec<String>,
+    #[serde(default)]
+    pub specialization_context: Option<PersistedSpecializationContext>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PersistedSpecializationSemanticImpact {
+    InformativeOnly,
+    ConstrainedPlacement,
+    RolloutCaveat,
+    ReplayCaveat,
+    BlocksPath,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedSpecializationContext {
+    pub backend_device_path: String,
+    pub capability_support: String,
+    pub readiness_state: String,
+    pub degradation_state: String,
+    pub fallback_state: String,
+    pub placement_impact: PersistedSpecializationSemanticImpact,
+    pub rollout_impact: PersistedSpecializationSemanticImpact,
+    pub replay_impact: PersistedSpecializationSemanticImpact,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -657,6 +681,14 @@ fn build_execution_snapshot(record: &JobRecord) -> PersistedExecutionSnapshot {
             stale_or_blocked_slots,
             replay_readiness_caveat.as_deref(),
         );
+    let specialization_context = derive_specialization_context(
+        &backend_device_readiness_context,
+        &backend_device_degradation_state,
+        &backend_device_fallback_semantics,
+        candidate_or_guarded_slots,
+        stale_or_blocked_slots,
+        record.result.is_some(),
+    );
     PersistedExecutionSnapshot {
         request: PersistedJobRequestIdentity {
             frame_id: request.frame_id.0,
@@ -705,6 +737,71 @@ fn build_execution_snapshot(record: &JobRecord) -> PersistedExecutionSnapshot {
         replay_readiness_caveat,
         deterministic_subset_class: Some(deterministic_subset_class),
         deterministic_subset_reasons,
+        specialization_context: Some(specialization_context),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn derive_specialization_context(
+    readiness_context: &str,
+    degradation_state: &str,
+    fallback_state: &str,
+    candidate_or_guarded_slots: usize,
+    stale_or_blocked_slots: usize,
+    has_backend_route: bool,
+) -> PersistedSpecializationContext {
+    let readiness_state = readiness_context
+        .rsplit(':')
+        .next()
+        .unwrap_or("unknown")
+        .to_string();
+    let capability_support = if degradation_state == "blocked_unusable" || !has_backend_route {
+        "blocked".to_string()
+    } else if degradation_state == "constrained_serviceable"
+        || readiness_state == "cold"
+        || readiness_state == "stale"
+        || readiness_state == "blocked"
+    {
+        "constrained".to_string()
+    } else {
+        "fully_supported".to_string()
+    };
+    let placement_impact = if capability_support == "blocked" {
+        PersistedSpecializationSemanticImpact::BlocksPath
+    } else if capability_support == "constrained" {
+        PersistedSpecializationSemanticImpact::ConstrainedPlacement
+    } else {
+        PersistedSpecializationSemanticImpact::InformativeOnly
+    };
+    let rollout_impact = if capability_support == "blocked" {
+        PersistedSpecializationSemanticImpact::BlocksPath
+    } else if candidate_or_guarded_slots > 0
+        || readiness_state == "cold"
+        || readiness_state == "prepared"
+    {
+        PersistedSpecializationSemanticImpact::RolloutCaveat
+    } else {
+        PersistedSpecializationSemanticImpact::InformativeOnly
+    };
+    let replay_impact = if capability_support == "blocked" {
+        PersistedSpecializationSemanticImpact::BlocksPath
+    } else if stale_or_blocked_slots > 0
+        || readiness_state == "stale"
+        || readiness_state == "blocked"
+    {
+        PersistedSpecializationSemanticImpact::ReplayCaveat
+    } else {
+        PersistedSpecializationSemanticImpact::InformativeOnly
+    };
+    PersistedSpecializationContext {
+        backend_device_path: readiness_context.to_string(),
+        capability_support,
+        readiness_state,
+        degradation_state: degradation_state.to_string(),
+        fallback_state: fallback_state.to_string(),
+        placement_impact,
+        rollout_impact,
+        replay_impact,
     }
 }
 
@@ -1254,6 +1351,12 @@ mod tests {
             Some("deterministic_subset_candidate")
                 | Some("replayable_but_not_deterministic_subset")
         ));
+        let specialization = snapshot
+            .specialization_context
+            .as_ref()
+            .expect("specialization context should exist");
+        assert_eq!(specialization.backend_device_path, "toy:cpu:cold");
+        assert_eq!(specialization.capability_support, "constrained");
     }
 
     #[test]

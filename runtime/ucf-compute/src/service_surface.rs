@@ -191,9 +191,39 @@ pub struct RuntimeOpsSnapshot {
     pub repeated_hotspot_stage: Option<CanonicalStageId>,
     pub repeated_hotspot_runs: usize,
     pub optimization_view: RuntimeOptimizationOpsView,
+    pub specialization: RuntimeSpecializationOpsView,
     pub replay_snapshot_coverage: ReplaySnapshotCoverage,
     pub latest_replay_regression: Option<ReplayRegressionAssessment>,
     pub recovery: Option<ComputeRecoverySnapshot>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpecializationSemanticImpact {
+    InformativeOnly,
+    ConstrainedPlacement,
+    RolloutCaveat,
+    ReplayCaveat,
+    BlocksPath,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeSpecializationPathSummary {
+    pub slot: ModelSlot,
+    pub backend_device_path: String,
+    pub support: String,
+    pub readiness: RuntimeWarmupState,
+    pub degradation: String,
+    pub fallback_prone: bool,
+    pub stage_path_caveat: Option<String>,
+    pub semantics: SpecializationSemanticImpact,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeSpecializationOpsView {
+    pub paths: Vec<RuntimeSpecializationPathSummary>,
+    pub caveats: Vec<String>,
+    pub preferred_alternative_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1312,6 +1342,7 @@ impl CanonicalComputeEntryPoint {
             .map(|comparison| format!("{:?}", comparison.outcome).to_ascii_lowercase())
             .unwrap_or_else(|| "insufficient_history_signal".to_string());
 
+        let specialization = build_specialization_ops_view(state, scheduler.execution_path, &slots);
         RuntimeOpsSnapshot {
             state,
             runtime_mode: runtime_profile.mode,
@@ -1352,6 +1383,7 @@ impl CanonicalComputeEntryPoint {
                 historical_feedback_alignment,
                 caveats,
             },
+            specialization,
             replay_snapshot_coverage: ReplaySnapshotCoverage {
                 replay_ready,
                 partial,
@@ -1543,6 +1575,131 @@ impl CanonicalComputeEntryPoint {
         records.sort_by_key(|record| std::cmp::Reverse(record.job_id.0));
         records
     }
+}
+
+fn build_specialization_ops_view(
+    runtime_state: RuntimeOpsState,
+    execution_path: JobExecutionPath,
+    slots: &[RuntimeSlotSnapshot],
+) -> RuntimeSpecializationOpsView {
+    let mut paths = slots
+        .iter()
+        .map(|slot| {
+            let support = match slot.status {
+                SlotRuntimeStatus::Disabled
+                | SlotRuntimeStatus::Unavailable
+                | SlotRuntimeStatus::VerificationFailed
+                | SlotRuntimeStatus::Incompatible => "blocked".to_string(),
+                SlotRuntimeStatus::Used
+                    if matches!(
+                        slot.warmup_state,
+                        RuntimeWarmupState::Blocked
+                            | RuntimeWarmupState::Stale
+                            | RuntimeWarmupState::Preparing
+                            | RuntimeWarmupState::Cold
+                    ) =>
+                {
+                    "constrained".to_string()
+                }
+                SlotRuntimeStatus::Used => "fully_supported".to_string(),
+            };
+            let stage_path_caveat = stage_path_caveat_from_detail(slot.status, slot.warmup_state);
+            let semantics = if support == "blocked" {
+                SpecializationSemanticImpact::BlocksPath
+            } else if stage_path_caveat
+                .as_deref()
+                .is_some_and(|caveat| caveat.contains("rollout"))
+            {
+                SpecializationSemanticImpact::RolloutCaveat
+            } else if matches!(slot.warmup_state, RuntimeWarmupState::Stale) {
+                SpecializationSemanticImpact::ReplayCaveat
+            } else if support == "constrained" {
+                SpecializationSemanticImpact::ConstrainedPlacement
+            } else {
+                SpecializationSemanticImpact::InformativeOnly
+            };
+            let degradation = if runtime_state == RuntimeOpsState::Degraded {
+                "degraded_path".to_string()
+            } else if support == "blocked" {
+                "blocked_unusable".to_string()
+            } else if support == "constrained" {
+                "constrained_serviceable".to_string()
+            } else {
+                "healthy_support".to_string()
+            };
+            RuntimeSpecializationPathSummary {
+                slot: slot.slot,
+                backend_device_path: format!("{:?}:cpu:{:?}", execution_path, slot.slot)
+                    .to_ascii_lowercase(),
+                support,
+                readiness: slot.warmup_state,
+                degradation,
+                fallback_prone: matches!(
+                    slot.warmup_state,
+                    RuntimeWarmupState::Blocked
+                        | RuntimeWarmupState::Stale
+                        | RuntimeWarmupState::Preparing
+                        | RuntimeWarmupState::Cold
+                ) || runtime_state == RuntimeOpsState::Degraded,
+                stage_path_caveat,
+                semantics,
+            }
+        })
+        .collect::<Vec<_>>();
+    paths.sort_by_key(|entry| entry.slot);
+    let mut caveats = Vec::new();
+    if paths.iter().any(|path| path.support == "blocked") {
+        caveats.push("path_blocked_in_current_runtime_context".to_string());
+    }
+    if paths.iter().any(|path| {
+        path.support == "constrained"
+            || path.semantics == SpecializationSemanticImpact::ReplayCaveat
+    }) {
+        caveats.push("path_viable_only_with_specialization_caveats".to_string());
+    }
+    if paths
+        .iter()
+        .any(|path| path.fallback_prone || path.degradation == "degraded_path")
+    {
+        caveats.push("path_repeatedly_cold_or_degraded".to_string());
+    }
+    let preferred_alternative_path = paths
+        .iter()
+        .find(|path| path.support == "fully_supported" && !path.fallback_prone)
+        .map(|path| path.backend_device_path.clone());
+    RuntimeSpecializationOpsView {
+        paths,
+        caveats,
+        preferred_alternative_path,
+    }
+}
+
+fn stage_path_caveat_from_detail(
+    status: SlotRuntimeStatus,
+    warmup: RuntimeWarmupState,
+) -> Option<String> {
+    if matches!(
+        status,
+        SlotRuntimeStatus::Disabled
+            | SlotRuntimeStatus::Unavailable
+            | SlotRuntimeStatus::VerificationFailed
+            | SlotRuntimeStatus::Incompatible
+    ) {
+        return Some("rollout_path_blocked".to_string());
+    }
+    if matches!(
+        warmup,
+        RuntimeWarmupState::Stale | RuntimeWarmupState::Blocked
+    ) {
+        return Some("replay_path_stale_or_blocked".to_string());
+    }
+    if matches!(
+        warmup,
+        RuntimeWarmupState::Preparing | RuntimeWarmupState::Cold
+    ) {
+        return Some("rollout_path_not_warm_ready".to_string());
+    }
+    None
 }
 
 fn parse_warmup_state(detail: Option<&str>) -> RuntimeWarmupState {
@@ -3442,7 +3599,7 @@ mod tests {
         ReplayMismatchClass, ReplayPreflightIssueCode, ReplayRegressionReasonCode,
         ReplayRegressionSignal, ReplayRemoteContextReproducibility, ReplayabilityClass,
         RolloutReplayComparability, RuntimeOperation, RuntimeOperationCode, RuntimeOpsState,
-        RuntimeSignalState, RuntimeWarmupState,
+        RuntimeSignalState, RuntimeWarmupState, SpecializationSemanticImpact,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{
@@ -3552,6 +3709,29 @@ mod tests {
         ));
         assert!(!status.stage_cost_attribution.is_empty());
         assert!(!entry.lifecycle(handle).is_empty());
+    }
+
+    #[test]
+    fn operations_snapshot_surfaces_specialization_context() {
+        let mut entry = service();
+        entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(100),
+                execution_mode: ComputeExecutionMode::ExecuteInline,
+            })
+            .expect("submit should not fail");
+        let snapshot = entry.operations_snapshot();
+        assert!(!snapshot.specialization.paths.is_empty());
+        assert!(snapshot.specialization.paths.iter().any(|path| matches!(
+            path.semantics,
+            SpecializationSemanticImpact::InformativeOnly
+                | SpecializationSemanticImpact::ConstrainedPlacement
+                | SpecializationSemanticImpact::RolloutCaveat
+                | SpecializationSemanticImpact::ReplayCaveat
+                | SpecializationSemanticImpact::BlocksPath
+        )));
     }
 
     #[test]
