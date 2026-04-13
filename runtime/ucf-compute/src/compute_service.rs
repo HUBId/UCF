@@ -12,6 +12,7 @@ use crate::pipeline::{
     FusionConfig, LimitsConfig,
 };
 use crate::ComputeError;
+use crate::{CapabilityConstraint, CapabilitySupportLevel, StageKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct JobId(pub u64);
@@ -836,6 +837,8 @@ pub struct ExecutionPlacement {
     pub execution_path: JobExecutionPath,
     pub lane: BackendExecutionLane,
     pub suitability: PlacementSuitability,
+    pub capability_support: CapabilitySupportLevel,
+    pub capability_constraints: Vec<CapabilityConstraint>,
     pub device_suitability: DeviceSuitability,
     pub device_preference: Option<ExecutionDeviceClass>,
     pub device_preference_met: bool,
@@ -943,6 +946,8 @@ pub struct PlacementCandidateAssessment {
     pub lane: BackendExecutionLane,
     pub runtime_status: WorkerRuntimeStatus,
     pub backend_suitability: PlacementSuitability,
+    pub capability_support: CapabilitySupportLevel,
+    pub capability_constraints: Vec<CapabilityConstraint>,
     pub device_suitability: DeviceSuitability,
     pub suitability: PlacementSuitability,
     pub warmup: PlacementWarmupState,
@@ -1998,6 +2003,14 @@ impl MultiWorkerComputeService {
                     execution_path: JobExecutionPath::WorkerIpc,
                     lane: BackendExecutionLane::Worker,
                     suitability,
+                    capability_support: candidate
+                        .as_ref()
+                        .map(|entry| entry.capability_support)
+                        .unwrap_or(CapabilitySupportLevel::Unsupported),
+                    capability_constraints: candidate
+                        .as_ref()
+                        .map(|entry| entry.capability_constraints.clone())
+                        .unwrap_or_default(),
                     device_suitability,
                     device_preference: Some(ExecutionDeviceClass::Worker),
                     device_preference_met: candidate
@@ -2077,6 +2090,8 @@ impl MultiWorkerComputeService {
                 execution_path: JobExecutionPath::LocalCanonical,
                 lane: BackendExecutionLane::Toy,
                 suitability: PlacementSuitability::Unavailable,
+                capability_support: CapabilitySupportLevel::Unsupported,
+                capability_constraints: Vec::new(),
                 device_suitability: DeviceSuitability::Unavailable,
                 device_preference: None,
                 device_preference_met: true,
@@ -2207,6 +2222,15 @@ impl MultiWorkerComputeService {
                     .as_ref()
                     .map(|failure| suitability_for_failure(failure.kind))
                     .unwrap_or(PlacementSuitability::Suitable);
+                let (capability_support, capability_constraints) = derive_capability_contract(
+                    unit.kind,
+                    lane,
+                    status,
+                    warmup,
+                    backend_suitability,
+                    device_suitability,
+                    admission.failure.as_ref(),
+                );
                 if !unit.can_accept_dispatch() {
                     return PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
@@ -2217,6 +2241,8 @@ impl MultiWorkerComputeService {
                         lane,
                         runtime_status: status,
                         backend_suitability,
+                        capability_support,
+                        capability_constraints: capability_constraints.clone(),
                         device_suitability,
                         suitability: combine_suitability(
                             PlacementSuitability::Unavailable,
@@ -2246,6 +2272,8 @@ impl MultiWorkerComputeService {
                         lane,
                         runtime_status: status,
                         backend_suitability,
+                        capability_support,
+                        capability_constraints: capability_constraints.clone(),
                         device_suitability,
                         suitability: combine_suitability(
                             PlacementSuitability::Unavailable,
@@ -2277,6 +2305,8 @@ impl MultiWorkerComputeService {
                         lane,
                         runtime_status: status,
                         backend_suitability,
+                        capability_support,
+                        capability_constraints: capability_constraints.clone(),
                         device_suitability,
                         suitability,
                         warmup,
@@ -2299,6 +2329,8 @@ impl MultiWorkerComputeService {
                         lane,
                         runtime_status: status,
                         backend_suitability,
+                        capability_support,
+                        capability_constraints: capability_constraints.clone(),
                         device_suitability,
                         suitability,
                         warmup,
@@ -2521,6 +2553,8 @@ impl MultiWorkerComputeService {
                     },
                     lane: selected.lane,
                     suitability: selected.suitability,
+                    capability_support: selected.capability_support,
+                    capability_constraints: selected.capability_constraints.clone(),
                     device_suitability: selected.device_suitability,
                     device_preference: Some(unit_device_class(selected.unit_kind)),
                     device_preference_met: true,
@@ -2547,6 +2581,14 @@ impl MultiWorkerComputeService {
             return None;
         }
         suitable.sort_by_key(|candidate| {
+            let (capability_support_rank, capability_constraint_rank) =
+                match candidate.capability_support {
+                    CapabilitySupportLevel::Supported => (0usize, 0usize),
+                    CapabilitySupportLevel::SupportedWithConstraints => {
+                        (1usize, candidate.capability_constraints.len())
+                    }
+                    CapabilitySupportLevel::Unsupported => (2usize, usize::MAX),
+                };
             let reference_class_rank = match candidate.reference_path_class {
                 ReferencePathClass::ActiveProduction => 0usize,
                 ReferencePathClass::GuardedActive => 1,
@@ -2573,9 +2615,11 @@ impl MultiWorkerComputeService {
                 .position(|unit| unit.id == candidate.unit_id)
                 .unwrap_or(usize::MAX);
             (
+                capability_support_rank,
                 reference_class_rank,
                 warmup_rank,
                 lane_rank,
+                capability_constraint_rank,
                 feedback
                     .suggested_warm_unit
                     .as_ref()
@@ -2624,6 +2668,8 @@ impl MultiWorkerComputeService {
                 },
                 lane: selected.lane,
                 suitability: selected.suitability,
+                capability_support: selected.capability_support,
+                capability_constraints: selected.capability_constraints.clone(),
                 device_suitability: selected.device_suitability,
                 device_preference: None,
                 device_preference_met: true,
@@ -3068,6 +3114,8 @@ impl MultiWorkerComputeService {
                         execution_path: JobExecutionPath::LocalCanonical,
                         lane: local.service.execution_lane(),
                         suitability: PlacementSuitability::Suitable,
+                        capability_support: CapabilitySupportLevel::SupportedWithConstraints,
+                        capability_constraints: vec![CapabilityConstraint::GuardedDegradedUsage],
                         device_suitability: DeviceSuitability::Suitable,
                         device_preference: Some(ExecutionDeviceClass::Worker),
                         device_preference_met: false,
@@ -3384,6 +3432,86 @@ fn combine_suitability(
     }
 }
 
+fn derive_capability_contract(
+    unit_kind: ExecutionUnitKind,
+    lane: BackendExecutionLane,
+    runtime_status: WorkerRuntimeStatus,
+    warmup: PlacementWarmupState,
+    backend_suitability: PlacementSuitability,
+    device_suitability: DeviceSuitability,
+    admission_failure: Option<&CanonicalPipelineFailure>,
+) -> (CapabilitySupportLevel, Vec<CapabilityConstraint>) {
+    let mut constraints = Vec::new();
+    match unit_kind {
+        ExecutionUnitKind::Local => constraints.push(CapabilityConstraint::OnlyLocal),
+        ExecutionUnitKind::Worker => constraints.push(CapabilityConstraint::OnlyRemoteWorker),
+    }
+    if matches!(
+        warmup,
+        PlacementWarmupState::Prepared
+            | PlacementWarmupState::ColdRunnable
+            | PlacementWarmupState::StalePrepared
+    ) {
+        constraints.push(CapabilityConstraint::WarmReadyPreferred);
+    }
+    if matches!(
+        warmup,
+        PlacementWarmupState::ColdRunnable | PlacementWarmupState::StalePrepared
+    ) {
+        constraints.push(CapabilityConstraint::CapacityOrColdStartCaveat);
+    }
+    if lane == BackendExecutionLane::Candle {
+        constraints.push(CapabilityConstraint::GuardedDegradedUsage);
+    }
+    if matches!(
+        runtime_status,
+        WorkerRuntimeStatus::Constrained
+            | WorkerRuntimeStatus::Busy
+            | WorkerRuntimeStatus::Backpressured
+            | WorkerRuntimeStatus::Saturated
+    ) {
+        constraints.push(CapabilityConstraint::CapacityOrColdStartCaveat);
+    }
+    if admission_failure
+        .as_ref()
+        .is_some_and(|failure| stage_from_failure(failure).is_some())
+    {
+        constraints.push(CapabilityConstraint::GuardedDegradedUsage);
+    }
+    let blocked = !matches!(backend_suitability, PlacementSuitability::Suitable)
+        || !matches!(device_suitability, DeviceSuitability::Suitable)
+        || warmup == PlacementWarmupState::BlockedUnavailable
+        || matches!(
+            runtime_status,
+            WorkerRuntimeStatus::Unavailable
+                | WorkerRuntimeStatus::Unhealthy
+                | WorkerRuntimeStatus::Stale
+                | WorkerRuntimeStatus::Unknown
+        );
+    if blocked {
+        return (CapabilitySupportLevel::Unsupported, constraints);
+    }
+    if constraints
+        .iter()
+        .any(|constraint| *constraint != CapabilityConstraint::OnlyLocal)
+    {
+        return (
+            CapabilitySupportLevel::SupportedWithConstraints,
+            constraints,
+        );
+    }
+    (CapabilitySupportLevel::Supported, constraints)
+}
+
+fn stage_from_failure(failure: &CanonicalPipelineFailure) -> Option<StageKind> {
+    match failure.stage? {
+        CanonicalStageId::World => Some(StageKind::World),
+        CanonicalStageId::Sae => Some(StageKind::Sae),
+        CanonicalStageId::Ssm => Some(StageKind::Ssm),
+        CanonicalStageId::Lfm => Some(StageKind::Lfm),
+    }
+}
+
 fn capacity_pressure_for(
     used_units: usize,
     limit_units: usize,
@@ -3617,10 +3745,11 @@ fn placement_input_view(
         .clone()
         .any(|candidate| candidate.unit_kind == ExecutionUnitKind::Worker);
     let has_constrained_suitable = suitable.clone().any(|candidate| {
-        matches!(
-            candidate.runtime_status,
-            WorkerRuntimeStatus::Constrained | WorkerRuntimeStatus::Busy
-        )
+        candidate.capability_support == CapabilitySupportLevel::SupportedWithConstraints
+            || matches!(
+                candidate.runtime_status,
+                WorkerRuntimeStatus::Constrained | WorkerRuntimeStatus::Busy
+            )
     });
     let has_degraded_only_suitable =
         distributed.state == DistributedPlacementState::AdmissibleDegradedOnly;
@@ -3649,6 +3778,10 @@ fn decisive_signals_for_selection(
     let mut out = Vec::with_capacity(8);
     out.push(format!("warmup={:?}", selected.warmup).to_lowercase());
     out.push(format!("runtime_status={:?}", selected.runtime_status).to_lowercase());
+    out.push(format!("capability_support={:?}", selected.capability_support).to_lowercase());
+    if let Some(first_constraint) = selected.capability_constraints.first() {
+        out.push(format!("capability_constraint={first_constraint:?}").to_lowercase());
+    }
     out.push(format!("feedback_strength={:?}", feedback.strength).to_lowercase());
     out.push(format!(
         "reference_path={}",
@@ -3896,7 +4029,9 @@ mod tests {
     };
     use crate::ssm::{SsmKernel, ToySsmKernel};
     use crate::world_model::MockJepaPredictor;
-    use crate::{ComputeBudget, ComputeError, ComputeInput, FrameId, ModelSlot};
+    use crate::{
+        CapabilitySupportLevel, ComputeBudget, ComputeError, ComputeInput, FrameId, ModelSlot,
+    };
 
     use super::{
         CapacityPressure, CapacityQueueDisposition, CoordinationFreshness, CoordinationIssueKind,
@@ -5439,11 +5574,13 @@ mod tests {
             .iter()
             .any(|entry| entry.unit_id == worker_id
                 && entry.warmup == PlacementWarmupState::WarmReady
-                && entry.cold_start_penalty_units == 0));
+                && entry.cold_start_penalty_units == 0
+                && entry.capability_support == CapabilitySupportLevel::SupportedWithConstraints));
         assert!(record.placement.considered.iter().any(|entry| entry.unit_id
             == ExecutionUnitId("local".to_string())
             && entry.warmup == PlacementWarmupState::ColdRunnable
-            && entry.cold_start_penalty_units > 0));
+            && entry.cold_start_penalty_units > 0
+            && entry.capability_support == CapabilitySupportLevel::SupportedWithConstraints));
     }
 
     #[test]
@@ -5484,11 +5621,10 @@ mod tests {
             record.placement_failure,
             Some(PlacementFailureKind::CurrentlyUnschedulable)
         );
-        assert!(record
-            .placement
-            .considered
-            .iter()
-            .all(|entry| entry.warmup == PlacementWarmupState::BlockedUnavailable));
+        assert!(record.placement.considered.iter().all(|entry| {
+            entry.warmup == PlacementWarmupState::BlockedUnavailable
+                && entry.capability_support == CapabilitySupportLevel::Unsupported
+        }));
     }
 
     #[test]

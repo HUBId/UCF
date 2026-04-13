@@ -92,13 +92,32 @@ impl ValidationReport {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum StageKind {
     World,
     Sae,
     Ssm,
     Lfm,
     Llm,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilitySupportLevel {
+    Supported,
+    SupportedWithConstraints,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityConstraint {
+    OnlyLocal,
+    OnlyRemoteWorker,
+    WarmReadyPreferred,
+    GuardedDegradedUsage,
+    CapacityOrColdStartCaveat,
 }
 
 pub trait ContractRegistry {
