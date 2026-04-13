@@ -278,6 +278,16 @@ pub enum PromotionEvaluationDisposition {
     ActivePathRemainsPreferred,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ConstrainedSupportRolloutClass {
+    #[default]
+    FullySupported,
+    SupportedWithBackendDeviceCaveat,
+    SupportedOnlyUnderGuardrails,
+    BlockedForRollout,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SlotPromotionDecision {
     pub slot: ModelSlot,
@@ -288,6 +298,10 @@ pub struct SlotPromotionDecision {
     pub signals: PromotionTechnicalSignals,
     pub compare_shadow: CompareShadowEvaluation,
     pub disposition: PromotionEvaluationDisposition,
+    #[serde(default)]
+    pub constrained_support: ConstrainedSupportRolloutClass,
+    #[serde(default)]
+    pub constrained_backend_device_path: String,
     pub detail: String,
 }
 
@@ -485,6 +499,10 @@ pub struct SlotRolloutDiagnostics {
     pub progress: RolloutProgressClassification,
     pub blockers: Vec<RolloutBlockerKind>,
     pub consolidated: RolloutSignalConsolidation,
+    #[serde(default)]
+    pub constrained_support: ConstrainedSupportRolloutClass,
+    #[serde(default)]
+    pub constrained_backend_device_path: String,
     pub events: Vec<RolloutEvent>,
 }
 
@@ -1423,6 +1441,8 @@ impl ModelStore {
             progress,
             blockers,
             consolidated,
+            constrained_support: promotion.constrained_support,
+            constrained_backend_device_path: promotion.constrained_backend_device_path,
             events,
         }
     }
@@ -1604,6 +1624,13 @@ impl ModelStore {
             || shadow.is_some_and(|entry| entry.verified && entry.configured_hash.is_some());
         let comparable_under_same_effective_configuration =
             candidate_hash.is_some() && compare_hash == candidate_hash && baseline_comparison_ready;
+        let constrained_backend_device_path = format!(
+            "active={};candidate={};compare={};shadow={}",
+            warmup_state_token(active_warmup.map(|entry| entry.state)),
+            warmup_state_token(candidate_warmup.map(|entry| entry.state)),
+            warmup_state_token(compare_warmup.map(|entry| entry.state)),
+            warmup_state_token(shadow_warmup.map(|entry| entry.state)),
+        );
         let signals = PromotionTechnicalSignals {
             baseline_comparison_ready,
             runtime_path_production_usable,
@@ -1626,6 +1653,18 @@ impl ModelStore {
         }
         if degraded_beyond_acceptable_threshold {
             blockers.push(PromotionBlockerCode::DegradedBeyondAcceptableThreshold);
+        }
+        let constrained_support = classify_rollout_constrained_support(
+            runtime_path_production_usable,
+            candidate_present,
+            candidate_warmup.map(|entry| entry.state),
+            active_warmup.map(|entry| entry.state),
+            baseline_comparison_ready,
+            compare_or_shadow_diagnostic_ready,
+            degraded_beyond_acceptable_threshold,
+        );
+        if constrained_support == ConstrainedSupportRolloutClass::BlockedForRollout {
+            blockers.push(PromotionBlockerCode::GateBlocked);
         }
 
         let state = if runtime_path_production_usable {
@@ -1783,6 +1822,8 @@ impl ModelStore {
             signals,
             compare_shadow,
             disposition,
+            constrained_support,
+            constrained_backend_device_path,
             detail: blocked
                 .map(|entry| entry.detail.clone())
                 .unwrap_or_else(|| "none".to_string()),
@@ -1949,6 +1990,53 @@ fn hash_prefix(value: Option<&str>) -> String {
         .filter(|v| !v.is_empty())
         .map(|v| v.chars().take(12).collect::<String>())
         .unwrap_or_else(|| "none".to_string())
+}
+
+fn warmup_state_token(state: Option<SlotWarmupState>) -> &'static str {
+    match state {
+        Some(SlotWarmupState::Warm) => "warm",
+        Some(SlotWarmupState::Prepared) => "prepared",
+        Some(SlotWarmupState::Cold) => "cold",
+        Some(SlotWarmupState::Blocked) => "blocked",
+        Some(SlotWarmupState::Stale) => "stale",
+        None => "unavailable",
+    }
+}
+
+fn classify_rollout_constrained_support(
+    runtime_path_production_usable: bool,
+    candidate_present: bool,
+    candidate_state: Option<SlotWarmupState>,
+    active_state: Option<SlotWarmupState>,
+    baseline_comparison_ready: bool,
+    compare_or_shadow_ready: bool,
+    degraded_beyond_threshold: bool,
+) -> ConstrainedSupportRolloutClass {
+    let hard_blocked = matches!(
+        candidate_state,
+        Some(SlotWarmupState::Blocked | SlotWarmupState::Stale)
+    ) || (!runtime_path_production_usable
+        && matches!(
+            active_state,
+            Some(SlotWarmupState::Blocked | SlotWarmupState::Stale)
+        ));
+    if hard_blocked {
+        return ConstrainedSupportRolloutClass::BlockedForRollout;
+    }
+    let guardrail_required = candidate_present
+        && (!baseline_comparison_ready || !compare_or_shadow_ready || degraded_beyond_threshold);
+    if guardrail_required {
+        return ConstrainedSupportRolloutClass::SupportedOnlyUnderGuardrails;
+    }
+    if candidate_present
+        && matches!(
+            candidate_state,
+            Some(SlotWarmupState::Prepared | SlotWarmupState::Cold)
+        )
+    {
+        return ConstrainedSupportRolloutClass::SupportedWithBackendDeviceCaveat;
+    }
+    ConstrainedSupportRolloutClass::FullySupported
 }
 
 fn consolidate_rollout_signals(
@@ -2710,6 +2798,72 @@ enabled = false
             decision.disposition,
             PromotionEvaluationDisposition::CandidateRemainsBlocked
         );
+        std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
+    }
+
+    #[test]
+    fn promotion_decision_surfaces_constrained_backend_device_support_classes() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        let active_bytes = b"verified-model-active";
+        let active_hash = hex::encode(Sha256::digest(active_bytes));
+        let active_path = models
+            .join("promoted")
+            .join("world_jepa")
+            .join(&active_hash)
+            .join("model.safetensors");
+        fs::create_dir_all(active_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&active_path, active_bytes).expect("write");
+
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::WorldJepa,
+            ModelSlotSpec {
+                slot: ModelSlot::WorldJepa,
+                enabled: true,
+                path: None,
+                expected_sha256: parse_hash(&active_hash),
+                max_bytes: 1024,
+                format: ModelFormat::Burn,
+                device: ModelDevice::CpuOnly,
+                active_hash: Some(active_hash.clone()),
+                contract_version: Some("v1".to_string()),
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+
+        std::env::set_var(
+            "UCF_MODEL_CANDIDATE_WORLD_JEPA",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        );
+        let blocked = store.slot_promotion_decision(ModelSlot::WorldJepa);
+        assert_eq!(
+            blocked.constrained_support,
+            ConstrainedSupportRolloutClass::BlockedForRollout
+        );
+        assert!(blocked
+            .blockers
+            .contains(&PromotionBlockerCode::GateBlocked));
+        assert!(blocked
+            .constrained_backend_device_path
+            .contains("candidate=blocked"));
+
+        std::env::set_var("UCF_MODEL_CANDIDATE_WORLD_JEPA", &active_hash);
+        let guarded = store.slot_promotion_decision(ModelSlot::WorldJepa);
+        assert_eq!(
+            guarded.constrained_support,
+            ConstrainedSupportRolloutClass::SupportedOnlyUnderGuardrails
+        );
+        assert!(guarded
+            .constrained_backend_device_path
+            .contains("candidate=prepared"));
         std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
     }
 

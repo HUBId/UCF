@@ -216,6 +216,21 @@ Signals are explicitly technical and bounded:
 - compare/shadow diagnostic readiness (`compare_or_shadow_diagnostic_ready`),
 - strict same-effective-config comparability (`comparable_under_same_effective_configuration`).
 
+Constrained backend/device support is now surfaced as a narrow rollout view (still technical-only):
+
+- `fully_supported`
+- `supported_with_backend_device_caveat`
+- `supported_only_under_guardrails`
+- `blocked_for_rollout`
+
+The same decision now carries a compact backend/device path provenance string
+(`constrained_backend_device_path`, e.g. `active=warm;candidate=prepared;...`) so rollout
+diagnostics can distinguish:
+
+- candidate promotable but caveated on the current backend/device warmup path,
+- guarded activation required due to backend/device readiness caveats,
+- activation/promotion blocked by backend/device path constraints.
+
 Canonical compare/shadow evaluation terms (promotion-adjacent, technical only):
 
 - context:

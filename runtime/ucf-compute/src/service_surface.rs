@@ -677,6 +677,8 @@ impl CanonicalComputeEntryPoint {
             mismatch_view,
             deterministic_subset,
             regression,
+            constrained_support: preflight.constrained_support,
+            constrained_backend_device_context: preflight.constrained_backend_device_context,
         }))
     }
 
@@ -746,6 +748,8 @@ impl CanonicalComputeEntryPoint {
                         DeterministicSubsetReasonCode::MissingSignalForClassification,
                     ],
                 },
+                constrained_support: ReplayConstrainedSupportClass::BlockedForReplay,
+                constrained_backend_device_context: None,
             };
         };
 
@@ -811,6 +815,10 @@ impl CanonicalComputeEntryPoint {
             current_mode,
             self.operations_snapshot().available_slots.as_slice(),
         );
+        let source_readiness = source
+            .backend_device_readiness_context
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
         if let Some(source_readiness_context) = source.backend_device_readiness_context.as_deref() {
             if readiness_state_token(source_readiness_context)
                 != readiness_state_token(&current_readiness_context)
@@ -936,6 +944,17 @@ impl CanonicalComputeEntryPoint {
         let mismatch_view =
             classify_preflight_mismatch_view(replayability, &issues, has_caveat, &rollout_context);
         let deterministic_subset = mismatch_view.deterministic_subset.clone();
+        let constrained_support = classify_replay_constrained_support(
+            replayability,
+            changed_context,
+            has_caveat,
+            &rollout_context,
+            issues.as_slice(),
+        );
+        let constrained_backend_device_context = Some(format!(
+            "source={};current={}",
+            source_readiness, current_readiness_context
+        ));
         ComputeReplayPreflight {
             source_job_id: source.job_id,
             replayability,
@@ -950,6 +969,8 @@ impl CanonicalComputeEntryPoint {
             issues,
             mismatch_view,
             deterministic_subset,
+            constrained_support,
+            constrained_backend_device_context,
         }
     }
 
@@ -1806,6 +1827,15 @@ pub enum ReplayabilityClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayConstrainedSupportClass {
+    FullySupported,
+    ReplayableWithBackendDeviceCaveat,
+    SupportedOnlyUnderGuardrails,
+    NotMeaningfullyComparable,
+    BlockedForReplay,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplayPreflightIssueCode {
     RecordMissing,
     SnapshotIncomplete,
@@ -1850,6 +1880,8 @@ pub struct ComputeReplayPreflight {
     pub issues: Vec<ReplayPreflightIssue>,
     pub mismatch_view: ReplayMismatchView,
     pub deterministic_subset: DeterministicSubsetAssessment,
+    pub constrained_support: ReplayConstrainedSupportClass,
+    pub constrained_backend_device_context: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1881,6 +1913,8 @@ pub struct ComputeReplayReport {
     pub mismatch_view: ReplayMismatchView,
     pub deterministic_subset: DeterministicSubsetAssessment,
     pub regression: ReplayRegressionAssessment,
+    pub constrained_support: ReplayConstrainedSupportClass,
+    pub constrained_backend_device_context: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2753,6 +2787,41 @@ fn classify_preflight_context_consistency(
         _ if has_caveat => ReplayContextConsistencyClass::ChangedContextWithFidelityCaveat,
         _ => ReplayContextConsistencyClass::SameEffectiveExecutionContext,
     }
+}
+
+fn classify_replay_constrained_support(
+    replayability: ReplayabilityClass,
+    changed_context: bool,
+    has_caveat: bool,
+    rollout_context: &RolloutReplayComparisonContext,
+    issues: &[ReplayPreflightIssue],
+) -> ReplayConstrainedSupportClass {
+    if matches!(
+        replayability,
+        ReplayabilityClass::BlockedForReplay | ReplayabilityClass::InsufficientForReplay
+    ) {
+        return ReplayConstrainedSupportClass::BlockedForReplay;
+    }
+    if changed_context
+        && matches!(
+            rollout_context.comparability,
+            RolloutReplayComparability::NotMeaningfullyComparableAcrossRolloutBoundary
+                | RolloutReplayComparability::BlockedChangedExecutionContextBeyondUsefulComparison
+        )
+    {
+        return ReplayConstrainedSupportClass::NotMeaningfullyComparable;
+    }
+    if issues.iter().any(|issue| {
+        issue.code == ReplayPreflightIssueCode::ChangedBackendDeviceWorkerContext
+            || issue.code == ReplayPreflightIssueCode::RolloutContextChangedTooMuch
+    }) || has_caveat
+    {
+        return ReplayConstrainedSupportClass::ReplayableWithBackendDeviceCaveat;
+    }
+    if rollout_context.comparability == RolloutReplayComparability::ComparableWithRolloutCaveat {
+        return ReplayConstrainedSupportClass::SupportedOnlyUnderGuardrails;
+    }
+    ReplayConstrainedSupportClass::FullySupported
 }
 
 fn classify_context_consistency(
@@ -4043,6 +4112,10 @@ mod tests {
                 eligibility: DeterministicSubsetEligibility::StableSubsetEligible,
                 reasons: Vec::new(),
             },
+            constrained_support: super::ReplayConstrainedSupportClass::FullySupported,
+            constrained_backend_device_context: Some(
+                "source=local:cpu:warm_ready;current=local:cpu:warm_ready".to_string(),
+            ),
         };
         let all_match = super::ReplayConfigurationDiff {
             execution_path_match: true,
@@ -4268,6 +4341,14 @@ mod tests {
             preflight.rollout_context.comparability,
             RolloutReplayComparability::BlockedInsufficientRolloutContext
         );
+        assert_eq!(
+            preflight.constrained_support,
+            super::ReplayConstrainedSupportClass::ReplayableWithBackendDeviceCaveat
+        );
+        assert!(preflight
+            .constrained_backend_device_context
+            .as_deref()
+            .is_some_and(|ctx| ctx.contains("source=") && ctx.contains("current=")));
     }
 
     #[test]
@@ -4288,6 +4369,27 @@ mod tests {
         assert_eq!(
             preflight.rollout_context.comparability,
             RolloutReplayComparability::BlockedInsufficientRolloutContext
+        );
+    }
+
+    #[test]
+    fn replay_preflight_marks_backend_device_shift_as_blocked_for_replay() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":8,"job_id":91,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"standard","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[],"execution_snapshot":{"request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request_available":true,"backend_route_available":true,"model_slot_count":0,"path":{"requested_execution_path":"LocalCanonical","executed_execution_path":"LocalCanonical","execution_lane":"standard","resource_class":"standard","was_remote":false,"redispatched_to_local":false,"retry_attempts":0},"rollout":{"active_or_warm_slots":0,"candidate_or_guarded_slots":1,"stale_or_blocked_slots":0,"rollout_context_hint":"guarded_or_candidate_path"},"result":{"lifecycle_state":"completed","completion_class":"completed","pipeline_state":"ok","failure_kind":null},"readiness":"replay_ready","backend_device_readiness_context":"standard:cpu:blocked"}}"#,
+        )
+        .expect("history fixture");
+        let entry = CanonicalComputeEntryPoint::with_history_path(
+            InMemoryComputeService::new(crate::pipeline::ComputePipelineBackend::stub()),
+            &history_path,
+        )
+        .expect("entry with history");
+        let preflight = entry.replay_preflight(ComputeJobHandle { job_id: JobId(91) });
+        assert_eq!(
+            preflight.constrained_support,
+            super::ReplayConstrainedSupportClass::BlockedForReplay
         );
     }
 
