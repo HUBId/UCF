@@ -366,6 +366,9 @@ stage-constrained alternatives and support-class-driven acceptance, e.g.
 Boundaries remain unchanged: no global optimization engine, no hardware scheduler, no autoscaling
 control-plane.
 
+For the hard, repo-based closure matrix of Device/Backend Specialization Hardening (Serie E), see
+`docs/ops/serie_e_device_backend_specialization_closure.md`.
+
 ## Backend selection (runtime)
 
 The orchestrator can be bootstrapped from env config via `RuntimeOrchestrator::try_new_from_env`.
