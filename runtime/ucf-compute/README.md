@@ -340,6 +340,32 @@ Decision provenance for ops/history stays explicit via `placement.decisive_signa
 This is intentionally **not** a warmup/caching platform: no global prewarming, no dynamic policy
 engine, no separate optimization control-plane.
 
+### Specialization-aware placement refinement (Serie E Prompt 7)
+
+Placement keeps the existing bounded candidate model, but now applies a small support-class pass
+before tie-breakers:
+
+- `fully_supported`: suitable candidate with healthy support and no stage/path caveat pressure.
+- `constrained_acceptable`: suitable candidate with warmup/readiness or stage/path constraints.
+- `degraded_fallback`: technically suitable but only via degraded/fallback specialization path.
+- `blocked`: unsuitable/non-placeable candidate.
+
+Canonical heuristics stay narrow and deterministic:
+
+- prefer `fully_supported` over `constrained_acceptable` when otherwise equivalent;
+- prefer `constrained_acceptable` over `degraded_fallback` when a full path is unavailable;
+- use degraded fallback only when no supported path remains viable;
+- keep blocked paths outside acceptable placement.
+
+Stage/path caveats are operational (not just diagnostic): selection now emits explicit provenance for
+stage-constrained alternatives and support-class-driven acceptance, e.g.
+`selected_path_over_stage_constrained_alternative=true`,
+`constrained_accepted_due_to_missing_supported_path=true`, and
+`degraded_accepted_due_to_missing_supported_path=true`.
+
+Boundaries remain unchanged: no global optimization engine, no hardware scheduler, no autoscaling
+control-plane.
+
 ## Backend selection (runtime)
 
 The orchestrator can be bootstrapped from env config via `RuntimeOrchestrator::try_new_from_env`.
