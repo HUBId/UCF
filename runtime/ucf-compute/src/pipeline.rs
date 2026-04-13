@@ -7,9 +7,11 @@ use crate::backend_pack::{
     SlotRuntimeStatus,
 };
 use crate::contracts::{
-    validate_evidence_chain_digest, ContractRegistry, LfmValidatorV1, NsrContractVersion,
-    NsrFailureKind, NsrRequest, NsrResult, SaeValidatorV1, SsmValidatorV1, StageContractRegistry,
-    StageContractVersion, StageKind, ValidationStatus, ViolationCode, WorldValidatorV1,
+    validate_evidence_chain_digest, CapabilityExecutionPath, CapabilityRuntimeMode,
+    CapabilitySupport, ContractRegistry, LfmValidatorV1, NsrContractVersion, NsrFailureKind,
+    NsrRequest, NsrResult, SaeValidatorV1, SsmValidatorV1, StageCapabilityContract,
+    StageContractRegistry, StageContractVersion, StageKind, ValidationStatus, ViolationCode,
+    WorldValidatorV1,
 };
 use crate::feature_extractor::{SaeOutput, ToySaeExtractor};
 use crate::lfm::{LfmInput, LfmOutput};
@@ -38,7 +40,10 @@ pub const CANONICAL_STAGE_SEQUENCE: [CanonicalStageId; 4] = [
     CanonicalStageId::Lfm,
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum CanonicalStageId {
     World,
     Sae,
@@ -299,6 +304,7 @@ pub struct CanonicalPipelineResult {
     pub stage_order: [CanonicalStageId; 4],
     pub executed_stages: Vec<CanonicalStageId>,
     pub route: CanonicalBackendRoute,
+    pub stage_capability_contracts: Vec<StageCapabilityRecord>,
     pub state: CanonicalPipelineState,
     pub failure: Option<CanonicalPipelineFailure>,
     pub validation_status: ValidationStatus,
@@ -310,6 +316,12 @@ pub struct CanonicalPipelineResult {
     pub nsr_stage: NsrStageStatus,
     pub model_slots: Vec<ModelSlotProvenance>,
     pub signals: ComputeSignals,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct StageCapabilityRecord {
+    pub stage: CanonicalStageId,
+    pub contract: StageCapabilityContract,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -420,6 +432,7 @@ pub struct CanonicalPipelineRequest {
 pub struct CanonicalAdmissionDecision {
     pub route: CanonicalBackendRoute,
     pub failure: Option<CanonicalPipelineFailure>,
+    pub stage_capability_contracts: Vec<StageCapabilityRecord>,
 }
 
 struct UnavailableResultContext {
@@ -546,6 +559,25 @@ impl ComputePipelineBackend {
 
     pub fn model_slot_provenance(&self) -> &[ModelSlotProvenance] {
         self.pack.model_slot_provenance()
+    }
+
+    fn runtime_mode_for_contracts() -> CapabilityRuntimeMode {
+        match crate::RuntimeProfile::from_runtime_env() {
+            Ok(profile) => match profile.mode {
+                crate::RuntimeMode::Production => CapabilityRuntimeMode::Production,
+                crate::RuntimeMode::Diagnostic => CapabilityRuntimeMode::Diagnostic,
+                crate::RuntimeMode::Test => CapabilityRuntimeMode::Test,
+            },
+            Err(_) => CapabilityRuntimeMode::Test,
+        }
+    }
+
+    fn execution_path_for_contracts(&self) -> CapabilityExecutionPath {
+        if self.execution_lane() == BackendExecutionLane::Worker {
+            CapabilityExecutionPath::Worker
+        } else {
+            CapabilityExecutionPath::Local
+        }
     }
 }
 
@@ -891,6 +923,7 @@ impl ComputePipelineBackend {
             ssm_backend: pack_meta.ssm_backend as u8,
             lfm_backend: pack_meta.lfm_backend as u8,
         };
+        let mut stage_capability_contracts = Vec::new();
 
         if input.t == 0 {
             return CanonicalAdmissionDecision {
@@ -900,6 +933,7 @@ impl ComputePipelineBackend {
                     stage: None,
                     detail: "invalid request: t must be non-zero".to_string(),
                 }),
+                stage_capability_contracts,
             };
         }
         if budget.max_micros == 0 || budget.hard_timeout_micros == 0 {
@@ -911,6 +945,7 @@ impl ComputePipelineBackend {
                     detail: "invalid budget: max_micros and hard_timeout_micros must be non-zero"
                         .to_string(),
                 }),
+                stage_capability_contracts,
             };
         }
         if budget.max_micros > budget.hard_timeout_micros {
@@ -924,6 +959,7 @@ impl ComputePipelineBackend {
                         budget.max_micros, budget.hard_timeout_micros
                     ),
                 }),
+                stage_capability_contracts,
             };
         }
         for (label, units) in [
@@ -943,6 +979,7 @@ impl ComputePipelineBackend {
                             "request too large for configured work budget: {label}_units=0"
                         ),
                     }),
+                    stage_capability_contracts,
                 };
             }
         }
@@ -951,11 +988,14 @@ impl ComputePipelineBackend {
             return CanonicalAdmissionDecision {
                 route,
                 failure: Some(failure),
+                stage_capability_contracts,
             };
         }
 
         let registry = StageContractRegistry;
         let requested = StageContractVersion::V1;
+        let runtime_mode = Self::runtime_mode_for_contracts();
+        let execution_path = self.execution_path_for_contracts();
         let checks = [
             (
                 CanonicalStageId::World,
@@ -998,9 +1038,18 @@ impl ComputePipelineBackend {
             ),
         ];
         for (stage_id, stage_kind, backend_id, contract_version) in checks {
-            if !registry.supports(stage_kind, backend_id, contract_version)
-                || contract_version != requested
-            {
+            let contract = registry.assess_support(
+                stage_kind,
+                backend_id,
+                contract_version,
+                runtime_mode,
+                execution_path,
+            );
+            stage_capability_contracts.push(StageCapabilityRecord {
+                stage: stage_id,
+                contract: contract.clone(),
+            });
+            if contract_version != requested || contract.support == CapabilitySupport::Unsupported {
                 return CanonicalAdmissionDecision {
                     route,
                     failure: Some(CanonicalPipelineFailure {
@@ -1011,9 +1060,11 @@ impl ComputePipelineBackend {
                         },
                         stage: Some(stage_id),
                         detail: format!(
-                            "{stage_kind:?} backend {backend_id:?} contract {contract_version:?} unsupported"
+                            "{stage_kind:?} backend {backend_id:?} contract {contract_version:?} unsupported ({})",
+                            contract.detail
                         ),
                     }),
+                    stage_capability_contracts,
                 };
             }
         }
@@ -1021,6 +1072,7 @@ impl ComputePipelineBackend {
         CanonicalAdmissionDecision {
             route,
             failure: None,
+            stage_capability_contracts,
         }
     }
 
@@ -1028,6 +1080,9 @@ impl ComputePipelineBackend {
         &self,
         request: CanonicalPipelineRequest,
     ) -> Result<CanonicalPipelineResult, ComputeError> {
+        let stage_capability_contracts = self
+            .technical_admission(&request)
+            .stage_capability_contracts;
         let input = request.input;
         let budget = request.budget;
         let pack_meta = self.pack.meta();
@@ -2224,6 +2279,7 @@ impl ComputePipelineBackend {
             stage_order: CANONICAL_STAGE_SEQUENCE,
             executed_stages,
             route,
+            stage_capability_contracts,
             state,
             failure,
             validation_status: signals.validation_status,
@@ -2322,6 +2378,12 @@ impl ComputePipelineBackend {
             stage_order: CANONICAL_STAGE_SEQUENCE,
             executed_stages: Vec::new(),
             route,
+            stage_capability_contracts: self
+                .technical_admission(&CanonicalPipelineRequest {
+                    input: input.clone(),
+                    budget,
+                })
+                .stage_capability_contracts,
             state: CanonicalPipelineState::Unavailable,
             failure: Some(ctx.failure),
             validation_status: ctx.validation_status,

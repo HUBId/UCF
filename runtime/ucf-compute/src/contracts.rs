@@ -102,31 +102,153 @@ pub enum StageKind {
 }
 
 pub trait ContractRegistry {
-    fn supports(
+    fn assess_support(
         &self,
         stage: StageKind,
         backend_id: BackendComponentId,
         version: StageContractVersion,
-    ) -> bool;
-}
+        runtime_mode: CapabilityRuntimeMode,
+        execution_path: CapabilityExecutionPath,
+    ) -> StageCapabilityContract;
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct StageContractRegistry;
-
-impl ContractRegistry for StageContractRegistry {
     fn supports(
         &self,
         stage: StageKind,
         backend_id: BackendComponentId,
         version: StageContractVersion,
     ) -> bool {
+        self.assess_support(
+            stage,
+            backend_id,
+            version,
+            CapabilityRuntimeMode::Test,
+            CapabilityExecutionPath::Local,
+        )
+        .support
+            != CapabilitySupport::Unsupported
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilitySupport {
+    Supported,
+    Constrained,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityConstraint {
+    OnlyLocal,
+    OnlyRemoteWorker,
+    WarmReadyPreferred,
+    GuardedUsageRecommended,
+    CapacityOrColdStartCaveat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityRuntimeMode {
+    Production,
+    Diagnostic,
+    Test,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityExecutionPath {
+    Local,
+    Worker,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct StageCapabilityContract {
+    pub support: CapabilitySupport,
+    #[serde(default)]
+    pub constraints: Vec<CapabilityConstraint>,
+    pub detail: String,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct StageContractRegistry;
+
+impl ContractRegistry for StageContractRegistry {
+    fn assess_support(
+        &self,
+        stage: StageKind,
+        backend_id: BackendComponentId,
+        version: StageContractVersion,
+        runtime_mode: CapabilityRuntimeMode,
+        execution_path: CapabilityExecutionPath,
+    ) -> StageCapabilityContract {
         if version != StageContractVersion::V1 {
-            return false;
+            return StageCapabilityContract {
+                support: CapabilitySupport::Unsupported,
+                constraints: Vec::new(),
+                detail: format!("unsupported contract version: {version:?}"),
+            };
         }
-        !matches!(
+        if matches!(
             (stage, backend_id),
             (_, BackendComponentId::Disabled) | (StageKind::World, BackendComponentId::StubV0)
-        )
+        ) {
+            return StageCapabilityContract {
+                support: CapabilitySupport::Unsupported,
+                constraints: Vec::new(),
+                detail: format!("stage={stage:?} backend={backend_id:?} is unsupported"),
+            };
+        }
+
+        let mut constraints = Vec::new();
+        let mut support = CapabilitySupport::Supported;
+        if runtime_mode == CapabilityRuntimeMode::Production
+            && matches!(
+                backend_id,
+                BackendComponentId::ToyV1
+                    | BackendComponentId::StubV0
+                    | BackendComponentId::CandleToyV1
+                    | BackendComponentId::CandleJepaV1
+                    | BackendComponentId::CandleSaeV1
+                    | BackendComponentId::CandleSsmV1
+                    | BackendComponentId::CandleEbmV1
+                    | BackendComponentId::CandleVljepaV1
+            )
+        {
+            support = CapabilitySupport::Constrained;
+            constraints.push(CapabilityConstraint::GuardedUsageRecommended);
+        }
+        if execution_path == CapabilityExecutionPath::Worker
+            && matches!(
+                backend_id,
+                BackendComponentId::BurnJepaV1
+                    | BackendComponentId::BurnSaeV1
+                    | BackendComponentId::BurnSsmV1
+                    | BackendComponentId::BurnLfmV1
+                    | BackendComponentId::CandleJepaV1
+                    | BackendComponentId::CandleSaeV1
+                    | BackendComponentId::CandleSsmV1
+                    | BackendComponentId::CandleEbmV1
+                    | BackendComponentId::CandleVljepaV1
+            )
+        {
+            support = CapabilitySupport::Unsupported;
+            constraints.push(CapabilityConstraint::OnlyLocal);
+        }
+        if stage == StageKind::Lfm && !matches!(backend_id, BackendComponentId::BurnLfmV1) {
+            if support == CapabilitySupport::Supported {
+                support = CapabilitySupport::Constrained;
+            }
+            constraints.push(CapabilityConstraint::GuardedUsageRecommended);
+            constraints.push(CapabilityConstraint::WarmReadyPreferred);
+        }
+        StageCapabilityContract {
+            support,
+            constraints,
+            detail: format!(
+                "stage={stage:?} backend={backend_id:?} runtime={runtime_mode:?} path={execution_path:?}"
+            ),
+        }
     }
 }
 
@@ -465,5 +587,39 @@ mod tests {
         resp.digest = [0; 32];
         let report = LlmValidatorV1::validate(&req, &resp);
         assert_eq!(report.status, ValidationStatus::Degraded);
+    }
+
+    #[test]
+    fn stage_contracts_distinguish_supported_constrained_and_unsupported() {
+        let registry = StageContractRegistry;
+        let supported = registry.assess_support(
+            StageKind::Sae,
+            BackendComponentId::BurnSaeV1,
+            StageContractVersion::V1,
+            CapabilityRuntimeMode::Production,
+            CapabilityExecutionPath::Local,
+        );
+        assert_eq!(supported.support, CapabilitySupport::Supported);
+
+        let constrained = registry.assess_support(
+            StageKind::Lfm,
+            BackendComponentId::ToyV1,
+            StageContractVersion::V1,
+            CapabilityRuntimeMode::Test,
+            CapabilityExecutionPath::Local,
+        );
+        assert_eq!(constrained.support, CapabilitySupport::Constrained);
+        assert!(constrained
+            .constraints
+            .contains(&CapabilityConstraint::WarmReadyPreferred));
+
+        let unsupported = registry.assess_support(
+            StageKind::World,
+            BackendComponentId::BurnJepaV1,
+            StageContractVersion::V1,
+            CapabilityRuntimeMode::Production,
+            CapabilityExecutionPath::Worker,
+        );
+        assert_eq!(unsupported.support, CapabilitySupport::Unsupported);
     }
 }

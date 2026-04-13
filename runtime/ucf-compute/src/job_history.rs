@@ -14,7 +14,7 @@ use crate::pipeline::{
     CanonicalIsolationDisposition, CanonicalPipelineState,
 };
 
-const JOB_HISTORY_SCHEMA_VERSION: u16 = 13;
+const JOB_HISTORY_SCHEMA_VERSION: u16 = 14;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRequestIdentity {
@@ -209,6 +209,16 @@ pub struct PersistedExecutionSnapshot {
     pub deterministic_subset_class: Option<String>,
     #[serde(default)]
     pub deterministic_subset_reasons: Vec<String>,
+    #[serde(default)]
+    pub stage_capability_contracts: Vec<PersistedStageCapabilityContractSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedStageCapabilityContractSummary {
+    pub stage: String,
+    pub support: String,
+    pub constraints: Vec<String>,
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -680,6 +690,31 @@ fn build_execution_snapshot(record: &JobRecord) -> PersistedExecutionSnapshot {
         readiness,
         deterministic_subset_class: Some(deterministic_subset_class),
         deterministic_subset_reasons,
+        stage_capability_contracts: record
+            .result
+            .as_ref()
+            .map(|result| {
+                result
+                    .stage_capability_contracts
+                    .iter()
+                    .map(|entry| PersistedStageCapabilityContractSummary {
+                        stage: format!("{:?}", entry.stage).to_ascii_lowercase(),
+                        support: format!("{:?}", entry.contract.support).to_ascii_lowercase(),
+                        constraints: entry
+                            .contract
+                            .constraints
+                            .iter()
+                            .map(|constraint| {
+                                format!("{constraint:?}")
+                                    .trim_start_matches("Capability")
+                                    .to_ascii_lowercase()
+                            })
+                            .collect(),
+                        detail: entry.contract.detail.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
