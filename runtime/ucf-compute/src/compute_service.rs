@@ -1137,13 +1137,24 @@ struct TerminalCoordinationInput {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PlacementInputView {
     has_suitable: bool,
+    has_supported_suitable: bool,
     has_warm_suitable: bool,
     has_prepared_or_cold_suitable: bool,
     has_local_suitable: bool,
     has_remote_suitable: bool,
     has_constrained_suitable: bool,
+    has_degraded_suitable: bool,
     has_degraded_only_suitable: bool,
+    has_stage_constrained_suitable: bool,
     has_pressure_blocked_admissible: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlacementSupportClass {
+    FullySupported,
+    ConstrainedAcceptable,
+    DegradedFallback,
+    Blocked,
 }
 
 impl WorkerRetrySummary {
@@ -2070,6 +2081,7 @@ impl MultiWorkerComputeService {
                     outcome: PlacementOutcome::AdmissibleButNoAcceptablePlacement,
                     decisive_signals: vec![
                         format!("requested_unit={}", requested.0),
+                        "support_class=blocked".to_string(),
                         format!("suitability={suitability:?}").to_lowercase(),
                         format!("device_suitability={device_suitability:?}").to_lowercase(),
                     ],
@@ -2149,6 +2161,7 @@ impl MultiWorkerComputeService {
                     PlacementOutcome::HardIncompatible
                 },
                 decisive_signals: vec![
+                    "support_class=blocked".to_string(),
                     format!("distributed_state={:?}", distributed.state).to_lowercase(),
                     format!(
                         "pressure_blocked={}",
@@ -2670,6 +2683,12 @@ impl MultiWorkerComputeService {
             return None;
         }
         suitable.sort_by_key(|candidate| {
+            let support_rank = match placement_support_class(candidate) {
+                PlacementSupportClass::FullySupported => 0usize,
+                PlacementSupportClass::ConstrainedAcceptable => 1usize,
+                PlacementSupportClass::DegradedFallback => 2usize,
+                PlacementSupportClass::Blocked => 3usize,
+            };
             let (capability_support_rank, capability_constraint_rank) =
                 match candidate.capability_support {
                     CapabilitySupportLevel::Supported => (0usize, 0usize),
@@ -2704,6 +2723,7 @@ impl MultiWorkerComputeService {
                 .position(|unit| unit.id == candidate.unit_id)
                 .unwrap_or(usize::MAX);
             (
+                support_rank,
                 capability_support_rank,
                 reference_class_rank,
                 warmup_rank,
@@ -2723,6 +2743,7 @@ impl MultiWorkerComputeService {
             )
         });
         let selected = suitable.first()?.clone();
+        let selected_support_class = placement_support_class(&selected);
         let warm_placeable_exists = suitable
             .iter()
             .any(|candidate| candidate.warmup == PlacementWarmupState::WarmReady);
@@ -2731,16 +2752,29 @@ impl MultiWorkerComputeService {
             .iter()
             .position(|unit| unit.id == selected.unit_id)?;
         self.round_robin_cursor = (idx + 1) % self.units.len().max(1);
-        let outcome = if selected.lane == BackendExecutionLane::Candle
-            || input_view.has_degraded_only_suitable
-        {
-            PlacementOutcome::DegradedValid
-        } else if selected.runtime_status == WorkerRuntimeStatus::Constrained
-            || selected.runtime_status == WorkerRuntimeStatus::Busy
-        {
-            PlacementOutcome::ConstrainedValid
-        } else {
-            PlacementOutcome::Optimal
+        let has_stage_path_constraint = selected.stage_path_capabilities.iter().any(|entry| {
+            matches!(
+                entry.support,
+                StagePathSupportLevel::DegradedOnly
+                    | StagePathSupportLevel::FallbackOnly
+                    | StagePathSupportLevel::Unsupported
+            )
+        });
+        let outcome = match selected_support_class {
+            PlacementSupportClass::FullySupported => PlacementOutcome::Optimal,
+            PlacementSupportClass::ConstrainedAcceptable => {
+                if matches!(
+                    selected.runtime_status,
+                    WorkerRuntimeStatus::Constrained | WorkerRuntimeStatus::Busy
+                ) || has_stage_path_constraint
+                {
+                    PlacementOutcome::ConstrainedValid
+                } else {
+                    PlacementOutcome::Optimal
+                }
+            }
+            PlacementSupportClass::DegradedFallback => PlacementOutcome::DegradedValid,
+            PlacementSupportClass::Blocked => PlacementOutcome::AdmissibleButNoAcceptablePlacement,
         };
         let decisive_signals =
             decisive_signals_for_selection(&selected, &suitable, input_view, &feedback);
@@ -2778,7 +2812,16 @@ impl MultiWorkerComputeService {
                 cold_start_penalty_units: selected.cold_start_penalty_units,
                 outcome,
                 decisive_signals,
-                reason: if selected.lane == BackendExecutionLane::Burn {
+                reason: if selected_support_class == PlacementSupportClass::DegradedFallback {
+                    format!(
+                        "degraded fallback accepted: no fully supported path remained viable ({})",
+                        backend_device_readiness_context(
+                            selected.lane,
+                            selected.device_class,
+                            selected.warmup
+                        )
+                    )
+                } else if selected.lane == BackendExecutionLane::Burn {
                     if selected.warmup == PlacementWarmupState::WarmReady {
                         format!(
                             "selected burn-capable warm unit ({})",
@@ -4012,6 +4055,9 @@ fn placement_input_view(
         .iter()
         .filter(|candidate| candidate.suitability == PlacementSuitability::Suitable);
     let has_suitable = suitable.clone().next().is_some();
+    let has_supported_suitable = suitable.clone().any(|candidate| {
+        placement_support_class(candidate) == PlacementSupportClass::FullySupported
+    });
     let has_warm_suitable = suitable
         .clone()
         .any(|candidate| candidate.warmup == PlacementWarmupState::WarmReady);
@@ -4030,27 +4076,69 @@ fn placement_input_view(
         .clone()
         .any(|candidate| candidate.unit_kind == ExecutionUnitKind::Worker);
     let has_constrained_suitable = suitable.clone().any(|candidate| {
-        candidate.capability_support == CapabilitySupportLevel::SupportedWithConstraints
-            || matches!(
-                candidate.runtime_status,
-                WorkerRuntimeStatus::Constrained | WorkerRuntimeStatus::Busy
-            )
+        placement_support_class(candidate) == PlacementSupportClass::ConstrainedAcceptable
+    });
+    let has_degraded_suitable = suitable.clone().any(|candidate| {
+        placement_support_class(candidate) == PlacementSupportClass::DegradedFallback
     });
     let has_degraded_only_suitable =
         distributed.state == DistributedPlacementState::AdmissibleDegradedOnly;
+    let has_stage_constrained_suitable = suitable.clone().any(|candidate| {
+        candidate
+            .stage_path_capabilities
+            .iter()
+            .any(|entry| entry.support != StagePathSupportLevel::Supported)
+    });
     let has_pressure_blocked_admissible = assessments.iter().any(|candidate| {
         candidate.backend_suitability == PlacementSuitability::Suitable
             && candidate.detail.contains("insufficient capacity units")
     });
     PlacementInputView {
         has_suitable,
+        has_supported_suitable,
         has_warm_suitable,
         has_prepared_or_cold_suitable,
         has_local_suitable,
         has_remote_suitable,
         has_constrained_suitable,
+        has_degraded_suitable,
         has_degraded_only_suitable,
+        has_stage_constrained_suitable,
         has_pressure_blocked_admissible,
+    }
+}
+
+fn placement_support_class(candidate: &PlacementCandidateAssessment) -> PlacementSupportClass {
+    if candidate.suitability != PlacementSuitability::Suitable
+        || candidate.capability_support == CapabilitySupportLevel::Unsupported
+    {
+        return PlacementSupportClass::Blocked;
+    }
+    if matches!(
+        candidate.backend_device_degradation,
+        BackendDeviceDegradationState::DegradedPath
+            | BackendDeviceDegradationState::FallbackPreferred
+            | BackendDeviceDegradationState::DegradedFallbackUsed
+    ) {
+        return PlacementSupportClass::DegradedFallback;
+    }
+    if candidate.capability_support == CapabilitySupportLevel::SupportedWithConstraints
+        || candidate
+            .stage_path_capabilities
+            .iter()
+            .any(|entry| entry.support != StagePathSupportLevel::Supported)
+    {
+        return PlacementSupportClass::ConstrainedAcceptable;
+    }
+    PlacementSupportClass::FullySupported
+}
+
+fn support_class_token(class: PlacementSupportClass) -> &'static str {
+    match class {
+        PlacementSupportClass::FullySupported => "fully_supported",
+        PlacementSupportClass::ConstrainedAcceptable => "constrained_acceptable",
+        PlacementSupportClass::DegradedFallback => "degraded_fallback",
+        PlacementSupportClass::Blocked => "blocked",
     }
 }
 
@@ -4060,7 +4148,11 @@ fn decisive_signals_for_selection(
     view: PlacementInputView,
     feedback: &PlacementOptimizationFeedbackView,
 ) -> Vec<String> {
-    let mut out = Vec::with_capacity(10);
+    let mut out = Vec::with_capacity(12);
+    out.push(format!(
+        "support_class={}",
+        support_class_token(placement_support_class(selected))
+    ));
     out.push(
         format!(
             "backend_device_degradation={:?}",
@@ -4095,12 +4187,29 @@ fn decisive_signals_for_selection(
     }
     if view.has_remote_suitable && view.has_local_suitable {
         out.push(format!("locality={:?}", selected.unit_kind).to_lowercase());
+    }
+    if view.has_supported_suitable
+        && placement_support_class(selected) != PlacementSupportClass::FullySupported
+    {
+        out.push("supported_path_exists_but_not_selected=true".to_string());
     } else if view.has_degraded_only_suitable {
         out.push("degraded_only_lane_available=true".to_string());
+    } else if view.has_degraded_suitable && !view.has_supported_suitable {
+        out.push("degraded_accepted_due_to_missing_supported_path=true".to_string());
+    } else if view.has_constrained_suitable && !view.has_supported_suitable {
+        out.push("constrained_accepted_due_to_missing_supported_path=true".to_string());
     } else if view.has_pressure_blocked_admissible {
         out.push("admissible_but_capacity_constrained=true".to_string());
     } else if view.has_prepared_or_cold_suitable && !view.has_warm_suitable {
         out.push("no_warm_path_available=true".to_string());
+    }
+    if view.has_stage_constrained_suitable
+        && selected
+            .stage_path_capabilities
+            .iter()
+            .all(|entry| entry.support == StagePathSupportLevel::Supported)
+    {
+        out.push("selected_path_over_stage_constrained_alternative=true".to_string());
     }
     if feedback.repeated_cold_reference_path {
         out.push("repeated_reference_path_cold=true".to_string());
@@ -4133,7 +4242,7 @@ fn decisive_signals_for_selection(
             out.push(format!("hotspot_stage_on_selected_path={hotspot:?}").to_lowercase());
         }
     }
-    out.truncate(10);
+    out.truncate(12);
     out
 }
 
@@ -5245,6 +5354,58 @@ mod tests {
                 && entry.backend_device_degradation
                     == BackendDeviceDegradationState::FallbackPreferred
         }));
+    }
+
+    #[test]
+    fn placement_prefers_constrained_supported_over_degraded_fallback() {
+        let constrained_local = ComputePipelineBackend::new(
+            pack_with(
+                BackendComponentId::BurnJepaV1,
+                vec![ModelSlotProvenance {
+                    slot: ModelSlot::WorldJepa,
+                    stage: "world",
+                    required_for_pack: true,
+                    status: SlotRuntimeStatus::Used,
+                    code: None,
+                    detail: Some(
+                        "state=active;rollout=Active:prepared:artifact prefetched".to_string(),
+                    ),
+                    resolved_path: None,
+                    hash_prefix: None,
+                    contract_version: None,
+                    format: None,
+                    gate: Default::default(),
+                    rollout: None,
+                }],
+            ),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(constrained_local, 1);
+        let degraded_worker = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::CandleJepaV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        service.register_worker_backend("degraded-worker", degraded_worker, 1);
+        let job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 182,
+                submitted_by: Some("specialization".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job).expect("record");
+        assert_eq!(record.placement.unit_id.0, "local");
+        assert!(!record.placement.degraded_fallback);
+        assert_eq!(record.placement.outcome, PlacementOutcome::Optimal);
+        assert!(record
+            .placement
+            .decisive_signals
+            .iter()
+            .any(|signal| signal.contains("support_class=constrained_acceptable")));
     }
 
     #[test]
