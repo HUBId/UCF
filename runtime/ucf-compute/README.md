@@ -66,6 +66,8 @@ Per candidate, placement tracks backend suitability and device suitability separ
 Serie E tightens this with a narrow capability-contract view per assessed path:
 
 - support: `supported|supported_with_constraints|unsupported`
+- stage/path view (per `world|sae|ssm|lfm` segment):
+  `supported|supported_with_constraints|degraded_only|fallback_only|unsupported`
 - constraints (minimal, load-bearing only):
   - `only_local` / `only_remote_worker`
   - `warm_ready_preferred`
@@ -75,6 +77,8 @@ Serie E tightens this with a narrow capability-contract view per assessed path:
 The contract is intentionally path-bound and technical:
 
 - it is evaluated on the effective execution path (`local_canonical` vs `worker_ipc`);
+- it now also records the dominant stage/path caveat per candidate, so "path valid but
+  constrained by one stage" is explicit in placement/replay provenance;
 - it uses stage/contract admission failures as hard blockers (`unsupported`) instead of
   optimistic backend claims;
 - it keeps constrained vs blocked distinct so placement can prefer full support, still execute

@@ -120,6 +120,25 @@ pub enum CapabilityConstraint {
     CapacityOrColdStartCaveat,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StagePathSupportLevel {
+    Supported,
+    SupportedWithConstraints,
+    DegradedOnly,
+    FallbackOnly,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct StagePathCapability {
+    pub stage: StageKind,
+    pub path_segment: &'static str,
+    pub support: StagePathSupportLevel,
+    pub constraints: Vec<CapabilityConstraint>,
+    pub detail: Option<String>,
+}
+
 pub trait ContractRegistry {
     fn supports(
         &self,
