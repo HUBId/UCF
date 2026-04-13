@@ -63,6 +63,23 @@ Per candidate, placement tracks backend suitability and device suitability separ
 - backend: `suitable|incompatible|disabled|unavailable`
 - device: `suitable|unsuitable|disabled|unavailable`
 
+Serie E tightens this with a narrow capability-contract view per assessed path:
+
+- support: `supported|supported_with_constraints|unsupported`
+- constraints (minimal, load-bearing only):
+  - `only_local` / `only_remote_worker`
+  - `warm_ready_preferred`
+  - `guarded_degraded_usage`
+  - `capacity_or_cold_start_caveat`
+
+The contract is intentionally path-bound and technical:
+
+- it is evaluated on the effective execution path (`local_canonical` vs `worker_ipc`);
+- it uses stage/contract admission failures as hard blockers (`unsupported`) instead of
+  optimistic backend claims;
+- it keeps constrained vs blocked distinct so placement can prefer full support, still execute
+  constrained paths when serviceable, and reject blocked paths deterministically.
+
 This is intentionally technical and minimal. The repo does **not** introduce GPU vendor/driver
 inventory or hardware orchestration in this layer.
 
@@ -80,6 +97,12 @@ placement candidate diagnostics.
 Multi-worker scheduling remains intentionally compact: jobs are either placed immediately, kept
 queued as currently-unschedulable (capacity/device temporarily unavailable), or rejected when no
 technical backend/device placement is possible.
+
+Selection/ranking now uses this same contract:
+
+- `supported` paths rank ahead of `supported_with_constraints`;
+- constrained paths remain eligible and explicit in decision provenance;
+- blocked paths stay outside admissible placement.
 
 ### Warmup/readiness-aware placement (Serie C Prompt 3)
 
