@@ -131,6 +131,36 @@ The scheduler keeps this coupling intentionally small:
 This is **not** a global warmup/caching orchestration system; it is a local placement signal that
 feeds existing admission/capacity/ops diagnostics.
 
+### Backend/device degradation + fallback semantics (Serie E Prompt 5)
+
+Placement now keeps a narrow backend/device degradation view per candidate and selected path:
+
+- `healthy_support`
+- `constrained_serviceable`
+- `degraded_path`
+- `fallback_preferred`
+- `degraded_fallback_used`
+- `blocked_unusable`
+- `generic_compute_failure`
+
+This view is intentionally technical and derived from existing signals only:
+
+- stage-path support (`supported_with_constraints|degraded_only|fallback_only|unsupported`),
+- warmup/readiness state (`warm_ready|prepared|cold|stale|blocked`),
+- backend lane pressure (`burn` vs guarded `candle` fallback lane),
+- explicit admission blockers vs generic semantic compute failures.
+
+Fallback semantics now stay tied to that backend/device view:
+
+- candle-only serviceable paths are marked `fallback_preferred`,
+- once selected/used they become `degraded_fallback_used`,
+- worker->local redispatch fallback is also marked `degraded_fallback_used`,
+- hard backend/device incompatibility remains `blocked_unusable`.
+
+Placement, rollout-context snapshots and replay caveats continue to reuse the same compact
+provenance surfaces (`backend_device_readiness_context`, degraded/fallback stage counters, and
+reason strings) instead of introducing a separate reliability/incident platform.
+
 ### Distributed admission / placement consistency (Serie A Prompt 5)
 
 Admission and placement now share one worker-crossing diagnostic summary

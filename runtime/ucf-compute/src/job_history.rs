@@ -208,6 +208,10 @@ pub struct PersistedExecutionSnapshot {
     #[serde(default)]
     pub backend_device_readiness_context: Option<String>,
     #[serde(default)]
+    pub backend_device_degradation_state: Option<String>,
+    #[serde(default)]
+    pub backend_device_fallback_semantics: Option<String>,
+    #[serde(default)]
     pub replay_readiness_caveat: Option<String>,
     #[serde(default)]
     pub deterministic_subset_class: Option<String>,
@@ -634,6 +638,9 @@ fn build_execution_snapshot(record: &JobRecord) -> PersistedExecutionSnapshot {
         record.accounting.execution_lane,
         &record.accounting.model_slots,
     );
+    let backend_device_degradation_state = derive_backend_device_degradation_snapshot(record);
+    let backend_device_fallback_semantics =
+        derive_backend_device_fallback_semantics_snapshot(record);
     let replay_readiness_caveat = derive_replay_readiness_caveat(
         &backend_device_readiness_context,
         candidate_or_guarded_slots,
@@ -693,10 +700,72 @@ fn build_execution_snapshot(record: &JobRecord) -> PersistedExecutionSnapshot {
         },
         readiness,
         backend_device_readiness_context: Some(backend_device_readiness_context),
+        backend_device_degradation_state: Some(backend_device_degradation_state),
+        backend_device_fallback_semantics: Some(backend_device_fallback_semantics),
         replay_readiness_caveat,
         deterministic_subset_class: Some(deterministic_subset_class),
         deterministic_subset_reasons,
     }
+}
+
+fn derive_backend_device_degradation_snapshot(record: &JobRecord) -> String {
+    if record.execution_failure.as_ref().is_some_and(|failure| {
+        matches!(
+            failure.kind,
+            CanonicalFailureKind::BackendDisabled
+                | CanonicalFailureKind::StageUnavailable
+                | CanonicalFailureKind::ArtifactUnavailable
+                | CanonicalFailureKind::ArtifactVerificationFailed
+                | CanonicalFailureKind::ArtifactIncompatible
+        )
+    }) {
+        return "blocked_unusable".to_string();
+    }
+    if record
+        .accounting
+        .work_cost_summary
+        .as_ref()
+        .is_some_and(|summary| summary.fallback_stage.is_some() || summary.degraded_stage_count > 0)
+    {
+        return "degraded_path".to_string();
+    }
+    if record.accounting.model_slots.iter().any(|slot| {
+        let detail = slot.detail.as_deref().unwrap_or_default();
+        detail.contains("prepared:")
+            || detail.contains("cold:")
+            || detail.contains("stale:")
+            || detail.contains("blocked:")
+    }) {
+        return "constrained_serviceable".to_string();
+    }
+    "healthy_support".to_string()
+}
+
+fn derive_backend_device_fallback_semantics_snapshot(record: &JobRecord) -> String {
+    if record
+        .accounting
+        .work_cost_summary
+        .as_ref()
+        .is_some_and(|summary| {
+            summary.fallback_stage.is_some()
+                || summary.redispatched_to_local
+                || summary.retry_attempts > 1
+        })
+    {
+        return "degraded_and_fallback_used".to_string();
+    }
+    if record
+        .accounting
+        .work_cost_summary
+        .as_ref()
+        .is_some_and(|summary| summary.degraded_stage_count > 0)
+    {
+        return "degraded_and_fallback_preferred".to_string();
+    }
+    if record.execution_failure.is_some() {
+        return "generic_semantic_compute_failure".to_string();
+    }
+    "not_required".to_string()
 }
 
 #[allow(clippy::too_many_arguments)]

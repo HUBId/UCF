@@ -847,6 +847,7 @@ pub struct ExecutionPlacement {
     pub device_suitability: DeviceSuitability,
     pub device_preference: Option<ExecutionDeviceClass>,
     pub device_preference_met: bool,
+    pub backend_device_degradation: BackendDeviceDegradationState,
     pub device_fallback_from: Option<ExecutionDeviceClass>,
     pub degraded_fallback: bool,
     pub resource_class: ResourceClass,
@@ -924,6 +925,18 @@ pub enum ExecutionDeviceClass {
     Worker,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackendDeviceDegradationState {
+    HealthySupport,
+    ConstrainedServiceable,
+    DegradedPath,
+    FallbackPreferred,
+    DegradedFallbackUsed,
+    BlockedUnusable,
+    GenericComputeFailure,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceSuitability {
     Suitable,
@@ -956,6 +969,7 @@ pub struct PlacementCandidateAssessment {
     pub stage_path_capabilities: Vec<StagePathCapability>,
     pub dominant_stage_constraint: Option<StageKind>,
     pub device_suitability: DeviceSuitability,
+    pub backend_device_degradation: BackendDeviceDegradationState,
     pub suitability: PlacementSuitability,
     pub warmup: PlacementWarmupState,
     pub cold_start_penalty_units: u16,
@@ -2034,6 +2048,10 @@ impl MultiWorkerComputeService {
                                 && c.device_suitability == DeviceSuitability::Suitable
                         })
                         .unwrap_or(false),
+                    backend_device_degradation: candidate
+                        .as_ref()
+                        .map(|entry| entry.backend_device_degradation)
+                        .unwrap_or(BackendDeviceDegradationState::BlockedUnusable),
                     device_fallback_from: None,
                     degraded_fallback: false,
                     resource_class: job.resource_class,
@@ -2111,6 +2129,7 @@ impl MultiWorkerComputeService {
                 device_suitability: DeviceSuitability::Unavailable,
                 device_preference: None,
                 device_preference_met: true,
+                backend_device_degradation: BackendDeviceDegradationState::BlockedUnusable,
                 device_fallback_from: None,
                 degraded_fallback: false,
                 resource_class: job.resource_class,
@@ -2256,6 +2275,16 @@ impl MultiWorkerComputeService {
                     device_suitability,
                 );
                 if !unit.can_accept_dispatch() {
+                    let suitability =
+                        combine_suitability(PlacementSuitability::Unavailable, device_suitability);
+                    let backend_device_degradation = derive_backend_device_degradation_state(
+                        lane,
+                        suitability,
+                        capability_support,
+                        stage_path_capabilities.as_slice(),
+                        warmup,
+                        admission.failure.as_ref().map(|failure| failure.kind),
+                    );
                     return PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
                         unit_kind: unit.kind,
@@ -2270,10 +2299,8 @@ impl MultiWorkerComputeService {
                         stage_path_capabilities: stage_path_capabilities.clone(),
                         dominant_stage_constraint,
                         device_suitability,
-                        suitability: combine_suitability(
-                            PlacementSuitability::Unavailable,
-                            device_suitability,
-                        ),
+                        backend_device_degradation,
+                        suitability,
                         warmup,
                         cold_start_penalty_units,
                         effective_reference_path,
@@ -2290,6 +2317,16 @@ impl MultiWorkerComputeService {
                     .capacity_limit_units()
                     .saturating_sub(unit.used_capacity_units);
                 if required_units > free_units {
+                    let suitability =
+                        combine_suitability(PlacementSuitability::Unavailable, device_suitability);
+                    let backend_device_degradation = derive_backend_device_degradation_state(
+                        lane,
+                        suitability,
+                        capability_support,
+                        stage_path_capabilities.as_slice(),
+                        warmup,
+                        admission.failure.as_ref().map(|failure| failure.kind),
+                    );
                     return PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
                         unit_kind: unit.kind,
@@ -2304,10 +2341,8 @@ impl MultiWorkerComputeService {
                         stage_path_capabilities: stage_path_capabilities.clone(),
                         dominant_stage_constraint,
                         device_suitability,
-                        suitability: combine_suitability(
-                            PlacementSuitability::Unavailable,
-                            device_suitability,
-                        ),
+                        backend_device_degradation,
+                        suitability,
                         warmup,
                         cold_start_penalty_units,
                         effective_reference_path,
@@ -2325,6 +2360,14 @@ impl MultiWorkerComputeService {
                     backend_suitability
                 };
                 let suitability = combine_suitability(backend_suitability, device_suitability);
+                let backend_device_degradation = derive_backend_device_degradation_state(
+                    lane,
+                    suitability,
+                    capability_support,
+                    stage_path_capabilities.as_slice(),
+                    warmup,
+                    admission.failure.as_ref().map(|failure| failure.kind),
+                );
                 if let Some(failure) = admission.failure {
                     PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
@@ -2340,6 +2383,7 @@ impl MultiWorkerComputeService {
                         stage_path_capabilities: stage_path_capabilities.clone(),
                         dominant_stage_constraint,
                         device_suitability,
+                        backend_device_degradation,
                         suitability,
                         warmup,
                         cold_start_penalty_units,
@@ -2367,6 +2411,7 @@ impl MultiWorkerComputeService {
                         stage_path_capabilities: stage_path_capabilities.clone(),
                         dominant_stage_constraint,
                         device_suitability,
+                        backend_device_degradation,
                         suitability,
                         warmup,
                         cold_start_penalty_units,
@@ -2572,6 +2617,11 @@ impl MultiWorkerComputeService {
             }
             let requested_signals = vec![
                 "requested_unit=true".to_string(),
+                format!(
+                    "backend_device_degradation={:?}",
+                    selected.backend_device_degradation
+                )
+                .to_lowercase(),
                 format!("warmup={:?}", selected.warmup).to_lowercase(),
                 format!("runtime_status={:?}", selected.runtime_status).to_lowercase(),
                 format!("feedback_strength={:?}", feedback.strength).to_lowercase(),
@@ -2596,6 +2646,7 @@ impl MultiWorkerComputeService {
                     device_suitability: selected.device_suitability,
                     device_preference: Some(unit_device_class(selected.unit_kind)),
                     device_preference_met: true,
+                    backend_device_degradation: selected.backend_device_degradation,
                     device_fallback_from: None,
                     degraded_fallback: false,
                     resource_class: ResourceClass::classify(request),
@@ -2713,6 +2764,11 @@ impl MultiWorkerComputeService {
                 device_suitability: selected.device_suitability,
                 device_preference: None,
                 device_preference_met: true,
+                backend_device_degradation: if selected.lane == BackendExecutionLane::Candle {
+                    BackendDeviceDegradationState::DegradedFallbackUsed
+                } else {
+                    selected.backend_device_degradation
+                },
                 device_fallback_from: None,
                 degraded_fallback: selected.lane == BackendExecutionLane::Candle,
                 resource_class: ResourceClass::classify(request),
@@ -3191,6 +3247,8 @@ impl MultiWorkerComputeService {
                         device_suitability: DeviceSuitability::Suitable,
                         device_preference: Some(ExecutionDeviceClass::Worker),
                         device_preference_met: false,
+                        backend_device_degradation:
+                            BackendDeviceDegradationState::DegradedFallbackUsed,
                         device_fallback_from: Some(ExecutionDeviceClass::Worker),
                         degraded_fallback: true,
                         resource_class: job.resource_class,
@@ -3502,6 +3560,54 @@ fn combine_suitability(
         DeviceSuitability::Disabled => PlacementSuitability::Disabled,
         DeviceSuitability::Unavailable => PlacementSuitability::Unavailable,
     }
+}
+
+fn backend_device_failure_related(kind: CanonicalFailureKind) -> bool {
+    matches!(
+        kind,
+        CanonicalFailureKind::BackendDisabled
+            | CanonicalFailureKind::ContractMismatch
+            | CanonicalFailureKind::StageContractMismatch
+            | CanonicalFailureKind::StageUnavailable
+            | CanonicalFailureKind::ArtifactUnavailable
+            | CanonicalFailureKind::ArtifactVerificationFailed
+            | CanonicalFailureKind::ArtifactIncompatible
+            | CanonicalFailureKind::NsrBackendUnavailable
+            | CanonicalFailureKind::NsrContractMismatch
+    )
+}
+
+fn derive_backend_device_degradation_state(
+    lane: BackendExecutionLane,
+    suitability: PlacementSuitability,
+    capability_support: CapabilitySupportLevel,
+    stage_path_capabilities: &[StagePathCapability],
+    warmup: PlacementWarmupState,
+    admission_failure: Option<CanonicalFailureKind>,
+) -> BackendDeviceDegradationState {
+    if suitability != PlacementSuitability::Suitable {
+        if admission_failure.is_some_and(|kind| !backend_device_failure_related(kind)) {
+            return BackendDeviceDegradationState::GenericComputeFailure;
+        }
+        return BackendDeviceDegradationState::BlockedUnusable;
+    }
+    if lane == BackendExecutionLane::Candle {
+        return BackendDeviceDegradationState::FallbackPreferred;
+    }
+    if stage_path_capabilities.iter().any(|entry| {
+        matches!(
+            entry.support,
+            StagePathSupportLevel::DegradedOnly | StagePathSupportLevel::FallbackOnly
+        )
+    }) {
+        return BackendDeviceDegradationState::DegradedPath;
+    }
+    if capability_support == CapabilitySupportLevel::SupportedWithConstraints
+        || warmup != PlacementWarmupState::WarmReady
+    {
+        return BackendDeviceDegradationState::ConstrainedServiceable;
+    }
+    BackendDeviceDegradationState::HealthySupport
 }
 
 fn derive_capability_contract(
@@ -3955,6 +4061,13 @@ fn decisive_signals_for_selection(
     feedback: &PlacementOptimizationFeedbackView,
 ) -> Vec<String> {
     let mut out = Vec::with_capacity(10);
+    out.push(
+        format!(
+            "backend_device_degradation={:?}",
+            selected.backend_device_degradation
+        )
+        .to_lowercase(),
+    );
     out.push(format!(
         "backend_device_readiness={}",
         backend_device_readiness_context(selected.lane, selected.device_class, selected.warmup)
@@ -4261,8 +4374,8 @@ mod tests {
     use crate::feature_extractor::ToySaeExtractor;
     use crate::lfm::{LfmKernel, ToyLfmKernel};
     use crate::pipeline::{
-        CanonicalFailureKind, CanonicalPipelineRequest, ComputePipelineBackend, FusionConfig,
-        LimitsConfig,
+        BackendExecutionLane, CanonicalFailureKind, CanonicalPipelineRequest,
+        ComputePipelineBackend, FusionConfig, LimitsConfig,
     };
     use crate::ssm::{SsmKernel, ToySsmKernel};
     use crate::world_model::MockJepaPredictor;
@@ -4272,16 +4385,17 @@ mod tests {
     };
 
     use super::{
-        CapacityPressure, CapacityQueueDisposition, CoordinationFreshness, CoordinationIssueKind,
-        DeviceSuitability, DistributedDegradationState, DistributedPlacementLocality,
-        DistributedPlacementState, ExecutionDeviceClass, ExecutionUnitId, ExecutionUnitKind,
-        FeedbackSignalStrength, InFlightCoordinationState, InMemoryComputeService,
-        JobCompletionClass, JobCoordinationSnapshot, JobExecutionPath, JobLifecycleState,
-        JobSubmissionMeta, MultiWorkerComputeService, OptimizationRuntimeState,
-        PlacementFailureKind, PlacementOutcome, PlacementSuitability, PlacementWarmupState,
-        RecoverySignal, ResourceClass, SchedulerConfig, TerminalCoordinationInput,
-        WorkCostProvenance, WorkCostTension, WorkerAvailability, WorkerClass,
-        WorkerDispatchOutcome, WorkerRecoveryKind, WorkerRegistryRole, WorkerRuntimeStatus,
+        BackendDeviceDegradationState, CapacityPressure, CapacityQueueDisposition,
+        CoordinationFreshness, CoordinationIssueKind, DeviceSuitability,
+        DistributedDegradationState, DistributedPlacementLocality, DistributedPlacementState,
+        ExecutionDeviceClass, ExecutionUnitId, ExecutionUnitKind, FeedbackSignalStrength,
+        InFlightCoordinationState, InMemoryComputeService, JobCompletionClass,
+        JobCoordinationSnapshot, JobExecutionPath, JobLifecycleState, JobSubmissionMeta,
+        MultiWorkerComputeService, OptimizationRuntimeState, PlacementFailureKind,
+        PlacementOutcome, PlacementSuitability, PlacementWarmupState, RecoverySignal,
+        ResourceClass, SchedulerConfig, TerminalCoordinationInput, WorkCostProvenance,
+        WorkCostTension, WorkerAvailability, WorkerClass, WorkerDispatchOutcome,
+        WorkerRecoveryKind, WorkerRegistryRole, WorkerRuntimeStatus,
     };
 
     struct NullLlm;
@@ -5082,6 +5196,10 @@ mod tests {
         if burn_record.worker_dispatch_outcome == Some(WorkerDispatchOutcome::RedispatchedLocal) {
             assert!(burn_record.placement.degraded_fallback);
             assert!(burn_record.placement.reason.contains("redispatched"));
+            assert_eq!(
+                burn_record.placement.backend_device_degradation,
+                BackendDeviceDegradationState::DegradedFallbackUsed
+            );
         } else {
             assert!(!burn_record.placement.degraded_fallback);
             assert!(burn_record.placement.reason.contains("burn"));
@@ -5104,6 +5222,10 @@ mod tests {
         let candle_record = service.job(candle_job).expect("candle result");
         assert!(candle_record.placement.degraded_fallback);
         assert_eq!(
+            candle_record.placement.backend_device_degradation,
+            BackendDeviceDegradationState::DegradedFallbackUsed
+        );
+        assert_eq!(
             candle_record.placement.outcome,
             PlacementOutcome::DegradedValid
         );
@@ -5118,6 +5240,11 @@ mod tests {
                 .distributed
                 .degraded_fallback_possible
         );
+        assert!(candle_record.placement.considered.iter().any(|entry| {
+            entry.lane == BackendExecutionLane::Candle
+                && entry.backend_device_degradation
+                    == BackendDeviceDegradationState::FallbackPreferred
+        }));
     }
 
     #[test]
@@ -5214,6 +5341,10 @@ mod tests {
         assert_eq!(
             record.placement_failure,
             Some(PlacementFailureKind::BackendIncompatible)
+        );
+        assert_eq!(
+            record.placement.backend_device_degradation,
+            BackendDeviceDegradationState::BlockedUnusable
         );
         assert_eq!(record.result, None);
     }
@@ -5813,12 +5944,16 @@ mod tests {
             .any(|entry| entry.unit_id == worker_id
                 && entry.warmup == PlacementWarmupState::WarmReady
                 && entry.cold_start_penalty_units == 0
-                && entry.capability_support == CapabilitySupportLevel::SupportedWithConstraints));
+                && entry.capability_support == CapabilitySupportLevel::SupportedWithConstraints
+                && entry.backend_device_degradation
+                    == BackendDeviceDegradationState::ConstrainedServiceable));
         assert!(record.placement.considered.iter().any(|entry| entry.unit_id
             == ExecutionUnitId("local".to_string())
             && entry.warmup == PlacementWarmupState::ColdRunnable
             && entry.cold_start_penalty_units > 0
-            && entry.capability_support == CapabilitySupportLevel::SupportedWithConstraints));
+            && entry.capability_support == CapabilitySupportLevel::SupportedWithConstraints
+            && entry.backend_device_degradation
+                == BackendDeviceDegradationState::ConstrainedServiceable));
         assert!(record
             .placement
             .considered
@@ -5867,6 +6002,8 @@ mod tests {
         assert!(record.placement.considered.iter().all(|entry| {
             entry.warmup == PlacementWarmupState::BlockedUnavailable
                 && entry.capability_support == CapabilitySupportLevel::Unsupported
+                && entry.backend_device_degradation
+                    == BackendDeviceDegradationState::BlockedUnusable
         }));
     }
 
