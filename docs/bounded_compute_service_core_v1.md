@@ -414,6 +414,18 @@ Preflight classifies a source run before replay execution:
 - `insufficient_for_replay`
 - `blocked_for_replay`
 
+Additionally, replay preflight/report now expose a constrained backend/device support class to keep
+replayability caveats explicit instead of implicit:
+
+- `fully_supported`
+- `replayable_with_backend_device_caveat`
+- `supported_only_under_guardrails`
+- `not_meaningfully_comparable`
+- `blocked_for_replay`
+
+Both surfaces also carry `constrained_backend_device_context` (`source=...;current=...`) so
+backend/device-path drift can be diagnosed as replay caveat vs replay blocker.
+
 Preflight surfaces bounded reasons (`ReplayPreflightIssueCode`) for missing artifacts/slots,
 changed backend/device/worker context, incomplete snapshots, changed rollout context, local/remote
 path mismatch, and non-fidelity-equivalent caveats.
