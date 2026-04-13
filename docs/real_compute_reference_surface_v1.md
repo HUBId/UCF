@@ -151,3 +151,34 @@ Explicit boundaries:
 - changed execution context is **not** auto-regression (`inconclusive`),
 - low-fidelity or blocked/incomplete replay is **not** a regression verdict (`not_suitable`),
 - these are informative diagnostics only (no governance/approval/release gating semantics).
+
+## 9) Specialization-aware diagnostics/ops/history consolidation (minimal, load-bearing)
+
+To keep backend/device specialization operationally visible without introducing a monitoring platform,
+the canonical surfaces now expose one narrow specialization context across runtime ops, history, and replay:
+
+- Runtime ops (`RuntimeOpsSnapshot.specialization`):
+  - per-slot backend/device path sketch (`backend_device_path`)
+  - support state (`fully_supported|constrained|blocked`)
+  - warmup/readiness state (`ready|preparing|cold|stale|blocked`)
+  - degradation/fallback-prone hints and compact caveat list
+  - semantic impact class:
+    - `informative_only`
+    - `constrained_placement`
+    - `rollout_caveat`
+    - `replay_caveat`
+    - `blocks_path`
+
+- History snapshots (`PersistedExecutionSnapshot.specialization_context`):
+  - canonical backend/device path context used by the run
+  - capability/readiness/degradation/fallback snapshot for the executed path
+  - explicit specialization semantic impact split for placement vs rollout vs replay
+
+- Replay surfaces:
+  - continue to expose constrained support class plus constrained backend/device context
+  - caveat/blocking semantics remain tied to rollout/readiness/context-bridge comparability
+
+Boundaries (intentional):
+- No hardware dashboard, scoring engine, or analytics warehouse is introduced.
+- Signals stay technical and bounded to placement/readiness/degradation/fallback/replay caveats.
+- Generic semantic compute failures remain separate from specialization context semantics.
