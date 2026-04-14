@@ -27,9 +27,10 @@ use crate::pipeline::{
 };
 use crate::{
     CanonicalSnapshotConsistency, DeploymentProfile, ExpertDiagnosticsAvailability,
-    ExpertWorkflowClass, ExpertWorkflowTransitionState, ModelSlot, ModelSlotProvenance,
-    RuntimeContractSafety, RuntimeContractShape, RuntimeDiagnosticFlags, RuntimeEntryClass,
-    RuntimeMode, RuntimeProfile, SlotRuntimeStatus,
+    ExpertMutationBlocker, ExpertMutationBoundary, ExpertMutationResult, ExpertWorkflowClass,
+    ExpertWorkflowTransitionState, ModelSlot, ModelSlotProvenance, RuntimeContractSafety,
+    RuntimeContractShape, RuntimeDiagnosticFlags, RuntimeEntryClass, RuntimeMode, RuntimeProfile,
+    SlotRuntimeStatus,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -128,6 +129,7 @@ pub enum RuntimeOperation {
 pub enum RuntimeOperationClass {
     ReadOnly,
     ControlledMutating,
+    HighImpactMutating,
     InternalDevTestOnly,
 }
 
@@ -157,7 +159,12 @@ pub struct RuntimeOperationOutcome {
     pub contract_shape: RuntimeContractShape,
     pub contract_safety: RuntimeContractSafety,
     pub code: RuntimeOperationCode,
+    pub mutation_boundary: ExpertMutationBoundary,
+    pub mutation_result: ExpertMutationResult,
+    pub blocked_by: Option<ExpertMutationBlocker>,
     pub snapshot_effect: RuntimeOperationSnapshotEffect,
+    pub intended_state_change: String,
+    pub resulting_state_change: String,
     pub detail: String,
     pub completed_jobs: Vec<JobId>,
 }
@@ -1603,236 +1610,362 @@ impl CanonicalComputeEntryPoint {
         operation: RuntimeOperation,
         entry_class: RuntimeEntryClass,
     ) -> Result<RuntimeOperationOutcome, crate::ComputeError> {
-        let outcome = match operation {
-            RuntimeOperation::Snapshot => RuntimeOperationOutcome {
+        let snapshot = self.operations_snapshot();
+        let contract_shape = runtime_operation_contract_shape(entry_class);
+        let contract_safety = runtime_operation_contract_safety(entry_class);
+        let make_outcome =
+            |operation_class: RuntimeOperationClass,
+             operation_scope: RuntimeOperationScope,
+             code: RuntimeOperationCode,
+             mutation_boundary: ExpertMutationBoundary,
+             mutation_result: ExpertMutationResult,
+             blocked_by: Option<ExpertMutationBlocker>,
+             snapshot_effect: RuntimeOperationSnapshotEffect,
+             intended_state_change: String,
+             resulting_state_change: String,
+             detail: String,
+             completed_jobs: Vec<JobId>| RuntimeOperationOutcome {
                 operation,
-                operation_class: RuntimeOperationClass::ReadOnly,
-                operation_scope: RuntimeOperationScope::RuntimeStatus,
+                operation_class,
+                operation_scope,
                 entry_class,
-                contract_shape: runtime_operation_contract_shape(entry_class),
-                contract_safety: runtime_operation_contract_safety(entry_class),
-                code: RuntimeOperationCode::Completed,
-                snapshot_effect: RuntimeOperationSnapshotEffect::SnapshotRefreshPerformed,
-                detail: "runtime snapshot captured".to_string(),
-                completed_jobs: Vec::new(),
-            },
+                contract_shape,
+                contract_safety,
+                code,
+                mutation_boundary,
+                mutation_result,
+                blocked_by,
+                snapshot_effect,
+                intended_state_change,
+                resulting_state_change,
+                detail,
+                completed_jobs,
+            };
+
+        let outcome = match operation {
+            RuntimeOperation::Snapshot => make_outcome(
+                RuntimeOperationClass::ReadOnly,
+                RuntimeOperationScope::RuntimeStatus,
+                RuntimeOperationCode::Completed,
+                ExpertMutationBoundary::ReadOnly,
+                ExpertMutationResult::NoMutationReadOnly,
+                None,
+                RuntimeOperationSnapshotEffect::SnapshotRefreshPerformed,
+                "refresh runtime diagnostics snapshot".to_string(),
+                "diagnostics snapshot refreshed without state mutation".to_string(),
+                "runtime snapshot captured".to_string(),
+                Vec::new(),
+            ),
             RuntimeOperation::DrainScheduler { max_jobs } => {
                 if entry_class == RuntimeEntryClass::StandardCanonical {
-                    RuntimeOperationOutcome {
-                        operation,
-                        operation_class: RuntimeOperationClass::ControlledMutating,
-                        operation_scope: RuntimeOperationScope::WorkerReadiness,
-                        entry_class,
-                        contract_shape: runtime_operation_contract_shape(entry_class),
-                        contract_safety: runtime_operation_contract_safety(entry_class),
-                        code: RuntimeOperationCode::Blocked,
-                        snapshot_effect: RuntimeOperationSnapshotEffect::NoSnapshotChange,
-                        detail: "drain_scheduler requires expert/high-trust entry contract"
-                            .to_string(),
-                        completed_jobs: Vec::new(),
-                    }
+                    make_outcome(
+                        RuntimeOperationClass::ControlledMutating,
+                        RuntimeOperationScope::WorkerReadiness,
+                        RuntimeOperationCode::Blocked,
+                        ExpertMutationBoundary::ControlledMutable,
+                        ExpertMutationResult::BlockedBySafetyRail,
+                        Some(ExpertMutationBlocker::ConflictingRuntimeState),
+                        RuntimeOperationSnapshotEffect::NoSnapshotChange,
+                        "drain scheduler run queue".to_string(),
+                        "blocked before mutating: standard entry path".to_string(),
+                        "drain_scheduler requires expert/high-trust entry contract".to_string(),
+                        Vec::new(),
+                    )
+                } else if snapshot.state == RuntimeOpsState::Unavailable {
+                    make_outcome(
+                        RuntimeOperationClass::ControlledMutating,
+                        RuntimeOperationScope::WorkerReadiness,
+                        RuntimeOperationCode::Blocked,
+                        ExpertMutationBoundary::ControlledMutable,
+                        ExpertMutationResult::BlockedBySafetyRail,
+                        Some(ExpertMutationBlocker::SubsystemConstrainedOrBusy),
+                        RuntimeOperationSnapshotEffect::NoSnapshotChange,
+                        "drain scheduler run queue".to_string(),
+                        "blocked: runtime currently unavailable".to_string(),
+                        "drain_scheduler blocked: runtime state unavailable".to_string(),
+                        Vec::new(),
+                    )
+                } else if max_jobs == 0 {
+                    make_outcome(
+                        RuntimeOperationClass::ControlledMutating,
+                        RuntimeOperationScope::WorkerReadiness,
+                        RuntimeOperationCode::NoOp,
+                        ExpertMutationBoundary::ControlledMutable,
+                        ExpertMutationResult::GuardedMutation,
+                        None,
+                        RuntimeOperationSnapshotEffect::NoSnapshotChange,
+                        "drain scheduler run queue".to_string(),
+                        "guarded no-op: max_jobs=0 does not execute drain cycle".to_string(),
+                        "drain_scheduler guarded no-op for max_jobs=0".to_string(),
+                        Vec::new(),
+                    )
                 } else {
-                    let accepted = RuntimeOperationOutcome {
-                        operation,
-                        operation_class: RuntimeOperationClass::ControlledMutating,
-                        operation_scope: RuntimeOperationScope::WorkerReadiness,
-                        entry_class,
-                        contract_shape: runtime_operation_contract_shape(entry_class),
-                        contract_safety: runtime_operation_contract_safety(entry_class),
-                        code: RuntimeOperationCode::Accepted,
-                        snapshot_effect:
-                            RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
-                        detail: format!(
-                            "drain_scheduler accepted with max_jobs={}",
-                            max_jobs.max(1)
-                        ),
-                        completed_jobs: Vec::new(),
-                    };
+                    let accepted = make_outcome(
+                        RuntimeOperationClass::ControlledMutating,
+                        RuntimeOperationScope::WorkerReadiness,
+                        RuntimeOperationCode::Accepted,
+                        ExpertMutationBoundary::ControlledMutable,
+                        ExpertMutationResult::GuardedMutation,
+                        None,
+                        RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
+                        "drain scheduler run queue".to_string(),
+                        format!("accepted; draining up to {} scheduler cycles", max_jobs),
+                        format!("drain_scheduler accepted with max_jobs={max_jobs}"),
+                        Vec::new(),
+                    );
                     self.record_operation_outcome(accepted);
-                    match self.service.run_scheduler_cycle(max_jobs.max(1)) {
-                        Ok(completed_jobs) if completed_jobs.is_empty() => {
-                            RuntimeOperationOutcome {
-                                operation,
-                                operation_class: RuntimeOperationClass::ControlledMutating,
-                                operation_scope: RuntimeOperationScope::WorkerReadiness,
-                                entry_class,
-                                contract_shape: runtime_operation_contract_shape(entry_class),
-                                contract_safety: runtime_operation_contract_safety(entry_class),
-                                code: RuntimeOperationCode::NoOp,
-                                snapshot_effect: RuntimeOperationSnapshotEffect::NoSnapshotChange,
-                                detail: "scheduler drain no-op (no runnable jobs)".to_string(),
-                                completed_jobs,
-                            }
-                        }
+                    match self.service.run_scheduler_cycle(max_jobs) {
+                        Ok(completed_jobs) if completed_jobs.is_empty() => make_outcome(
+                            RuntimeOperationClass::ControlledMutating,
+                            RuntimeOperationScope::WorkerReadiness,
+                            RuntimeOperationCode::NoOp,
+                            ExpertMutationBoundary::ControlledMutable,
+                            ExpertMutationResult::NoOp,
+                            None,
+                            RuntimeOperationSnapshotEffect::NoSnapshotChange,
+                            "drain scheduler run queue".to_string(),
+                            "no jobs completed; scheduler state unchanged".to_string(),
+                            "scheduler drain no-op (no runnable jobs)".to_string(),
+                            completed_jobs,
+                        ),
                         Ok(completed_jobs) => {
                             for job_id in &completed_jobs {
                                 self.persist_job(*job_id);
                             }
-                            RuntimeOperationOutcome {
-                                operation,
-                                operation_class: RuntimeOperationClass::ControlledMutating,
-                                operation_scope: RuntimeOperationScope::WorkerReadiness,
-                                entry_class,
-                                contract_shape: runtime_operation_contract_shape(entry_class),
-                                contract_safety: runtime_operation_contract_safety(entry_class),
-                                code: RuntimeOperationCode::Completed,
-                                snapshot_effect:
-                                    RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
-                                detail: format!("scheduler drained {} jobs", completed_jobs.len()),
-                                completed_jobs,
-                            }
-                        }
-                        Err(error) => RuntimeOperationOutcome {
-                            operation,
-                            operation_class: RuntimeOperationClass::ControlledMutating,
-                            operation_scope: RuntimeOperationScope::WorkerReadiness,
-                            entry_class,
-                            contract_shape: runtime_operation_contract_shape(entry_class),
-                            contract_safety: runtime_operation_contract_safety(entry_class),
-                            code: RuntimeOperationCode::Failed,
-                            snapshot_effect:
+                            make_outcome(
+                                RuntimeOperationClass::ControlledMutating,
+                                RuntimeOperationScope::WorkerReadiness,
+                                RuntimeOperationCode::Completed,
+                                ExpertMutationBoundary::ControlledMutable,
+                                ExpertMutationResult::StateChanged,
+                                None,
                                 RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
-                            detail: format!("scheduler drain failed: {error}"),
-                            completed_jobs: Vec::new(),
-                        },
+                                "drain scheduler run queue".to_string(),
+                                format!(
+                                    "completed {} jobs and persisted resulting records",
+                                    completed_jobs.len()
+                                ),
+                                format!("scheduler drained {} jobs", completed_jobs.len()),
+                                completed_jobs,
+                            )
+                        }
+                        Err(error) => make_outcome(
+                            RuntimeOperationClass::ControlledMutating,
+                            RuntimeOperationScope::WorkerReadiness,
+                            RuntimeOperationCode::Failed,
+                            ExpertMutationBoundary::ControlledMutable,
+                            ExpertMutationResult::BlockedBySafetyRail,
+                            Some(ExpertMutationBlocker::SubsystemConstrainedOrBusy),
+                            RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
+                            "drain scheduler run queue".to_string(),
+                            "scheduler cycle failed before applying intended mutation".to_string(),
+                            format!("scheduler drain failed: {error}"),
+                            Vec::new(),
+                        ),
                     }
                 }
             }
-            RuntimeOperation::RefreshRuntime => RuntimeOperationOutcome {
-                operation,
-                operation_class: RuntimeOperationClass::ReadOnly,
-                operation_scope: RuntimeOperationScope::RuntimeStatus,
-                entry_class,
-                contract_shape: runtime_operation_contract_shape(entry_class),
-                contract_safety: runtime_operation_contract_safety(entry_class),
-                code: RuntimeOperationCode::Unsupported,
-                snapshot_effect: RuntimeOperationSnapshotEffect::NoSnapshotChange,
-                detail: "refresh_runtime unsupported for in-memory compute service".to_string(),
-                completed_jobs: Vec::new(),
-            },
+            RuntimeOperation::RefreshRuntime => make_outcome(
+                RuntimeOperationClass::ReadOnly,
+                RuntimeOperationScope::RuntimeStatus,
+                RuntimeOperationCode::Unsupported,
+                ExpertMutationBoundary::ReadOnly,
+                ExpertMutationResult::UnsupportedInRuntimeContext,
+                None,
+                RuntimeOperationSnapshotEffect::NoSnapshotChange,
+                "force runtime refresh".to_string(),
+                "unsupported on in-memory compute service".to_string(),
+                "refresh_runtime unsupported for in-memory compute service".to_string(),
+                Vec::new(),
+            ),
             RuntimeOperation::RehydrateHistory => {
                 if entry_class == RuntimeEntryClass::StandardCanonical {
-                    RuntimeOperationOutcome {
-                        operation,
-                        operation_class: RuntimeOperationClass::ControlledMutating,
-                        operation_scope: RuntimeOperationScope::ReplayHistory,
-                        entry_class,
-                        contract_shape: runtime_operation_contract_shape(entry_class),
-                        contract_safety: runtime_operation_contract_safety(entry_class),
-                        code: RuntimeOperationCode::Blocked,
-                        snapshot_effect: RuntimeOperationSnapshotEffect::NoSnapshotChange,
-                        detail: "rehydrate_history requires expert/high-trust entry contract"
-                            .to_string(),
-                        completed_jobs: Vec::new(),
-                    }
+                    make_outcome(
+                        RuntimeOperationClass::HighImpactMutating,
+                        RuntimeOperationScope::ReplayHistory,
+                        RuntimeOperationCode::Blocked,
+                        ExpertMutationBoundary::HighImpactMutable,
+                        ExpertMutationResult::BlockedBySafetyRail,
+                        Some(ExpertMutationBlocker::ConflictingRuntimeState),
+                        RuntimeOperationSnapshotEffect::NoSnapshotChange,
+                        "rehydrate runtime state from persisted history".to_string(),
+                        "blocked before mutation: standard entry path".to_string(),
+                        "rehydrate_history requires expert/high-trust entry contract".to_string(),
+                        Vec::new(),
+                    )
                 } else if self.history_store.is_none() {
-                    RuntimeOperationOutcome {
-                        operation,
-                        operation_class: RuntimeOperationClass::ControlledMutating,
-                        operation_scope: RuntimeOperationScope::ReplayHistory,
-                        entry_class,
-                        contract_shape: runtime_operation_contract_shape(entry_class),
-                        contract_safety: runtime_operation_contract_safety(entry_class),
-                        code: RuntimeOperationCode::Blocked,
-                        snapshot_effect: RuntimeOperationSnapshotEffect::NoSnapshotChange,
-                        detail: "rehydrate_history blocked: history store unavailable".to_string(),
-                        completed_jobs: Vec::new(),
-                    }
+                    make_outcome(
+                        RuntimeOperationClass::HighImpactMutating,
+                        RuntimeOperationScope::ReplayHistory,
+                        RuntimeOperationCode::Unsupported,
+                        ExpertMutationBoundary::HighImpactMutable,
+                        ExpertMutationResult::UnsupportedInRuntimeContext,
+                        None,
+                        RuntimeOperationSnapshotEffect::NoSnapshotChange,
+                        "rehydrate runtime state from persisted history".to_string(),
+                        "unsupported: no configured history store".to_string(),
+                        "rehydrate_history unsupported: history store unavailable".to_string(),
+                        Vec::new(),
+                    )
+                } else if snapshot.replay_snapshot_coverage.stale_or_incomplete > 0 {
+                    make_outcome(
+                        RuntimeOperationClass::HighImpactMutating,
+                        RuntimeOperationScope::ReplayHistory,
+                        RuntimeOperationCode::Blocked,
+                        ExpertMutationBoundary::HighImpactMutable,
+                        ExpertMutationResult::BlockedBySafetyRail,
+                        Some(ExpertMutationBlocker::StaleDiagnosticBasis),
+                        RuntimeOperationSnapshotEffect::NoSnapshotChange,
+                        "rehydrate runtime state from persisted history".to_string(),
+                        "blocked by stale/incomplete replay diagnostic basis".to_string(),
+                        "rehydrate_history blocked: snapshot basis stale_or_incomplete".to_string(),
+                        Vec::new(),
+                    )
+                } else if snapshot.queue.running_jobs > 0 || snapshot.queue.queued_jobs > 0 {
+                    make_outcome(
+                        RuntimeOperationClass::HighImpactMutating,
+                        RuntimeOperationScope::ReplayHistory,
+                        RuntimeOperationCode::Blocked,
+                        ExpertMutationBoundary::HighImpactMutable,
+                        ExpertMutationResult::BlockedBySafetyRail,
+                        Some(ExpertMutationBlocker::ConflictingRuntimeState),
+                        RuntimeOperationSnapshotEffect::NoSnapshotChange,
+                        "rehydrate runtime state from persisted history".to_string(),
+                        "blocked due to in-flight scheduler activity".to_string(),
+                        "rehydrate_history blocked: in-flight/queued jobs must be drained first"
+                            .to_string(),
+                        Vec::new(),
+                    )
                 } else {
                     let before = self
                         .recovery_snapshot
                         .as_ref()
                         .map(|snapshot| snapshot.recovered_jobs)
                         .unwrap_or(0);
-                    self.record_operation_outcome(RuntimeOperationOutcome {
-                        operation,
-                        operation_class: RuntimeOperationClass::ControlledMutating,
-                        operation_scope: RuntimeOperationScope::ReplayHistory,
-                        entry_class,
-                        contract_shape: runtime_operation_contract_shape(entry_class),
-                        contract_safety: runtime_operation_contract_safety(entry_class),
-                        code: RuntimeOperationCode::Accepted,
-                        snapshot_effect:
-                            RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
-                        detail: "rehydrate_history accepted".to_string(),
-                        completed_jobs: Vec::new(),
-                    });
+                    self.record_operation_outcome(make_outcome(
+                        RuntimeOperationClass::HighImpactMutating,
+                        RuntimeOperationScope::ReplayHistory,
+                        RuntimeOperationCode::Accepted,
+                        ExpertMutationBoundary::HighImpactMutable,
+                        ExpertMutationResult::GuardedMutation,
+                        None,
+                        RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
+                        "rehydrate runtime state from persisted history".to_string(),
+                        "accepted; applying recovery reconciliation".to_string(),
+                        "rehydrate_history accepted".to_string(),
+                        Vec::new(),
+                    ));
                     self.rehydrate_from_history();
-                    let after = self
-                        .recovery_snapshot
-                        .as_ref()
-                        .map(|snapshot| snapshot.recovered_jobs)
-                        .unwrap_or(0);
-                    let (code, detail) = if after > before {
-                        (
-                            RuntimeOperationCode::Completed,
-                            format!(
-                                "rehydrate_history completed: recovered_jobs {before}->{after}"
-                            ),
-                        )
+                    let Some(after_snapshot) = self.recovery_snapshot.as_ref() else {
+                        return Ok(make_outcome(
+                            RuntimeOperationClass::HighImpactMutating,
+                            RuntimeOperationScope::ReplayHistory,
+                            RuntimeOperationCode::NoOp,
+                            ExpertMutationBoundary::HighImpactMutable,
+                            ExpertMutationResult::NoOp,
+                            None,
+                            RuntimeOperationSnapshotEffect::NoSnapshotChange,
+                            "rehydrate runtime state from persisted history".to_string(),
+                            "history traversal produced no recovery snapshot".to_string(),
+                            "rehydrate_history no-op: no recoverable records".to_string(),
+                            Vec::new(),
+                        ));
+                    };
+                    let after = after_snapshot.recovered_jobs;
+                    let (code, mutation_result, detail, resulting_state_change) = if after > before
+                    {
+                        if after_snapshot.uncertain_jobs > 0 || after_snapshot.failed_jobs > 0 {
+                            (
+                                RuntimeOperationCode::Completed,
+                                ExpertMutationResult::PartialEffect,
+                                format!(
+                                    "rehydrate_history partial effect: recovered_jobs {before}->{after}, uncertain={}, failed={}",
+                                    after_snapshot.uncertain_jobs, after_snapshot.failed_jobs
+                                ),
+                                format!(
+                                    "recovery snapshot changed with partial effect (uncertain={}, failed={})",
+                                    after_snapshot.uncertain_jobs, after_snapshot.failed_jobs
+                                ),
+                            )
+                        } else {
+                            (
+                                RuntimeOperationCode::Completed,
+                                ExpertMutationResult::StateChanged,
+                                format!(
+                                    "rehydrate_history completed: recovered_jobs {before}->{after}"
+                                ),
+                                format!(
+                                    "recovery snapshot updated: recovered_jobs {before}->{after}"
+                                ),
+                            )
+                        }
                     } else {
                         (
                             RuntimeOperationCode::NoOp,
+                            ExpertMutationResult::NoOp,
                             "rehydrate_history no-op: no additional recoverable jobs".to_string(),
+                            "recovery snapshot unchanged".to_string(),
                         )
                     };
-                    RuntimeOperationOutcome {
-                        operation,
-                        operation_class: RuntimeOperationClass::ControlledMutating,
-                        operation_scope: RuntimeOperationScope::ReplayHistory,
-                        entry_class,
-                        contract_shape: runtime_operation_contract_shape(entry_class),
-                        contract_safety: runtime_operation_contract_safety(entry_class),
+                    make_outcome(
+                        RuntimeOperationClass::HighImpactMutating,
+                        RuntimeOperationScope::ReplayHistory,
                         code,
-                        snapshot_effect:
-                            RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
+                        ExpertMutationBoundary::HighImpactMutable,
+                        mutation_result,
+                        None,
+                        RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
+                        "rehydrate runtime state from persisted history".to_string(),
+                        resulting_state_change,
                         detail,
-                        completed_jobs: Vec::new(),
-                    }
+                        Vec::new(),
+                    )
                 }
             }
             RuntimeOperation::InternalClearReplayRegression => {
                 if entry_class != RuntimeEntryClass::InternalDevTest {
-                    RuntimeOperationOutcome {
-                        operation,
-                        operation_class: RuntimeOperationClass::InternalDevTestOnly,
-                        operation_scope: RuntimeOperationScope::ReplayHistory,
-                        entry_class,
-                        contract_shape: runtime_operation_contract_shape(entry_class),
-                        contract_safety: runtime_operation_contract_safety(entry_class),
-                        code: RuntimeOperationCode::Blocked,
-                        snapshot_effect: RuntimeOperationSnapshotEffect::NoSnapshotChange,
-                        detail: "internal_clear_replay_regression is internal-only".to_string(),
-                        completed_jobs: Vec::new(),
-                    }
+                    make_outcome(
+                        RuntimeOperationClass::InternalDevTestOnly,
+                        RuntimeOperationScope::ReplayHistory,
+                        RuntimeOperationCode::Blocked,
+                        ExpertMutationBoundary::InternalDevTestOnly,
+                        ExpertMutationResult::BlockedBySafetyRail,
+                        Some(ExpertMutationBlocker::ConflictingRuntimeState),
+                        RuntimeOperationSnapshotEffect::NoSnapshotChange,
+                        "clear replay regression marker".to_string(),
+                        "blocked: internal-only mutation path".to_string(),
+                        "internal_clear_replay_regression is internal-only".to_string(),
+                        Vec::new(),
+                    )
                 } else if self.latest_replay_regression.is_some() {
                     self.latest_replay_regression = None;
-                    RuntimeOperationOutcome {
-                        operation,
-                        operation_class: RuntimeOperationClass::InternalDevTestOnly,
-                        operation_scope: RuntimeOperationScope::ReplayHistory,
-                        entry_class,
-                        contract_shape: runtime_operation_contract_shape(entry_class),
-                        contract_safety: runtime_operation_contract_safety(entry_class),
-                        code: RuntimeOperationCode::Completed,
-                        snapshot_effect:
-                            RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
-                        detail: "latest replay regression marker cleared".to_string(),
-                        completed_jobs: Vec::new(),
-                    }
+                    make_outcome(
+                        RuntimeOperationClass::InternalDevTestOnly,
+                        RuntimeOperationScope::ReplayHistory,
+                        RuntimeOperationCode::Completed,
+                        ExpertMutationBoundary::InternalDevTestOnly,
+                        ExpertMutationResult::StateChanged,
+                        None,
+                        RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
+                        "clear replay regression marker".to_string(),
+                        "latest replay regression marker cleared".to_string(),
+                        "latest replay regression marker cleared".to_string(),
+                        Vec::new(),
+                    )
                 } else {
-                    RuntimeOperationOutcome {
-                        operation,
-                        operation_class: RuntimeOperationClass::InternalDevTestOnly,
-                        operation_scope: RuntimeOperationScope::ReplayHistory,
-                        entry_class,
-                        contract_shape: runtime_operation_contract_shape(entry_class),
-                        contract_safety: runtime_operation_contract_safety(entry_class),
-                        code: RuntimeOperationCode::NoOp,
-                        snapshot_effect: RuntimeOperationSnapshotEffect::NoSnapshotChange,
-                        detail: "latest replay regression marker already clear".to_string(),
-                        completed_jobs: Vec::new(),
-                    }
+                    make_outcome(
+                        RuntimeOperationClass::InternalDevTestOnly,
+                        RuntimeOperationScope::ReplayHistory,
+                        RuntimeOperationCode::NoOp,
+                        ExpertMutationBoundary::InternalDevTestOnly,
+                        ExpertMutationResult::NoOp,
+                        None,
+                        RuntimeOperationSnapshotEffect::NoSnapshotChange,
+                        "clear replay regression marker".to_string(),
+                        "marker already clear; no mutation".to_string(),
+                        "latest replay regression marker already clear".to_string(),
+                        Vec::new(),
+                    )
                 }
             }
         };
@@ -4360,7 +4493,8 @@ mod tests {
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{
         compute_service::SchedulerConfig, CanonicalSnapshotConsistency,
-        ExpertDiagnosticsAvailability, ExpertWorkflowClass, ExpertWorkflowTransitionState,
+        ExpertDiagnosticsAvailability, ExpertMutationBlocker, ExpertMutationBoundary,
+        ExpertMutationResult, ExpertWorkflowClass, ExpertWorkflowTransitionState,
         InMemoryComputeService, JobExecutionPath, JobHistoryStore, JobId, JobLifecycleState,
         RuntimeContractShape, RuntimeEntryClass,
     };
@@ -4671,12 +4805,21 @@ mod tests {
             drained.operation_class,
             RuntimeOperationClass::ControlledMutating
         );
+        assert_eq!(
+            drained.mutation_boundary,
+            ExpertMutationBoundary::ControlledMutable
+        );
+        assert_eq!(drained.mutation_result, ExpertMutationResult::StateChanged);
 
         let unsupported = entry
             .run_operation(RuntimeOperation::RefreshRuntime)
             .expect("refresh operation");
         assert_eq!(unsupported.code, RuntimeOperationCode::Unsupported);
         assert_eq!(unsupported.operation_class, RuntimeOperationClass::ReadOnly);
+        assert_eq!(
+            unsupported.mutation_result,
+            ExpertMutationResult::UnsupportedInRuntimeContext
+        );
     }
 
     #[test]
@@ -4686,7 +4829,23 @@ mod tests {
             .run_operation(RuntimeOperation::DrainScheduler { max_jobs: 2 })
             .expect("drain operation");
         assert_eq!(outcome.code, RuntimeOperationCode::NoOp);
+        assert_eq!(outcome.mutation_result, ExpertMutationResult::NoOp);
         assert!(outcome.completed_jobs.is_empty());
+    }
+
+    #[test]
+    fn drain_scheduler_guarded_noop_boundary_is_explicit() {
+        let mut entry = service();
+        let outcome = entry
+            .run_operation(RuntimeOperation::DrainScheduler { max_jobs: 0 })
+            .expect("drain operation");
+        assert_eq!(outcome.code, RuntimeOperationCode::NoOp);
+        assert_eq!(
+            outcome.mutation_result,
+            ExpertMutationResult::GuardedMutation
+        );
+        assert_eq!(outcome.blocked_by, None);
+        assert!(outcome.detail.contains("guarded"));
     }
 
     #[test]
@@ -4695,10 +4854,14 @@ mod tests {
         let blocked = entry
             .run_operation(RuntimeOperation::RehydrateHistory)
             .expect("rehydrate operation");
-        assert_eq!(blocked.code, RuntimeOperationCode::Blocked);
+        assert_eq!(blocked.code, RuntimeOperationCode::Unsupported);
         assert_eq!(
             blocked.operation_class,
-            RuntimeOperationClass::ControlledMutating
+            RuntimeOperationClass::HighImpactMutating
+        );
+        assert_eq!(
+            blocked.mutation_result,
+            ExpertMutationResult::UnsupportedInRuntimeContext
         );
 
         let dir = tempfile::tempdir().expect("tempdir");
@@ -4714,6 +4877,32 @@ mod tests {
             ),
             "expected completed or no-op, got {:?}",
             completed.code
+        );
+        assert!(matches!(
+            completed.mutation_result,
+            ExpertMutationResult::StateChanged
+                | ExpertMutationResult::NoOp
+                | ExpertMutationResult::PartialEffect
+        ));
+    }
+
+    #[test]
+    fn rehydrate_history_blocks_when_snapshot_basis_is_stale() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":8,"job_id":120,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"standard","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[],"execution_snapshot":{"request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request_available":true,"backend_route_available":true,"model_slot_count":0,"path":{"requested_execution_path":"LocalCanonical","executed_execution_path":"LocalCanonical","execution_lane":"standard","resource_class":"standard","was_remote":false,"redispatched_to_local":false,"retry_attempts":0},"rollout":{"active_or_warm_slots":0,"candidate_or_guarded_slots":0,"stale_or_blocked_slots":1,"rollout_context_hint":"blocked_or_stale"},"result":{"lifecycle_state":"completed","completion_class":"completed","pipeline_state":"ok","failure_kind":null},"readiness":"stale_or_incomplete"}}"#,
+        )
+        .expect("seed stale record");
+        let mut entry = service_with_history(&history_path);
+        let outcome = entry
+            .run_operation(RuntimeOperation::RehydrateHistory)
+            .expect("rehydrate operation");
+        assert_eq!(outcome.code, RuntimeOperationCode::Blocked);
+        assert_eq!(
+            outcome.blocked_by,
+            Some(ExpertMutationBlocker::StaleDiagnosticBasis)
         );
     }
 

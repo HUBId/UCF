@@ -75,6 +75,35 @@ pub enum ExpertWorkflowTransitionState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExpertMutationBoundary {
+    ReadOnly,
+    ControlledMutable,
+    HighImpactMutable,
+    InternalDevTestOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExpertMutationBlocker {
+    StaleDiagnosticBasis,
+    ConflictingRuntimeState,
+    SubsystemConstrainedOrBusy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExpertMutationResult {
+    NoMutationReadOnly,
+    StateChanged,
+    NoOp,
+    GuardedMutation,
+    PartialEffect,
+    BlockedBySafetyRail,
+    UnsupportedInRuntimeContext,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[repr(u16)]
 pub enum StageContractVersion {
     V1 = 1,

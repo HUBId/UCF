@@ -107,7 +107,8 @@ pub use compute_service::{
 };
 pub use contracts::{
     CanonicalSnapshotConsistency, CapabilityConstraint, CapabilitySupportLevel,
-    ExpertDiagnosticsAvailability, ExpertWorkflowClass, ExpertWorkflowTransitionState,
+    ExpertDiagnosticsAvailability, ExpertMutationBlocker, ExpertMutationBoundary,
+    ExpertMutationResult, ExpertWorkflowClass, ExpertWorkflowTransitionState,
     RuntimeContractSafety, RuntimeContractShape, RuntimeEntryClass, StageContractVersion,
     StageKind, StagePathCapability, StagePathSupportLevel, ValidationStatus,
 };
