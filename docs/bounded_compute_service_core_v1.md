@@ -360,6 +360,16 @@ in-memory service because no extra promotion/compare queue exists at this layer.
 candidate-vs-baseline check was executed through the canonical entry point. This keeps comparison
 visibility in the same ops snapshot surface already used for runtime diagnosis and promotion prep.
 
+`RuntimeOpsSnapshot.canonical` is the canonical expert diagnostics frame for the same data. It adds:
+
+- `consistency`: `current | partial | stale | unavailable`
+- `diagnostics_availability`: `available | partial | unavailable | blocked | internal_only`
+- top-level caveats plus subsystem summaries for:
+  worker, placement/capacity, rollout, warmup/capability, replay/history, specialization.
+
+This keeps subsystem diagnostics tied to one load-bearing top-level semantic frame instead of
+requiring separate interpretation paths.
+
 ### Runtime state semantics
 
 State is derived from real service signals only:
@@ -370,6 +380,15 @@ State is derived from real service signals only:
 - `healthy_ready`: none of the above conditions hold
 
 No synthetic “always green” health outcome is emitted.
+
+Snapshot consistency semantics are intentionally narrow:
+
+- `current`: canonical view is coherent and replay/history fidelity has no active caveat.
+- `partial`: canonical view exists, but required slot or snapshot fidelity caveats are present.
+- `stale`: diagnostics rely on stale/incomplete history snapshot context.
+- `unavailable`: runtime status itself is currently unavailable.
+
+These are diagnostics semantics only; they do not replace compute/pipeline fault taxonomy.
 
 ## Minimal replay + reproducibility surface (v1)
 

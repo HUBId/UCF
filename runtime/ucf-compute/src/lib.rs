@@ -106,9 +106,9 @@ pub use compute_service::{
     WorkerRegistryRole, WorkerRetrySummary, WorkerRuntimeStatus,
 };
 pub use contracts::{
-    CapabilityConstraint, CapabilitySupportLevel, RuntimeContractSafety, RuntimeContractShape,
-    RuntimeEntryClass, StageContractVersion, StageKind, StagePathCapability, StagePathSupportLevel,
-    ValidationStatus,
+    CanonicalSnapshotConsistency, CapabilityConstraint, CapabilitySupportLevel,
+    ExpertDiagnosticsAvailability, RuntimeContractSafety, RuntimeContractShape, RuntimeEntryClass,
+    StageContractVersion, StageKind, StagePathCapability, StagePathSupportLevel, ValidationStatus,
 };
 pub use enablement::{
     EnablementComputeBackend, EnablementConfig, RealEnablementMode, SlotEnablement, SlotMode,
@@ -141,7 +141,8 @@ pub use risk_contract::{
 pub use runtime_profile::{DeploymentProfile, RuntimeDiagnosticFlags, RuntimeMode, RuntimeProfile};
 pub use service_surface::{
     BaselineComparisonFailureCode, BaselineComparisonOutcome, BaselineComparisonResult,
-    BaselineComparisonSummary, BaselineReference, CanonicalComputeEntryPoint, ComputeExecutionMode,
+    BaselineComparisonSummary, BaselineReference, CanonicalComputeEntryPoint,
+    CanonicalRuntimeSnapshot, CanonicalRuntimeSubsystemDiagnostics, ComputeExecutionMode,
     ComputeHistoryLookupError, ComputeHistoryStoreStatus, ComputeInvalidRequest, ComputeJobHandle,
     ComputeJobHistoryLookup, ComputeJobStatus, ComputeRecoverySnapshot, ComputeReplayOutcome,
     ComputeReplayPreflight, ComputeReplayReport, ComputeRequestValidationCode,
@@ -154,7 +155,8 @@ pub use service_surface::{
     ReplayRemoteContextReproducibility, ReplayabilityClass, RolloutReplayComparability,
     RolloutReplayComparisonContext, RolloutReplayContextClass, RuntimeOperation,
     RuntimeOperationClass, RuntimeOperationCode, RuntimeOperationOutcome, RuntimeOperationScope,
-    RuntimeOpsSnapshot, RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState,
+    RuntimeOperationSnapshotEffect, RuntimeOpsSnapshot, RuntimeOpsState, RuntimeSignalState,
+    RuntimeSubsystemDiagnosticSummary, RuntimeWarmupState,
 };
 pub use work_meter::WorkMeter;
 
