@@ -38,6 +38,25 @@ pub enum RuntimeContractSafety {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CanonicalSnapshotConsistency {
+    Current,
+    Partial,
+    Stale,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExpertDiagnosticsAvailability {
+    Available,
+    Partial,
+    Unavailable,
+    Blocked,
+    InternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[repr(u16)]
 pub enum StageContractVersion {
     V1 = 1,

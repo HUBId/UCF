@@ -26,8 +26,9 @@ use crate::pipeline::{
     CanonicalPipelineState, CanonicalStageCostAttribution, CanonicalStageId, CanonicalWorkSummary,
 };
 use crate::{
-    DeploymentProfile, ModelSlot, ModelSlotProvenance, RuntimeContractSafety, RuntimeContractShape,
-    RuntimeDiagnosticFlags, RuntimeEntryClass, RuntimeMode, RuntimeProfile, SlotRuntimeStatus,
+    CanonicalSnapshotConsistency, DeploymentProfile, ExpertDiagnosticsAvailability, ModelSlot,
+    ModelSlotProvenance, RuntimeContractSafety, RuntimeContractShape, RuntimeDiagnosticFlags,
+    RuntimeEntryClass, RuntimeMode, RuntimeProfile, SlotRuntimeStatus,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -155,8 +156,16 @@ pub struct RuntimeOperationOutcome {
     pub contract_shape: RuntimeContractShape,
     pub contract_safety: RuntimeContractSafety,
     pub code: RuntimeOperationCode,
+    pub snapshot_effect: RuntimeOperationSnapshotEffect,
     pub detail: String,
     pub completed_jobs: Vec<JobId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeOperationSnapshotEffect {
+    NoSnapshotChange,
+    SnapshotRefreshPerformed,
+    SnapshotMayBeStaleUntilRefresh,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -197,6 +206,7 @@ pub enum RuntimeWarmupState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeOpsSnapshot {
+    pub canonical: CanonicalRuntimeSnapshot,
     pub state: RuntimeOpsState,
     pub runtime_mode: RuntimeMode,
     pub deployment_profile: DeploymentProfile,
@@ -220,6 +230,30 @@ pub struct RuntimeOpsSnapshot {
     pub latest_replay_regression: Option<ReplayRegressionAssessment>,
     pub recovery: Option<ComputeRecoverySnapshot>,
     pub recent_operations: Vec<RuntimeOperationOutcome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalRuntimeSnapshot {
+    pub consistency: CanonicalSnapshotConsistency,
+    pub diagnostics_availability: ExpertDiagnosticsAvailability,
+    pub top_level_caveats: Vec<String>,
+    pub subsystems: CanonicalRuntimeSubsystemDiagnostics,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalRuntimeSubsystemDiagnostics {
+    pub worker: RuntimeSubsystemDiagnosticSummary,
+    pub placement_capacity: RuntimeSubsystemDiagnosticSummary,
+    pub rollout: RuntimeSubsystemDiagnosticSummary,
+    pub warmup_capability: RuntimeSubsystemDiagnosticSummary,
+    pub replay_history: RuntimeSubsystemDiagnosticSummary,
+    pub specialization: RuntimeSubsystemDiagnosticSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeSubsystemDiagnosticSummary {
+    pub availability: ExpertDiagnosticsAvailability,
+    pub caveat: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1439,7 +1473,21 @@ impl CanonicalComputeEntryPoint {
             .unwrap_or_else(|| "insufficient_history_signal".to_string());
 
         let specialization = build_specialization_ops_view(state, scheduler.execution_path, &slots);
+        let canonical_snapshot = build_canonical_runtime_snapshot(
+            state,
+            runtime_profile.mode,
+            runtime_profile.diagnostics,
+            scheduler.execution_path,
+            queue_pressure,
+            has_missing_required_slot,
+            cold_or_warmup_pressure,
+            replay_ready,
+            partial,
+            stale_or_incomplete,
+            &specialization,
+        );
         RuntimeOpsSnapshot {
+            canonical: canonical_snapshot,
             state,
             runtime_mode: runtime_profile.mode,
             deployment_profile: runtime_profile.deployment,
@@ -1513,6 +1561,7 @@ impl CanonicalComputeEntryPoint {
                 contract_shape: runtime_operation_contract_shape(entry_class),
                 contract_safety: runtime_operation_contract_safety(entry_class),
                 code: RuntimeOperationCode::Completed,
+                snapshot_effect: RuntimeOperationSnapshotEffect::SnapshotRefreshPerformed,
                 detail: "runtime snapshot captured".to_string(),
                 completed_jobs: Vec::new(),
             },
@@ -1526,6 +1575,7 @@ impl CanonicalComputeEntryPoint {
                         contract_shape: runtime_operation_contract_shape(entry_class),
                         contract_safety: runtime_operation_contract_safety(entry_class),
                         code: RuntimeOperationCode::Blocked,
+                        snapshot_effect: RuntimeOperationSnapshotEffect::NoSnapshotChange,
                         detail: "drain_scheduler requires expert/high-trust entry contract"
                             .to_string(),
                         completed_jobs: Vec::new(),
@@ -1539,6 +1589,8 @@ impl CanonicalComputeEntryPoint {
                         contract_shape: runtime_operation_contract_shape(entry_class),
                         contract_safety: runtime_operation_contract_safety(entry_class),
                         code: RuntimeOperationCode::Accepted,
+                        snapshot_effect:
+                            RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
                         detail: format!(
                             "drain_scheduler accepted with max_jobs={}",
                             max_jobs.max(1)
@@ -1556,6 +1608,7 @@ impl CanonicalComputeEntryPoint {
                                 contract_shape: runtime_operation_contract_shape(entry_class),
                                 contract_safety: runtime_operation_contract_safety(entry_class),
                                 code: RuntimeOperationCode::NoOp,
+                                snapshot_effect: RuntimeOperationSnapshotEffect::NoSnapshotChange,
                                 detail: "scheduler drain no-op (no runnable jobs)".to_string(),
                                 completed_jobs,
                             }
@@ -1572,6 +1625,8 @@ impl CanonicalComputeEntryPoint {
                                 contract_shape: runtime_operation_contract_shape(entry_class),
                                 contract_safety: runtime_operation_contract_safety(entry_class),
                                 code: RuntimeOperationCode::Completed,
+                                snapshot_effect:
+                                    RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
                                 detail: format!("scheduler drained {} jobs", completed_jobs.len()),
                                 completed_jobs,
                             }
@@ -1584,6 +1639,8 @@ impl CanonicalComputeEntryPoint {
                             contract_shape: runtime_operation_contract_shape(entry_class),
                             contract_safety: runtime_operation_contract_safety(entry_class),
                             code: RuntimeOperationCode::Failed,
+                            snapshot_effect:
+                                RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
                             detail: format!("scheduler drain failed: {error}"),
                             completed_jobs: Vec::new(),
                         },
@@ -1598,6 +1655,7 @@ impl CanonicalComputeEntryPoint {
                 contract_shape: runtime_operation_contract_shape(entry_class),
                 contract_safety: runtime_operation_contract_safety(entry_class),
                 code: RuntimeOperationCode::Unsupported,
+                snapshot_effect: RuntimeOperationSnapshotEffect::NoSnapshotChange,
                 detail: "refresh_runtime unsupported for in-memory compute service".to_string(),
                 completed_jobs: Vec::new(),
             },
@@ -1611,6 +1669,7 @@ impl CanonicalComputeEntryPoint {
                         contract_shape: runtime_operation_contract_shape(entry_class),
                         contract_safety: runtime_operation_contract_safety(entry_class),
                         code: RuntimeOperationCode::Blocked,
+                        snapshot_effect: RuntimeOperationSnapshotEffect::NoSnapshotChange,
                         detail: "rehydrate_history requires expert/high-trust entry contract"
                             .to_string(),
                         completed_jobs: Vec::new(),
@@ -1624,6 +1683,7 @@ impl CanonicalComputeEntryPoint {
                         contract_shape: runtime_operation_contract_shape(entry_class),
                         contract_safety: runtime_operation_contract_safety(entry_class),
                         code: RuntimeOperationCode::Blocked,
+                        snapshot_effect: RuntimeOperationSnapshotEffect::NoSnapshotChange,
                         detail: "rehydrate_history blocked: history store unavailable".to_string(),
                         completed_jobs: Vec::new(),
                     }
@@ -1641,6 +1701,8 @@ impl CanonicalComputeEntryPoint {
                         contract_shape: runtime_operation_contract_shape(entry_class),
                         contract_safety: runtime_operation_contract_safety(entry_class),
                         code: RuntimeOperationCode::Accepted,
+                        snapshot_effect:
+                            RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
                         detail: "rehydrate_history accepted".to_string(),
                         completed_jobs: Vec::new(),
                     });
@@ -1671,6 +1733,8 @@ impl CanonicalComputeEntryPoint {
                         contract_shape: runtime_operation_contract_shape(entry_class),
                         contract_safety: runtime_operation_contract_safety(entry_class),
                         code,
+                        snapshot_effect:
+                            RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
                         detail,
                         completed_jobs: Vec::new(),
                     }
@@ -1686,6 +1750,7 @@ impl CanonicalComputeEntryPoint {
                         contract_shape: runtime_operation_contract_shape(entry_class),
                         contract_safety: runtime_operation_contract_safety(entry_class),
                         code: RuntimeOperationCode::Blocked,
+                        snapshot_effect: RuntimeOperationSnapshotEffect::NoSnapshotChange,
                         detail: "internal_clear_replay_regression is internal-only".to_string(),
                         completed_jobs: Vec::new(),
                     }
@@ -1699,6 +1764,8 @@ impl CanonicalComputeEntryPoint {
                         contract_shape: runtime_operation_contract_shape(entry_class),
                         contract_safety: runtime_operation_contract_safety(entry_class),
                         code: RuntimeOperationCode::Completed,
+                        snapshot_effect:
+                            RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
                         detail: "latest replay regression marker cleared".to_string(),
                         completed_jobs: Vec::new(),
                     }
@@ -1711,6 +1778,7 @@ impl CanonicalComputeEntryPoint {
                         contract_shape: runtime_operation_contract_shape(entry_class),
                         contract_safety: runtime_operation_contract_safety(entry_class),
                         code: RuntimeOperationCode::NoOp,
+                        snapshot_effect: RuntimeOperationSnapshotEffect::NoSnapshotChange,
                         detail: "latest replay regression marker already clear".to_string(),
                         completed_jobs: Vec::new(),
                     }
@@ -2032,6 +2100,167 @@ fn parse_warmup_state(detail: Option<&str>) -> RuntimeWarmupState {
         RuntimeWarmupState::Cold
     } else {
         RuntimeWarmupState::Unknown
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_canonical_runtime_snapshot(
+    state: RuntimeOpsState,
+    runtime_mode: RuntimeMode,
+    diagnostic_flags: RuntimeDiagnosticFlags,
+    execution_path: JobExecutionPath,
+    queue_pressure: bool,
+    has_missing_required_slot: bool,
+    cold_or_warmup_pressure: bool,
+    replay_ready: usize,
+    partial: usize,
+    stale_or_incomplete: usize,
+    specialization: &RuntimeSpecializationOpsView,
+) -> CanonicalRuntimeSnapshot {
+    let consistency = if state == RuntimeOpsState::Unavailable {
+        CanonicalSnapshotConsistency::Unavailable
+    } else if stale_or_incomplete > 0 && replay_ready == 0 {
+        CanonicalSnapshotConsistency::Stale
+    } else if partial > 0 || has_missing_required_slot {
+        CanonicalSnapshotConsistency::Partial
+    } else {
+        CanonicalSnapshotConsistency::Current
+    };
+
+    let diagnostics_availability = if runtime_mode == RuntimeMode::Production
+        && (diagnostic_flags.compare_enabled || diagnostic_flags.shadow_enabled)
+    {
+        ExpertDiagnosticsAvailability::Blocked
+    } else if !diagnostic_flags.shadow_enabled && !diagnostic_flags.compare_enabled {
+        ExpertDiagnosticsAvailability::Partial
+    } else {
+        ExpertDiagnosticsAvailability::Available
+    };
+
+    let worker = RuntimeSubsystemDiagnosticSummary {
+        availability: if matches!(execution_path, JobExecutionPath::WorkerIpc) {
+            ExpertDiagnosticsAvailability::Available
+        } else {
+            ExpertDiagnosticsAvailability::Partial
+        },
+        caveat: if matches!(execution_path, JobExecutionPath::WorkerIpc) {
+            None
+        } else {
+            Some("worker execution path not currently active".to_string())
+        },
+    };
+    let placement_capacity = RuntimeSubsystemDiagnosticSummary {
+        availability: if queue_pressure || has_missing_required_slot {
+            ExpertDiagnosticsAvailability::Partial
+        } else {
+            ExpertDiagnosticsAvailability::Available
+        },
+        caveat: if queue_pressure {
+            Some("queue pressure influences placement/capacity diagnostics".to_string())
+        } else if has_missing_required_slot {
+            Some("required slot unavailable for placement/capacity path".to_string())
+        } else {
+            None
+        },
+    };
+    let rollout = RuntimeSubsystemDiagnosticSummary {
+        availability: if specialization.paths.is_empty() {
+            ExpertDiagnosticsAvailability::Unavailable
+        } else {
+            ExpertDiagnosticsAvailability::Available
+        },
+        caveat: if specialization.paths.is_empty() {
+            Some("rollout slot context unavailable".to_string())
+        } else {
+            None
+        },
+    };
+    let warmup_capability = RuntimeSubsystemDiagnosticSummary {
+        availability: if cold_or_warmup_pressure {
+            ExpertDiagnosticsAvailability::Partial
+        } else {
+            ExpertDiagnosticsAvailability::Available
+        },
+        caveat: if cold_or_warmup_pressure {
+            Some("cold/stale/blocked readiness pressure present".to_string())
+        } else {
+            None
+        },
+    };
+    let replay_history = RuntimeSubsystemDiagnosticSummary {
+        availability: if replay_ready > 0 {
+            ExpertDiagnosticsAvailability::Available
+        } else if partial > 0 {
+            ExpertDiagnosticsAvailability::Partial
+        } else if stale_or_incomplete > 0 {
+            ExpertDiagnosticsAvailability::Blocked
+        } else {
+            ExpertDiagnosticsAvailability::Unavailable
+        },
+        caveat: if stale_or_incomplete > 0 {
+            Some("replay/history snapshots stale or incomplete".to_string())
+        } else if partial > 0 {
+            Some("replay/history snapshots carry partial fidelity".to_string())
+        } else {
+            None
+        },
+    };
+    let specialization_diag = RuntimeSubsystemDiagnosticSummary {
+        availability: if specialization.paths.is_empty() {
+            ExpertDiagnosticsAvailability::Unavailable
+        } else if specialization.caveats.is_empty() {
+            ExpertDiagnosticsAvailability::Available
+        } else {
+            ExpertDiagnosticsAvailability::Partial
+        },
+        caveat: specialization.caveats.first().cloned(),
+    };
+
+    let mut top_level_caveats = Vec::new();
+    if consistency != CanonicalSnapshotConsistency::Current {
+        top_level_caveats.push(format!(
+            "canonical_snapshot_consistency={}",
+            canonical_snapshot_consistency_name(consistency)
+        ));
+    }
+    if diagnostics_availability != ExpertDiagnosticsAvailability::Available {
+        top_level_caveats.push(format!(
+            "expert_diagnostics={}",
+            diagnostics_availability_name(diagnostics_availability)
+        ));
+    }
+
+    CanonicalRuntimeSnapshot {
+        consistency,
+        diagnostics_availability,
+        top_level_caveats,
+        subsystems: CanonicalRuntimeSubsystemDiagnostics {
+            worker,
+            placement_capacity,
+            rollout,
+            warmup_capability,
+            replay_history,
+            specialization: specialization_diag,
+        },
+    }
+}
+
+fn canonical_snapshot_consistency_name(consistency: CanonicalSnapshotConsistency) -> &'static str {
+    match consistency {
+        CanonicalSnapshotConsistency::Current => "current",
+        CanonicalSnapshotConsistency::Partial => "partial",
+        CanonicalSnapshotConsistency::Stale => "stale",
+        CanonicalSnapshotConsistency::Unavailable => "unavailable",
+    }
+}
+
+fn diagnostics_availability_name(availability: ExpertDiagnosticsAvailability) -> &'static str {
+    match availability {
+        ExpertDiagnosticsAvailability::Available => "available",
+        ExpertDiagnosticsAvailability::Partial => "partial",
+        ExpertDiagnosticsAvailability::Unavailable => "unavailable",
+        ExpertDiagnosticsAvailability::Blocked => "blocked",
+        ExpertDiagnosticsAvailability::InternalOnly => "internal_only",
     }
 }
 
@@ -3963,12 +4192,14 @@ mod tests {
         ReplayMismatchClass, ReplayPreflightIssueCode, ReplayRegressionReasonCode,
         ReplayRegressionSignal, ReplayRemoteContextReproducibility, ReplayabilityClass,
         RolloutReplayComparability, RuntimeOperation, RuntimeOperationClass, RuntimeOperationCode,
-        RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState, SpecializationSemanticImpact,
+        RuntimeOperationSnapshotEffect, RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState,
+        SpecializationSemanticImpact,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{
-        compute_service::SchedulerConfig, InMemoryComputeService, JobExecutionPath,
-        JobHistoryStore, JobId, JobLifecycleState, RuntimeContractShape, RuntimeEntryClass,
+        compute_service::SchedulerConfig, CanonicalSnapshotConsistency,
+        ExpertDiagnosticsAvailability, InMemoryComputeService, JobExecutionPath, JobHistoryStore,
+        JobId, JobLifecycleState, RuntimeContractShape, RuntimeEntryClass,
     };
 
     fn service() -> CanonicalComputeEntryPoint {
@@ -4103,6 +4334,14 @@ mod tests {
         let entry = service();
         let snapshot = entry.operations_snapshot();
         assert_eq!(snapshot.state, RuntimeOpsState::HealthyReady);
+        assert_eq!(
+            snapshot.canonical.consistency,
+            CanonicalSnapshotConsistency::Current
+        );
+        assert!(matches!(
+            snapshot.canonical.diagnostics_availability,
+            ExpertDiagnosticsAvailability::Partial | ExpertDiagnosticsAvailability::Available
+        ));
         assert_eq!(snapshot.state_signal, RuntimeSignalState::Unknown);
         assert_eq!(snapshot.jobs.submitted_total, 0);
         assert_eq!(snapshot.optimization_view.current_state, "inconclusive");
@@ -4128,6 +4367,10 @@ mod tests {
         let unavailable = entry.operations_snapshot();
         assert_eq!(unavailable.state_signal, RuntimeSignalState::Known);
         assert_eq!(unavailable.state, RuntimeOpsState::Unavailable);
+        assert_eq!(
+            unavailable.canonical.consistency,
+            CanonicalSnapshotConsistency::Unavailable
+        );
 
         entry
             .submit(ComputeSubmitRequest {
@@ -4141,6 +4384,31 @@ mod tests {
         assert_eq!(
             partially_unavailable.state,
             RuntimeOpsState::PartiallyUnavailable
+        );
+        assert_eq!(
+            partially_unavailable.canonical.consistency,
+            CanonicalSnapshotConsistency::Partial
+        );
+    }
+
+    #[test]
+    fn operations_snapshot_marks_stale_when_only_stale_history_context_exists() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":8,"job_id":120,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"standard","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[],"execution_snapshot":{"request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request_available":true,"backend_route_available":true,"model_slot_count":0,"path":{"requested_execution_path":"LocalCanonical","executed_execution_path":"LocalCanonical","execution_lane":"standard","resource_class":"standard","was_remote":false,"redispatched_to_local":false,"retry_attempts":0},"rollout":{"active_or_warm_slots":0,"candidate_or_guarded_slots":0,"stale_or_blocked_slots":1,"rollout_context_hint":"blocked_or_stale"},"result":{"lifecycle_state":"completed","completion_class":"completed","pipeline_state":"ok","failure_kind":null},"readiness":"stale_or_incomplete"}}"#,
+        )
+        .expect("seed stale record");
+        let entry = service_with_history(&history_path);
+        let snapshot = entry.operations_snapshot();
+        assert_eq!(
+            snapshot.canonical.consistency,
+            CanonicalSnapshotConsistency::Stale
+        );
+        assert_eq!(
+            snapshot.canonical.subsystems.replay_history.availability,
+            ExpertDiagnosticsAvailability::Blocked
         );
     }
 
@@ -4330,6 +4598,11 @@ mod tests {
             last.operation_class,
             RuntimeOperationClass::ControlledMutating
         );
+        assert!(matches!(
+            last.snapshot_effect,
+            RuntimeOperationSnapshotEffect::NoSnapshotChange
+                | RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh
+        ));
     }
 
     #[test]
