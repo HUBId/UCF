@@ -109,8 +109,9 @@ pub use contracts::{
     CanonicalSnapshotConsistency, CapabilityConstraint, CapabilitySupportLevel,
     ExpertDiagnosticsAvailability, ExpertMutationBlocker, ExpertMutationBoundary,
     ExpertMutationResult, ExpertWorkflowClass, ExpertWorkflowTransitionState,
-    RuntimeContractSafety, RuntimeContractShape, RuntimeEntryClass, StageContractVersion,
-    StageKind, StagePathCapability, StagePathSupportLevel, ValidationStatus,
+    RuntimeContractSafety, RuntimeContractShape, RuntimeDiagnosticsCore, RuntimeEntryClass,
+    RuntimeStatusCore, RuntimeSurfaceExtension, StageContractVersion, StageKind,
+    StagePathCapability, StagePathSupportLevel, ValidationStatus,
 };
 pub use enablement::{
     EnablementComputeBackend, EnablementConfig, RealEnablementMode, SlotEnablement, SlotMode,

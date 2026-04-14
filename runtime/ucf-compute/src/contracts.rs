@@ -39,6 +39,14 @@ pub enum RuntimeContractSafety {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum RuntimeSurfaceExtension {
+    Standard,
+    Expert,
+    Internal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CanonicalSnapshotConsistency {
     Current,
     Partial,
@@ -54,6 +62,81 @@ pub enum ExpertDiagnosticsAvailability {
     Unavailable,
     Blocked,
     InternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeStatusCore {
+    Current,
+    Partial,
+    Stale,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeDiagnosticsCore {
+    Available,
+    Partial,
+    Unavailable,
+    Blocked,
+}
+
+impl RuntimeEntryClass {
+    pub const fn extension(self) -> RuntimeSurfaceExtension {
+        match self {
+            Self::StandardCanonical => RuntimeSurfaceExtension::Standard,
+            Self::ExpertHighTrust => RuntimeSurfaceExtension::Expert,
+            Self::InternalDevTest => RuntimeSurfaceExtension::Internal,
+        }
+    }
+
+    pub const fn replay_contract_shape(self) -> RuntimeContractShape {
+        match self {
+            Self::StandardCanonical => RuntimeContractShape::CanonicalCompute,
+            Self::ExpertHighTrust => RuntimeContractShape::ExpertReplay,
+            Self::InternalDevTest => RuntimeContractShape::InternalControl,
+        }
+    }
+
+    pub const fn runtime_ops_contract_shape(self) -> RuntimeContractShape {
+        match self {
+            Self::StandardCanonical => RuntimeContractShape::CanonicalCompute,
+            Self::ExpertHighTrust => RuntimeContractShape::ExpertRuntimeOps,
+            Self::InternalDevTest => RuntimeContractShape::InternalControl,
+        }
+    }
+
+    pub const fn contract_safety(self) -> RuntimeContractSafety {
+        match self {
+            Self::StandardCanonical => RuntimeContractSafety::StandardSafe,
+            Self::ExpertHighTrust => RuntimeContractSafety::HighTrustOnly,
+            Self::InternalDevTest => RuntimeContractSafety::InternalOnly,
+        }
+    }
+}
+
+impl CanonicalSnapshotConsistency {
+    pub const fn core(self) -> RuntimeStatusCore {
+        match self {
+            Self::Current => RuntimeStatusCore::Current,
+            Self::Partial => RuntimeStatusCore::Partial,
+            Self::Stale => RuntimeStatusCore::Stale,
+            Self::Unavailable => RuntimeStatusCore::Unavailable,
+        }
+    }
+}
+
+impl ExpertDiagnosticsAvailability {
+    pub const fn core(self) -> Option<RuntimeDiagnosticsCore> {
+        match self {
+            Self::Available => Some(RuntimeDiagnosticsCore::Available),
+            Self::Partial => Some(RuntimeDiagnosticsCore::Partial),
+            Self::Unavailable => Some(RuntimeDiagnosticsCore::Unavailable),
+            Self::Blocked => Some(RuntimeDiagnosticsCore::Blocked),
+            Self::InternalOnly => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -594,5 +677,97 @@ mod tests {
         resp.digest = [0; 32];
         let report = LlmValidatorV1::validate(&req, &resp);
         assert_eq!(report.status, ValidationStatus::Degraded);
+    }
+
+    #[test]
+    fn runtime_entry_class_contract_views_are_canonicalized() {
+        assert_eq!(
+            RuntimeEntryClass::StandardCanonical.extension(),
+            RuntimeSurfaceExtension::Standard
+        );
+        assert_eq!(
+            RuntimeEntryClass::StandardCanonical.replay_contract_shape(),
+            RuntimeContractShape::CanonicalCompute
+        );
+        assert_eq!(
+            RuntimeEntryClass::StandardCanonical.runtime_ops_contract_shape(),
+            RuntimeContractShape::CanonicalCompute
+        );
+        assert_eq!(
+            RuntimeEntryClass::StandardCanonical.contract_safety(),
+            RuntimeContractSafety::StandardSafe
+        );
+
+        assert_eq!(
+            RuntimeEntryClass::ExpertHighTrust.extension(),
+            RuntimeSurfaceExtension::Expert
+        );
+        assert_eq!(
+            RuntimeEntryClass::ExpertHighTrust.replay_contract_shape(),
+            RuntimeContractShape::ExpertReplay
+        );
+        assert_eq!(
+            RuntimeEntryClass::ExpertHighTrust.runtime_ops_contract_shape(),
+            RuntimeContractShape::ExpertRuntimeOps
+        );
+        assert_eq!(
+            RuntimeEntryClass::ExpertHighTrust.contract_safety(),
+            RuntimeContractSafety::HighTrustOnly
+        );
+
+        assert_eq!(
+            RuntimeEntryClass::InternalDevTest.extension(),
+            RuntimeSurfaceExtension::Internal
+        );
+        assert_eq!(
+            RuntimeEntryClass::InternalDevTest.replay_contract_shape(),
+            RuntimeContractShape::InternalControl
+        );
+        assert_eq!(
+            RuntimeEntryClass::InternalDevTest.runtime_ops_contract_shape(),
+            RuntimeContractShape::InternalControl
+        );
+        assert_eq!(
+            RuntimeEntryClass::InternalDevTest.contract_safety(),
+            RuntimeContractSafety::InternalOnly
+        );
+    }
+
+    #[test]
+    fn snapshot_and_diagnostics_core_semantics_are_stable() {
+        assert_eq!(
+            CanonicalSnapshotConsistency::Current.core(),
+            RuntimeStatusCore::Current
+        );
+        assert_eq!(
+            CanonicalSnapshotConsistency::Partial.core(),
+            RuntimeStatusCore::Partial
+        );
+        assert_eq!(
+            CanonicalSnapshotConsistency::Stale.core(),
+            RuntimeStatusCore::Stale
+        );
+        assert_eq!(
+            CanonicalSnapshotConsistency::Unavailable.core(),
+            RuntimeStatusCore::Unavailable
+        );
+
+        assert_eq!(
+            ExpertDiagnosticsAvailability::Available.core(),
+            Some(RuntimeDiagnosticsCore::Available)
+        );
+        assert_eq!(
+            ExpertDiagnosticsAvailability::Partial.core(),
+            Some(RuntimeDiagnosticsCore::Partial)
+        );
+        assert_eq!(
+            ExpertDiagnosticsAvailability::Unavailable.core(),
+            Some(RuntimeDiagnosticsCore::Unavailable)
+        );
+        assert_eq!(
+            ExpertDiagnosticsAvailability::Blocked.core(),
+            Some(RuntimeDiagnosticsCore::Blocked)
+        );
+        assert_eq!(ExpertDiagnosticsAvailability::InternalOnly.core(), None);
     }
 }

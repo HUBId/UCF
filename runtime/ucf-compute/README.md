@@ -69,6 +69,23 @@ as explicit entry contracts instead of side-entry behavior:
 No auth/role/tenant platform is introduced here. The contract distinction is runtime-technical:
 standard-safe vs high-trust vs internal-only semantics with explicit unsupported outcomes.
 
+Shared surface core (drift guard, Serie F Prompt 6):
+
+- shared core status terms:
+  - snapshot consistency: `current | partial | stale | unavailable`
+  - diagnostics availability core: `available | partial | unavailable | blocked`
+- explicit extension seam:
+  - `internal_only` stays an internal extension (`ExpertDiagnosticsAvailability::InternalOnly`)
+    and is intentionally not folded into productive core diagnostics states.
+- shared entry mapping:
+  - `RuntimeEntryClass` now owns canonical mapping for replay/runtime-ops shape + safety
+    (`replay_contract_shape`, `runtime_ops_contract_shape`, `contract_safety`), so standard,
+    expert, and internal paths reuse one mapping source.
+- shared action-result alignment:
+  - runtime-ops outcome code and mutation result are checked against a single core semantic
+    compatibility rule (`accepted/completed/no_op/blocked/failed/unsupported` vs mutation result),
+    reducing silent contract drift across entry paths.
+
 ### Expert ops actions / controlled runtime interventions (Serie F Prompt 2)
 
 `CanonicalComputeEntryPoint::run_operation_with_entry` now keeps a narrow expert-ops surface with
