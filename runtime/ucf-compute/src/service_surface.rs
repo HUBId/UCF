@@ -26,9 +26,10 @@ use crate::pipeline::{
     CanonicalPipelineState, CanonicalStageCostAttribution, CanonicalStageId, CanonicalWorkSummary,
 };
 use crate::{
-    CanonicalSnapshotConsistency, DeploymentProfile, ExpertDiagnosticsAvailability, ModelSlot,
-    ModelSlotProvenance, RuntimeContractSafety, RuntimeContractShape, RuntimeDiagnosticFlags,
-    RuntimeEntryClass, RuntimeMode, RuntimeProfile, SlotRuntimeStatus,
+    CanonicalSnapshotConsistency, DeploymentProfile, ExpertDiagnosticsAvailability,
+    ExpertWorkflowClass, ExpertWorkflowTransitionState, ModelSlot, ModelSlotProvenance,
+    RuntimeContractSafety, RuntimeContractShape, RuntimeDiagnosticFlags, RuntimeEntryClass,
+    RuntimeMode, RuntimeProfile, SlotRuntimeStatus,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -230,6 +231,43 @@ pub struct RuntimeOpsSnapshot {
     pub latest_replay_regression: Option<ReplayRegressionAssessment>,
     pub recovery: Option<ComputeRecoverySnapshot>,
     pub recent_operations: Vec<RuntimeOperationOutcome>,
+    pub workflow_view: WorkflowViewSnapshot,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkflowTransitionType {
+    SnapshotDiagnosticsBeforeMutatingAction,
+    ReplayPreflightBeforeReplayAction,
+    RolloutDiagnosticsBeforeActivationFallbackRollback,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowContractBinding {
+    pub entry_class: RuntimeEntryClass,
+    pub diagnostics_contract: ExpertDiagnosticsAvailability,
+    pub action_contract_shape: RuntimeContractShape,
+    pub resulting_state_contract: CanonicalSnapshotConsistency,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowTransitionSummary {
+    pub transition: WorkflowTransitionType,
+    pub state: ExpertWorkflowTransitionState,
+    pub detail: String,
+    pub contracts: WorkflowContractBinding,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SupportedExpertWorkflowPath {
+    pub class: ExpertWorkflowClass,
+    pub state: ExpertWorkflowTransitionState,
+    pub canonical_path: &'static str,
+    pub transitions: Vec<WorkflowTransitionSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowViewSnapshot {
+    pub paths: Vec<SupportedExpertWorkflowPath>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1486,6 +1524,14 @@ impl CanonicalComputeEntryPoint {
             stale_or_incomplete,
             &specialization,
         );
+        let workflow_view = build_workflow_view_snapshot(
+            &canonical_snapshot,
+            state,
+            self.history_store.is_some(),
+            replay_ready,
+            partial,
+            stale_or_incomplete,
+        );
         RuntimeOpsSnapshot {
             canonical: canonical_snapshot,
             state,
@@ -1537,7 +1583,12 @@ impl CanonicalComputeEntryPoint {
             latest_replay_regression: self.latest_replay_regression.clone(),
             recovery: self.recovery_snapshot.clone(),
             recent_operations: self.recent_operations.iter().cloned().collect(),
+            workflow_view,
         }
+    }
+
+    pub fn workflow_view(&self) -> WorkflowViewSnapshot {
+        self.operations_snapshot().workflow_view
     }
 
     pub fn run_operation(
@@ -3029,6 +3080,117 @@ fn completion_rank(class: Option<&str>) -> Option<u8> {
     }
 }
 
+fn build_workflow_view_snapshot(
+    canonical: &CanonicalRuntimeSnapshot,
+    state: RuntimeOpsState,
+    has_history_store: bool,
+    replay_ready: usize,
+    replay_partial: usize,
+    replay_stale_or_incomplete: usize,
+) -> WorkflowViewSnapshot {
+    let diagnostics = canonical.diagnostics_availability;
+    let resulting_state = canonical.consistency;
+    let inspect_state = if diagnostics == ExpertDiagnosticsAvailability::Unavailable {
+        ExpertWorkflowTransitionState::Blocked
+    } else if diagnostics == ExpertDiagnosticsAvailability::Partial {
+        ExpertWorkflowTransitionState::Partial
+    } else {
+        ExpertWorkflowTransitionState::Supported
+    };
+    let replay_state = if replay_ready > 0 {
+        if replay_partial > 0 || replay_stale_or_incomplete > 0 {
+            ExpertWorkflowTransitionState::Partial
+        } else {
+            ExpertWorkflowTransitionState::Supported
+        }
+    } else if has_history_store {
+        ExpertWorkflowTransitionState::Blocked
+    } else {
+        ExpertWorkflowTransitionState::Partial
+    };
+    let rollout_state = if matches!(state, RuntimeOpsState::Unavailable) {
+        ExpertWorkflowTransitionState::Blocked
+    } else if matches!(
+        canonical.subsystems.rollout.availability,
+        ExpertDiagnosticsAvailability::Available
+    ) {
+        ExpertWorkflowTransitionState::Supported
+    } else {
+        ExpertWorkflowTransitionState::Partial
+    };
+    WorkflowViewSnapshot {
+        paths: vec![
+            SupportedExpertWorkflowPath {
+                class: ExpertWorkflowClass::InspectDiagnoseAct,
+                state: inspect_state,
+                canonical_path: "operations_snapshot -> diagnostics assessment -> runtime operation",
+                transitions: vec![WorkflowTransitionSummary {
+                    transition: WorkflowTransitionType::SnapshotDiagnosticsBeforeMutatingAction,
+                    state: inspect_state,
+                    detail: "canonical snapshot/diagnostics are explicit before controlled mutating runtime ops".to_string(),
+                    contracts: WorkflowContractBinding {
+                        entry_class: RuntimeEntryClass::ExpertHighTrust,
+                        diagnostics_contract: diagnostics,
+                        action_contract_shape: RuntimeContractShape::ExpertRuntimeOps,
+                        resulting_state_contract: resulting_state,
+                    },
+                }],
+            },
+            SupportedExpertWorkflowPath {
+                class: ExpertWorkflowClass::ReplayOriented,
+                state: replay_state,
+                canonical_path: "operations_snapshot -> replay_preflight -> replay_with_entry",
+                transitions: vec![WorkflowTransitionSummary {
+                    transition: WorkflowTransitionType::ReplayPreflightBeforeReplayAction,
+                    state: replay_state,
+                    detail: "replay preflight remains the canonical gate before replay action".to_string(),
+                    contracts: WorkflowContractBinding {
+                        entry_class: RuntimeEntryClass::ExpertHighTrust,
+                        diagnostics_contract: canonical.subsystems.replay_history.availability,
+                        action_contract_shape: RuntimeContractShape::ExpertReplay,
+                        resulting_state_contract: resulting_state,
+                    },
+                }],
+            },
+            SupportedExpertWorkflowPath {
+                class: ExpertWorkflowClass::RolloutOriented,
+                state: rollout_state,
+                canonical_path:
+                    "operations_snapshot.rollout diagnostics -> activation/fallback/rollback action",
+                transitions: vec![WorkflowTransitionSummary {
+                    transition:
+                        WorkflowTransitionType::RolloutDiagnosticsBeforeActivationFallbackRollback,
+                    state: rollout_state,
+                    detail: "rollout diagnostics are surfaced on the same runtime snapshot before rollout interventions".to_string(),
+                    contracts: WorkflowContractBinding {
+                        entry_class: RuntimeEntryClass::ExpertHighTrust,
+                        diagnostics_contract: canonical.subsystems.rollout.availability,
+                        action_contract_shape: RuntimeContractShape::ExpertRuntimeOps,
+                        resulting_state_contract: resulting_state,
+                    },
+                }],
+            },
+            SupportedExpertWorkflowPath {
+                class: ExpertWorkflowClass::InternalDevTestOnly,
+                state: ExpertWorkflowTransitionState::InternalOnly,
+                canonical_path: "run_operation_with_entry(..., InternalDevTest)",
+                transitions: vec![WorkflowTransitionSummary {
+                    transition: WorkflowTransitionType::SnapshotDiagnosticsBeforeMutatingAction,
+                    state: ExpertWorkflowTransitionState::InternalOnly,
+                    detail:
+                        "internal/dev/test-only paths are explicit and isolated from supported expert workflows".to_string(),
+                    contracts: WorkflowContractBinding {
+                        entry_class: RuntimeEntryClass::InternalDevTest,
+                        diagnostics_contract: ExpertDiagnosticsAvailability::InternalOnly,
+                        action_contract_shape: RuntimeContractShape::InternalControl,
+                        resulting_state_contract: resulting_state,
+                    },
+                }],
+            },
+        ],
+    }
+}
+
 fn validate_request(request: &ComputeSubmitRequest) -> Option<ComputeInvalidRequest> {
     if let Some(submitted_by) = request.submitted_by.as_ref() {
         if submitted_by.trim().is_empty() {
@@ -4193,13 +4355,14 @@ mod tests {
         ReplayRegressionSignal, ReplayRemoteContextReproducibility, ReplayabilityClass,
         RolloutReplayComparability, RuntimeOperation, RuntimeOperationClass, RuntimeOperationCode,
         RuntimeOperationSnapshotEffect, RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState,
-        SpecializationSemanticImpact,
+        SpecializationSemanticImpact, WorkflowTransitionType,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{
         compute_service::SchedulerConfig, CanonicalSnapshotConsistency,
-        ExpertDiagnosticsAvailability, InMemoryComputeService, JobExecutionPath, JobHistoryStore,
-        JobId, JobLifecycleState, RuntimeContractShape, RuntimeEntryClass,
+        ExpertDiagnosticsAvailability, ExpertWorkflowClass, ExpertWorkflowTransitionState,
+        InMemoryComputeService, JobExecutionPath, JobHistoryStore, JobId, JobLifecycleState,
+        RuntimeContractShape, RuntimeEntryClass,
     };
 
     fn service() -> CanonicalComputeEntryPoint {
@@ -4603,6 +4766,84 @@ mod tests {
             RuntimeOperationSnapshotEffect::NoSnapshotChange
                 | RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh
         ));
+    }
+
+    #[test]
+    fn workflow_view_surfaces_canonical_expert_paths_and_transitions() {
+        let mut entry = service();
+        entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(100),
+                execution_mode: ComputeExecutionMode::ExecuteInline,
+            })
+            .expect("submit should not fail");
+        let view = entry.workflow_view();
+        assert_eq!(view.paths.len(), 4);
+        assert!(view.paths.iter().any(|path| {
+            path.class == ExpertWorkflowClass::InspectDiagnoseAct
+                && path.transitions.iter().any(|transition| {
+                    transition.transition
+                        == WorkflowTransitionType::SnapshotDiagnosticsBeforeMutatingAction
+                })
+        }));
+        assert!(view.paths.iter().any(|path| {
+            path.class == ExpertWorkflowClass::ReplayOriented
+                && path.transitions.iter().any(|transition| {
+                    transition.transition
+                        == WorkflowTransitionType::ReplayPreflightBeforeReplayAction
+                })
+        }));
+        assert!(view.paths.iter().any(|path| {
+            path.class == ExpertWorkflowClass::RolloutOriented
+                && path
+                    .transitions
+                    .iter()
+                    .any(|transition| transition.transition
+                        == WorkflowTransitionType::RolloutDiagnosticsBeforeActivationFallbackRollback)
+        }));
+    }
+
+    #[test]
+    fn workflow_view_marks_partial_blocked_and_internal_only_states() {
+        let entry = service();
+        let view = entry.workflow_view();
+        let replay_path = view
+            .paths
+            .iter()
+            .find(|path| path.class == ExpertWorkflowClass::ReplayOriented)
+            .expect("replay path");
+        assert_eq!(replay_path.state, ExpertWorkflowTransitionState::Partial);
+
+        let internal_path = view
+            .paths
+            .iter()
+            .find(|path| path.class == ExpertWorkflowClass::InternalDevTestOnly)
+            .expect("internal path");
+        assert_eq!(
+            internal_path.state,
+            ExpertWorkflowTransitionState::InternalOnly
+        );
+
+        let mut unavailable = service();
+        let mut rejected = valid_request();
+        rejected.input.t = 0;
+        unavailable
+            .submit(ComputeSubmitRequest {
+                pipeline_request: rejected,
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(100),
+                execution_mode: ComputeExecutionMode::EnqueueOnly,
+            })
+            .expect("submit should not fail");
+        let blocked = unavailable.workflow_view();
+        let rollout_path = blocked
+            .paths
+            .iter()
+            .find(|path| path.class == ExpertWorkflowClass::RolloutOriented)
+            .expect("rollout path");
+        assert_eq!(rollout_path.state, ExpertWorkflowTransitionState::Blocked);
     }
 
     #[test]
