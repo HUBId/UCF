@@ -69,6 +69,40 @@ as explicit entry contracts instead of side-entry behavior:
 No auth/role/tenant platform is introduced here. The contract distinction is runtime-technical:
 standard-safe vs high-trust vs internal-only semantics with explicit unsupported outcomes.
 
+### Expert ops actions / controlled runtime interventions (Serie F Prompt 2)
+
+`CanonicalComputeEntryPoint::run_operation_with_entry` now keeps a narrow expert-ops surface with
+explicit action class + scope + result semantics:
+
+- action classes:
+  - `read_only`
+  - `controlled_mutating`
+  - `internal_dev_test_only`
+- scopes:
+  - `runtime_status`
+  - `worker_readiness`
+  - `replay_history`
+- result codes:
+  - `accepted`
+  - `completed`
+  - `no_op`
+  - `blocked`
+  - `failed`
+  - `unsupported` (runtime mode/context cannot provide this action)
+
+Canonical actions in this layer:
+
+- `snapshot` (read-only runtime status)
+- `drain_scheduler` (controlled mutating worker/readiness intervention; blocked on
+  `standard_canonical` entry)
+- `rehydrate_history` (controlled mutating replay/history rehydrate trigger; blocked without
+  history store)
+- `refresh_runtime` (explicitly unsupported for the in-memory bounded runtime)
+- `internal_clear_replay_regression` (internal/dev/test-only operation)
+
+Ops provenance stays in the runtime surface itself (`RuntimeOpsSnapshot.recent_operations`) so
+interventions are visible without introducing an admin/control-plane subsystem.
+
 ## Execution-device classes (bounded service placement)
 
 `MultiWorkerComputeService` now keeps a narrow execution-device layer for placement:

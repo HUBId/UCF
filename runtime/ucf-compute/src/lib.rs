@@ -153,8 +153,8 @@ pub use service_surface::{
     ReplayPreflightIssue, ReplayPreflightIssueCode, ReplayPreflightLocality,
     ReplayRemoteContextReproducibility, ReplayabilityClass, RolloutReplayComparability,
     RolloutReplayComparisonContext, RolloutReplayContextClass, RuntimeOperation,
-    RuntimeOperationCode, RuntimeOperationOutcome, RuntimeOpsSnapshot, RuntimeOpsState,
-    RuntimeSignalState, RuntimeWarmupState,
+    RuntimeOperationClass, RuntimeOperationCode, RuntimeOperationOutcome, RuntimeOperationScope,
+    RuntimeOpsSnapshot, RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState,
 };
 pub use work_meter::WorkMeter;
 
