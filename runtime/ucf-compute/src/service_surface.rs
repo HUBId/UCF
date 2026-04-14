@@ -1613,18 +1613,22 @@ impl CanonicalComputeEntryPoint {
         let snapshot = self.operations_snapshot();
         let contract_shape = runtime_operation_contract_shape(entry_class);
         let contract_safety = runtime_operation_contract_safety(entry_class);
-        let make_outcome =
-            |operation_class: RuntimeOperationClass,
-             operation_scope: RuntimeOperationScope,
-             code: RuntimeOperationCode,
-             mutation_boundary: ExpertMutationBoundary,
-             mutation_result: ExpertMutationResult,
-             blocked_by: Option<ExpertMutationBlocker>,
-             snapshot_effect: RuntimeOperationSnapshotEffect,
-             intended_state_change: String,
-             resulting_state_change: String,
-             detail: String,
-             completed_jobs: Vec<JobId>| RuntimeOperationOutcome {
+        let make_outcome = |operation_class: RuntimeOperationClass,
+                            operation_scope: RuntimeOperationScope,
+                            code: RuntimeOperationCode,
+                            mutation_boundary: ExpertMutationBoundary,
+                            mutation_result: ExpertMutationResult,
+                            blocked_by: Option<ExpertMutationBlocker>,
+                            snapshot_effect: RuntimeOperationSnapshotEffect,
+                            intended_state_change: String,
+                            resulting_state_change: String,
+                            detail: String,
+                            completed_jobs: Vec<JobId>| {
+            debug_assert!(
+                    runtime_operation_core_semantics_consistent(code, mutation_result),
+                    "runtime operation core semantics drift: code={code:?}, mutation_result={mutation_result:?}"
+                );
+            RuntimeOperationOutcome {
                 operation,
                 operation_class,
                 operation_scope,
@@ -1640,7 +1644,8 @@ impl CanonicalComputeEntryPoint {
                 resulting_state_change,
                 detail,
                 completed_jobs,
-            };
+            }
+        };
 
         let outcome = match operation {
             RuntimeOperation::Snapshot => make_outcome(
@@ -3349,34 +3354,43 @@ fn validate_request(request: &ComputeSubmitRequest) -> Option<ComputeInvalidRequ
 }
 
 fn replay_contract_shape(entry_class: RuntimeEntryClass) -> RuntimeContractShape {
-    match entry_class {
-        RuntimeEntryClass::StandardCanonical => RuntimeContractShape::CanonicalCompute,
-        RuntimeEntryClass::ExpertHighTrust => RuntimeContractShape::ExpertReplay,
-        RuntimeEntryClass::InternalDevTest => RuntimeContractShape::InternalControl,
-    }
+    entry_class.replay_contract_shape()
 }
 
 fn replay_contract_safety(entry_class: RuntimeEntryClass) -> RuntimeContractSafety {
-    match entry_class {
-        RuntimeEntryClass::StandardCanonical => RuntimeContractSafety::StandardSafe,
-        RuntimeEntryClass::ExpertHighTrust => RuntimeContractSafety::HighTrustOnly,
-        RuntimeEntryClass::InternalDevTest => RuntimeContractSafety::InternalOnly,
-    }
+    entry_class.contract_safety()
 }
 
 fn runtime_operation_contract_shape(entry_class: RuntimeEntryClass) -> RuntimeContractShape {
-    match entry_class {
-        RuntimeEntryClass::StandardCanonical => RuntimeContractShape::CanonicalCompute,
-        RuntimeEntryClass::ExpertHighTrust => RuntimeContractShape::ExpertRuntimeOps,
-        RuntimeEntryClass::InternalDevTest => RuntimeContractShape::InternalControl,
-    }
+    entry_class.runtime_ops_contract_shape()
 }
 
 fn runtime_operation_contract_safety(entry_class: RuntimeEntryClass) -> RuntimeContractSafety {
-    match entry_class {
-        RuntimeEntryClass::StandardCanonical => RuntimeContractSafety::StandardSafe,
-        RuntimeEntryClass::ExpertHighTrust => RuntimeContractSafety::HighTrustOnly,
-        RuntimeEntryClass::InternalDevTest => RuntimeContractSafety::InternalOnly,
+    entry_class.contract_safety()
+}
+
+fn runtime_operation_core_semantics_consistent(
+    code: RuntimeOperationCode,
+    mutation_result: ExpertMutationResult,
+) -> bool {
+    match code {
+        RuntimeOperationCode::Accepted => mutation_result == ExpertMutationResult::GuardedMutation,
+        RuntimeOperationCode::Completed => matches!(
+            mutation_result,
+            ExpertMutationResult::NoMutationReadOnly
+                | ExpertMutationResult::StateChanged
+                | ExpertMutationResult::PartialEffect
+        ),
+        RuntimeOperationCode::NoOp => matches!(
+            mutation_result,
+            ExpertMutationResult::NoOp | ExpertMutationResult::GuardedMutation
+        ),
+        RuntimeOperationCode::Blocked | RuntimeOperationCode::Failed => {
+            mutation_result == ExpertMutationResult::BlockedBySafetyRail
+        }
+        RuntimeOperationCode::Unsupported => {
+            mutation_result == ExpertMutationResult::UnsupportedInRuntimeContext
+        }
     }
 }
 
@@ -4477,18 +4491,20 @@ fn now_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_warmup_state, BaselineComparisonFailureCode, BaselineComparisonResult,
-        BaselineReference, CanonicalComputeEntryPoint, ComputeExecutionMode,
-        ComputeHistoryLookupError, ComputeJobHandle, ComputeJobHistoryLookup, ComputeReplayOutcome,
-        ComputeReplayPreflight, ComputeRequestValidationCode, ComputeSubmitOutcome,
-        ComputeSubmitRequest, DeterministicSubsetClass, DeterministicSubsetEligibility,
-        PersistedSnapshotReadiness, RecoveryDisposition, ReplayContextConsistencyClass,
-        ReplayContextTransition, ReplayDeterminismClass, ReplayExecutionMode, ReplayFailureCode,
-        ReplayMismatchClass, ReplayPreflightIssueCode, ReplayRegressionReasonCode,
-        ReplayRegressionSignal, ReplayRemoteContextReproducibility, ReplayabilityClass,
-        RolloutReplayComparability, RuntimeOperation, RuntimeOperationClass, RuntimeOperationCode,
-        RuntimeOperationSnapshotEffect, RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState,
-        SpecializationSemanticImpact, WorkflowTransitionType,
+        parse_warmup_state, replay_contract_safety, replay_contract_shape,
+        runtime_operation_contract_safety, runtime_operation_contract_shape,
+        runtime_operation_core_semantics_consistent, BaselineComparisonFailureCode,
+        BaselineComparisonResult, BaselineReference, CanonicalComputeEntryPoint,
+        ComputeExecutionMode, ComputeHistoryLookupError, ComputeJobHandle, ComputeJobHistoryLookup,
+        ComputeReplayOutcome, ComputeReplayPreflight, ComputeRequestValidationCode,
+        ComputeSubmitOutcome, ComputeSubmitRequest, DeterministicSubsetClass,
+        DeterministicSubsetEligibility, PersistedSnapshotReadiness, RecoveryDisposition,
+        ReplayContextConsistencyClass, ReplayContextTransition, ReplayDeterminismClass,
+        ReplayExecutionMode, ReplayFailureCode, ReplayMismatchClass, ReplayPreflightIssueCode,
+        ReplayRegressionReasonCode, ReplayRegressionSignal, ReplayRemoteContextReproducibility,
+        ReplayabilityClass, RolloutReplayComparability, RuntimeOperation, RuntimeOperationClass,
+        RuntimeOperationCode, RuntimeOperationSnapshotEffect, RuntimeOpsState, RuntimeSignalState,
+        RuntimeWarmupState, SpecializationSemanticImpact, WorkflowTransitionType,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{
@@ -5599,6 +5615,75 @@ mod tests {
             RuntimeContractShape::CanonicalCompute
         );
         assert!(outcome.completed_jobs.is_empty());
+    }
+
+    #[test]
+    fn shared_entry_contract_mapping_stays_consistent_for_replay_and_ops() {
+        let cases = [
+            (
+                RuntimeEntryClass::StandardCanonical,
+                RuntimeContractShape::CanonicalCompute,
+            ),
+            (
+                RuntimeEntryClass::ExpertHighTrust,
+                RuntimeContractShape::ExpertRuntimeOps,
+            ),
+            (
+                RuntimeEntryClass::InternalDevTest,
+                RuntimeContractShape::InternalControl,
+            ),
+        ];
+        for (entry_class, ops_shape) in cases {
+            assert_eq!(runtime_operation_contract_shape(entry_class), ops_shape);
+            assert_eq!(
+                runtime_operation_contract_safety(entry_class),
+                entry_class.contract_safety()
+            );
+            assert_eq!(
+                replay_contract_shape(entry_class),
+                entry_class.replay_contract_shape()
+            );
+            assert_eq!(
+                replay_contract_safety(entry_class),
+                entry_class.contract_safety()
+            );
+        }
+    }
+
+    #[test]
+    fn runtime_operation_code_and_mutation_result_core_semantics_are_aligned() {
+        assert!(runtime_operation_core_semantics_consistent(
+            RuntimeOperationCode::Accepted,
+            ExpertMutationResult::GuardedMutation
+        ));
+        assert!(runtime_operation_core_semantics_consistent(
+            RuntimeOperationCode::Completed,
+            ExpertMutationResult::StateChanged
+        ));
+        assert!(runtime_operation_core_semantics_consistent(
+            RuntimeOperationCode::Completed,
+            ExpertMutationResult::NoMutationReadOnly
+        ));
+        assert!(runtime_operation_core_semantics_consistent(
+            RuntimeOperationCode::NoOp,
+            ExpertMutationResult::NoOp
+        ));
+        assert!(runtime_operation_core_semantics_consistent(
+            RuntimeOperationCode::Blocked,
+            ExpertMutationResult::BlockedBySafetyRail
+        ));
+        assert!(runtime_operation_core_semantics_consistent(
+            RuntimeOperationCode::Unsupported,
+            ExpertMutationResult::UnsupportedInRuntimeContext
+        ));
+        assert!(!runtime_operation_core_semantics_consistent(
+            RuntimeOperationCode::Completed,
+            ExpertMutationResult::BlockedBySafetyRail
+        ));
+        assert!(!runtime_operation_core_semantics_consistent(
+            RuntimeOperationCode::NoOp,
+            ExpertMutationResult::StateChanged
+        ));
     }
 
     #[test]
