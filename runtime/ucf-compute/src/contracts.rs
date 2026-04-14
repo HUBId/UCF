@@ -57,6 +57,24 @@ pub enum ExpertDiagnosticsAvailability {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExpertWorkflowClass {
+    InspectDiagnoseAct,
+    ReplayOriented,
+    RolloutOriented,
+    InternalDevTestOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExpertWorkflowTransitionState {
+    Supported,
+    Partial,
+    Blocked,
+    InternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[repr(u16)]
 pub enum StageContractVersion {
     V1 = 1,

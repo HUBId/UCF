@@ -107,8 +107,9 @@ pub use compute_service::{
 };
 pub use contracts::{
     CanonicalSnapshotConsistency, CapabilityConstraint, CapabilitySupportLevel,
-    ExpertDiagnosticsAvailability, RuntimeContractSafety, RuntimeContractShape, RuntimeEntryClass,
-    StageContractVersion, StageKind, StagePathCapability, StagePathSupportLevel, ValidationStatus,
+    ExpertDiagnosticsAvailability, ExpertWorkflowClass, ExpertWorkflowTransitionState,
+    RuntimeContractSafety, RuntimeContractShape, RuntimeEntryClass, StageContractVersion,
+    StageKind, StagePathCapability, StagePathSupportLevel, ValidationStatus,
 };
 pub use enablement::{
     EnablementComputeBackend, EnablementConfig, RealEnablementMode, SlotEnablement, SlotMode,
@@ -156,7 +157,9 @@ pub use service_surface::{
     RolloutReplayComparisonContext, RolloutReplayContextClass, RuntimeOperation,
     RuntimeOperationClass, RuntimeOperationCode, RuntimeOperationOutcome, RuntimeOperationScope,
     RuntimeOperationSnapshotEffect, RuntimeOpsSnapshot, RuntimeOpsState, RuntimeSignalState,
-    RuntimeSubsystemDiagnosticSummary, RuntimeWarmupState,
+    RuntimeSubsystemDiagnosticSummary, RuntimeWarmupState, SupportedExpertWorkflowPath,
+    WorkflowContractBinding, WorkflowTransitionSummary, WorkflowTransitionType,
+    WorkflowViewSnapshot,
 };
 pub use work_meter::WorkMeter;
 
