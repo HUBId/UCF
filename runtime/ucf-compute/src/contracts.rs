@@ -13,6 +13,31 @@ pub const MAX_STAGE_ENCODED_BYTES: usize = 64 * 1024;
 pub const NSR_CONTRACT_VERSION_V1: &str = "v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeEntryClass {
+    StandardCanonical,
+    ExpertHighTrust,
+    InternalDevTest,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeContractShape {
+    CanonicalCompute,
+    ExpertReplay,
+    ExpertRuntimeOps,
+    InternalControl,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeContractSafety {
+    StandardSafe,
+    HighTrustOnly,
+    InternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[repr(u16)]
 pub enum StageContractVersion {
     V1 = 1,

@@ -51,6 +51,24 @@ See also `docs/compute_onboarding_reference_path.md` for the compact readiness m
 For the hard, repo-based closure matrix of Distributed Execution Hardening (Serie A), see
 `docs/distributed_execution_serie_a_closure_v1.md`.
 
+### Expert runtime entry contracts (Serie F)
+
+The service surface keeps one canonical submit path and now models high-trust usage
+as explicit entry contracts instead of side-entry behavior:
+
+- `RuntimeEntryClass::standard_canonical`
+  - canonical submit + snapshot-safe ops.
+  - does **not** support replay or scheduler-drain operations.
+- `RuntimeEntryClass::expert_high_trust`
+  - technical replay and runtime-ops entry (`replay_with_entry`, `run_operation_with_entry`).
+  - guarantees explicit contract metadata in outcomes (`entry_class`, `contract_shape`,
+    `contract_safety`).
+- `RuntimeEntryClass::internal_dev_test`
+  - internal control/test surface on the same contract model.
+
+No auth/role/tenant platform is introduced here. The contract distinction is runtime-technical:
+standard-safe vs high-trust vs internal-only semantics with explicit unsupported outcomes.
+
 ## Execution-device classes (bounded service placement)
 
 `MultiWorkerComputeService` now keeps a narrow execution-device layer for placement:
