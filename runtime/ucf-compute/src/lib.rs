@@ -14,6 +14,8 @@
 //! - Multi-worker/IPC/remote execution: [`worker_backend`], [`ipc`], [`remote_compute`]
 //! - Rollout and slot path enablement (`active/candidate/compare/shadow`): [`enablement`]
 //! - Ops/history/recovery/replay-facing persistence: [`job_history`], [`service_surface`]
+//! - Expert/high-trust runtime contracts for replay + runtime ops:
+//!   [`RuntimeEntryClass`], [`RuntimeContractShape`], [`service_surface`]
 //!
 //! ## Diagnostic/test seams (not production defaults)
 //! - Compatibility/dev backend lane (`stub`, `candle` compatibility seam): [`backends`]
@@ -104,8 +106,9 @@ pub use compute_service::{
     WorkerRegistryRole, WorkerRetrySummary, WorkerRuntimeStatus,
 };
 pub use contracts::{
-    CapabilityConstraint, CapabilitySupportLevel, StageContractVersion, StageKind,
-    StagePathCapability, StagePathSupportLevel, ValidationStatus,
+    CapabilityConstraint, CapabilitySupportLevel, RuntimeContractSafety, RuntimeContractShape,
+    RuntimeEntryClass, StageContractVersion, StageKind, StagePathCapability, StagePathSupportLevel,
+    ValidationStatus,
 };
 pub use enablement::{
     EnablementComputeBackend, EnablementConfig, RealEnablementMode, SlotEnablement, SlotMode,

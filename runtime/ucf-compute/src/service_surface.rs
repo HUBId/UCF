@@ -26,8 +26,8 @@ use crate::pipeline::{
     CanonicalPipelineState, CanonicalStageCostAttribution, CanonicalStageId, CanonicalWorkSummary,
 };
 use crate::{
-    DeploymentProfile, ModelSlot, ModelSlotProvenance, RuntimeDiagnosticFlags, RuntimeMode,
-    RuntimeProfile, SlotRuntimeStatus,
+    DeploymentProfile, ModelSlot, ModelSlotProvenance, RuntimeContractSafety, RuntimeContractShape,
+    RuntimeDiagnosticFlags, RuntimeEntryClass, RuntimeMode, RuntimeProfile, SlotRuntimeStatus,
 };
 use std::collections::BTreeMap;
 
@@ -130,6 +130,9 @@ pub enum RuntimeOperationCode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeOperationOutcome {
     pub operation: RuntimeOperation,
+    pub entry_class: RuntimeEntryClass,
+    pub contract_shape: RuntimeContractShape,
+    pub contract_safety: RuntimeContractSafety,
     pub code: RuntimeOperationCode,
     pub detail: String,
     pub completed_jobs: Vec<JobId>,
@@ -444,6 +447,59 @@ impl CanonicalComputeEntryPoint {
         &mut self,
         handle: ComputeJobHandle,
     ) -> Result<ComputeReplayOutcome, crate::ComputeError> {
+        self.replay_with_entry(handle, RuntimeEntryClass::ExpertHighTrust)
+    }
+
+    pub fn replay_with_entry(
+        &mut self,
+        handle: ComputeJobHandle,
+        entry_class: RuntimeEntryClass,
+    ) -> Result<ComputeReplayOutcome, crate::ComputeError> {
+        if entry_class == RuntimeEntryClass::StandardCanonical {
+            let source_job_id = handle.job_id;
+            let bridge = ReplayContextBridgeSummary {
+                transition: ReplayContextTransition::LocalToLocal,
+                source: ReplayExecutionContextDescriptor {
+                    execution_mode: ReplayExecutionMode::Local,
+                    execution_path: "local_canonical".to_string(),
+                    execution_lane: None,
+                    resource_class: None,
+                    capacity_pressure: None,
+                    has_backend_route: false,
+                    remote_context_completeness: "missing".to_string(),
+                },
+                replay: ReplayExecutionContextDescriptor {
+                    execution_mode: ReplayExecutionMode::Local,
+                    execution_path: "local_canonical".to_string(),
+                    execution_lane: None,
+                    resource_class: None,
+                    capacity_pressure: None,
+                    has_backend_route: false,
+                    remote_context_completeness: "missing".to_string(),
+                },
+                major_mismatches: vec!["entry_contract:standard_path_blocked".to_string()],
+            };
+            let regression = regression_for_not_replayable(
+                source_job_id,
+                ReplayabilityClass::BlockedForReplay,
+                None,
+                &bridge,
+            );
+            self.latest_replay_regression = Some(regression.clone());
+            return Ok(ComputeReplayOutcome::NotReplayable {
+                source_job_id,
+                entry_class,
+                contract_shape: replay_contract_shape(entry_class),
+                contract_safety: replay_contract_safety(entry_class),
+                code: ReplayFailureCode::UnsupportedOnStandardEntryPath,
+                detail: "replay requires expert/high-trust entry contract".to_string(),
+                mismatch_view: blocked_replay_mismatch_view(
+                    ReplayMismatchReasonCode::MissingReplayPrerequisites,
+                    "expert replay contract required; standard canonical entry is unsupported",
+                ),
+                regression,
+            });
+        }
         let preflight = self.replay_preflight(handle);
         if matches!(
             preflight.replayability,
@@ -459,6 +515,9 @@ impl CanonicalComputeEntryPoint {
             self.latest_replay_regression = Some(regression.clone());
             return Ok(ComputeReplayOutcome::NotReplayable {
                 source_job_id: preflight.source_job_id,
+                entry_class,
+                contract_shape: replay_contract_shape(entry_class),
+                contract_safety: replay_contract_safety(entry_class),
                 code,
                 detail,
                 mismatch_view: preflight.mismatch_view.clone(),
@@ -477,6 +536,9 @@ impl CanonicalComputeEntryPoint {
                 self.latest_replay_regression = Some(regression.clone());
                 return Ok(ComputeReplayOutcome::NotReplayable {
                     source_job_id: preflight.source_job_id,
+                    entry_class,
+                    contract_shape: replay_contract_shape(entry_class),
+                    contract_safety: replay_contract_safety(entry_class),
                     code: ReplayFailureCode::RecordMissing,
                     detail: "replay record missing".to_string(),
                     mismatch_view: preflight.mismatch_view.clone(),
@@ -495,6 +557,9 @@ impl CanonicalComputeEntryPoint {
             self.latest_replay_regression = Some(regression.clone());
             return Ok(ComputeReplayOutcome::NotReplayable {
                 source_job_id: source.job_id,
+                entry_class,
+                contract_shape: replay_contract_shape(entry_class),
+                contract_safety: replay_contract_safety(entry_class),
                 code: ReplayFailureCode::ConfigurationIncomplete,
                 detail: "replay configuration incomplete (canonical request unavailable)"
                     .to_string(),
@@ -537,6 +602,9 @@ impl CanonicalComputeEntryPoint {
             self.latest_replay_regression = Some(regression.clone());
             return Ok(ComputeReplayOutcome::NotReplayable {
                 source_job_id: source.job_id,
+                entry_class,
+                contract_shape: replay_contract_shape(entry_class),
+                contract_safety: replay_contract_safety(entry_class),
                 code,
                 detail,
                 mismatch_view: preflight.mismatch_view.clone(),
@@ -692,6 +760,9 @@ impl CanonicalComputeEntryPoint {
         Ok(ComputeReplayOutcome::Completed(ComputeReplayReport {
             source_job_id: source.job_id,
             replay_job_id: replay_id,
+            entry_class,
+            contract_shape: replay_contract_shape(entry_class),
+            contract_safety: replay_contract_safety(entry_class),
             determinism_class,
             source_execution_mode,
             replay_execution_mode,
@@ -1399,20 +1470,46 @@ impl CanonicalComputeEntryPoint {
         &mut self,
         operation: RuntimeOperation,
     ) -> Result<RuntimeOperationOutcome, crate::ComputeError> {
+        self.run_operation_with_entry(operation, RuntimeEntryClass::ExpertHighTrust)
+    }
+
+    pub fn run_operation_with_entry(
+        &mut self,
+        operation: RuntimeOperation,
+        entry_class: RuntimeEntryClass,
+    ) -> Result<RuntimeOperationOutcome, crate::ComputeError> {
         match operation {
             RuntimeOperation::Snapshot => Ok(RuntimeOperationOutcome {
                 operation,
+                entry_class,
+                contract_shape: runtime_operation_contract_shape(entry_class),
+                contract_safety: runtime_operation_contract_safety(entry_class),
                 code: RuntimeOperationCode::Applied,
                 detail: "runtime snapshot captured".to_string(),
                 completed_jobs: Vec::new(),
             }),
             RuntimeOperation::DrainScheduler { max_jobs } => {
+                if entry_class == RuntimeEntryClass::StandardCanonical {
+                    return Ok(RuntimeOperationOutcome {
+                        operation,
+                        entry_class,
+                        contract_shape: runtime_operation_contract_shape(entry_class),
+                        contract_safety: runtime_operation_contract_safety(entry_class),
+                        code: RuntimeOperationCode::Unsupported,
+                        detail: "drain_scheduler requires expert/high-trust entry contract"
+                            .to_string(),
+                        completed_jobs: Vec::new(),
+                    });
+                }
                 let completed_jobs = self.service.run_scheduler_cycle(max_jobs.max(1))?;
                 for job_id in &completed_jobs {
                     self.persist_job(*job_id);
                 }
                 Ok(RuntimeOperationOutcome {
                     operation,
+                    entry_class,
+                    contract_shape: runtime_operation_contract_shape(entry_class),
+                    contract_safety: runtime_operation_contract_safety(entry_class),
                     code: RuntimeOperationCode::Applied,
                     detail: format!("scheduler drained {} jobs", completed_jobs.len()),
                     completed_jobs,
@@ -1420,6 +1517,9 @@ impl CanonicalComputeEntryPoint {
             }
             RuntimeOperation::RefreshRuntime => Ok(RuntimeOperationOutcome {
                 operation,
+                entry_class,
+                contract_shape: runtime_operation_contract_shape(entry_class),
+                contract_safety: runtime_operation_contract_safety(entry_class),
                 code: RuntimeOperationCode::Unsupported,
                 detail: "refresh_runtime unsupported for in-memory compute service".to_string(),
                 completed_jobs: Vec::new(),
@@ -1766,6 +1866,7 @@ pub enum ReplayFailureCode {
     ConfigurationIncomplete,
     RequiredArtifactUnavailable,
     BackendOrDeviceUnavailable,
+    UnsupportedOnStandardEntryPath,
     ChangedRuntimeContextIncompatible,
     MissingRemoteExecutionContext,
     ReplayExecutionFailed,
@@ -2055,6 +2156,9 @@ pub struct ReplayConfigurationDiff {
 pub struct ComputeReplayReport {
     pub source_job_id: JobId,
     pub replay_job_id: JobId,
+    pub entry_class: RuntimeEntryClass,
+    pub contract_shape: RuntimeContractShape,
+    pub contract_safety: RuntimeContractSafety,
     pub determinism_class: ReplayDeterminismClass,
     pub source_execution_mode: ReplayExecutionMode,
     pub replay_execution_mode: ReplayExecutionMode,
@@ -2080,6 +2184,9 @@ pub enum ComputeReplayOutcome {
     Completed(ComputeReplayReport),
     NotReplayable {
         source_job_id: JobId,
+        entry_class: RuntimeEntryClass,
+        contract_shape: RuntimeContractShape,
+        contract_safety: RuntimeContractSafety,
         code: ReplayFailureCode,
         detail: String,
         mismatch_view: ReplayMismatchView,
@@ -2513,6 +2620,61 @@ fn validate_request(request: &ComputeSubmitRequest) -> Option<ComputeInvalidRequ
         }
     }
     None
+}
+
+fn replay_contract_shape(entry_class: RuntimeEntryClass) -> RuntimeContractShape {
+    match entry_class {
+        RuntimeEntryClass::StandardCanonical => RuntimeContractShape::CanonicalCompute,
+        RuntimeEntryClass::ExpertHighTrust => RuntimeContractShape::ExpertReplay,
+        RuntimeEntryClass::InternalDevTest => RuntimeContractShape::InternalControl,
+    }
+}
+
+fn replay_contract_safety(entry_class: RuntimeEntryClass) -> RuntimeContractSafety {
+    match entry_class {
+        RuntimeEntryClass::StandardCanonical => RuntimeContractSafety::StandardSafe,
+        RuntimeEntryClass::ExpertHighTrust => RuntimeContractSafety::HighTrustOnly,
+        RuntimeEntryClass::InternalDevTest => RuntimeContractSafety::InternalOnly,
+    }
+}
+
+fn runtime_operation_contract_shape(entry_class: RuntimeEntryClass) -> RuntimeContractShape {
+    match entry_class {
+        RuntimeEntryClass::StandardCanonical => RuntimeContractShape::CanonicalCompute,
+        RuntimeEntryClass::ExpertHighTrust => RuntimeContractShape::ExpertRuntimeOps,
+        RuntimeEntryClass::InternalDevTest => RuntimeContractShape::InternalControl,
+    }
+}
+
+fn runtime_operation_contract_safety(entry_class: RuntimeEntryClass) -> RuntimeContractSafety {
+    match entry_class {
+        RuntimeEntryClass::StandardCanonical => RuntimeContractSafety::StandardSafe,
+        RuntimeEntryClass::ExpertHighTrust => RuntimeContractSafety::HighTrustOnly,
+        RuntimeEntryClass::InternalDevTest => RuntimeContractSafety::InternalOnly,
+    }
+}
+
+fn blocked_replay_mismatch_view(
+    code: ReplayMismatchReasonCode,
+    detail: &str,
+) -> ReplayMismatchView {
+    ReplayMismatchView {
+        class: ReplayMismatchClass::BlockedByMissingPrerequisites,
+        blocked_before_execution: true,
+        divergence_observed_after_execution: false,
+        primary_reasons: vec![code],
+        reasons: vec![ReplayMismatchReason {
+            code,
+            category: ReplayMismatchCategory::SnapshotCompleteness,
+            detail: detail.to_string(),
+        }],
+        outcome_comparison: Some(ReplayOutcomeComparison::ReplayFailedBeforeMeaningfulComparison),
+        deterministic_subset: DeterministicSubsetAssessment {
+            class: DeterministicSubsetClass::ExcludedFromDeterministicSubset,
+            eligibility: DeterministicSubsetEligibility::StableSubsetExcludedWithReason,
+            reasons: vec![DeterministicSubsetReasonCode::IncompleteSnapshotOrContext],
+        },
+    }
 }
 
 fn status_from_record(
@@ -3604,7 +3766,7 @@ mod tests {
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{
         compute_service::SchedulerConfig, InMemoryComputeService, JobExecutionPath,
-        JobHistoryStore, JobId, JobLifecycleState,
+        JobHistoryStore, JobId, JobLifecycleState, RuntimeContractShape, RuntimeEntryClass,
     };
 
     fn service() -> CanonicalComputeEntryPoint {
@@ -4401,6 +4563,48 @@ mod tests {
             }
             other => panic!("expected non-replayable, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn standard_entry_blocks_expert_replay_contract() {
+        let mut entry = service();
+        let replay = entry
+            .replay_with_entry(
+                ComputeJobHandle { job_id: JobId(42) },
+                RuntimeEntryClass::StandardCanonical,
+            )
+            .expect("replay");
+        match replay {
+            ComputeReplayOutcome::NotReplayable {
+                code,
+                entry_class,
+                contract_shape,
+                ..
+            } => {
+                assert_eq!(code, ReplayFailureCode::UnsupportedOnStandardEntryPath);
+                assert_eq!(entry_class, RuntimeEntryClass::StandardCanonical);
+                assert_eq!(contract_shape, RuntimeContractShape::CanonicalCompute);
+            }
+            other => panic!("expected unsupported standard-path replay, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn standard_entry_blocks_scheduler_drain_runtime_ops() {
+        let mut entry = service();
+        let outcome = entry
+            .run_operation_with_entry(
+                RuntimeOperation::DrainScheduler { max_jobs: 2 },
+                RuntimeEntryClass::StandardCanonical,
+            )
+            .expect("run operation");
+        assert_eq!(outcome.code, RuntimeOperationCode::Unsupported);
+        assert_eq!(outcome.entry_class, RuntimeEntryClass::StandardCanonical);
+        assert_eq!(
+            outcome.contract_shape,
+            RuntimeContractShape::CanonicalCompute
+        );
+        assert!(outcome.completed_jobs.is_empty());
     }
 
     #[test]
