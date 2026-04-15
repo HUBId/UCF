@@ -33,6 +33,7 @@ use crate::{
     RuntimeFreshnessClass, RuntimeMode, RuntimeProfile, SlotRuntimeStatus,
 };
 use std::collections::{BTreeMap, VecDeque};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComputeExecutionMode {
@@ -234,12 +235,55 @@ pub struct RuntimeOpsSnapshot {
     pub repeated_hotspot_stage: Option<CanonicalStageId>,
     pub repeated_hotspot_runs: usize,
     pub optimization_view: RuntimeOptimizationOpsView,
+    pub queue_hygiene: QueueHygieneSnapshot,
     pub specialization: RuntimeSpecializationOpsView,
     pub replay_snapshot_coverage: ReplaySnapshotCoverage,
     pub latest_replay_regression: Option<ReplayRegressionAssessment>,
     pub recovery: Option<ComputeRecoverySnapshot>,
     pub recent_operations: Vec<RuntimeOperationOutcome>,
     pub workflow_view: WorkflowViewSnapshot,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueHygieneClass {
+    HealthyQueued,
+    HealthyRunning,
+    RetryOrRedispatchPending,
+    StaleQueued,
+    StuckRunning,
+    OrphanedWorkItem,
+    TerminalUnreconciled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueHygieneWaitingClass {
+    LegitimatelyWaiting,
+    DelayedButExplainable,
+    LikelyStuck,
+    StaleNeedsRecheck,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueHygieneAction {
+    MarkForRecheck,
+    MarkAsOrphaned,
+    MarkForReconcileDecision,
+    MarkAsTerminallyStale,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QueueHygieneSnapshot {
+    pub healthy_queued: usize,
+    pub healthy_running: usize,
+    pub retry_or_redispatch_pending: usize,
+    pub stale_queued: usize,
+    pub stuck_running: usize,
+    pub orphaned_work_items: usize,
+    pub terminal_unreconciled: usize,
+    pub waiting_class: QueueHygieneWaitingClass,
+    pub dominant_hygiene_class: Option<QueueHygieneClass>,
+    pub suggested_actions: Vec<QueueHygieneAction>,
+    pub signals: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -423,6 +467,9 @@ pub struct CanonicalComputeEntryPoint {
 }
 
 impl CanonicalComputeEntryPoint {
+    const STALE_QUEUE_WAIT_MS: u64 = 30_000;
+    const STUCK_RUNNING_MS: u64 = 120_000;
+
     pub fn new(service: InMemoryComputeService) -> Self {
         Self {
             service,
@@ -1359,6 +1406,7 @@ impl CanonicalComputeEntryPoint {
         let mut partial = 0usize;
         let mut insufficient = 0usize;
         let mut stale_or_incomplete = 0usize;
+        let now_unix_ms = now_unix_ms();
 
         for record in self.service.jobs() {
             submitted_total = submitted_total.saturating_add(1);
@@ -1546,6 +1594,15 @@ impl CanonicalComputeEntryPoint {
             .unwrap_or_else(|| "insufficient_history_signal".to_string());
 
         let specialization = build_specialization_ops_view(state, scheduler.execution_path, &slots);
+        let queue_hygiene = build_queue_hygiene_snapshot(
+            self.service.jobs(),
+            self.service.lifecycle_events(),
+            self.history_store.as_ref(),
+            has_missing_required_slot,
+            now_unix_ms,
+            Self::STALE_QUEUE_WAIT_MS,
+            Self::STUCK_RUNNING_MS,
+        );
         let stale_runtime = build_runtime_stale_drift_view(
             state,
             scheduler.running_jobs,
@@ -1621,6 +1678,7 @@ impl CanonicalComputeEntryPoint {
                 historical_feedback_alignment,
                 caveats,
             },
+            queue_hygiene,
             specialization,
             replay_snapshot_coverage: ReplaySnapshotCoverage {
                 replay_ready,
@@ -2183,6 +2241,181 @@ impl CanonicalComputeEntryPoint {
         }
         records.sort_by_key(|record| std::cmp::Reverse(record.job_id.0));
         records
+    }
+}
+
+fn now_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_millis() as u64)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_queue_hygiene_snapshot<'a>(
+    jobs: impl Iterator<Item = &'a JobRecord>,
+    lifecycle_events: &[JobLifecycleEvent],
+    history_store: Option<&JobHistoryStore>,
+    has_missing_required_slot: bool,
+    now_unix_ms: u64,
+    stale_queue_wait_ms: u64,
+    stuck_running_ms: u64,
+) -> QueueHygieneSnapshot {
+    let mut healthy_queued = 0usize;
+    let mut healthy_running = 0usize;
+    let mut retry_or_redispatch_pending = 0usize;
+    let mut stale_queued = 0usize;
+    let mut stuck_running = 0usize;
+    let mut terminal_unreconciled = 0usize;
+    let mut signals = Vec::new();
+    let mut live_job_ids = std::collections::BTreeSet::new();
+
+    for record in jobs {
+        live_job_ids.insert(record.job.id.0);
+        match record.state {
+            JobLifecycleState::Queued => {
+                let wait_ms = now_unix_ms.saturating_sub(record.accounting.submitted_at_unix_ms);
+                if wait_ms >= stale_queue_wait_ms || has_missing_required_slot {
+                    stale_queued = stale_queued.saturating_add(1);
+                    signals.push(format!(
+                        "job={} queued_stale wait_ms={} required_slot_missing={}",
+                        record.job.id.0, wait_ms, has_missing_required_slot
+                    ));
+                } else {
+                    healthy_queued = healthy_queued.saturating_add(1);
+                }
+            }
+            JobLifecycleState::Running => {
+                let run_ms = record
+                    .accounting
+                    .started_at_unix_ms
+                    .map(|started| now_unix_ms.saturating_sub(started))
+                    .unwrap_or(0);
+                if run_ms >= stuck_running_ms {
+                    stuck_running = stuck_running.saturating_add(1);
+                    signals.push(format!(
+                        "job={} running_likely_stuck run_ms={}",
+                        record.job.id.0, run_ms
+                    ));
+                } else {
+                    healthy_running = healthy_running.saturating_add(1);
+                }
+            }
+            JobLifecycleState::Failed
+            | JobLifecycleState::TimedOut
+            | JobLifecycleState::Completed => {
+                if history_store.is_some() {
+                    terminal_unreconciled = terminal_unreconciled.saturating_add(1);
+                }
+            }
+            _ => {}
+        }
+        if record
+            .accounting
+            .work_cost_summary
+            .as_ref()
+            .is_some_and(|summary| summary.retry_attempts > 1 || summary.redispatched_to_local)
+            && matches!(
+                record.state,
+                JobLifecycleState::Queued | JobLifecycleState::Running
+            )
+        {
+            retry_or_redispatch_pending = retry_or_redispatch_pending.saturating_add(1);
+            signals.push(format!(
+                "job={} retry_or_redispatch_pending",
+                record.job.id.0
+            ));
+        }
+    }
+
+    if let Some(store) = history_store {
+        for persisted in store.records() {
+            let active_lifecycle = matches!(
+                persisted.lifecycle_state.as_str(),
+                "submitted" | "admitted" | "queued" | "running"
+            );
+            if active_lifecycle && !live_job_ids.contains(&persisted.job_id) {
+                signals.push(format!(
+                    "job={} persisted_active_without_live_owner state={}",
+                    persisted.job_id, persisted.lifecycle_state
+                ));
+            }
+        }
+    }
+
+    let orphaned_work_items = lifecycle_events
+        .iter()
+        .filter(|event| {
+            event
+                .detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("worker_unavailable_or_stale"))
+                || event
+                    .detail
+                    .as_deref()
+                    .is_some_and(|detail| detail.contains("worker placement failed"))
+        })
+        .count()
+        .saturating_add(
+            signals
+                .iter()
+                .filter(|signal| signal.contains("persisted_active_without_live_owner"))
+                .count(),
+        );
+
+    let waiting_class = if stuck_running > 0 {
+        QueueHygieneWaitingClass::LikelyStuck
+    } else if stale_queued > 0 || orphaned_work_items > 0 {
+        QueueHygieneWaitingClass::StaleNeedsRecheck
+    } else if retry_or_redispatch_pending > 0 {
+        QueueHygieneWaitingClass::DelayedButExplainable
+    } else {
+        QueueHygieneWaitingClass::LegitimatelyWaiting
+    };
+
+    let dominant_hygiene_class = if orphaned_work_items > 0 {
+        Some(QueueHygieneClass::OrphanedWorkItem)
+    } else if stuck_running > 0 {
+        Some(QueueHygieneClass::StuckRunning)
+    } else if stale_queued > 0 {
+        Some(QueueHygieneClass::StaleQueued)
+    } else if retry_or_redispatch_pending > 0 {
+        Some(QueueHygieneClass::RetryOrRedispatchPending)
+    } else if healthy_running > 0 {
+        Some(QueueHygieneClass::HealthyRunning)
+    } else if healthy_queued > 0 {
+        Some(QueueHygieneClass::HealthyQueued)
+    } else if terminal_unreconciled > 0 {
+        Some(QueueHygieneClass::TerminalUnreconciled)
+    } else {
+        None
+    };
+
+    let mut suggested_actions = Vec::new();
+    if stale_queued > 0 || stuck_running > 0 {
+        suggested_actions.push(QueueHygieneAction::MarkForRecheck);
+    }
+    if orphaned_work_items > 0 {
+        suggested_actions.push(QueueHygieneAction::MarkAsOrphaned);
+    }
+    if retry_or_redispatch_pending > 0 || terminal_unreconciled > 0 {
+        suggested_actions.push(QueueHygieneAction::MarkForReconcileDecision);
+    }
+    if stale_queued > 0 && stuck_running > 0 {
+        suggested_actions.push(QueueHygieneAction::MarkAsTerminallyStale);
+    }
+
+    QueueHygieneSnapshot {
+        healthy_queued,
+        healthy_running,
+        retry_or_redispatch_pending,
+        stale_queued,
+        stuck_running,
+        orphaned_work_items,
+        terminal_unreconciled,
+        waiting_class,
+        dominant_hygiene_class,
+        suggested_actions,
+        signals,
     }
 }
 
@@ -4652,12 +4885,6 @@ fn replay_preflight_failure(preflight: &ComputeReplayPreflight) -> (ReplayFailur
     )
 }
 
-fn now_unix_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_millis() as u64)
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -4668,7 +4895,8 @@ mod tests {
         ComputeExecutionMode, ComputeHistoryLookupError, ComputeJobHandle, ComputeJobHistoryLookup,
         ComputeReplayOutcome, ComputeReplayPreflight, ComputeRequestValidationCode,
         ComputeSubmitOutcome, ComputeSubmitRequest, DeterministicSubsetClass,
-        DeterministicSubsetEligibility, PersistedSnapshotReadiness, RecoveryDisposition,
+        DeterministicSubsetEligibility, PersistedSnapshotReadiness, QueueHygieneAction,
+        QueueHygieneClass, QueueHygieneWaitingClass, RecoveryDisposition,
         ReplayContextConsistencyClass, ReplayContextTransition, ReplayDeterminismClass,
         ReplayExecutionMode, ReplayFailureCode, ReplayMismatchClass, ReplayPreflightIssueCode,
         ReplayRegressionReasonCode, ReplayRegressionSignal, ReplayRemoteContextReproducibility,
@@ -4832,6 +5060,65 @@ mod tests {
             snapshot.optimization_view.main_bottleneck,
             "insufficient_signal"
         );
+        assert_eq!(
+            snapshot.queue_hygiene.waiting_class,
+            QueueHygieneWaitingClass::LegitimatelyWaiting
+        );
+    }
+
+    #[test]
+    fn queue_hygiene_distinguishes_stale_queued_from_healthy_delay() {
+        let mut entry = service();
+        entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(1),
+                execution_mode: ComputeExecutionMode::EnqueueOnly,
+            })
+            .expect("submit should not fail");
+        let snapshot = entry.operations_snapshot();
+        assert_eq!(snapshot.queue_hygiene.stale_queued, 1);
+        assert_eq!(snapshot.queue_hygiene.healthy_queued, 0);
+        assert_eq!(
+            snapshot.queue_hygiene.dominant_hygiene_class,
+            Some(QueueHygieneClass::StaleQueued)
+        );
+        assert_eq!(
+            snapshot.queue_hygiene.waiting_class,
+            QueueHygieneWaitingClass::StaleNeedsRecheck
+        );
+        assert!(snapshot
+            .queue_hygiene
+            .suggested_actions
+            .contains(&QueueHygieneAction::MarkForRecheck));
+    }
+
+    #[test]
+    fn queue_hygiene_surfaces_orphaned_persisted_active_work() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":14,"job_id":992,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"lifecycle_state":"running","completion_class":null,"execution_path":"WorkerIpc","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":null,"queue_wait_ms":1,"execution_duration_micros":null,"total_duration_ms":null,"failure_kind":null,"pipeline_state":null,"model_slots":[]}"#,
+        )
+        .expect("seed orphan-like active record");
+        let entry = service_with_history(&history_path);
+        let snapshot = entry.operations_snapshot();
+        assert_eq!(snapshot.queue_hygiene.orphaned_work_items, 1);
+        assert_eq!(
+            snapshot.queue_hygiene.dominant_hygiene_class,
+            Some(QueueHygieneClass::OrphanedWorkItem)
+        );
+        assert!(snapshot
+            .queue_hygiene
+            .suggested_actions
+            .contains(&QueueHygieneAction::MarkAsOrphaned));
+        assert!(snapshot
+            .queue_hygiene
+            .signals
+            .iter()
+            .any(|signal| signal.contains("persisted_active_without_live_owner")));
     }
 
     #[test]

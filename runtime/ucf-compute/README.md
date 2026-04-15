@@ -137,6 +137,49 @@ Stale/drift guardrails for expert mutations:
   - drift/inconsistency context
   - normal runtime failure paths.
 
+### Long-run queue hygiene semantics (Serie G Prompt 2)
+
+`CanonicalComputeEntryPoint::operations_snapshot` now includes a compact
+`queue_hygiene` view so long-run queue/lifecycle ambiguity becomes explicit
+without introducing a workflow/reconciliation platform.
+
+Canonical hygiene classes (minimal, load-bearing):
+
+- `healthy_queued`
+- `healthy_running`
+- `retry_or_redispatch_pending`
+- `stale_queued`
+- `stuck_running`
+- `orphaned_work_items`
+- `terminal_unreconciled`
+
+Waiting interpretation remains narrow and technical:
+
+- `legitimately_waiting`
+- `delayed_but_explainable`
+- `likely_stuck`
+- `stale_needs_recheck`
+
+Detection basis (repo-local only):
+
+- live queue/running states from in-memory job lifecycle/accounting,
+- lifecycle event detail for worker-linkage loss signals,
+- persisted history entries that still claim active lifecycle (`submitted|admitted|queued|running`)
+  but have no live owner in the current runtime.
+
+Prepared reaction signals are surfaced as explicit action hints only (no automation engine):
+
+- `mark_for_recheck`
+- `mark_as_orphaned`
+- `mark_for_reconcile_decision`
+- `mark_as_terminally_stale`
+
+Boundaries intentionally unchanged:
+
+- no global reconciliation engine,
+- no incident/governance control-plane,
+- no parallel lifecycle model outside queue/history/runtime snapshot surfaces.
+
 ## Execution-device classes (bounded service placement)
 
 `MultiWorkerComputeService` now keeps a narrow execution-device layer for placement:
