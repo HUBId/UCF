@@ -72,8 +72,13 @@ standard-safe vs high-trust vs internal-only semantics with explicit unsupported
 Shared surface core (drift guard, Serie F Prompt 6):
 
 - shared core status terms:
-  - snapshot consistency: `current | partial | stale | unavailable`
+  - snapshot consistency: `current | partial | stale | drift_affected | unavailable`
   - diagnostics availability core: `available | partial | unavailable | blocked`
+  - stale/drift runtime view:
+    - freshness: `current | partial | stale`
+    - drift: `none | drift_suspected | inconsistent_needs_refresh`
+    - source-scoped drift signals are surfaced from worker/placement, warmup/readiness,
+      rollout-vs-snapshot, and replay-basis checks.
 - explicit extension seam:
   - `internal_only` stays an internal extension (`ExpertDiagnosticsAvailability::InternalOnly`)
     and is intentionally not folded into productive core diagnostics states.
@@ -122,6 +127,15 @@ Canonical actions in this layer:
 
 Ops provenance stays in the runtime surface itself (`RuntimeOpsSnapshot.recent_operations`) so
 interventions are visible without introducing an admin/control-plane subsystem.
+
+Stale/drift guardrails for expert mutations:
+
+- mutating `rehydrate_history` operations are now blocked whenever stale/drift view requires
+  refresh (`needs_refresh=true`), not only for stale replay snapshots.
+- block details explicitly include freshness, drift class, and primary source to separate:
+  - stale/partial diagnostic basis
+  - drift/inconsistency context
+  - normal runtime failure paths.
 
 ## Execution-device classes (bounded service placement)
 

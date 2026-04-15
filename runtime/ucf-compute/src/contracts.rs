@@ -51,6 +51,7 @@ pub enum CanonicalSnapshotConsistency {
     Current,
     Partial,
     Stale,
+    DriftAffected,
     Unavailable,
 }
 
@@ -70,7 +71,24 @@ pub enum RuntimeStatusCore {
     Current,
     Partial,
     Stale,
+    DriftSuspected,
     Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeFreshnessClass {
+    Current,
+    Partial,
+    Stale,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeDriftClass {
+    NoDriftDetected,
+    DriftSuspected,
+    InconsistentNeedsRefresh,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -122,6 +140,7 @@ impl CanonicalSnapshotConsistency {
             Self::Current => RuntimeStatusCore::Current,
             Self::Partial => RuntimeStatusCore::Partial,
             Self::Stale => RuntimeStatusCore::Stale,
+            Self::DriftAffected => RuntimeStatusCore::DriftSuspected,
             Self::Unavailable => RuntimeStatusCore::Unavailable,
         }
     }
@@ -746,6 +765,10 @@ mod tests {
         assert_eq!(
             CanonicalSnapshotConsistency::Stale.core(),
             RuntimeStatusCore::Stale
+        );
+        assert_eq!(
+            CanonicalSnapshotConsistency::DriftAffected.core(),
+            RuntimeStatusCore::DriftSuspected
         );
         assert_eq!(
             CanonicalSnapshotConsistency::Unavailable.core(),
