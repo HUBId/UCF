@@ -161,8 +161,9 @@ pub use service_surface::{
     RuntimeOperationScope, RuntimeOperationSnapshotEffect, RuntimeOpsSnapshot, RuntimeOpsState,
     RuntimeRecoveryFlow, RuntimeRecoveryResultState, RuntimeRecoveryTrustState, RuntimeSignalState,
     RuntimeStaleDriftView, RuntimeSubsystemDiagnosticSummary, RuntimeWarmupState,
-    SupportedExpertWorkflowPath, WorkflowContractBinding, WorkflowTransitionSummary,
-    WorkflowTransitionType, WorkflowViewSnapshot,
+    ServiceMutationTrustDisposition, ServiceTrustEvolution, ServiceTrustState,
+    ServiceTrustStateView, SupportedExpertWorkflowPath, WorkflowContractBinding,
+    WorkflowTransitionSummary, WorkflowTransitionType, WorkflowViewSnapshot,
 };
 pub use work_meter::WorkMeter;
 
