@@ -606,12 +606,33 @@ signals:
 - drift/inconsistency signals → resync candidate,
 - orphaned/unreconciled persisted work → rehydrate candidate (or blocked when history is missing).
 
+In parallel, `RuntimeOpsSnapshot.service_trust` now provides a compact resilience-aware trust view:
+
+- `trusted_current`
+- `trusted_with_caveats`
+- `partial_trust`
+- `trust_degraded`
+- `insufficient_for_mutation`
+
+This trust view is sourced from the same canonical signals (stale/drift/queue hygiene/recovery and
+subsystem caveats), and provides explicit mutation guidance:
+
+- `allowed` under trusted current state,
+- `allowed_with_caveat` under caveated/partial/degraded trust,
+- `blocked` when trust is insufficient for mutating actions,
+- optional recovery recommendation (`refresh_state | resync_state | rehydrate_state`).
+
+`CanonicalRuntimeSnapshot` now carries the same top-level `service_trust` value to keep one
+canonical snapshot world.
+
 `RuntimeOperationOutcome` now returns:
 
 - `recovery_flow` (refresh/resync/rehydrate/no-op/blocked),
 - `recovery_state` (`state_refreshed | state_resynced | state_rehydrated | no_relevant_change |
   partial_recovery | blocked_unable_to_restore_trustable_state`),
-- `trust_state_after` (`trustable | partial | blocked`) from the canonical post-operation snapshot.
+- `trust_state_after` (`trustable | partial | blocked`) from the canonical post-operation snapshot,
+- service-trust evolution (`service_trust_before`, `service_trust_after`, `trust_evolution`) so
+  diagnostics/history views can represent trust improvement/partial persistence/degradation.
 
 This keeps resulting state change and remaining uncertainty diagnosable without adding an
 orchestration/self-healing platform.

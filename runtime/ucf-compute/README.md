@@ -180,6 +180,35 @@ Boundaries intentionally unchanged:
 - no incident/governance control-plane,
 - no parallel lifecycle model outside queue/history/runtime snapshot surfaces.
 
+### Resilience-aware service trust state (Serie G Prompt 4)
+
+`CanonicalComputeEntryPoint::operations_snapshot` now carries a compact
+`service_trust` view that consolidates stale/drift/queue/recovery/subsystem caveats
+without introducing a score system.
+
+Canonical trust states:
+
+- `trusted_current`
+- `trusted_with_caveats`
+- `partial_trust`
+- `trust_degraded`
+- `insufficient_for_mutation`
+
+Mutation guidance is explicit (`allowed | allowed_with_caveat | blocked`) plus an optional
+bounded recommendation (`refresh_state | resync_state | rehydrate_state | blocked_recovery_action`).
+
+Signal mapping remains narrow/repo-local:
+
+- stale snapshot and drift signals degrade trust,
+- orphaned/terminal queue inconsistency can move trust to mutation-insufficient,
+- bounded recovery partial outcomes keep trust partial,
+- subsystem caveats can keep trust trusted but caveated.
+
+`CanonicalRuntimeSnapshot` now includes top-level `service_trust` so trust semantics live in the
+single canonical runtime snapshot contract. `RuntimeOperationOutcome` additionally records
+`service_trust_before`, `service_trust_after`, and `trust_evolution`
+(`unchanged | improved_after_recovery_action | remained_partial | degraded_by_new_signal`).
+
 ## Execution-device classes (bounded service placement)
 
 `MultiWorkerComputeService` now keeps a narrow execution-device layer for placement:

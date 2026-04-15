@@ -177,6 +177,38 @@ pub enum RuntimeRecoveryTrustState {
     Blocked,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServiceTrustState {
+    TrustedCurrent,
+    TrustedWithCaveats,
+    PartialTrust,
+    TrustDegraded,
+    InsufficientForMutation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServiceMutationTrustDisposition {
+    Allowed,
+    AllowedWithCaveat,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServiceTrustEvolution {
+    Unchanged,
+    ImprovedAfterRecoveryAction,
+    RemainedPartial,
+    DegradedByNewSignal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceTrustStateView {
+    pub state: ServiceTrustState,
+    pub mutating_action: ServiceMutationTrustDisposition,
+    pub recommendation: Option<RuntimeRecoveryFlow>,
+    pub reasons: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeOperationOutcome {
     pub operation: RuntimeOperation,
@@ -195,6 +227,9 @@ pub struct RuntimeOperationOutcome {
     pub recovery_flow: RuntimeRecoveryFlow,
     pub recovery_state: RuntimeRecoveryResultState,
     pub trust_state_after: RuntimeRecoveryTrustState,
+    pub service_trust_before: ServiceTrustState,
+    pub service_trust_after: ServiceTrustState,
+    pub trust_evolution: ServiceTrustEvolution,
     pub detail: String,
     pub completed_jobs: Vec<JobId>,
 }
@@ -245,6 +280,7 @@ pub enum RuntimeWarmupState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeOpsSnapshot {
     pub canonical: CanonicalRuntimeSnapshot,
+    pub service_trust: ServiceTrustStateView,
     pub stale_runtime: RuntimeStaleDriftView,
     pub state: RuntimeOpsState,
     pub runtime_mode: RuntimeMode,
@@ -363,6 +399,7 @@ pub struct WorkflowViewSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CanonicalRuntimeSnapshot {
     pub consistency: CanonicalSnapshotConsistency,
+    pub service_trust: ServiceTrustState,
     pub freshness: RuntimeFreshnessClass,
     pub drift: RuntimeDriftClass,
     pub stale_runtime_sources: Vec<String>,
@@ -1652,6 +1689,17 @@ impl CanonicalComputeEntryPoint {
             self.latest_baseline_comparison.as_ref(),
             self.latest_replay_regression.as_ref(),
         );
+        let service_trust = build_service_trust_state_view(
+            state,
+            &stale_runtime,
+            &queue_hygiene,
+            replay_ready,
+            partial,
+            stale_or_incomplete,
+            &specialization,
+            self.recovery_snapshot.as_ref(),
+            self.history_store.is_some(),
+        );
         let canonical_snapshot = build_canonical_runtime_snapshot(
             state,
             runtime_profile.mode,
@@ -1665,6 +1713,7 @@ impl CanonicalComputeEntryPoint {
             stale_or_incomplete,
             &specialization,
             &stale_runtime,
+            &service_trust,
         );
         let workflow_view = build_workflow_view_snapshot(
             &canonical_snapshot,
@@ -1681,6 +1730,7 @@ impl CanonicalComputeEntryPoint {
         );
         RuntimeOpsSnapshot {
             canonical: canonical_snapshot,
+            service_trust,
             stale_runtime,
             state,
             runtime_mode: runtime_profile.mode,
@@ -1755,6 +1805,7 @@ impl CanonicalComputeEntryPoint {
     ) -> Result<RuntimeOperationOutcome, crate::ComputeError> {
         let snapshot = self.operations_snapshot();
         let trust_state_before = snapshot.bounded_recovery.trust_state;
+        let service_trust_before = snapshot.service_trust.state;
         let contract_shape = runtime_operation_contract_shape(entry_class);
         let contract_safety = runtime_operation_contract_safety(entry_class);
         let make_outcome = |operation_class: RuntimeOperationClass,
@@ -1789,6 +1840,9 @@ impl CanonicalComputeEntryPoint {
                 recovery_flow: classify_runtime_recovery_flow(operation, code),
                 recovery_state: classify_runtime_recovery_state(operation, code, mutation_result),
                 trust_state_after: trust_state_before,
+                service_trust_before,
+                service_trust_after: service_trust_before,
+                trust_evolution: ServiceTrustEvolution::Unchanged,
                 detail,
                 completed_jobs,
             }
@@ -1823,6 +1877,25 @@ impl CanonicalComputeEntryPoint {
                         "drain_scheduler requires expert/high-trust entry contract".to_string(),
                         Vec::new(),
                     )
+                } else if snapshot.service_trust.mutating_action
+                    == ServiceMutationTrustDisposition::Blocked
+                {
+                    make_outcome(
+                        RuntimeOperationClass::ControlledMutating,
+                        RuntimeOperationScope::WorkerReadiness,
+                        RuntimeOperationCode::Blocked,
+                        ExpertMutationBoundary::ControlledMutable,
+                        ExpertMutationResult::BlockedBySafetyRail,
+                        Some(ExpertMutationBlocker::StaleDiagnosticBasis),
+                        RuntimeOperationSnapshotEffect::NoSnapshotChange,
+                        "drain scheduler run queue".to_string(),
+                        "blocked: insufficient service trust for mutating action".to_string(),
+                        format!(
+                            "drain_scheduler blocked under trust_state={:?}; recommended_recovery={:?}",
+                            snapshot.service_trust.state, snapshot.service_trust.recommendation
+                        ),
+                        Vec::new(),
+                    )
                 } else if snapshot.state == RuntimeOpsState::Unavailable {
                     make_outcome(
                         RuntimeOperationClass::ControlledMutating,
@@ -1852,6 +1925,16 @@ impl CanonicalComputeEntryPoint {
                         Vec::new(),
                     )
                 } else {
+                    let caveat_suffix = if snapshot.service_trust.mutating_action
+                        == ServiceMutationTrustDisposition::AllowedWithCaveat
+                    {
+                        format!(
+                            "; caveat trust_state={:?}, recommended_recovery={:?}",
+                            snapshot.service_trust.state, snapshot.service_trust.recommendation
+                        )
+                    } else {
+                        String::new()
+                    };
                     let accepted = make_outcome(
                         RuntimeOperationClass::ControlledMutating,
                         RuntimeOperationScope::WorkerReadiness,
@@ -1862,7 +1945,7 @@ impl CanonicalComputeEntryPoint {
                         RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
                         "drain scheduler run queue".to_string(),
                         format!("accepted; draining up to {} scheduler cycles", max_jobs),
-                        format!("drain_scheduler accepted with max_jobs={max_jobs}"),
+                        format!("drain_scheduler accepted with max_jobs={max_jobs}{caveat_suffix}"),
                         Vec::new(),
                     );
                     self.record_operation_outcome(accepted);
@@ -1979,6 +2062,26 @@ impl CanonicalComputeEntryPoint {
                                 .primary_source
                                 .as_deref()
                                 .unwrap_or("unspecified")
+                        ),
+                        Vec::new(),
+                    )
+                } else if snapshot.service_trust.mutating_action
+                    == ServiceMutationTrustDisposition::Blocked
+                {
+                    make_outcome(
+                        RuntimeOperationClass::HighImpactMutating,
+                        RuntimeOperationScope::ReplayHistory,
+                        RuntimeOperationCode::Blocked,
+                        ExpertMutationBoundary::HighImpactMutable,
+                        ExpertMutationResult::BlockedBySafetyRail,
+                        Some(ExpertMutationBlocker::StaleDiagnosticBasis),
+                        RuntimeOperationSnapshotEffect::NoSnapshotChange,
+                        "rehydrate runtime state from persisted history".to_string(),
+                        "blocked: insufficient service trust for high-impact mutation"
+                            .to_string(),
+                        format!(
+                            "rehydrate_history blocked under trust_state={:?}; refresh/resync recommended before action: {:?}",
+                            snapshot.service_trust.state, snapshot.service_trust.recommendation
                         ),
                         Vec::new(),
                     )
@@ -2130,6 +2233,15 @@ impl CanonicalComputeEntryPoint {
                 }
             }
         };
+        let mut outcome = outcome;
+        let after_snapshot = self.operations_snapshot();
+        outcome.trust_state_after = after_snapshot.bounded_recovery.trust_state;
+        outcome.service_trust_after = after_snapshot.service_trust.state;
+        outcome.trust_evolution = classify_service_trust_evolution(
+            outcome.service_trust_before,
+            outcome.service_trust_after,
+            outcome.recovery_state,
+        );
         self.record_operation_outcome(outcome.clone());
         Ok(outcome)
     }
@@ -2796,6 +2908,97 @@ fn build_bounded_recovery_view(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn build_service_trust_state_view(
+    state: RuntimeOpsState,
+    stale_runtime: &RuntimeStaleDriftView,
+    queue_hygiene: &QueueHygieneSnapshot,
+    replay_ready: usize,
+    partial: usize,
+    stale_or_incomplete: usize,
+    specialization: &RuntimeSpecializationOpsView,
+    recovery: Option<&ComputeRecoverySnapshot>,
+    has_history_store: bool,
+) -> ServiceTrustStateView {
+    let mut reasons = Vec::new();
+    let mut state_hint = ServiceTrustState::TrustedCurrent;
+
+    if stale_runtime.freshness == RuntimeFreshnessClass::Stale {
+        reasons.push("trust_degraded_by_stale_snapshot".to_string());
+        state_hint = ServiceTrustState::TrustDegraded;
+    }
+    if stale_runtime.drift != RuntimeDriftClass::NoDriftDetected {
+        reasons.push("trust_degraded_by_runtime_drift".to_string());
+        state_hint = ServiceTrustState::TrustDegraded;
+    }
+    if queue_hygiene.orphaned_work_items > 0 || queue_hygiene.terminal_unreconciled > 0 {
+        reasons.push("trust_degraded_by_queue_inconsistency".to_string());
+        state_hint = ServiceTrustState::TrustDegraded;
+    }
+    if queue_hygiene.stale_queued > 0 || queue_hygiene.stuck_running > 0 {
+        reasons.push("trust_partial_due_to_queue_hygiene".to_string());
+        if state_hint == ServiceTrustState::TrustedCurrent {
+            state_hint = ServiceTrustState::PartialTrust;
+        }
+    }
+    if partial > 0 || stale_or_incomplete > 0 {
+        reasons.push("trust_partial_due_to_replay_snapshot_fidelity".to_string());
+        if state_hint == ServiceTrustState::TrustedCurrent {
+            state_hint = ServiceTrustState::PartialTrust;
+        }
+    }
+    if let Some(recovery) = recovery {
+        if recovery.uncertain_jobs > 0 || recovery.failed_jobs > 0 {
+            reasons.push("trust_partial_after_bounded_recovery".to_string());
+            if state_hint == ServiceTrustState::TrustedCurrent {
+                state_hint = ServiceTrustState::PartialTrust;
+            }
+        }
+    }
+    if !specialization.caveats.is_empty() && state_hint == ServiceTrustState::TrustedCurrent {
+        reasons.push("trusted_current_with_subsystem_caveat".to_string());
+        state_hint = ServiceTrustState::TrustedWithCaveats;
+    }
+
+    if state == RuntimeOpsState::Unavailable {
+        reasons.push("runtime_unavailable".to_string());
+        state_hint = ServiceTrustState::InsufficientForMutation;
+    } else if has_history_store && queue_hygiene.orphaned_work_items > 0 {
+        reasons.push("insufficient_for_mutation_until_orphaned_work_is_reconciled".to_string());
+        state_hint = ServiceTrustState::InsufficientForMutation;
+    }
+
+    if reasons.is_empty() && replay_ready == 0 {
+        reasons.push("trusted_current_on_live_runtime_signal".to_string());
+    }
+
+    let (mutating_action, recommendation) = match state_hint {
+        ServiceTrustState::TrustedCurrent => (ServiceMutationTrustDisposition::Allowed, None),
+        ServiceTrustState::TrustedWithCaveats => {
+            (ServiceMutationTrustDisposition::AllowedWithCaveat, None)
+        }
+        ServiceTrustState::PartialTrust => (
+            ServiceMutationTrustDisposition::AllowedWithCaveat,
+            Some(RuntimeRecoveryFlow::RefreshState),
+        ),
+        ServiceTrustState::TrustDegraded => (
+            ServiceMutationTrustDisposition::AllowedWithCaveat,
+            Some(RuntimeRecoveryFlow::ResyncState),
+        ),
+        ServiceTrustState::InsufficientForMutation => (
+            ServiceMutationTrustDisposition::Blocked,
+            Some(RuntimeRecoveryFlow::RehydrateState),
+        ),
+    };
+
+    ServiceTrustStateView {
+        state: state_hint,
+        mutating_action,
+        recommendation,
+        reasons,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn build_canonical_runtime_snapshot(
     state: RuntimeOpsState,
     runtime_mode: RuntimeMode,
@@ -2809,6 +3012,7 @@ fn build_canonical_runtime_snapshot(
     stale_or_incomplete: usize,
     specialization: &RuntimeSpecializationOpsView,
     stale_runtime: &RuntimeStaleDriftView,
+    service_trust: &ServiceTrustStateView,
 ) -> CanonicalRuntimeSnapshot {
     let consistency = if state == RuntimeOpsState::Unavailable {
         CanonicalSnapshotConsistency::Unavailable
@@ -2930,9 +3134,16 @@ fn build_canonical_runtime_snapshot(
             diagnostics_availability_name(diagnostics_availability)
         ));
     }
+    if service_trust.state != ServiceTrustState::TrustedCurrent {
+        top_level_caveats.push(format!(
+            "service_trust={}",
+            service_trust_state_name(service_trust.state)
+        ));
+    }
 
     CanonicalRuntimeSnapshot {
         consistency,
+        service_trust: service_trust.state,
         freshness: stale_runtime.freshness,
         drift: stale_runtime.drift,
         stale_runtime_sources: stale_runtime
@@ -2978,6 +3189,16 @@ fn diagnostics_availability_name(availability: ExpertDiagnosticsAvailability) ->
         ExpertDiagnosticsAvailability::Unavailable => "unavailable",
         ExpertDiagnosticsAvailability::Blocked => "blocked",
         ExpertDiagnosticsAvailability::InternalOnly => "internal_only",
+    }
+}
+
+fn service_trust_state_name(state: ServiceTrustState) -> &'static str {
+    match state {
+        ServiceTrustState::TrustedCurrent => "trusted_current",
+        ServiceTrustState::TrustedWithCaveats => "trusted_with_caveats",
+        ServiceTrustState::PartialTrust => "partial_trust",
+        ServiceTrustState::TrustDegraded => "trust_degraded",
+        ServiceTrustState::InsufficientForMutation => "insufficient_for_mutation",
     }
 }
 
@@ -3960,6 +4181,43 @@ fn classify_runtime_recovery_state(
         | RuntimeOperationCode::Failed => {
             RuntimeRecoveryResultState::BlockedUnableToRestoreTrustableState
         }
+    }
+}
+
+fn classify_service_trust_evolution(
+    before: ServiceTrustState,
+    after: ServiceTrustState,
+    recovery_state: RuntimeRecoveryResultState,
+) -> ServiceTrustEvolution {
+    if before == after {
+        if after == ServiceTrustState::PartialTrust {
+            return ServiceTrustEvolution::RemainedPartial;
+        }
+        return ServiceTrustEvolution::Unchanged;
+    }
+
+    let rank = |state: ServiceTrustState| match state {
+        ServiceTrustState::InsufficientForMutation => 0_u8,
+        ServiceTrustState::TrustDegraded => 1_u8,
+        ServiceTrustState::PartialTrust => 2_u8,
+        ServiceTrustState::TrustedWithCaveats => 3_u8,
+        ServiceTrustState::TrustedCurrent => 4_u8,
+    };
+
+    if rank(after) > rank(before)
+        && matches!(
+            recovery_state,
+            RuntimeRecoveryResultState::StateRefreshed
+                | RuntimeRecoveryResultState::StateResynced
+                | RuntimeRecoveryResultState::StateRehydrated
+                | RuntimeRecoveryResultState::PartialRecovery
+        )
+    {
+        ServiceTrustEvolution::ImprovedAfterRecoveryAction
+    } else if rank(after) < rank(before) {
+        ServiceTrustEvolution::DegradedByNewSignal
+    } else {
+        ServiceTrustEvolution::Unchanged
     }
 }
 
@@ -5094,7 +5352,8 @@ mod tests {
         ReplayabilityClass, RolloutReplayComparability, RuntimeOperation, RuntimeOperationClass,
         RuntimeOperationCode, RuntimeOperationSnapshotEffect, RuntimeOpsState, RuntimeRecoveryFlow,
         RuntimeRecoveryResultState, RuntimeRecoveryTrustState, RuntimeSignalState,
-        RuntimeWarmupState, SpecializationSemanticImpact, WorkflowTransitionType,
+        RuntimeWarmupState, ServiceMutationTrustDisposition, ServiceTrustEvolution,
+        ServiceTrustState, SpecializationSemanticImpact, WorkflowTransitionType,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{
@@ -5388,6 +5647,14 @@ mod tests {
             snapshot.bounded_recovery.trust_state,
             RuntimeRecoveryTrustState::Partial
         );
+        assert_eq!(
+            snapshot.service_trust.state,
+            ServiceTrustState::TrustDegraded
+        );
+        assert_eq!(
+            snapshot.service_trust.mutating_action,
+            ServiceMutationTrustDisposition::AllowedWithCaveat
+        );
     }
 
     #[test]
@@ -5432,6 +5699,10 @@ mod tests {
             snapshot.bounded_recovery.recommended_flow,
             RuntimeRecoveryFlow::ResyncState
         );
+        assert_eq!(
+            snapshot.service_trust.state,
+            ServiceTrustState::TrustDegraded
+        );
     }
 
     #[test]
@@ -5452,6 +5723,64 @@ mod tests {
         assert_eq!(
             snapshot.bounded_recovery.trust_state,
             RuntimeRecoveryTrustState::Blocked
+        );
+        assert_eq!(
+            snapshot.service_trust.state,
+            ServiceTrustState::InsufficientForMutation
+        );
+        assert_eq!(
+            snapshot.service_trust.mutating_action,
+            ServiceMutationTrustDisposition::Blocked
+        );
+    }
+
+    #[test]
+    fn service_trust_state_distinguishes_current_caveated_partial_degraded_and_insufficient() {
+        let healthy = service().operations_snapshot();
+        assert_eq!(
+            healthy.service_trust.state,
+            ServiceTrustState::TrustedCurrent
+        );
+
+        let caveated = ServiceTrustState::TrustedWithCaveats;
+        assert_ne!(healthy.service_trust.state, caveated);
+
+        let mut partial_entry = service();
+        partial_entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc".to_string()),
+                submitted_at_unix_ms: Some(1),
+                execution_mode: ComputeExecutionMode::EnqueueOnly,
+            })
+            .expect("enqueue should succeed");
+        let partial = partial_entry.operations_snapshot();
+        assert_eq!(partial.service_trust.state, ServiceTrustState::PartialTrust);
+
+        let degraded_dir = tempfile::tempdir().expect("tempdir");
+        let degraded_history = degraded_dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &degraded_history,
+            r#"{"schema_version":8,"job_id":222,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"standard","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[],"execution_snapshot":{"request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request_available":true,"backend_route_available":true,"model_slot_count":0,"path":{"requested_execution_path":"LocalCanonical","executed_execution_path":"LocalCanonical","execution_lane":"standard","resource_class":"standard","was_remote":false,"redispatched_to_local":false,"retry_attempts":0},"rollout":{"active_or_warm_slots":0,"candidate_or_guarded_slots":0,"stale_or_blocked_slots":1,"rollout_context_hint":"blocked_or_stale"},"result":{"lifecycle_state":"completed","completion_class":"completed","pipeline_state":"ok","failure_kind":null},"readiness":"stale_or_incomplete"}}"#,
+        )
+        .expect("seed stale");
+        let degraded = service_with_history(&degraded_history).operations_snapshot();
+        assert_eq!(
+            degraded.service_trust.state,
+            ServiceTrustState::TrustDegraded
+        );
+
+        let insufficient_dir = tempfile::tempdir().expect("tempdir");
+        let insufficient_history = insufficient_dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &insufficient_history,
+            r#"{"schema_version":14,"job_id":3001,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"lifecycle_state":"running","completion_class":null,"execution_path":"WorkerIpc","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":null,"queue_wait_ms":1,"execution_duration_micros":null,"total_duration_ms":null,"failure_kind":null,"pipeline_state":null,"model_slots":[]}"#,
+        )
+        .expect("seed orphan");
+        let insufficient = service_with_history(&insufficient_history).operations_snapshot();
+        assert_eq!(
+            insufficient.service_trust.state,
+            ServiceTrustState::InsufficientForMutation
         );
     }
 
@@ -5565,6 +5894,59 @@ mod tests {
         assert_eq!(
             unsupported.mutation_result,
             ExpertMutationResult::UnsupportedInRuntimeContext
+        );
+    }
+
+    #[test]
+    fn high_impact_mutation_blocks_when_service_trust_is_insufficient() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":14,"job_id":4001,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"lifecycle_state":"running","completion_class":null,"execution_path":"WorkerIpc","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":null,"queue_wait_ms":1,"execution_duration_micros":null,"total_duration_ms":null,"failure_kind":null,"pipeline_state":null,"model_slots":[]}"#,
+        )
+        .expect("seed orphan");
+        let mut entry = service_with_history(&history_path);
+        let snapshot = entry.operations_snapshot();
+        assert_eq!(
+            snapshot.service_trust.state,
+            ServiceTrustState::InsufficientForMutation
+        );
+        let blocked = entry
+            .run_operation(RuntimeOperation::RehydrateHistory)
+            .expect("rehydrate should return structured outcome");
+        assert_eq!(blocked.code, RuntimeOperationCode::Blocked);
+        assert_eq!(
+            blocked.service_trust_before,
+            ServiceTrustState::InsufficientForMutation
+        );
+    }
+
+    #[test]
+    fn trust_evolution_is_recorded_across_operations() {
+        assert_eq!(
+            super::classify_service_trust_evolution(
+                ServiceTrustState::PartialTrust,
+                ServiceTrustState::TrustedWithCaveats,
+                RuntimeRecoveryResultState::StateResynced,
+            ),
+            ServiceTrustEvolution::ImprovedAfterRecoveryAction
+        );
+        assert_eq!(
+            super::classify_service_trust_evolution(
+                ServiceTrustState::PartialTrust,
+                ServiceTrustState::PartialTrust,
+                RuntimeRecoveryResultState::NoRelevantChange,
+            ),
+            ServiceTrustEvolution::RemainedPartial
+        );
+        assert_ne!(
+            super::classify_service_trust_evolution(
+                ServiceTrustState::TrustedWithCaveats,
+                ServiceTrustState::TrustDegraded,
+                RuntimeRecoveryResultState::NoRelevantChange,
+            ),
+            ServiceTrustEvolution::ImprovedAfterRecoveryAction
         );
     }
 
