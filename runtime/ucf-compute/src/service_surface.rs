@@ -29,8 +29,8 @@ use crate::{
     CanonicalSnapshotConsistency, DeploymentProfile, ExpertDiagnosticsAvailability,
     ExpertMutationBlocker, ExpertMutationBoundary, ExpertMutationResult, ExpertWorkflowClass,
     ExpertWorkflowTransitionState, ModelSlot, ModelSlotProvenance, RuntimeContractSafety,
-    RuntimeContractShape, RuntimeDiagnosticFlags, RuntimeEntryClass, RuntimeMode, RuntimeProfile,
-    SlotRuntimeStatus,
+    RuntimeContractShape, RuntimeDiagnosticFlags, RuntimeDriftClass, RuntimeEntryClass,
+    RuntimeFreshnessClass, RuntimeMode, RuntimeProfile, SlotRuntimeStatus,
 };
 use std::collections::{BTreeMap, VecDeque};
 
@@ -215,6 +215,7 @@ pub enum RuntimeWarmupState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeOpsSnapshot {
     pub canonical: CanonicalRuntimeSnapshot,
+    pub stale_runtime: RuntimeStaleDriftView,
     pub state: RuntimeOpsState,
     pub runtime_mode: RuntimeMode,
     pub deployment_profile: DeploymentProfile,
@@ -280,9 +281,36 @@ pub struct WorkflowViewSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CanonicalRuntimeSnapshot {
     pub consistency: CanonicalSnapshotConsistency,
+    pub freshness: RuntimeFreshnessClass,
+    pub drift: RuntimeDriftClass,
+    pub stale_runtime_sources: Vec<String>,
     pub diagnostics_availability: ExpertDiagnosticsAvailability,
     pub top_level_caveats: Vec<String>,
     pub subsystems: CanonicalRuntimeSubsystemDiagnostics,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeDriftSignalCode {
+    WorkerReadyPlacementMismatch,
+    WarmupReadinessStaleRelativeToRuntimeUsage,
+    RolloutContextDivergesFromSnapshotBasis,
+    ReplaySnapshotBasisOlderThanCurrentRuntimeContext,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeDriftSignal {
+    pub code: RuntimeDriftSignalCode,
+    pub detail: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeStaleDriftView {
+    pub freshness: RuntimeFreshnessClass,
+    pub drift: RuntimeDriftClass,
+    pub primary_source: Option<String>,
+    pub signals: Vec<RuntimeDriftSignal>,
+    pub needs_refresh: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1518,6 +1546,17 @@ impl CanonicalComputeEntryPoint {
             .unwrap_or_else(|| "insufficient_history_signal".to_string());
 
         let specialization = build_specialization_ops_view(state, scheduler.execution_path, &slots);
+        let stale_runtime = build_runtime_stale_drift_view(
+            state,
+            scheduler.running_jobs,
+            has_missing_required_slot,
+            slots.as_slice(),
+            replay_ready,
+            partial,
+            stale_or_incomplete,
+            self.latest_baseline_comparison.as_ref(),
+            self.latest_replay_regression.as_ref(),
+        );
         let canonical_snapshot = build_canonical_runtime_snapshot(
             state,
             runtime_profile.mode,
@@ -1530,6 +1569,7 @@ impl CanonicalComputeEntryPoint {
             partial,
             stale_or_incomplete,
             &specialization,
+            &stale_runtime,
         );
         let workflow_view = build_workflow_view_snapshot(
             &canonical_snapshot,
@@ -1541,6 +1581,7 @@ impl CanonicalComputeEntryPoint {
         );
         RuntimeOpsSnapshot {
             canonical: canonical_snapshot,
+            stale_runtime,
             state,
             runtime_mode: runtime_profile.mode,
             deployment_profile: runtime_profile.deployment,
@@ -1812,7 +1853,7 @@ impl CanonicalComputeEntryPoint {
                         "rehydrate_history unsupported: history store unavailable".to_string(),
                         Vec::new(),
                     )
-                } else if snapshot.replay_snapshot_coverage.stale_or_incomplete > 0 {
+                } else if snapshot.stale_runtime.needs_refresh {
                     make_outcome(
                         RuntimeOperationClass::HighImpactMutating,
                         RuntimeOperationScope::ReplayHistory,
@@ -1822,8 +1863,17 @@ impl CanonicalComputeEntryPoint {
                         Some(ExpertMutationBlocker::StaleDiagnosticBasis),
                         RuntimeOperationSnapshotEffect::NoSnapshotChange,
                         "rehydrate runtime state from persisted history".to_string(),
-                        "blocked by stale/incomplete replay diagnostic basis".to_string(),
-                        "rehydrate_history blocked: snapshot basis stale_or_incomplete".to_string(),
+                        "blocked by stale/drift diagnostic basis".to_string(),
+                        format!(
+                            "rehydrate_history blocked: refresh/recheck required (freshness={:?}, drift={:?}, source={})",
+                            snapshot.stale_runtime.freshness,
+                            snapshot.stale_runtime.drift,
+                            snapshot
+                                .stale_runtime
+                                .primary_source
+                                .as_deref()
+                                .unwrap_or("unspecified")
+                        ),
                         Vec::new(),
                     )
                 } else if snapshot.queue.running_jobs > 0 || snapshot.queue.queued_jobs > 0 {
@@ -2293,6 +2343,101 @@ fn parse_warmup_state(detail: Option<&str>) -> RuntimeWarmupState {
 }
 
 #[allow(clippy::too_many_arguments)]
+fn build_runtime_stale_drift_view(
+    state: RuntimeOpsState,
+    running_jobs: usize,
+    has_missing_required_slot: bool,
+    slots: &[RuntimeSlotSnapshot],
+    replay_ready: usize,
+    partial: usize,
+    stale_or_incomplete: usize,
+    latest_baseline_comparison: Option<&BaselineComparisonSummary>,
+    latest_replay_regression: Option<&ReplayRegressionAssessment>,
+) -> RuntimeStaleDriftView {
+    let freshness = if stale_or_incomplete > 0 && replay_ready == 0 {
+        RuntimeFreshnessClass::Stale
+    } else if partial > 0 || has_missing_required_slot {
+        RuntimeFreshnessClass::Partial
+    } else {
+        RuntimeFreshnessClass::Current
+    };
+
+    let mut signals = Vec::new();
+    let ready_slot_present = slots
+        .iter()
+        .any(|slot| matches!(slot.warmup_state, RuntimeWarmupState::Ready));
+    if ready_slot_present && has_missing_required_slot {
+        signals.push(RuntimeDriftSignal {
+            code: RuntimeDriftSignalCode::WorkerReadyPlacementMismatch,
+            detail:
+                "worker warmup reports ready slot while placement marks required slot unavailable"
+                    .to_string(),
+            source: "worker_vs_placement_capability".to_string(),
+        });
+    }
+    if running_jobs > 0
+        && slots.iter().any(|slot| {
+            matches!(
+                slot.warmup_state,
+                RuntimeWarmupState::Stale
+                    | RuntimeWarmupState::Blocked
+                    | RuntimeWarmupState::Cold
+                    | RuntimeWarmupState::Preparing
+            )
+        })
+    {
+        signals.push(RuntimeDriftSignal {
+            code: RuntimeDriftSignalCode::WarmupReadinessStaleRelativeToRuntimeUsage,
+            detail: "runtime has active jobs while warmup/readiness context is stale/cold/blocked"
+                .to_string(),
+            source: "warmup_readiness_vs_runtime_usage".to_string(),
+        });
+    }
+    if latest_baseline_comparison.is_some_and(|comparison| {
+        comparison.rollout_context.comparability
+            == RolloutReplayComparability::NotMeaningfullyComparableAcrossRolloutBoundary
+    }) {
+        signals.push(RuntimeDriftSignal {
+            code: RuntimeDriftSignalCode::RolloutContextDivergesFromSnapshotBasis,
+            detail: "latest rollout context crossed boundary against snapshot basis".to_string(),
+            source: "rollout_vs_runtime_snapshot".to_string(),
+        });
+    }
+    if replay_ready == 0
+        && stale_or_incomplete > 0
+        && latest_replay_regression.is_some_and(|assessment| {
+            assessment.signal != ReplayRegressionSignal::NotSuitableForRegressionChecking
+        })
+    {
+        signals.push(RuntimeDriftSignal {
+            code: RuntimeDriftSignalCode::ReplaySnapshotBasisOlderThanCurrentRuntimeContext,
+            detail: "replay/snapshot basis is stale relative to currently observed runtime context"
+                .to_string(),
+            source: "replay_snapshot_basis".to_string(),
+        });
+    }
+
+    let drift = if state == RuntimeOpsState::Unavailable || signals.len() >= 2 {
+        RuntimeDriftClass::InconsistentNeedsRefresh
+    } else if !signals.is_empty() {
+        RuntimeDriftClass::DriftSuspected
+    } else {
+        RuntimeDriftClass::NoDriftDetected
+    };
+    let primary_source = signals.first().map(|signal| signal.source.clone());
+    RuntimeStaleDriftView {
+        freshness,
+        drift,
+        primary_source,
+        signals,
+        needs_refresh: matches!(
+            freshness,
+            RuntimeFreshnessClass::Partial | RuntimeFreshnessClass::Stale
+        ) || drift != RuntimeDriftClass::NoDriftDetected,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn build_canonical_runtime_snapshot(
     state: RuntimeOpsState,
     runtime_mode: RuntimeMode,
@@ -2305,9 +2450,12 @@ fn build_canonical_runtime_snapshot(
     partial: usize,
     stale_or_incomplete: usize,
     specialization: &RuntimeSpecializationOpsView,
+    stale_runtime: &RuntimeStaleDriftView,
 ) -> CanonicalRuntimeSnapshot {
     let consistency = if state == RuntimeOpsState::Unavailable {
         CanonicalSnapshotConsistency::Unavailable
+    } else if stale_runtime.drift != RuntimeDriftClass::NoDriftDetected {
+        CanonicalSnapshotConsistency::DriftAffected
     } else if stale_or_incomplete > 0 && replay_ready == 0 {
         CanonicalSnapshotConsistency::Stale
     } else if partial > 0 || has_missing_required_slot {
@@ -2412,6 +2560,12 @@ fn build_canonical_runtime_snapshot(
             canonical_snapshot_consistency_name(consistency)
         ));
     }
+    if stale_runtime.drift != RuntimeDriftClass::NoDriftDetected {
+        top_level_caveats.push(format!(
+            "runtime_drift={}",
+            runtime_drift_class_name(stale_runtime.drift)
+        ));
+    }
     if diagnostics_availability != ExpertDiagnosticsAvailability::Available {
         top_level_caveats.push(format!(
             "expert_diagnostics={}",
@@ -2421,6 +2575,13 @@ fn build_canonical_runtime_snapshot(
 
     CanonicalRuntimeSnapshot {
         consistency,
+        freshness: stale_runtime.freshness,
+        drift: stale_runtime.drift,
+        stale_runtime_sources: stale_runtime
+            .signals
+            .iter()
+            .map(|signal| signal.source.clone())
+            .collect(),
         diagnostics_availability,
         top_level_caveats,
         subsystems: CanonicalRuntimeSubsystemDiagnostics {
@@ -2439,7 +2600,16 @@ fn canonical_snapshot_consistency_name(consistency: CanonicalSnapshotConsistency
         CanonicalSnapshotConsistency::Current => "current",
         CanonicalSnapshotConsistency::Partial => "partial",
         CanonicalSnapshotConsistency::Stale => "stale",
+        CanonicalSnapshotConsistency::DriftAffected => "drift_affected",
         CanonicalSnapshotConsistency::Unavailable => "unavailable",
+    }
+}
+
+fn runtime_drift_class_name(class: RuntimeDriftClass) -> &'static str {
+    match class {
+        RuntimeDriftClass::NoDriftDetected => "none",
+        RuntimeDriftClass::DriftSuspected => "drift_suspected",
+        RuntimeDriftClass::InconsistentNeedsRefresh => "inconsistent_needs_refresh",
     }
 }
 
@@ -4512,7 +4682,7 @@ mod tests {
         ExpertDiagnosticsAvailability, ExpertMutationBlocker, ExpertMutationBoundary,
         ExpertMutationResult, ExpertWorkflowClass, ExpertWorkflowTransitionState,
         InMemoryComputeService, JobExecutionPath, JobHistoryStore, JobId, JobLifecycleState,
-        RuntimeContractShape, RuntimeEntryClass,
+        RuntimeContractShape, RuntimeDriftClass, RuntimeEntryClass, RuntimeFreshnessClass,
     };
 
     fn service() -> CanonicalComputeEntryPoint {
@@ -4723,6 +4893,54 @@ mod tests {
             snapshot.canonical.subsystems.replay_history.availability,
             ExpertDiagnosticsAvailability::Blocked
         );
+        assert_eq!(
+            snapshot.stale_runtime.freshness,
+            RuntimeFreshnessClass::Stale
+        );
+        assert_eq!(
+            snapshot.stale_runtime.drift,
+            RuntimeDriftClass::NoDriftDetected
+        );
+    }
+
+    #[test]
+    fn operations_snapshot_marks_drift_affected_when_stale_basis_and_regression_signal_conflict() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":8,"job_id":121,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"standard","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[],"execution_snapshot":{"request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request_available":true,"backend_route_available":true,"model_slot_count":0,"path":{"requested_execution_path":"LocalCanonical","executed_execution_path":"LocalCanonical","execution_lane":"standard","resource_class":"standard","was_remote":false,"redispatched_to_local":false,"retry_attempts":0},"rollout":{"active_or_warm_slots":0,"candidate_or_guarded_slots":0,"stale_or_blocked_slots":1,"rollout_context_hint":"blocked_or_stale"},"result":{"lifecycle_state":"completed","completion_class":"completed","pipeline_state":"ok","failure_kind":null},"readiness":"stale_or_incomplete"}}"#,
+        )
+        .expect("seed stale record");
+        let mut entry = service_with_history(&history_path);
+        entry.latest_replay_regression = Some(super::ReplayRegressionAssessment {
+            source_job_id: JobId(121),
+            replay_job_id: Some(JobId(122)),
+            signal: ReplayRegressionSignal::PossibleRegressionSignal,
+            reason_codes: vec![ReplayRegressionReasonCode::BlockedOrIncompleteReplay],
+            influenced_by_rollout_context: false,
+            influenced_by_remote_context: false,
+            influenced_by_backend_context: false,
+            influenced_by_snapshot_fidelity: true,
+        });
+        let snapshot = entry.operations_snapshot();
+        assert_eq!(
+            snapshot.canonical.consistency,
+            CanonicalSnapshotConsistency::DriftAffected
+        );
+        assert_eq!(
+            snapshot.stale_runtime.freshness,
+            RuntimeFreshnessClass::Stale
+        );
+        assert_eq!(
+            snapshot.stale_runtime.drift,
+            RuntimeDriftClass::DriftSuspected
+        );
+        assert!(snapshot.stale_runtime.needs_refresh);
+        assert_eq!(
+            snapshot.stale_runtime.primary_source.as_deref(),
+            Some("replay_snapshot_basis")
+        );
     }
 
     #[test]
@@ -4920,6 +5138,8 @@ mod tests {
             outcome.blocked_by,
             Some(ExpertMutationBlocker::StaleDiagnosticBasis)
         );
+        assert!(outcome.detail.contains("refresh/recheck required"));
+        assert!(outcome.detail.contains("freshness=Stale"));
     }
 
     #[test]
