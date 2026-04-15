@@ -86,6 +86,9 @@ Shared surface core (drift guard, Serie F Prompt 6):
     compatibility rule (`accepted/completed/no_op/blocked/failed/unsupported` vs mutation result),
     reducing silent contract drift across entry paths.
 
+For the hard, repo-based closure matrix of Expert Runtime Surface / API Hardening (Serie F), see
+`docs/ops/serie_f_expert_runtime_surface_closure.md`.
+
 ### Expert ops actions / controlled runtime interventions (Serie F Prompt 2)
 
 `CanonicalComputeEntryPoint::run_operation_with_entry` now keeps a narrow expert-ops surface with
