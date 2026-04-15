@@ -1252,6 +1252,8 @@ pub struct ExecutionUnitSnapshot {
     pub free_capacity_units: usize,
     pub capacity_pressure: CapacityPressure,
     pub consecutive_failures: u32,
+    pub availability_flip_count: u32,
+    pub unavailable_event_count: u32,
     pub last_job_id: Option<JobId>,
     pub last_dispatch_outcome: Option<WorkerDispatchOutcome>,
     pub last_error: Option<String>,
@@ -1288,6 +1290,7 @@ pub enum DistributedDegradationState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DistributedRecoverySnapshot {
     pub state: DistributedDegradationState,
+    pub membership_state: WorkerMembershipState,
     pub total_units: usize,
     pub healthy_units: usize,
     pub constrained_serviceable_units: usize,
@@ -1300,6 +1303,34 @@ pub struct DistributedRecoverySnapshot {
     pub queued_jobs: usize,
     pub uncertain_jobs: usize,
     pub recovery_required_jobs: usize,
+    pub serviceable_subset_present: bool,
+    pub trust_limited_by_membership_instability: bool,
+    pub reliable_units: Vec<ExecutionUnitId>,
+    pub flapping_workers: Vec<ExecutionUnitId>,
+    pub repeatedly_unavailable_workers: Vec<ExecutionUnitId>,
+    pub repeatedly_excluded_workers: Vec<ExecutionUnitId>,
+    pub membership_signals: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkerMembershipState {
+    Stable,
+    WorkerSetConstrained,
+    FlappingWorkerPresent,
+    UnstableButServiceable,
+    DegradedMembership,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WorkerMembershipView {
+    state: WorkerMembershipState,
+    reliable_units: Vec<ExecutionUnitId>,
+    flapping_workers: Vec<ExecutionUnitId>,
+    repeatedly_unavailable_workers: Vec<ExecutionUnitId>,
+    repeatedly_excluded_workers: Vec<ExecutionUnitId>,
+    serviceable_subset_present: bool,
+    trust_limited_by_membership_instability: bool,
+    signals: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1337,6 +1368,8 @@ struct ExecutionUnit {
     active_jobs: usize,
     used_capacity_units: usize,
     consecutive_failures: u32,
+    availability_flip_count: u32,
+    unavailable_event_count: u32,
     last_job_id: Option<JobId>,
     last_dispatch_outcome: Option<WorkerDispatchOutcome>,
     last_error: Option<String>,
@@ -1394,6 +1427,8 @@ impl MultiWorkerComputeService {
             active_jobs: 0,
             used_capacity_units: 0,
             consecutive_failures: 0,
+            availability_flip_count: 0,
+            unavailable_event_count: 0,
             last_job_id: None,
             last_dispatch_outcome: None,
             last_error: None,
@@ -1465,6 +1500,8 @@ impl MultiWorkerComputeService {
             active_jobs: 0,
             used_capacity_units: 0,
             consecutive_failures: 0,
+            availability_flip_count: 0,
+            unavailable_event_count: 0,
             last_job_id: None,
             last_dispatch_outcome: None,
             last_error: None,
@@ -1484,8 +1521,15 @@ impl MultiWorkerComputeService {
         for unit in &mut self.units {
             if &unit.id == worker_id {
                 let previous = unit.runtime_status();
+                let previous_availability = unit.availability;
                 unit.availability = availability;
                 unit.last_health_contact_at_unix_ms = Some(now_unix_ms());
+                if previous_availability != availability {
+                    unit.availability_flip_count = unit.availability_flip_count.saturating_add(1);
+                }
+                if availability == WorkerAvailability::Unavailable {
+                    unit.unavailable_event_count = unit.unavailable_event_count.saturating_add(1);
+                }
                 if availability == WorkerAvailability::Available {
                     unit.quarantine_until_unix_ms = None;
                     if matches!(
@@ -1564,6 +1608,8 @@ impl MultiWorkerComputeService {
                             format!("distributed_state={:?}", placement.distributed.state)
                                 .to_lowercase(),
                             format!("placement_attempt={}", job.placement_attempts + 1),
+                            format!("membership_state={:?}", self.worker_membership_view().state)
+                                .to_lowercase(),
                         ];
                         placement.reason =
                             "deferred: all suitable placements currently constrained".to_string();
@@ -1784,6 +1830,8 @@ impl MultiWorkerComputeService {
                     .saturating_sub(unit.used_capacity_units),
                 capacity_pressure: unit.capacity_pressure(),
                 consecutive_failures: unit.consecutive_failures,
+                availability_flip_count: unit.availability_flip_count,
+                unavailable_event_count: unit.unavailable_event_count,
                 last_job_id: unit.last_job_id,
                 last_dispatch_outcome: unit.last_dispatch_outcome,
                 last_error: unit.last_error.clone(),
@@ -1848,6 +1896,7 @@ impl MultiWorkerComputeService {
     }
 
     pub fn distributed_recovery_snapshot(&self) -> DistributedRecoverySnapshot {
+        let membership = self.worker_membership_view();
         let mut healthy_units = 0usize;
         let mut constrained_serviceable_units = 0usize;
         let mut degraded_units = 0usize;
@@ -1915,6 +1964,7 @@ impl MultiWorkerComputeService {
 
         DistributedRecoverySnapshot {
             state,
+            membership_state: membership.state,
             total_units: self.units.len(),
             healthy_units,
             constrained_serviceable_units,
@@ -1927,6 +1977,141 @@ impl MultiWorkerComputeService {
             queued_jobs: self.queue.len(),
             uncertain_jobs,
             recovery_required_jobs,
+            serviceable_subset_present: membership.serviceable_subset_present,
+            trust_limited_by_membership_instability: membership
+                .trust_limited_by_membership_instability,
+            reliable_units: membership.reliable_units,
+            flapping_workers: membership.flapping_workers,
+            repeatedly_unavailable_workers: membership.repeatedly_unavailable_workers,
+            repeatedly_excluded_workers: membership.repeatedly_excluded_workers,
+            membership_signals: membership.signals,
+        }
+    }
+
+    fn worker_membership_view(&self) -> WorkerMembershipView {
+        let mut exclusion_counts: BTreeMap<ExecutionUnitId, usize> = BTreeMap::new();
+        for record in self.records.values().rev().take(Self::FEEDBACK_LOOKBACK) {
+            for candidate in &record.placement.considered {
+                if candidate.suitability == PlacementSuitability::Suitable
+                    && candidate.unit_id != record.placement.unit_id
+                    && matches!(
+                        candidate.runtime_status,
+                        WorkerRuntimeStatus::Unavailable
+                            | WorkerRuntimeStatus::Stale
+                            | WorkerRuntimeStatus::Degraded
+                            | WorkerRuntimeStatus::Unhealthy
+                    )
+                {
+                    let current = exclusion_counts
+                        .get(&candidate.unit_id)
+                        .copied()
+                        .unwrap_or(0);
+                    exclusion_counts.insert(candidate.unit_id.clone(), current.saturating_add(1));
+                }
+            }
+        }
+
+        let mut reliable_units = Vec::new();
+        let mut flapping_workers = Vec::new();
+        let mut repeatedly_unavailable_workers = Vec::new();
+        let mut repeatedly_excluded_workers = Vec::new();
+        let mut constrained_units = 0usize;
+        let mut degraded_or_unavailable_units = 0usize;
+
+        for unit in &self.units {
+            if unit.runtime_status() == WorkerRuntimeStatus::Constrained {
+                constrained_units = constrained_units.saturating_add(1);
+            }
+            if matches!(
+                unit.runtime_status(),
+                WorkerRuntimeStatus::Unavailable
+                    | WorkerRuntimeStatus::Stale
+                    | WorkerRuntimeStatus::Degraded
+                    | WorkerRuntimeStatus::Unhealthy
+                    | WorkerRuntimeStatus::Backpressured
+                    | WorkerRuntimeStatus::Saturated
+            ) {
+                degraded_or_unavailable_units = degraded_or_unavailable_units.saturating_add(1);
+            }
+            if unit.is_flapping() {
+                flapping_workers.push(unit.id.clone());
+            }
+            if unit.repeatedly_unavailable() {
+                repeatedly_unavailable_workers.push(unit.id.clone());
+            }
+            if exclusion_counts.get(&unit.id).copied().unwrap_or(0) >= 2 {
+                repeatedly_excluded_workers.push(unit.id.clone());
+            }
+            if unit.can_accept_dispatch()
+                && !unit.is_flapping()
+                && !unit.repeatedly_unavailable()
+                && exclusion_counts.get(&unit.id).copied().unwrap_or(0) < 2
+            {
+                reliable_units.push(unit.id.clone());
+            }
+        }
+
+        flapping_workers.sort();
+        repeatedly_unavailable_workers.sort();
+        repeatedly_excluded_workers.sort();
+        reliable_units.sort();
+
+        let serviceable_subset_present = !reliable_units.is_empty();
+        let state = if degraded_or_unavailable_units == 0
+            && flapping_workers.is_empty()
+            && repeatedly_unavailable_workers.is_empty()
+            && repeatedly_excluded_workers.is_empty()
+        {
+            if constrained_units > 0 {
+                WorkerMembershipState::WorkerSetConstrained
+            } else {
+                WorkerMembershipState::Stable
+            }
+        } else if !flapping_workers.is_empty() && serviceable_subset_present {
+            WorkerMembershipState::FlappingWorkerPresent
+        } else if serviceable_subset_present {
+            WorkerMembershipState::UnstableButServiceable
+        } else {
+            WorkerMembershipState::DegradedMembership
+        };
+        let trust_limited_by_membership_instability = !matches!(
+            state,
+            WorkerMembershipState::Stable | WorkerMembershipState::WorkerSetConstrained
+        );
+        let mut signals = Vec::new();
+        signals.push(format!("membership_state={state:?}").to_lowercase());
+        if !flapping_workers.is_empty() {
+            signals.push(format!("flapping_workers={}", flapping_workers.len()));
+        }
+        if !repeatedly_unavailable_workers.is_empty() {
+            signals.push(format!(
+                "repeatedly_unavailable_workers={}",
+                repeatedly_unavailable_workers.len()
+            ));
+        }
+        if !repeatedly_excluded_workers.is_empty() {
+            signals.push(format!(
+                "repeatedly_excluded_workers={}",
+                repeatedly_excluded_workers.len()
+            ));
+        }
+        if serviceable_subset_present {
+            signals.push(format!("reliable_units={}", reliable_units.len()));
+        } else {
+            signals.push("reliable_units=0".to_string());
+        }
+        if trust_limited_by_membership_instability {
+            signals.push("trust_limited_by_membership_instability=true".to_string());
+        }
+        WorkerMembershipView {
+            state,
+            reliable_units,
+            flapping_workers,
+            repeatedly_unavailable_workers,
+            repeatedly_excluded_workers,
+            serviceable_subset_present,
+            trust_limited_by_membership_instability,
+            signals,
         }
     }
 
@@ -2000,6 +2185,7 @@ impl MultiWorkerComputeService {
         PlacementFailureKind,
         Option<WorkerDispatchOutcome>,
     ) {
+        let membership = self.worker_membership_view();
         let mut considered = self.assess_candidates(&job.request, job.resource_class);
         let distributed = distributed_summary(&considered);
         let input_view = placement_input_view(&considered, &distributed);
@@ -2084,6 +2270,7 @@ impl MultiWorkerComputeService {
                         "support_class=blocked".to_string(),
                         format!("suitability={suitability:?}").to_lowercase(),
                         format!("device_suitability={device_suitability:?}").to_lowercase(),
+                        format!("membership_state={:?}", membership.state).to_lowercase(),
                     ],
                     reason: "requested unit not placeable".to_string(),
                     considered,
@@ -2168,6 +2355,7 @@ impl MultiWorkerComputeService {
                         input_view.has_pressure_blocked_admissible
                     ),
                     format!("failure={best:?}").to_lowercase(),
+                    format!("membership_state={:?}", membership.state).to_lowercase(),
                 ],
                 reason: "no suitable execution unit".to_string(),
                 considered,
@@ -2180,6 +2368,7 @@ impl MultiWorkerComputeService {
     fn scheduling_decision(&self, job: &QueuedJob) -> SchedulingDecision {
         let considered = self.assess_candidates(&job.request, job.resource_class);
         let distributed = distributed_summary(&considered);
+        let membership = self.worker_membership_view();
         if self.selectable_candidate_exists(
             &job.request,
             job.resource_class,
@@ -2191,6 +2380,11 @@ impl MultiWorkerComputeService {
             return SchedulingDecision::NotPlaceable(PlacementFailureKind::WorkerPlacementFailed);
         }
         if distributed.state == DistributedPlacementState::AdmissibleButCurrentlyUnschedulable {
+            return SchedulingDecision::QueueRequired;
+        }
+        if membership.state == WorkerMembershipState::DegradedMembership
+            && !membership.serviceable_subset_present
+        {
             return SchedulingDecision::QueueRequired;
         }
         if considered
@@ -2618,6 +2812,7 @@ impl MultiWorkerComputeService {
     ) -> Option<UnitSelection> {
         let assessments = self.assess_candidates(request, resource_class);
         let feedback = self.optimization_feedback_view(&assessments);
+        let membership = self.worker_membership_view();
         let distributed = distributed_summary(&assessments);
         let input_view = placement_input_view(&assessments, &distributed);
         if let Some(requested) = requested {
@@ -2682,6 +2877,15 @@ impl MultiWorkerComputeService {
         if suitable.is_empty() {
             return None;
         }
+        let stable_alternative_exists = suitable.iter().any(|candidate| {
+            !membership.flapping_workers.contains(&candidate.unit_id)
+                && !membership
+                    .repeatedly_unavailable_workers
+                    .contains(&candidate.unit_id)
+                && !membership
+                    .repeatedly_excluded_workers
+                    .contains(&candidate.unit_id)
+        });
         suitable.sort_by_key(|candidate| {
             let support_rank = match placement_support_class(candidate) {
                 PlacementSupportClass::FullySupported => 0usize,
@@ -2722,6 +2926,16 @@ impl MultiWorkerComputeService {
                 .iter()
                 .position(|unit| unit.id == candidate.unit_id)
                 .unwrap_or(usize::MAX);
+            let unstable_membership_rank = usize::from(
+                stable_alternative_exists
+                    && (membership.flapping_workers.contains(&candidate.unit_id)
+                        || membership
+                            .repeatedly_unavailable_workers
+                            .contains(&candidate.unit_id)
+                        || membership
+                            .repeatedly_excluded_workers
+                            .contains(&candidate.unit_id)),
+            );
             (
                 support_rank,
                 capability_support_rank,
@@ -2729,6 +2943,7 @@ impl MultiWorkerComputeService {
                 warmup_rank,
                 lane_rank,
                 capability_constraint_rank,
+                unstable_membership_rank,
                 feedback
                     .suggested_warm_unit
                     .as_ref()
@@ -2778,6 +2993,20 @@ impl MultiWorkerComputeService {
         };
         let decisive_signals =
             decisive_signals_for_selection(&selected, &suitable, input_view, &feedback);
+        let mut decisive_signals = decisive_signals;
+        decisive_signals.push(format!("membership_state={:?}", membership.state).to_lowercase());
+        if stable_alternative_exists
+            && (membership.flapping_workers.contains(&selected.unit_id)
+                || membership
+                    .repeatedly_unavailable_workers
+                    .contains(&selected.unit_id)
+                || membership
+                    .repeatedly_excluded_workers
+                    .contains(&selected.unit_id))
+        {
+            decisive_signals
+                .push("membership_unstable_unit_selected_under_constraint=true".to_string());
+        }
         Some(UnitSelection {
             idx,
             feedback,
@@ -3418,6 +3647,22 @@ impl ExecutionUnit {
         )
     }
 
+    fn is_flapping(&self) -> bool {
+        self.availability_flip_count >= 3
+            || (self.availability_flip_count >= 2
+                && (self.consecutive_failures >= 2
+                    || self.unavailable_event_count >= 2
+                    || self
+                        .last_dispatch_outcome
+                        .is_some_and(|outcome| outcome == WorkerDispatchOutcome::Unavailable)))
+    }
+
+    fn repeatedly_unavailable(&self) -> bool {
+        self.unavailable_event_count >= 2
+            || (self.runtime_status() == WorkerRuntimeStatus::Unavailable
+                && self.availability_flip_count >= 2)
+    }
+
     fn degradation_state(&self) -> DistributedDegradationState {
         let now = now_unix_ms();
         if self
@@ -3473,6 +3718,9 @@ impl ExecutionUnit {
         let now = now_unix_ms();
         self.last_used_at_unix_ms = Some(now);
         self.last_health_contact_at_unix_ms = Some(now);
+        if outcome == WorkerDispatchOutcome::Unavailable {
+            self.unavailable_event_count = self.unavailable_event_count.saturating_add(1);
+        }
         let exp = self.consecutive_failures.saturating_sub(1).min(4);
         let cooldown_ms =
             (Self::COOLDOWN_BASE_MS.saturating_mul(1_u64 << exp)).min(Self::COOLDOWN_MAX_MS);
@@ -4504,7 +4752,7 @@ mod tests {
         PlacementOutcome, PlacementSuitability, PlacementWarmupState, RecoverySignal,
         ResourceClass, SchedulerConfig, TerminalCoordinationInput, WorkCostProvenance,
         WorkCostTension, WorkerAvailability, WorkerClass, WorkerDispatchOutcome,
-        WorkerRecoveryKind, WorkerRegistryRole, WorkerRuntimeStatus,
+        WorkerMembershipState, WorkerRecoveryKind, WorkerRegistryRole, WorkerRuntimeStatus,
     };
 
     struct NullLlm;
@@ -5844,6 +6092,11 @@ mod tests {
         assert!(snapshot.excluded_units.contains(&worker_id));
         assert!(!snapshot.placement_eligible_units.contains(&worker_id));
         assert_eq!(snapshot.unavailable_units, 1);
+        assert_eq!(
+            snapshot.membership_state,
+            WorkerMembershipState::UnstableButServiceable
+        );
+        assert!(snapshot.serviceable_subset_present);
     }
 
     #[test]
@@ -5875,6 +6128,157 @@ mod tests {
         );
         assert!(recovered.recovered_units.contains(&worker_id));
         assert!(recovered.placement_eligible_units.contains(&worker_id));
+        assert!(!recovered.trust_limited_by_membership_instability);
+    }
+
+    #[test]
+    fn membership_view_distinguishes_single_failure_flapping_and_degraded_states() {
+        let backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(backend, 1);
+        let worker_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let worker_id = service.register_worker_backend("membership-worker", worker_backend, 1);
+
+        service.set_worker_availability(&worker_id, WorkerAvailability::Unavailable);
+        let single_failure = service.distributed_recovery_snapshot();
+        assert!(single_failure.flapping_workers.is_empty());
+        assert!(single_failure.repeatedly_unavailable_workers.is_empty());
+        assert_eq!(
+            single_failure.membership_state,
+            WorkerMembershipState::UnstableButServiceable
+        );
+
+        for _ in 0..3 {
+            service.set_worker_availability(&worker_id, WorkerAvailability::Available);
+            service.set_worker_availability(&worker_id, WorkerAvailability::Unavailable);
+        }
+        let flapping = service.distributed_recovery_snapshot();
+        assert!(flapping.flapping_workers.contains(&worker_id));
+        assert!(flapping.trust_limited_by_membership_instability);
+        assert_eq!(
+            flapping.membership_state,
+            WorkerMembershipState::FlappingWorkerPresent
+        );
+
+        service.set_worker_availability(
+            &ExecutionUnitId("local".to_string()),
+            WorkerAvailability::Unavailable,
+        );
+        let degraded = service.distributed_recovery_snapshot();
+        assert_eq!(
+            degraded.membership_state,
+            WorkerMembershipState::DegradedMembership
+        );
+        assert!(!degraded.serviceable_subset_present);
+    }
+
+    #[test]
+    fn placement_avoids_flapping_worker_when_stable_alternative_exists() {
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(
+                BackendComponentId::ToyV1,
+                vec![ModelSlotProvenance {
+                    slot: ModelSlot::WorldJepa,
+                    stage: "world",
+                    required_for_pack: true,
+                    status: SlotRuntimeStatus::Used,
+                    code: None,
+                    detail: Some("state=active;rollout=Active:cold:artifact verified".to_string()),
+                    resolved_path: None,
+                    hash_prefix: None,
+                    contract_version: None,
+                    format: None,
+                    gate: Default::default(),
+                    rollout: None,
+                }],
+            ),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        let warm_worker = ComputePipelineBackend::new(
+            pack_with(
+                BackendComponentId::BurnJepaV1,
+                vec![ModelSlotProvenance {
+                    slot: ModelSlot::WorldJepa,
+                    stage: "world",
+                    required_for_pack: true,
+                    status: SlotRuntimeStatus::Used,
+                    code: None,
+                    detail: Some("state=active;rollout=Active:warm:artifact verified".to_string()),
+                    resolved_path: None,
+                    hash_prefix: None,
+                    contract_version: None,
+                    format: None,
+                    gate: Default::default(),
+                    rollout: None,
+                }],
+            ),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let worker_id = service.register_worker_backend("flapping-warm-worker", warm_worker, 1);
+        for _ in 0..3 {
+            service.set_worker_availability(&worker_id, WorkerAvailability::Unavailable);
+            service.set_worker_availability(&worker_id, WorkerAvailability::Available);
+        }
+        let job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 700,
+                submitted_by: Some("membership-placement".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job).expect("record");
+        assert_eq!(record.placement.unit_id.0, "local");
+        let membership = service.distributed_recovery_snapshot();
+        assert!(membership.flapping_workers.contains(&worker_id));
+    }
+
+    #[test]
+    fn queue_defer_includes_degraded_membership_signal_when_worker_set_is_unreliable() {
+        let backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(backend, 1);
+        let worker_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let worker_id = service.register_worker_backend("defer-worker", worker_backend, 1);
+        service.set_worker_availability(
+            &ExecutionUnitId("local".to_string()),
+            WorkerAvailability::Unavailable,
+        );
+        service.set_worker_availability(&worker_id, WorkerAvailability::Unavailable);
+        let job_id = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 701,
+                submitted_by: Some("membership-queue".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job_id).expect("record");
+        assert_eq!(record.state, JobLifecycleState::Queued);
+        assert!(record
+            .placement
+            .decisive_signals
+            .iter()
+            .any(|signal| signal.contains("membership_state=degradedmembership")));
     }
 
     #[test]

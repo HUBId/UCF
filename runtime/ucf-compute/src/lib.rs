@@ -102,8 +102,9 @@ pub use compute_service::{
     JobLifecycleEvent, JobLifecycleState, JobRecord, JobSubmissionMeta, MultiWorkerComputeService,
     PlacementCandidateAssessment, PlacementFailureKind, PlacementOptimizationFeedbackView,
     PlacementSuitability, RecoverySignal, ResourceClass, SchedulerConfig, SchedulerSnapshot,
-    WorkerAvailability, WorkerClass, WorkerDispatchOutcome, WorkerFailureKind, WorkerRecoveryKind,
-    WorkerRegistryRole, WorkerRetrySummary, WorkerRuntimeStatus,
+    WorkerAvailability, WorkerClass, WorkerDispatchOutcome, WorkerFailureKind,
+    WorkerMembershipState, WorkerRecoveryKind, WorkerRegistryRole, WorkerRetrySummary,
+    WorkerRuntimeStatus,
 };
 pub use contracts::{
     CanonicalSnapshotConsistency, CapabilityConstraint, CapabilitySupportLevel,

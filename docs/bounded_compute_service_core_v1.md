@@ -53,6 +53,29 @@ Both paths preserve the same `CanonicalPipelineResult` / `CanonicalPipelineFailu
 - per-unit health timestamps (`last_health_contact_at_unix_ms`) with narrow cooldown/quarantine
   semantics to avoid immediate re-dispatch to intermittently failing workers.
 
+### Worker membership churn semantics (Serie G, narrow)
+
+`MultiWorkerComputeService` additionally exposes a bounded `membership_state` view that is separate
+from canonical compute-stage failure semantics:
+
+- `stable`
+- `worker_set_constrained`
+- `flapping_worker_present`
+- `unstable_but_serviceable`
+- `degraded_membership`
+
+Classification is derived from existing runtime signals only (availability flip count, repeated
+unavailable events, repeated exclusion from placement, and dispatch eligibility). This intentionally
+does **not** introduce service discovery, fleet management, or autoscaling behavior.
+
+Coupling to runtime decisions remains technical and minimal:
+
+- placement avoids flapping/repeatedly-unavailable workers when a stable alternative exists,
+- queue/defer signals include degraded-membership context when no reliable subset is currently
+  serviceable,
+- distributed recovery snapshot reports effective reliable subset + churn indicators and flags when
+  service trust is limited by membership instability.
+
 ## Backend capability matrix + execution placement (technical, narrow)
 
 Placement now uses a small capability assessment for every execution unit before dispatch:
