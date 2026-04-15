@@ -151,6 +151,32 @@ pub enum RuntimeOperationCode {
     Failed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeRecoveryFlow {
+    RefreshState,
+    ResyncState,
+    RehydrateState,
+    NoOpRecoveryAction,
+    BlockedRecoveryAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeRecoveryResultState {
+    StateRefreshed,
+    StateResynced,
+    StateRehydrated,
+    NoRelevantChange,
+    PartialRecovery,
+    BlockedUnableToRestoreTrustableState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeRecoveryTrustState {
+    Trustable,
+    Partial,
+    Blocked,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeOperationOutcome {
     pub operation: RuntimeOperation,
@@ -166,6 +192,9 @@ pub struct RuntimeOperationOutcome {
     pub snapshot_effect: RuntimeOperationSnapshotEffect,
     pub intended_state_change: String,
     pub resulting_state_change: String,
+    pub recovery_flow: RuntimeRecoveryFlow,
+    pub recovery_state: RuntimeRecoveryResultState,
+    pub trust_state_after: RuntimeRecoveryTrustState,
     pub detail: String,
     pub completed_jobs: Vec<JobId>,
 }
@@ -242,6 +271,15 @@ pub struct RuntimeOpsSnapshot {
     pub recovery: Option<ComputeRecoverySnapshot>,
     pub recent_operations: Vec<RuntimeOperationOutcome>,
     pub workflow_view: WorkflowViewSnapshot,
+    pub bounded_recovery: RuntimeBoundedRecoveryView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeBoundedRecoveryView {
+    pub recommended_flow: RuntimeRecoveryFlow,
+    pub trust_state: RuntimeRecoveryTrustState,
+    pub reason: String,
+    pub remaining_uncertainty: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1636,6 +1674,11 @@ impl CanonicalComputeEntryPoint {
             partial,
             stale_or_incomplete,
         );
+        let bounded_recovery = build_bounded_recovery_view(
+            &stale_runtime,
+            &queue_hygiene,
+            self.history_store.is_some(),
+        );
         RuntimeOpsSnapshot {
             canonical: canonical_snapshot,
             stale_runtime,
@@ -1690,6 +1733,7 @@ impl CanonicalComputeEntryPoint {
             recovery: self.recovery_snapshot.clone(),
             recent_operations: self.recent_operations.iter().cloned().collect(),
             workflow_view,
+            bounded_recovery,
         }
     }
 
@@ -1710,6 +1754,7 @@ impl CanonicalComputeEntryPoint {
         entry_class: RuntimeEntryClass,
     ) -> Result<RuntimeOperationOutcome, crate::ComputeError> {
         let snapshot = self.operations_snapshot();
+        let trust_state_before = snapshot.bounded_recovery.trust_state;
         let contract_shape = runtime_operation_contract_shape(entry_class);
         let contract_safety = runtime_operation_contract_safety(entry_class);
         let make_outcome = |operation_class: RuntimeOperationClass,
@@ -1741,6 +1786,9 @@ impl CanonicalComputeEntryPoint {
                 snapshot_effect,
                 intended_state_change,
                 resulting_state_change,
+                recovery_flow: classify_runtime_recovery_flow(operation, code),
+                recovery_state: classify_runtime_recovery_state(operation, code, mutation_result),
+                trust_state_after: trust_state_before,
                 detail,
                 completed_jobs,
             }
@@ -2667,6 +2715,83 @@ fn build_runtime_stale_drift_view(
             freshness,
             RuntimeFreshnessClass::Partial | RuntimeFreshnessClass::Stale
         ) || drift != RuntimeDriftClass::NoDriftDetected,
+    }
+}
+
+fn build_bounded_recovery_view(
+    stale_runtime: &RuntimeStaleDriftView,
+    queue_hygiene: &QueueHygieneSnapshot,
+    has_history_store: bool,
+) -> RuntimeBoundedRecoveryView {
+    let mut remaining_uncertainty = Vec::new();
+    if stale_runtime.needs_refresh {
+        remaining_uncertainty.push(format!(
+            "runtime_stale_or_drifted(freshness={:?},drift={:?})",
+            stale_runtime.freshness, stale_runtime.drift
+        ));
+    }
+    if queue_hygiene.stale_queued > 0 {
+        remaining_uncertainty.push(format!("stale_queued={}", queue_hygiene.stale_queued));
+    }
+    if queue_hygiene.stuck_running > 0 {
+        remaining_uncertainty.push(format!("stuck_running={}", queue_hygiene.stuck_running));
+    }
+    if queue_hygiene.orphaned_work_items > 0 {
+        remaining_uncertainty.push(format!(
+            "orphaned_work_items={}",
+            queue_hygiene.orphaned_work_items
+        ));
+    }
+    if queue_hygiene.terminal_unreconciled > 0 {
+        remaining_uncertainty.push(format!(
+            "terminal_unreconciled={}",
+            queue_hygiene.terminal_unreconciled
+        ));
+    }
+
+    if queue_hygiene.orphaned_work_items > 0 || queue_hygiene.terminal_unreconciled > 0 {
+        if has_history_store {
+            RuntimeBoundedRecoveryView {
+                recommended_flow: RuntimeRecoveryFlow::RehydrateState,
+                trust_state: RuntimeRecoveryTrustState::Blocked,
+                reason:
+                    "orphaned or unreconciled runtime work detected; rehydrate/reconcile is the bounded candidate".to_string(),
+                remaining_uncertainty,
+            }
+        } else {
+            RuntimeBoundedRecoveryView {
+                recommended_flow: RuntimeRecoveryFlow::BlockedRecoveryAction,
+                trust_state: RuntimeRecoveryTrustState::Blocked,
+                reason:
+                    "orphaned or unreconciled runtime work detected but no history store is configured".to_string(),
+                remaining_uncertainty,
+            }
+        }
+    } else if stale_runtime.drift != RuntimeDriftClass::NoDriftDetected
+        || queue_hygiene.stuck_running > 0
+    {
+        RuntimeBoundedRecoveryView {
+            recommended_flow: RuntimeRecoveryFlow::ResyncState,
+            trust_state: RuntimeRecoveryTrustState::Partial,
+            reason:
+                "runtime drift/inconsistency signals are present; bounded resync is the primary candidate".to_string(),
+            remaining_uncertainty,
+        }
+    } else if stale_runtime.needs_refresh || queue_hygiene.stale_queued > 0 {
+        RuntimeBoundedRecoveryView {
+            recommended_flow: RuntimeRecoveryFlow::RefreshState,
+            trust_state: RuntimeRecoveryTrustState::Partial,
+            reason: "stale runtime snapshot detected; bounded refresh/recheck is recommended first"
+                .to_string(),
+            remaining_uncertainty,
+        }
+    } else {
+        RuntimeBoundedRecoveryView {
+            recommended_flow: RuntimeRecoveryFlow::NoOpRecoveryAction,
+            trust_state: RuntimeRecoveryTrustState::Trustable,
+            reason: "no bounded recovery action is currently required".to_string(),
+            remaining_uncertainty,
+        }
     }
 }
 
@@ -3770,6 +3895,72 @@ fn runtime_operation_contract_shape(entry_class: RuntimeEntryClass) -> RuntimeCo
 
 fn runtime_operation_contract_safety(entry_class: RuntimeEntryClass) -> RuntimeContractSafety {
     entry_class.contract_safety()
+}
+
+fn classify_runtime_recovery_flow(
+    operation: RuntimeOperation,
+    code: RuntimeOperationCode,
+) -> RuntimeRecoveryFlow {
+    match (operation, code) {
+        (
+            RuntimeOperation::Snapshot | RuntimeOperation::RefreshRuntime,
+            RuntimeOperationCode::Blocked,
+        )
+        | (
+            RuntimeOperation::Snapshot | RuntimeOperation::RefreshRuntime,
+            RuntimeOperationCode::Unsupported,
+        ) => RuntimeRecoveryFlow::BlockedRecoveryAction,
+        (RuntimeOperation::Snapshot | RuntimeOperation::RefreshRuntime, _) => {
+            RuntimeRecoveryFlow::RefreshState
+        }
+        (RuntimeOperation::DrainScheduler { .. }, RuntimeOperationCode::Blocked)
+        | (RuntimeOperation::DrainScheduler { .. }, RuntimeOperationCode::Unsupported) => {
+            RuntimeRecoveryFlow::BlockedRecoveryAction
+        }
+        (RuntimeOperation::DrainScheduler { .. }, _) => RuntimeRecoveryFlow::ResyncState,
+        (RuntimeOperation::RehydrateHistory, RuntimeOperationCode::Blocked)
+        | (RuntimeOperation::RehydrateHistory, RuntimeOperationCode::Unsupported) => {
+            RuntimeRecoveryFlow::BlockedRecoveryAction
+        }
+        (RuntimeOperation::RehydrateHistory, _) => RuntimeRecoveryFlow::RehydrateState,
+        (RuntimeOperation::InternalClearReplayRegression, _) => {
+            RuntimeRecoveryFlow::NoOpRecoveryAction
+        }
+    }
+}
+
+fn classify_runtime_recovery_state(
+    operation: RuntimeOperation,
+    code: RuntimeOperationCode,
+    mutation_result: ExpertMutationResult,
+) -> RuntimeRecoveryResultState {
+    match code {
+        RuntimeOperationCode::Completed => match mutation_result {
+            ExpertMutationResult::NoMutationReadOnly => RuntimeRecoveryResultState::StateRefreshed,
+            ExpertMutationResult::StateChanged => match operation {
+                RuntimeOperation::RehydrateHistory => RuntimeRecoveryResultState::StateRehydrated,
+                RuntimeOperation::Snapshot | RuntimeOperation::RefreshRuntime => {
+                    RuntimeRecoveryResultState::StateRefreshed
+                }
+                RuntimeOperation::DrainScheduler { .. } => {
+                    RuntimeRecoveryResultState::StateResynced
+                }
+                RuntimeOperation::InternalClearReplayRegression => {
+                    RuntimeRecoveryResultState::NoRelevantChange
+                }
+            },
+            ExpertMutationResult::PartialEffect => RuntimeRecoveryResultState::PartialRecovery,
+            _ => RuntimeRecoveryResultState::NoRelevantChange,
+        },
+        RuntimeOperationCode::Accepted | RuntimeOperationCode::NoOp => {
+            RuntimeRecoveryResultState::NoRelevantChange
+        }
+        RuntimeOperationCode::Blocked
+        | RuntimeOperationCode::Unsupported
+        | RuntimeOperationCode::Failed => {
+            RuntimeRecoveryResultState::BlockedUnableToRestoreTrustableState
+        }
+    }
 }
 
 fn runtime_operation_core_semantics_consistent(
@@ -4901,7 +5092,8 @@ mod tests {
         ReplayExecutionMode, ReplayFailureCode, ReplayMismatchClass, ReplayPreflightIssueCode,
         ReplayRegressionReasonCode, ReplayRegressionSignal, ReplayRemoteContextReproducibility,
         ReplayabilityClass, RolloutReplayComparability, RuntimeOperation, RuntimeOperationClass,
-        RuntimeOperationCode, RuntimeOperationSnapshotEffect, RuntimeOpsState, RuntimeSignalState,
+        RuntimeOperationCode, RuntimeOperationSnapshotEffect, RuntimeOpsState, RuntimeRecoveryFlow,
+        RuntimeRecoveryResultState, RuntimeRecoveryTrustState, RuntimeSignalState,
         RuntimeWarmupState, SpecializationSemanticImpact, WorkflowTransitionType,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
@@ -5188,6 +5380,14 @@ mod tests {
             snapshot.stale_runtime.drift,
             RuntimeDriftClass::NoDriftDetected
         );
+        assert_eq!(
+            snapshot.bounded_recovery.recommended_flow,
+            RuntimeRecoveryFlow::RefreshState
+        );
+        assert_eq!(
+            snapshot.bounded_recovery.trust_state,
+            RuntimeRecoveryTrustState::Partial
+        );
     }
 
     #[test]
@@ -5227,6 +5427,31 @@ mod tests {
         assert_eq!(
             snapshot.stale_runtime.primary_source.as_deref(),
             Some("replay_snapshot_basis")
+        );
+        assert_eq!(
+            snapshot.bounded_recovery.recommended_flow,
+            RuntimeRecoveryFlow::ResyncState
+        );
+    }
+
+    #[test]
+    fn operations_snapshot_recommends_rehydrate_for_orphaned_work_items() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":14,"job_id":1001,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"lifecycle_state":"running","completion_class":null,"execution_path":"WorkerIpc","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":null,"queue_wait_ms":1,"execution_duration_micros":null,"total_duration_ms":null,"failure_kind":null,"pipeline_state":null,"model_slots":[]}"#,
+        )
+        .expect("seed orphan-like active record");
+        let entry = service_with_history(&history_path);
+        let snapshot = entry.operations_snapshot();
+        assert_eq!(
+            snapshot.bounded_recovery.recommended_flow,
+            RuntimeRecoveryFlow::RehydrateState
+        );
+        assert_eq!(
+            snapshot.bounded_recovery.trust_state,
+            RuntimeRecoveryTrustState::Blocked
         );
     }
 
@@ -5384,6 +5609,14 @@ mod tests {
             blocked.mutation_result,
             ExpertMutationResult::UnsupportedInRuntimeContext
         );
+        assert_eq!(
+            blocked.recovery_flow,
+            RuntimeRecoveryFlow::BlockedRecoveryAction
+        );
+        assert_eq!(
+            blocked.recovery_state,
+            RuntimeRecoveryResultState::BlockedUnableToRestoreTrustableState
+        );
 
         let dir = tempfile::tempdir().expect("tempdir");
         let history_path = dir.path().join("job_history.jsonl");
@@ -5405,6 +5638,13 @@ mod tests {
                 | ExpertMutationResult::NoOp
                 | ExpertMutationResult::PartialEffect
         ));
+        assert_eq!(completed.recovery_flow, RuntimeRecoveryFlow::RehydrateState);
+        if completed.mutation_result == ExpertMutationResult::StateChanged {
+            assert_eq!(
+                completed.recovery_state,
+                RuntimeRecoveryResultState::StateRehydrated
+            );
+        }
     }
 
     #[test]
@@ -5421,6 +5661,10 @@ mod tests {
             .run_operation(RuntimeOperation::RehydrateHistory)
             .expect("rehydrate operation");
         assert_eq!(outcome.code, RuntimeOperationCode::Blocked);
+        assert_eq!(
+            outcome.recovery_flow,
+            RuntimeRecoveryFlow::BlockedRecoveryAction
+        );
         assert_eq!(
             outcome.blocked_by,
             Some(ExpertMutationBlocker::StaleDiagnosticBasis)

@@ -585,6 +585,37 @@ No statistical suite, leaderboard, or governance signoff layer is added at this 
 - `RuntimeOperation::RefreshRuntime`: currently returns structured `Unsupported` for
   `InMemoryComputeService` (no hidden refresh side-path)
 
+### Bounded runtime recovery flow semantics (Serie G)
+
+Runtime operations now expose an explicit bounded recovery interpretation instead of overloading
+queue/recovery/replay signals implicitly:
+
+- `refresh` (`RuntimeRecoveryFlow::RefreshState`): re-capture current runtime diagnostics/snapshot
+  when stale basis is suspected.
+- `resync` (`RuntimeRecoveryFlow::ResyncState`): reconcile diverged in-memory runtime/queue/worker
+  views (bounded to scheduler/worker-readiness actions).
+- `rehydrate` (`RuntimeRecoveryFlow::RehydrateState`): move persisted history/runtime intent back
+  into active in-memory recovery state.
+- `no-op` / `blocked` (`RuntimeRecoveryFlow::{NoOpRecoveryAction,BlockedRecoveryAction}`):
+  explicitly represented rather than inferred from generic failure codes.
+
+`RuntimeOpsSnapshot.bounded_recovery` provides a canonical recommendation driven by existing
+signals:
+
+- stale snapshot basis → refresh candidate,
+- drift/inconsistency signals → resync candidate,
+- orphaned/unreconciled persisted work → rehydrate candidate (or blocked when history is missing).
+
+`RuntimeOperationOutcome` now returns:
+
+- `recovery_flow` (refresh/resync/rehydrate/no-op/blocked),
+- `recovery_state` (`state_refreshed | state_resynced | state_rehydrated | no_relevant_change |
+  partial_recovery | blocked_unable_to_restore_trustable_state`),
+- `trust_state_after` (`trustable | partial | blocked`) from the canonical post-operation snapshot.
+
+This keeps resulting state change and remaining uncertainty diagnosable without adding an
+orchestration/self-healing platform.
+
 `RuntimeOperationOutcome` separates `Applied`, `Unsupported`, and `Failed` outcome classes to keep
 operations failure semantics explicit and aligned with the canonical runtime failure world.
 
