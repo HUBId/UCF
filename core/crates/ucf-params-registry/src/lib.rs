@@ -53,7 +53,7 @@ impl ParamSnapshot {
         mut deltas: Vec<ParamSnapshotDelta>,
         applied_root: Digest32,
     ) -> Self {
-        deltas.sort_by(|a, b| a.target.cmp(&b.target));
+        deltas.sort_by_key(|a| a.target);
         let commit = commit_snapshot(
             cycle_id,
             onn_params_commit,

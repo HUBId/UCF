@@ -391,11 +391,10 @@ fn summarize_facts(facts: &[Fact]) -> FactsSummary {
                     summary.phase_locked = true;
                 }
             }
-            Fact::SpikeSummary { thought_only, .. } => {
-                if thought_only > 0 {
-                    summary.thought_only_present = true;
-                }
+            Fact::SpikeSummary { thought_only, .. } if thought_only > 0 => {
+                summary.thought_only_present = true;
             }
+            Fact::SpikeSummary { .. } => {}
             Fact::PhaseLocked => summary.phase_locked = true,
             Fact::HighSurprise => summary.high_surprise = true,
             Fact::ThoughtOnlyPresent => summary.thought_only_present = true,
@@ -411,108 +410,86 @@ fn evaluate_rules(cycle_id: u64, facts_commit: Digest32, summary: &FactsSummary)
     let mut hits = Vec::new();
     for rule in RULES {
         match rule.id.0 {
-            1 => {
-                if summary.risk >= 7_500 && summary.phi <= 2_500 {
-                    push_rule_hit(
-                        &mut hits,
-                        cycle_id,
-                        facts_commit,
-                        rule,
-                        REASON_RISK_OVER_CAP,
-                    );
-                }
+            1 if summary.risk >= 7_500 && summary.phi <= 2_500 => {
+                push_rule_hit(
+                    &mut hits,
+                    cycle_id,
+                    facts_commit,
+                    rule,
+                    REASON_RISK_OVER_CAP,
+                );
             }
-            2 => {
-                if summary.tool_req && (summary.risk >= 6_000 || summary.drift >= 7_000) {
-                    push_rule_hit(&mut hits, cycle_id, facts_commit, rule, REASON_POLICY_DENY);
-                }
+            2 if summary.tool_req && (summary.risk >= 6_000 || summary.drift >= 7_000) => {
+                push_rule_hit(&mut hits, cycle_id, facts_commit, rule, REASON_POLICY_DENY);
             }
-            3 => {
-                if summary.thought_only_present && summary.tool_req {
-                    push_rule_hit(
-                        &mut hits,
-                        cycle_id,
-                        facts_commit,
-                        rule,
-                        REASON_THOUGHT_ONLY_LEAK,
-                    );
-                }
+            3 if summary.thought_only_present && summary.tool_req => {
+                push_rule_hit(
+                    &mut hits,
+                    cycle_id,
+                    facts_commit,
+                    rule,
+                    REASON_THOUGHT_ONLY_LEAK,
+                );
             }
-            4 => {
-                if summary.high_surprise && summary.plv <= 3_000 && !summary.phase_locked {
-                    push_rule_hit(
-                        &mut hits,
-                        cycle_id,
-                        facts_commit,
-                        rule,
-                        REASON_HIGH_SURPRISE_LOW_COHERENCE,
-                    );
-                }
+            4 if summary.high_surprise && summary.plv <= 3_000 && !summary.phase_locked => {
+                push_rule_hit(
+                    &mut hits,
+                    cycle_id,
+                    facts_commit,
+                    rule,
+                    REASON_HIGH_SURPRISE_LOW_COHERENCE,
+                );
             }
-            5 => {
-                if summary.tighten_sync && summary.plv <= 3_000 {
-                    push_rule_hit(
-                        &mut hits,
-                        cycle_id,
-                        facts_commit,
-                        rule,
-                        REASON_TIGHTEN_SYNC_LOW_PLV,
-                    );
-                }
+            5 if summary.tighten_sync && summary.plv <= 3_000 => {
+                push_rule_hit(
+                    &mut hits,
+                    cycle_id,
+                    facts_commit,
+                    rule,
+                    REASON_TIGHTEN_SYNC_LOW_PLV,
+                );
             }
-            6 => {
-                if summary.drift >= 8_000 && summary.plv <= 4_000 {
-                    push_rule_hit(
-                        &mut hits,
-                        cycle_id,
-                        facts_commit,
-                        rule,
-                        REASON_DRIFT_OVER_CAP,
-                    );
-                }
+            6 if summary.drift >= 8_000 && summary.plv <= 4_000 => {
+                push_rule_hit(
+                    &mut hits,
+                    cycle_id,
+                    facts_commit,
+                    rule,
+                    REASON_DRIFT_OVER_CAP,
+                );
             }
-            7 => {
-                if summary.sleep_active {
-                    push_rule_hit(&mut hits, cycle_id, facts_commit, rule, REASON_SLEEP_ACTIVE);
-                }
+            7 if summary.sleep_active => {
+                push_rule_hit(&mut hits, cycle_id, facts_commit, rule, REASON_SLEEP_ACTIVE);
             }
-            8 => {
-                if summary.surprise >= 7_000 && !summary.has_cde_edge {
-                    push_rule_hit(
-                        &mut hits,
-                        cycle_id,
-                        facts_commit,
-                        rule,
-                        REASON_SURPRISE_NO_CDE,
-                    );
-                }
+            8 if summary.surprise >= 7_000 && !summary.has_cde_edge => {
+                push_rule_hit(
+                    &mut hits,
+                    cycle_id,
+                    facts_commit,
+                    rule,
+                    REASON_SURPRISE_NO_CDE,
+                );
             }
-            9 => {
-                if summary.has_cde_edge && !summary.has_cf_ok && summary.surprise >= 8_000 {
-                    push_rule_hit(
-                        &mut hits,
-                        cycle_id,
-                        facts_commit,
-                        rule,
-                        REASON_SURPRISE_NO_COUNTERFACTUAL,
-                    );
-                }
+            9 if summary.has_cde_edge && !summary.has_cf_ok && summary.surprise >= 8_000 => {
+                push_rule_hit(
+                    &mut hits,
+                    cycle_id,
+                    facts_commit,
+                    rule,
+                    REASON_SURPRISE_NO_COUNTERFACTUAL,
+                );
             }
-            10 => {
-                if summary.damp_output {
-                    push_rule_hit(&mut hits, cycle_id, facts_commit, rule, REASON_DAMP_OUTPUT);
-                }
+            10 if summary.damp_output => {
+                push_rule_hit(&mut hits, cycle_id, facts_commit, rule, REASON_DAMP_OUTPUT);
             }
-            11 => {
-                if summary.thought_only_requested {
-                    push_rule_hit(
-                        &mut hits,
-                        cycle_id,
-                        facts_commit,
-                        rule,
-                        REASON_THOUGHT_ONLY_REQUESTED,
-                    );
-                }
+            11 if summary.thought_only_requested => {
+                push_rule_hit(
+                    &mut hits,
+                    cycle_id,
+                    facts_commit,
+                    rule,
+                    REASON_THOUGHT_ONLY_REQUESTED,
+                );
             }
             _ => {}
         }
