@@ -229,6 +229,9 @@ pub struct RuntimeOperationOutcome {
     pub trust_state_after: RuntimeRecoveryTrustState,
     pub service_trust_before: ServiceTrustState,
     pub service_trust_after: ServiceTrustState,
+    pub hardening_before: ServiceHardeningState,
+    pub hardening_after: ServiceHardeningState,
+    pub hardening_evolution: ServiceHardeningEvolution,
     pub trust_evolution: ServiceTrustEvolution,
     pub detail: String,
     pub completed_jobs: Vec<JobId>,
@@ -280,6 +283,7 @@ pub enum RuntimeWarmupState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeOpsSnapshot {
     pub canonical: CanonicalRuntimeSnapshot,
+    pub hardening: ServiceHardeningView,
     pub service_trust: ServiceTrustStateView,
     pub stale_runtime: RuntimeStaleDriftView,
     pub state: RuntimeOpsState,
@@ -316,6 +320,41 @@ pub struct RuntimeBoundedRecoveryView {
     pub trust_state: RuntimeRecoveryTrustState,
     pub reason: String,
     pub remaining_uncertainty: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServiceHardeningState {
+    Stable,
+    CaveatedButServiceable,
+    DegradedServiceState,
+    RecoveryActiveState,
+    InsufficientlyTrustworthyState,
+    NormalComputeFailureUnrelatedToHardening,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServiceHardeningActionPosture {
+    StandardOperations,
+    OperationsWithCaveats,
+    DegradedOperationsOnly,
+    RecoveryFirst,
+    MutatingActionsBlocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServiceHardeningEvolution {
+    Unchanged,
+    Improved,
+    Degraded,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceHardeningView {
+    pub state: ServiceHardeningState,
+    pub action_posture: ServiceHardeningActionPosture,
+    pub recommended_preflight: Vec<RuntimeRecoveryFlow>,
+    pub dominant_signal: Option<String>,
+    pub signals: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -399,6 +438,7 @@ pub struct WorkflowViewSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CanonicalRuntimeSnapshot {
     pub consistency: CanonicalSnapshotConsistency,
+    pub hardening_state: ServiceHardeningState,
     pub service_trust: ServiceTrustState,
     pub freshness: RuntimeFreshnessClass,
     pub drift: RuntimeDriftClass,
@@ -1700,6 +1740,15 @@ impl CanonicalComputeEntryPoint {
             self.recovery_snapshot.as_ref(),
             self.history_store.is_some(),
         );
+        let hardening = build_service_hardening_view(
+            state,
+            &service_trust,
+            &stale_runtime,
+            &queue_hygiene,
+            self.recovery_snapshot.as_ref(),
+            has_missing_required_slot,
+            failed_total,
+        );
         let canonical_snapshot = build_canonical_runtime_snapshot(
             state,
             runtime_profile.mode,
@@ -1714,6 +1763,7 @@ impl CanonicalComputeEntryPoint {
             &specialization,
             &stale_runtime,
             &service_trust,
+            &hardening,
         );
         let workflow_view = build_workflow_view_snapshot(
             &canonical_snapshot,
@@ -1730,6 +1780,7 @@ impl CanonicalComputeEntryPoint {
         );
         RuntimeOpsSnapshot {
             canonical: canonical_snapshot,
+            hardening,
             service_trust,
             stale_runtime,
             state,
@@ -1806,6 +1857,7 @@ impl CanonicalComputeEntryPoint {
         let snapshot = self.operations_snapshot();
         let trust_state_before = snapshot.bounded_recovery.trust_state;
         let service_trust_before = snapshot.service_trust.state;
+        let hardening_before = snapshot.hardening.state;
         let contract_shape = runtime_operation_contract_shape(entry_class);
         let contract_safety = runtime_operation_contract_safety(entry_class);
         let make_outcome = |operation_class: RuntimeOperationClass,
@@ -1842,6 +1894,9 @@ impl CanonicalComputeEntryPoint {
                 trust_state_after: trust_state_before,
                 service_trust_before,
                 service_trust_after: service_trust_before,
+                hardening_before,
+                hardening_after: hardening_before,
+                hardening_evolution: ServiceHardeningEvolution::Unchanged,
                 trust_evolution: ServiceTrustEvolution::Unchanged,
                 detail,
                 completed_jobs,
@@ -2237,6 +2292,9 @@ impl CanonicalComputeEntryPoint {
         let after_snapshot = self.operations_snapshot();
         outcome.trust_state_after = after_snapshot.bounded_recovery.trust_state;
         outcome.service_trust_after = after_snapshot.service_trust.state;
+        outcome.hardening_after = after_snapshot.hardening.state;
+        outcome.hardening_evolution =
+            classify_service_hardening_evolution(outcome.hardening_before, outcome.hardening_after);
         outcome.trust_evolution = classify_service_trust_evolution(
             outcome.service_trust_before,
             outcome.service_trust_after,
@@ -2999,6 +3057,119 @@ fn build_service_trust_state_view(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn build_service_hardening_view(
+    state: RuntimeOpsState,
+    service_trust: &ServiceTrustStateView,
+    stale_runtime: &RuntimeStaleDriftView,
+    queue_hygiene: &QueueHygieneSnapshot,
+    recovery: Option<&ComputeRecoverySnapshot>,
+    has_missing_required_slot: bool,
+    failed_total: usize,
+) -> ServiceHardeningView {
+    let mut signals = Vec::new();
+    let mut recommended_preflight = Vec::new();
+
+    if stale_runtime.freshness == RuntimeFreshnessClass::Stale {
+        signals.push("stale_runtime_context".to_string());
+        recommended_preflight.push(RuntimeRecoveryFlow::RefreshState);
+    }
+    if stale_runtime.drift != RuntimeDriftClass::NoDriftDetected {
+        signals.push("runtime_drift_or_inconsistency".to_string());
+        recommended_preflight.push(RuntimeRecoveryFlow::ResyncState);
+    }
+    if queue_hygiene.stale_queued > 0
+        || queue_hygiene.stuck_running > 0
+        || queue_hygiene.orphaned_work_items > 0
+        || queue_hygiene.terminal_unreconciled > 0
+    {
+        signals.push("queue_hygiene_pressure".to_string());
+    }
+    if queue_hygiene.orphaned_work_items > 0 || queue_hygiene.terminal_unreconciled > 0 {
+        signals.push("queue_rehydrate_required".to_string());
+        recommended_preflight.push(RuntimeRecoveryFlow::RehydrateState);
+    }
+    if has_missing_required_slot
+        || stale_runtime
+            .signals
+            .iter()
+            .any(|signal| signal.code == RuntimeDriftSignalCode::WorkerReadyPlacementMismatch)
+    {
+        signals.push("membership_health_caveat".to_string());
+    }
+    if let Some(recovery) = recovery {
+        if recovery.resumed_jobs > 0 || recovery.uncertain_jobs > 0 || recovery.failed_jobs > 0 {
+            signals.push("recovery_recently_active".to_string());
+        }
+    }
+    if service_trust.state != ServiceTrustState::TrustedCurrent {
+        signals.push(format!(
+            "service_trust={}",
+            service_trust_state_name(service_trust.state)
+        ));
+    }
+
+    if state == RuntimeOpsState::Unavailable {
+        signals.push("runtime_unavailable".to_string());
+    }
+    if failed_total > 0 {
+        signals.push(format!("recent_failed_jobs={failed_total}"));
+    }
+
+    recommended_preflight.sort_unstable_by_key(|flow| *flow as u8);
+    recommended_preflight.dedup();
+
+    let hardening_state = if service_trust.state == ServiceTrustState::InsufficientForMutation {
+        ServiceHardeningState::InsufficientlyTrustworthyState
+    } else if recovery.is_some_and(|snapshot| {
+        snapshot.resumed_jobs > 0 || snapshot.uncertain_jobs > 0 || snapshot.failed_jobs > 0
+    }) {
+        ServiceHardeningState::RecoveryActiveState
+    } else if matches!(
+        state,
+        RuntimeOpsState::Degraded
+            | RuntimeOpsState::PartiallyUnavailable
+            | RuntimeOpsState::Unavailable
+    ) || service_trust.state == ServiceTrustState::TrustDegraded
+    {
+        ServiceHardeningState::DegradedServiceState
+    } else if failed_total > 0
+        && stale_runtime.drift == RuntimeDriftClass::NoDriftDetected
+        && queue_hygiene.orphaned_work_items == 0
+        && queue_hygiene.terminal_unreconciled == 0
+        && service_trust.state == ServiceTrustState::TrustedCurrent
+    {
+        ServiceHardeningState::NormalComputeFailureUnrelatedToHardening
+    } else if service_trust.state == ServiceTrustState::TrustedCurrent && signals.is_empty() {
+        ServiceHardeningState::Stable
+    } else {
+        ServiceHardeningState::CaveatedButServiceable
+    };
+
+    let action_posture = match hardening_state {
+        ServiceHardeningState::Stable => ServiceHardeningActionPosture::StandardOperations,
+        ServiceHardeningState::CaveatedButServiceable
+        | ServiceHardeningState::NormalComputeFailureUnrelatedToHardening => {
+            ServiceHardeningActionPosture::OperationsWithCaveats
+        }
+        ServiceHardeningState::DegradedServiceState => {
+            ServiceHardeningActionPosture::DegradedOperationsOnly
+        }
+        ServiceHardeningState::RecoveryActiveState => ServiceHardeningActionPosture::RecoveryFirst,
+        ServiceHardeningState::InsufficientlyTrustworthyState => {
+            ServiceHardeningActionPosture::MutatingActionsBlocked
+        }
+    };
+
+    ServiceHardeningView {
+        state: hardening_state,
+        action_posture,
+        recommended_preflight,
+        dominant_signal: signals.first().cloned(),
+        signals,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn build_canonical_runtime_snapshot(
     state: RuntimeOpsState,
     runtime_mode: RuntimeMode,
@@ -3013,6 +3184,7 @@ fn build_canonical_runtime_snapshot(
     specialization: &RuntimeSpecializationOpsView,
     stale_runtime: &RuntimeStaleDriftView,
     service_trust: &ServiceTrustStateView,
+    hardening: &ServiceHardeningView,
 ) -> CanonicalRuntimeSnapshot {
     let consistency = if state == RuntimeOpsState::Unavailable {
         CanonicalSnapshotConsistency::Unavailable
@@ -3140,9 +3312,16 @@ fn build_canonical_runtime_snapshot(
             service_trust_state_name(service_trust.state)
         ));
     }
+    if hardening.state != ServiceHardeningState::Stable {
+        top_level_caveats.push(format!(
+            "service_hardening={}",
+            service_hardening_state_name(hardening.state)
+        ));
+    }
 
     CanonicalRuntimeSnapshot {
         consistency,
+        hardening_state: hardening.state,
         service_trust: service_trust.state,
         freshness: stale_runtime.freshness,
         drift: stale_runtime.drift,
@@ -3199,6 +3378,19 @@ fn service_trust_state_name(state: ServiceTrustState) -> &'static str {
         ServiceTrustState::PartialTrust => "partial_trust",
         ServiceTrustState::TrustDegraded => "trust_degraded",
         ServiceTrustState::InsufficientForMutation => "insufficient_for_mutation",
+    }
+}
+
+fn service_hardening_state_name(state: ServiceHardeningState) -> &'static str {
+    match state {
+        ServiceHardeningState::Stable => "stable",
+        ServiceHardeningState::CaveatedButServiceable => "caveated_but_serviceable",
+        ServiceHardeningState::DegradedServiceState => "degraded_service_state",
+        ServiceHardeningState::RecoveryActiveState => "recovery_active_state",
+        ServiceHardeningState::InsufficientlyTrustworthyState => "insufficiently_trustworthy_state",
+        ServiceHardeningState::NormalComputeFailureUnrelatedToHardening => {
+            "normal_compute_failure_unrelated_to_hardening"
+        }
     }
 }
 
@@ -4218,6 +4410,28 @@ fn classify_service_trust_evolution(
         ServiceTrustEvolution::DegradedByNewSignal
     } else {
         ServiceTrustEvolution::Unchanged
+    }
+}
+
+fn classify_service_hardening_evolution(
+    before: ServiceHardeningState,
+    after: ServiceHardeningState,
+) -> ServiceHardeningEvolution {
+    if before == after {
+        return ServiceHardeningEvolution::Unchanged;
+    }
+    let rank = |state: ServiceHardeningState| match state {
+        ServiceHardeningState::InsufficientlyTrustworthyState => 0_u8,
+        ServiceHardeningState::RecoveryActiveState => 1_u8,
+        ServiceHardeningState::DegradedServiceState => 2_u8,
+        ServiceHardeningState::CaveatedButServiceable => 3_u8,
+        ServiceHardeningState::NormalComputeFailureUnrelatedToHardening => 4_u8,
+        ServiceHardeningState::Stable => 5_u8,
+    };
+    if rank(after) >= rank(before) {
+        ServiceHardeningEvolution::Improved
+    } else {
+        ServiceHardeningEvolution::Degraded
     }
 }
 
@@ -5342,18 +5556,21 @@ mod tests {
         runtime_operation_core_semantics_consistent, BaselineComparisonFailureCode,
         BaselineComparisonResult, BaselineReference, CanonicalComputeEntryPoint,
         ComputeExecutionMode, ComputeHistoryLookupError, ComputeJobHandle, ComputeJobHistoryLookup,
-        ComputeReplayOutcome, ComputeReplayPreflight, ComputeRequestValidationCode,
-        ComputeSubmitOutcome, ComputeSubmitRequest, DeterministicSubsetClass,
-        DeterministicSubsetEligibility, PersistedSnapshotReadiness, QueueHygieneAction,
-        QueueHygieneClass, QueueHygieneWaitingClass, RecoveryDisposition,
-        ReplayContextConsistencyClass, ReplayContextTransition, ReplayDeterminismClass,
-        ReplayExecutionMode, ReplayFailureCode, ReplayMismatchClass, ReplayPreflightIssueCode,
-        ReplayRegressionReasonCode, ReplayRegressionSignal, ReplayRemoteContextReproducibility,
-        ReplayabilityClass, RolloutReplayComparability, RuntimeOperation, RuntimeOperationClass,
-        RuntimeOperationCode, RuntimeOperationSnapshotEffect, RuntimeOpsState, RuntimeRecoveryFlow,
+        ComputeRecoverySnapshot, ComputeReplayOutcome, ComputeReplayPreflight,
+        ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
+        DeterministicSubsetClass, DeterministicSubsetEligibility, PersistedSnapshotReadiness,
+        QueueHygieneAction, QueueHygieneClass, QueueHygieneSnapshot, QueueHygieneWaitingClass,
+        RecoveryDisposition, ReplayContextConsistencyClass, ReplayContextTransition,
+        ReplayDeterminismClass, ReplayExecutionMode, ReplayFailureCode, ReplayMismatchClass,
+        ReplayPreflightIssueCode, ReplayRegressionReasonCode, ReplayRegressionSignal,
+        ReplayRemoteContextReproducibility, ReplayabilityClass, RolloutReplayComparability,
+        RuntimeOperation, RuntimeOperationClass, RuntimeOperationCode,
+        RuntimeOperationSnapshotEffect, RuntimeOpsState, RuntimeRecoveryFlow,
         RuntimeRecoveryResultState, RuntimeRecoveryTrustState, RuntimeSignalState,
-        RuntimeWarmupState, ServiceMutationTrustDisposition, ServiceTrustEvolution,
-        ServiceTrustState, SpecializationSemanticImpact, WorkflowTransitionType,
+        RuntimeStaleDriftView, RuntimeWarmupState, ServiceHardeningActionPosture,
+        ServiceHardeningState, ServiceMutationTrustDisposition, ServiceTrustEvolution,
+        ServiceTrustState, ServiceTrustStateView, SpecializationSemanticImpact,
+        WorkflowTransitionType,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{
@@ -5781,6 +5998,183 @@ mod tests {
         assert_eq!(
             insufficient.service_trust.state,
             ServiceTrustState::InsufficientForMutation
+        );
+    }
+
+    #[test]
+    fn service_hardening_view_distinguishes_stable_caveated_degraded_recovery_and_insufficient() {
+        let stable = service().operations_snapshot();
+        assert_eq!(stable.hardening.state, ServiceHardeningState::Stable);
+        assert_eq!(
+            stable.hardening.action_posture,
+            ServiceHardeningActionPosture::StandardOperations
+        );
+        assert_eq!(
+            stable.canonical.hardening_state,
+            ServiceHardeningState::Stable
+        );
+
+        let caveated = super::build_service_hardening_view(
+            RuntimeOpsState::HealthyReady,
+            &ServiceTrustStateView {
+                state: ServiceTrustState::TrustedWithCaveats,
+                mutating_action: ServiceMutationTrustDisposition::AllowedWithCaveat,
+                recommendation: None,
+                reasons: vec!["trusted_current_with_subsystem_caveat".to_string()],
+            },
+            &RuntimeStaleDriftView {
+                freshness: RuntimeFreshnessClass::Current,
+                drift: RuntimeDriftClass::NoDriftDetected,
+                primary_source: None,
+                signals: Vec::new(),
+                needs_refresh: false,
+            },
+            &QueueHygieneSnapshot {
+                healthy_queued: 0,
+                healthy_running: 0,
+                retry_or_redispatch_pending: 0,
+                stale_queued: 0,
+                stuck_running: 0,
+                orphaned_work_items: 0,
+                terminal_unreconciled: 0,
+                waiting_class: QueueHygieneWaitingClass::LegitimatelyWaiting,
+                dominant_hygiene_class: None,
+                suggested_actions: Vec::new(),
+                signals: Vec::new(),
+            },
+            None,
+            false,
+            0,
+        );
+        assert_eq!(
+            caveated.state,
+            ServiceHardeningState::CaveatedButServiceable
+        );
+        assert_eq!(
+            caveated.action_posture,
+            ServiceHardeningActionPosture::OperationsWithCaveats
+        );
+
+        let degraded_dir = tempfile::tempdir().expect("tempdir");
+        let degraded_history = degraded_dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &degraded_history,
+            r#"{"schema_version":8,"job_id":222,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"standard","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[],"execution_snapshot":{"request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request_available":true,"backend_route_available":true,"model_slot_count":0,"path":{"requested_execution_path":"LocalCanonical","executed_execution_path":"LocalCanonical","execution_lane":"standard","resource_class":"standard","was_remote":false,"redispatched_to_local":false,"retry_attempts":0},"rollout":{"active_or_warm_slots":0,"candidate_or_guarded_slots":0,"stale_or_blocked_slots":1,"rollout_context_hint":"blocked_or_stale"},"result":{"lifecycle_state":"completed","completion_class":"completed","pipeline_state":"ok","failure_kind":null},"readiness":"stale_or_incomplete"}}"#,
+        )
+        .expect("seed stale");
+        let degraded = service_with_history(&degraded_history).operations_snapshot();
+        assert_eq!(
+            degraded.hardening.state,
+            ServiceHardeningState::DegradedServiceState
+        );
+        assert_eq!(
+            degraded.hardening.action_posture,
+            ServiceHardeningActionPosture::DegradedOperationsOnly
+        );
+
+        let recovery_snapshot = super::build_service_hardening_view(
+            RuntimeOpsState::HealthyReady,
+            &ServiceTrustStateView {
+                state: ServiceTrustState::PartialTrust,
+                mutating_action: ServiceMutationTrustDisposition::AllowedWithCaveat,
+                recommendation: Some(RuntimeRecoveryFlow::RefreshState),
+                reasons: vec!["trust_partial_after_bounded_recovery".to_string()],
+            },
+            &RuntimeStaleDriftView {
+                freshness: RuntimeFreshnessClass::Current,
+                drift: RuntimeDriftClass::NoDriftDetected,
+                primary_source: None,
+                signals: Vec::new(),
+                needs_refresh: false,
+            },
+            &QueueHygieneSnapshot {
+                healthy_queued: 0,
+                healthy_running: 0,
+                retry_or_redispatch_pending: 0,
+                stale_queued: 0,
+                stuck_running: 0,
+                orphaned_work_items: 0,
+                terminal_unreconciled: 0,
+                waiting_class: QueueHygieneWaitingClass::LegitimatelyWaiting,
+                dominant_hygiene_class: None,
+                suggested_actions: Vec::new(),
+                signals: Vec::new(),
+            },
+            Some(&ComputeRecoverySnapshot {
+                recovered_jobs: 2,
+                resumed_jobs: 1,
+                rerun_required_jobs: 0,
+                uncertain_jobs: 1,
+                failed_jobs: 0,
+                records: Vec::new(),
+            }),
+            false,
+            0,
+        );
+        assert_eq!(
+            recovery_snapshot.state,
+            ServiceHardeningState::RecoveryActiveState
+        );
+        assert_eq!(
+            recovery_snapshot.action_posture,
+            ServiceHardeningActionPosture::RecoveryFirst
+        );
+
+        let insufficient_dir = tempfile::tempdir().expect("tempdir");
+        let insufficient_history = insufficient_dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &insufficient_history,
+            r#"{"schema_version":14,"job_id":3001,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"lifecycle_state":"running","completion_class":null,"execution_path":"WorkerIpc","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":null,"queue_wait_ms":1,"execution_duration_micros":null,"total_duration_ms":null,"failure_kind":null,"pipeline_state":null,"model_slots":[]}"#,
+        )
+        .expect("seed orphan");
+        let insufficient = service_with_history(&insufficient_history).operations_snapshot();
+        assert_eq!(
+            insufficient.hardening.state,
+            ServiceHardeningState::InsufficientlyTrustworthyState
+        );
+        assert_eq!(
+            insufficient.hardening.action_posture,
+            ServiceHardeningActionPosture::MutatingActionsBlocked
+        );
+    }
+
+    #[test]
+    fn service_hardening_semantics_preserve_non_hardening_compute_failure_class() {
+        let stable = super::build_service_hardening_view(
+            RuntimeOpsState::HealthyReady,
+            &ServiceTrustStateView {
+                state: ServiceTrustState::TrustedCurrent,
+                mutating_action: ServiceMutationTrustDisposition::Allowed,
+                recommendation: None,
+                reasons: vec!["trusted_current_on_live_runtime_signal".to_string()],
+            },
+            &RuntimeStaleDriftView {
+                freshness: RuntimeFreshnessClass::Current,
+                drift: RuntimeDriftClass::NoDriftDetected,
+                primary_source: None,
+                signals: Vec::new(),
+                needs_refresh: false,
+            },
+            &QueueHygieneSnapshot {
+                healthy_queued: 0,
+                healthy_running: 0,
+                retry_or_redispatch_pending: 0,
+                stale_queued: 0,
+                stuck_running: 0,
+                orphaned_work_items: 0,
+                terminal_unreconciled: 0,
+                waiting_class: QueueHygieneWaitingClass::LegitimatelyWaiting,
+                dominant_hygiene_class: None,
+                suggested_actions: Vec::new(),
+                signals: Vec::new(),
+            },
+            None,
+            false,
+            1,
+        );
+        assert_eq!(
+            stable.state,
+            ServiceHardeningState::NormalComputeFailureUnrelatedToHardening
         );
     }
 

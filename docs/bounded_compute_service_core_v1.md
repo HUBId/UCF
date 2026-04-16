@@ -648,6 +648,24 @@ subsystem caveats), and provides explicit mutation guidance:
 `CanonicalRuntimeSnapshot` now carries the same top-level `service_trust` value to keep one
 canonical snapshot world.
 
+Serie G additionally introduces a narrow `RuntimeOpsSnapshot.hardening` view so resilience
+semantics are not split across unrelated caveats:
+
+- `stable`
+- `caveated_but_serviceable`
+- `degraded_service_state`
+- `recovery_active_state`
+- `insufficiently_trustworthy_state`
+- `normal_compute_failure_unrelated_to_hardening`
+
+Signal inputs remain the existing runtime signals only: stale/drift, queue hygiene (including
+orphaned/stuck), bounded recovery outcomes, membership-health caveats, and service trust context.
+
+`CanonicalRuntimeSnapshot.hardening_state` mirrors this same top-level state (no second snapshot
+world). `RuntimeOperationOutcome` also carries hardening evolution
+(`hardening_before`, `hardening_after`, `hardening_evolution`) so expert ops can see whether
+refresh/resync/rehydrate actions improved or degraded service-hardening posture.
+
 `RuntimeOperationOutcome` now returns:
 
 - `recovery_flow` (refresh/resync/rehydrate/no-op/blocked),
