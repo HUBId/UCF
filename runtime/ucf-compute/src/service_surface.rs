@@ -2520,10 +2520,10 @@ fn build_queue_hygiene_snapshot<'a>(
             }
             JobLifecycleState::Failed
             | JobLifecycleState::TimedOut
-            | JobLifecycleState::Completed => {
-                if history_store.is_some() {
-                    terminal_unreconciled = terminal_unreconciled.saturating_add(1);
-                }
+            | JobLifecycleState::Completed
+                if history_store.is_some() =>
+            {
+                terminal_unreconciled = terminal_unreconciled.saturating_add(1);
             }
             _ => {}
         }
