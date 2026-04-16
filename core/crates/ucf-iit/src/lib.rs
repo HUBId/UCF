@@ -365,11 +365,10 @@ fn stability_score(
             count = count.saturating_add(1);
         }
     }
-    let avg_dist = if count == 0 {
-        0
-    } else {
-        u16::try_from(total_dist / count).unwrap_or(0)
-    };
+    let avg_dist = total_dist
+        .checked_div(count)
+        .and_then(|avg| u16::try_from(avg).ok())
+        .unwrap_or(0);
     let mut stability = stability_table_score(avg_dist);
     if avg_dist > 0 {
         let delta_phi = base_phi.abs_diff(state.last_phi);

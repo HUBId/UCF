@@ -56,11 +56,10 @@ pub fn make_ebm_tag_from_reasoning(
         total = total.saturating_add(u32::from(energy));
         count = count.saturating_add(1);
     }
-    let mean_topk = if count == 0 {
-        reasoning.aggregate_energy_q
-    } else {
-        (total / count) as u16
-    };
+    let mean_topk = total
+        .checked_div(count)
+        .map(|mean| mean as u16)
+        .unwrap_or(reasoning.aggregate_energy_q);
 
     ExperienceEbmTagRecord {
         decision_id: reasoning.decision_id,
@@ -151,7 +150,7 @@ pub fn apply_ebm_bias(
             role: RetrievedExperienceRole::AvoidExample,
         })
         .collect();
-    avoid.sort_by(|a, b| a.experience_id.0.cmp(&b.experience_id.0));
+    avoid.sort_by_key(|a| a.experience_id.0);
     avoid.truncate(policy.max_avoid);
     if !avoid.is_empty() {
         reasons.push(RetrievalReasonCode::AvoidExamplesIncluded);
