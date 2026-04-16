@@ -381,7 +381,7 @@ impl EvolutionEngine for MockEvolutionEngineV0 {
                 }],
             );
         }
-        out.sort_by(|a, b| a.digest.cmp(&b.digest));
+        out.sort_by_key(|a| a.digest);
         out.truncate(MAX_DELTA_CANDIDATES);
         out
     }

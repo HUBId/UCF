@@ -249,7 +249,7 @@ fn load_runtime_ebm_constraints(policy_hash: &str) -> EbmConstraintLibrary {
                     })
                 })
                 .collect::<Vec<_>>();
-            terms.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+            terms.sort_by_key(|a| a.id.0);
             EbmConstraintLibrary {
                 schema_version: bundle.schema_version,
                 terms,
