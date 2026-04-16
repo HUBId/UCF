@@ -279,7 +279,7 @@ impl SnBiophysMicrocircuit {
             })
             .collect();
 
-        items.sort_by(|a, b| (a.source as u8).cmp(&(b.source as u8)));
+        items.sort_by_key(|a| a.source as u8);
         if items.len() > 8 {
             items.truncate(8);
         }

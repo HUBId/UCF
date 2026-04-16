@@ -86,7 +86,7 @@ fn select_micro_configs(
         .filter(|ev| allowed.contains(&ev.module))
         .cloned()
         .collect();
-    selected.sort_by(|a, b| a.module.cmp(&b.module));
+    selected.sort_by_key(|a| a.module);
     if selected.len() > MAX_MICRO_CONFIGS {
         selected.truncate(MAX_MICRO_CONFIGS);
     }

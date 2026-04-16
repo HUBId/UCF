@@ -349,21 +349,22 @@ fn run_ebm_scenario(mode: EbmModeFixture) -> EbmScenarioSummary {
     for idx in 0..orchestrator.ess.len() {
         let rec = orchestrator.ess.get(idx).expect("record index");
         match &rec.payload {
-            ExperiencePayload::Audit(AuditPayload::CandidateSet(set)) => {
-                if rec.kind == ExperienceKind::CandidateSet {
-                    let has_safe_text = set
-                        .summaries
-                        .iter()
-                        .any(|s| s.output_class == OutputClass::SafeText as u8);
-                    let has_noop = set.summaries.iter().any(|s| s.candidate_id == 3);
-                    let has_tool_intent = set.summaries.iter().any(|s| {
-                        s.candidate_id == 2 && s.output_class != OutputClass::SafeText as u8
-                    });
-                    assert!(has_safe_text, "candidate set must include SafeText");
-                    assert!(has_noop, "candidate set must include NoOp fallback");
-                    saw_tool_intent_candidate = saw_tool_intent_candidate || has_tool_intent;
-                    selected_candidate_ids.push(set.selected_candidate_id);
-                }
+            ExperiencePayload::Audit(AuditPayload::CandidateSet(set))
+                if rec.kind == ExperienceKind::CandidateSet =>
+            {
+                let has_safe_text = set
+                    .summaries
+                    .iter()
+                    .any(|s| s.output_class == OutputClass::SafeText as u8);
+                let has_noop = set.summaries.iter().any(|s| s.candidate_id == 3);
+                let has_tool_intent = set
+                    .summaries
+                    .iter()
+                    .any(|s| s.candidate_id == 2 && s.output_class != OutputClass::SafeText as u8);
+                assert!(has_safe_text, "candidate set must include SafeText");
+                assert!(has_noop, "candidate set must include NoOp fallback");
+                saw_tool_intent_candidate = saw_tool_intent_candidate || has_tool_intent;
+                selected_candidate_ids.push(set.selected_candidate_id);
             }
             ExperiencePayload::Audit(AuditPayload::EbmReasoning(ebm)) => {
                 ebm_record_count = ebm_record_count.saturating_add(1);
@@ -372,16 +373,16 @@ fn run_ebm_scenario(mode: EbmModeFixture) -> EbmScenarioSummary {
                 assert!(ebm.top_energies_q.len() <= 8);
                 assert!(ebm.top_term_contributions.len() <= 8);
             }
-            ExperiencePayload::Audit(AuditPayload::ToolAuth(auth)) => {
-                if rec.kind == ExperienceKind::ToolAuth {
-                    tool_auth_denied = tool_auth_denied || !auth.allowed;
-                }
+            ExperiencePayload::Audit(AuditPayload::ToolAuth(auth))
+                if rec.kind == ExperienceKind::ToolAuth =>
+            {
+                tool_auth_denied = tool_auth_denied || !auth.allowed;
             }
-            ExperiencePayload::Audit(AuditPayload::EbmConstraintProvenance(prov)) => {
-                if rec.kind == ExperienceKind::EbmConstraintProvenance {
-                    has_constraint_provenance = has_constraint_provenance
-                        || !prov.policy_hash_prefix.iter().all(|b| *b == 0);
-                }
+            ExperiencePayload::Audit(AuditPayload::EbmConstraintProvenance(prov))
+                if rec.kind == ExperienceKind::EbmConstraintProvenance =>
+            {
+                has_constraint_provenance =
+                    has_constraint_provenance || !prov.policy_hash_prefix.iter().all(|b| *b == 0);
             }
             _ => {}
         }

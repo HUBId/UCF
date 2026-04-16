@@ -95,7 +95,7 @@ pub fn drift_report(
     let fixture_path = workdir.join("ess").join("ess_fixture.json");
     let mut compare_records: Vec<ExperienceRecord> =
         load_fixture_records(&fixture_path).unwrap_or_default();
-    compare_records.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+    compare_records.sort_by_key(|a| a.id.0);
     for record in compare_records {
         if let ExperiencePayload::Audit(AuditPayload::SlotCompareWindow(w)) = record.payload {
             if w.sample_count == 0 {

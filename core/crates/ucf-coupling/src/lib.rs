@@ -229,7 +229,7 @@ pub struct CouplingOutputs {
 
 impl CouplingOutputs {
     pub fn new(cycle_id: u64, mut influences: Vec<(SignalId, i16)>) -> Self {
-        influences.sort_by(|a, b| a.0.cmp(&b.0));
+        influences.sort_by_key(|a| a.0);
         let influences_root = commit_influences_root(cycle_id, &influences);
         let commit = commit_outputs(cycle_id, influences_root, &influences);
         Self {
@@ -311,7 +311,7 @@ impl CouplingCore {
             .iter()
             .map(|buf| (buf.id, buf.commit))
             .collect::<Vec<_>>();
-        commits.sort_by(|a, b| a.0.cmp(&b.0));
+        commits.sort_by_key(|a| a.0);
         commits
     }
 

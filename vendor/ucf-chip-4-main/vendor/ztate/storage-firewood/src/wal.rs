@@ -193,8 +193,8 @@ impl FileWal {
         let mut new_index = Vec::with_capacity(retained.len());
 
         let mut offset = 0u64;
-        let mut sequence = retained.first().map(|entry| entry.sequence).unwrap_or(0);
-        for entry in retained {
+        let start_sequence = retained.first().map(|entry| entry.sequence).unwrap_or(0);
+        for (sequence, entry) in (start_sequence..).zip(retained) {
             reader.seek(SeekFrom::Start(entry.offset))?;
             let mut len_buf = [0u8; 4];
             reader.read_exact(&mut len_buf)?;
@@ -208,7 +208,6 @@ impl FileWal {
             new_index.push(WalEntry { sequence, offset });
 
             offset += 4 + len as u64;
-            sequence += 1;
         }
 
         tmp_file.flush()?;

@@ -176,7 +176,7 @@ pub fn world_parity_report(
 ) -> Result<WorldParityReportV1, OpsError> {
     let fixture_path = workdir.join("ess").join("ess_fixture.json");
     let mut fixture = load_fixture_records(&fixture_path).unwrap_or_default();
-    fixture.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+    fixture.sort_by_key(|a| a.id.0);
 
     let probe_path = workdir.join("out").join("probe_report.json");
     let probe = fs::read_to_string(probe_path)

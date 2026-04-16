@@ -172,12 +172,12 @@ fn clamp_u16(value: i32, min: u16, max: u16) -> u16 {
 
 impl StpState {
     pub fn update_between_spikes(&mut self, params: StpParams) {
-        if params.tau_rec_steps > 0 {
-            let increment = (STP_SCALE.saturating_sub(self.x)) / params.tau_rec_steps;
-            self.x = clamp_u16(self.x as i32 + increment as i32, 0, STP_SCALE);
-        } else {
-            self.x = STP_SCALE;
-        }
+        let rec_gap = STP_SCALE.saturating_sub(self.x);
+        self.x = rec_gap
+            .checked_div(params.tau_rec_steps)
+            .map_or(STP_SCALE, |increment| {
+                clamp_u16(self.x as i32 + increment as i32, 0, STP_SCALE)
+            });
 
         if params.tau_fac_steps > 0 {
             let delta = (params.u as i32 - self.u as i32) / params.tau_fac_steps as i32;

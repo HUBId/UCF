@@ -209,6 +209,34 @@ single canonical runtime snapshot contract. `RuntimeOperationOutcome` additional
 `service_trust_before`, `service_trust_after`, and `trust_evolution`
 (`unchanged | improved_after_recovery_action | remained_partial | degraded_by_new_signal`).
 
+### Service-hardening view (Serie G Prompt 6)
+
+`CanonicalComputeEntryPoint::operations_snapshot` now also carries one compact
+`hardening` view that keeps stale/drift, queue hygiene, bounded recovery, trust state, and
+membership-health caveats in one canonical runtime surface (no separate monitoring plane).
+
+Canonical hardening states:
+
+- `stable`
+- `caveated_but_serviceable`
+- `degraded_service_state`
+- `recovery_active_state`
+- `insufficiently_trustworthy_state`
+- `normal_compute_failure_unrelated_to_hardening`
+
+Operational posture is explicit per state:
+
+- `standard_operations`
+- `operations_with_caveats`
+- `degraded_operations_only`
+- `recovery_first`
+- `mutating_actions_blocked`
+
+The same top-level hardening state is mirrored into `CanonicalRuntimeSnapshot.hardening_state`
+to keep a single snapshot truth. `RuntimeOperationOutcome` now also records
+`hardening_before`, `hardening_after`, and `hardening_evolution` so expert diagnostics/history can
+see if runtime interventions improved or degraded long-run hardening posture.
+
 ## Execution-device classes (bounded service placement)
 
 `MultiWorkerComputeService` now keeps a narrow execution-device layer for placement:

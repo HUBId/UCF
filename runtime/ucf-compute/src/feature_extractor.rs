@@ -315,7 +315,7 @@ impl SaeExtractor for ToySaeExtractor {
                 timestamp: input.t,
             });
         }
-        spikes.sort_by(|a, b| a.feature_id.cmp(&b.feature_id));
+        spikes.sort_by_key(|a| a.feature_id);
 
         let spike_count = spikes.len() as u16;
         let sparsity = (1.0 - (spike_count as f32 / SAE_FEATURE_DIM as f32)).clamp(0.0, 1.0);

@@ -292,7 +292,7 @@ fn parse_rules(input: &str) -> Result<Vec<Rule>, String> {
             body,
         });
     }
-    rules.sort_by(|a, b| a.id.cmp(&b.id));
+    rules.sort_by_key(|a| a.id);
     Ok(rules)
 }
 

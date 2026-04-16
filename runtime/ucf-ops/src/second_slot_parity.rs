@@ -235,7 +235,7 @@ pub fn second_slot_parity_report(
 
     let fixture_path = workdir.join("ess").join("ess_fixture.json");
     let mut fixture = load_fixture_records(&fixture_path).unwrap_or_default();
-    fixture.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+    fixture.sort_by_key(|a| a.id.0);
 
     let primary_backend_id = format!("stub_{}_v1", slot.as_str());
     let hash_prefix = model_hash_prefix(slot);

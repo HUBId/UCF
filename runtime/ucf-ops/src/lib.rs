@@ -11259,16 +11259,8 @@ pub fn attest_run(workdir: &Path, run_id: &str, out: &Path) -> Result<RunCertifi
         final_checkpoint_root: final_root,
         record_count: records.len() as u64,
         summary: RunCertificateSummaryV1 {
-            mean_risk_q: if count_risk == 0 {
-                0
-            } else {
-                (sum_risk / count_risk) as u16
-            },
-            mean_uncertainty_q: if count_unc == 0 {
-                0
-            } else {
-                (sum_unc / count_unc) as u16
-            },
+            mean_risk_q: sum_risk.checked_div(count_risk).map_or(0, |avg| avg as u16),
+            mean_uncertainty_q: sum_unc.checked_div(count_unc).map_or(0, |avg| avg as u16),
             max_governor_tier: max_tier,
             total_violations_count: total_violations,
         },

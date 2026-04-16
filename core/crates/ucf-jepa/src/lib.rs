@@ -330,7 +330,7 @@ fn surprise_from_digests(world_state: Digest32, prediction: Digest32) -> u16 {
     let left = trunc16(world_state);
     let right = trunc16(prediction);
     let xor = left ^ right;
-    let count = xor.count_ones() as u32;
+    let count = xor.count_ones();
     let scaled = count.saturating_mul(10_000) / 16;
     u16::try_from(scaled.min(10_000)).unwrap_or(10_000)
 }
