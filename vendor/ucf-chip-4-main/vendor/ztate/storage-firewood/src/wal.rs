@@ -194,7 +194,7 @@ impl FileWal {
 
         let mut offset = 0u64;
         let start_sequence = retained.first().map(|entry| entry.sequence).unwrap_or(0);
-        for (sequence, entry) in (start_sequence..).zip(retained.into_iter()) {
+        for (sequence, entry) in (start_sequence..).zip(retained) {
             reader.seek(SeekFrom::Start(entry.offset))?;
             let mut len_buf = [0u8; 4];
             reader.read_exact(&mut len_buf)?;
