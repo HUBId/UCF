@@ -139,6 +139,17 @@ mod tests {
     }
 
     #[test]
+    fn canonical_map_lane_names_are_unique() {
+        let mut lane_names: Vec<&str> = canonical_compute_reference_map()
+            .iter()
+            .map(|lane| lane.lane)
+            .collect();
+        lane_names.sort_unstable();
+        lane_names.dedup();
+        assert_eq!(lane_names.len(), canonical_compute_reference_map().len());
+    }
+
+    #[test]
     fn onboarding_summary_matches_pinned_canonical_constants() {
         let (backend, pack) = canonical_onboarding_reference_summary();
         assert_eq!(backend, "burn");

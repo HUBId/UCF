@@ -1,12 +1,12 @@
-# Real Compute Stack Abschlussmatrix (Prompt 40)
+# Real Compute Stack Abschlussmatrix (Serie I Prompt 4)
 
-Stand: Repo-Zustand am 2026-04-08.
+Stand: Repo-Zustand am 2026-04-17.
 
-Ziel: harte technische Abschlusslinie für die aktuelle Real-Compute-Ausbaustufe und Priorisierung der **nächsten** Vertiefungsreihe.
+Ziel: harte technische Abschlusslinie für **Narrow final cleanup / canonical reference consolidation** (Serie I) und klare Priorisierung der nächsten technischen Serie.
 
 ## Canonical readiness authority (für diese Ausbaustufe)
 
-Diese Datei ist die kanonische **Readiness-Klassifikationsfläche** für den aktuellen Real-Compute-Stand.
+Diese Datei ist die kanonische **Readiness-/Abschlussklassifikationsfläche** für den aktuellen Real-Compute-Stand.
 
 Sie ist absichtlich gekoppelt mit:
 
@@ -18,74 +18,93 @@ Sie ist absichtlich gekoppelt mit:
   - `docs/roadmap/REAL_COMPUTE_TRANSITION.md`
 
 Roadmap-Dateien (`docs/roadmap/AI_STACK.md`, `docs/roadmap/AI_BACKENDS.md`) bleiben Kontext und
-dürfen diese Readiness-Klassifikation nicht neu definieren.
+müssen mit den oben genannten Flächen ausgerichtet bleiben.
 
-## 1) Abschlussmatrix (repo-basiert, kurz)
+## 1) Serie-I Kernprüfung (repo-basiert)
 
-| Bereich | Einstufung | Harte Repo-Basis |
+### 1.1 Canonical reference map
+
+- **Real konsolidiert:**
+  - `CANONICAL_COMPUTE_REFERENCE_MAP` klassifiziert produktive, expert-, diagnostics- und internal/legacy-Lanes explizit in einem code-pinned Ort.
+  - Kanonischer produktiver Referenzpfad bleibt eindeutig (`service_entry` + canonical pipeline core + rollout activation core).
+- **Constrained/partial:**
+  - compatibility/dev- und internal-worker-Lanes bleiben vorhanden, aber explizit als nicht-produktive Referenzklassen markiert.
+- **Bewusst verbleibender Rand:**
+  - `stub|candle` und `worker` bleiben als technische Seams/Internals bestehen; sie sind dokumentiert, aber keine zweite Produktionswahrheit.
+
+### 1.2 Shared-core terminology / contract invariants
+
+- **Real konsolidiert:**
+  - `request -> job -> run`, `action`, `result/fault/status` sind als shared core Begriffe in runtime docs und Referenzfläche deckungsgleich.
+  - Action-Result-Semantik und diagnostics-core (`available|partial|unavailable`) bleiben als eine gemeinsame Vertragsbasis verankert.
+- **Constrained/partial:**
+  - Expert/diagnostic/internal Erweiterungen bleiben absichtlich als Erweiterungen über demselben Kern und tragen zusätzliche Caveats.
+- **Bewusst verbleibender Rand:**
+  - Erweiterte Betriebsdiagnostik bleibt technisch nutzbar, aber nicht als zweite Autoritätsquelle für den Kernvertrag.
+
+### 1.3 Docs / status / readiness alignment
+
+- **Real konsolidiert:**
+  - Split ist klar: Reference (`real_compute_reference_surface_v1` + code map), Status/Transition (`AI_MODEL_PIPELINE_STATUS`, `REAL_COMPUTE_TRANSITION`), Readiness (diese Datei).
+  - `AI_STACK` und `AI_BACKENDS` deklarieren die gleichen kanonischen Flächen als Autorität.
+- **Constrained/partial:**
+  - Roadmap-Files bleiben bewusst Kontextflächen; sie tragen keine tiefen Vertragsdetails.
+- **Bewusst verbleibender Rand:**
+  - Einzelne roadmap-nahe Formulierungen können künftig nachgezogen werden, solange keine Autoritätskollision entsteht.
+
+## 2) Serie-I Abschlussmatrix (kurz)
+
+| Bereich | Statusklasse | Repo-basierte Kurzbegründung |
 |---|---|---|
-| Kanonischer produktiver Pfad (`build_onboarding_reference_backend` → `compute_canonical`) | **stable core** | Burn-pinned Canonical-Onboarding (`CANONICAL_ONBOARDING_BACKEND/PACK`) + fester Canonical-Stage-Contract in `pipeline`. |
-| Compute Entry / Service Surface (`CanonicalComputeEntryPoint`) | **stable core** | Einheitlicher Entry für submit/status/lifecycle/ops/replay/baseline compare inkl. typisierter Outcomes. |
-| Pipeline/Contracts/Failure-Taxonomie | **stable core** | `CanonicalPipelineResult` / `CanonicalPipelineFailure` + Failure-Kind/Fault-Domain/Isolation-Dispositions als tragende Vertragsfläche. |
-| Bounded Service + Scheduling (Admission/Queue/Lifecycle/Timeout/Accounting) | **stable core** | `InMemoryComputeService` + deterministische Datenstrukturen (`BTreeMap/BTreeSet/VecDeque`) + strukturierte Lifecycle-Events. |
-| Multi-Worker/Placement/Capacity (lokal + Worker IPC) | **production-usable but constrained** | Suitability-/Placement-/Capacity-Pfade und Worker-States sind vorhanden; Device-Semantik bleibt bewusst grob (`cpu`, `worker`). |
-| Promotion/Rollout/Gates/Baselines | **production-usable but constrained** | Slot-Pfade (`active/candidate/compare/shadow`), Readiness-Gates inkl. `required_stage_profile`, Baseline-Compare vorhanden; bewusst schmaler Automationsgrad. |
-| Ops/History/Replay/Recovery | **production-usable but constrained** | History-store, Replay, Recovery-Dispositionen und Runtime-Operationen vorhanden; Failures bei fehlender Persistenz bleiben explizit sichtbar. |
-| Config/Modes/Readiness/Isolation | **production-usable but constrained** | `configs/prod.toml` pinnt Burn; Readiness-Gate erzwingt profilgebundene Stage-Checks; Isolation/Fault-Domain-Semantik ist typisiert. |
-| Expert-/Runtime-Control + Diagnostics/Evidence Surfaces | **partial / diagnostic** | Expert-Workflow, Replay-Preflight, Snapshot/Evidence-Hinweise sind kanonisch angebunden, aber explizit Nebenpfade (keine zweite Produktionswahrheit). |
-| Tiefe heterogene Device-/Accelerator-Spezialisierung | **intentionally deferred** | Nicht Teil des aktuellen Placement-Designs; keine feingranulare Accelerator-Klassifikation im Kernpfad. |
-| Vollautomatische verteilte Orchestrierung/Fleet-Scheduling | **intentionally deferred** | Kein Cluster-Orchestrator in dieser Ausbaustufe; bounded local scheduler + optional worker lane bleiben die Grenze. |
+| Canonical compute reference core (code map + canonical production lane) | **stable canonical reference core** | Eine code-pinned Referenzkarte klassifiziert alle relevanten Lanes; Produktionspfad bleibt eindeutig. |
+| Shared-core terminology + contract invariants | **stable canonical reference core** | Kernbegriffe und Vertragsinvarianten sind quer über service/pipeline/reference konsistent und als Shared-Core verankert. |
+| Docs/status/readiness surface split (reference vs status vs readiness) | **mostly aligned with minor caveats** | Autoritätsflächen sind klar definiert und in Stack/Backend-Roadmaps gespiegelt; Roadmap-Kontext bleibt absichtlich weniger detailtief. |
+| Compatibility/dev/internal side lanes (`stub|candle`, `worker`, `domains/ai*`) | **partial / still split** | Lanes existieren weiter als Kompatibilitäts-/Internalschicht, aber explizit nicht als kanonische Produktionswahrheit. |
+| Deep heterogeneous accelerator specialization / full fleet orchestrator | **intentionally deferred** | Nicht Teil dieser Cleanup-Serie; bleibt bewusst außerhalb des kanonischen Referenzkerns. |
 
-## 2) Explizite Abschlusslinie dieser Ausbaustufe
+## 3) Explizite Abschlusslinie für Serie I
 
-Diese Reihe ist technisch **abgeschlossen** für den Grundaufbau des Real Compute Stacks:
+Serie I ist als **Narrow final cleanup / canonical reference consolidation** abgeschlossen:
 
-1. Der kanonische produktive Pfad ist gebaut, eindeutig und belastbar.
-2. Der bounded compute service inkl. Admission/Lifecycle/Placement-/Failure-/Provenance-Semantik ist tragfähig.
-3. Promotion-/Rollout-/Readiness-/Replay-/Recovery-Flächen sind produktiv nutzbar, aber bewusst mit engen Grenzen.
-4. Expert-/Diagnostics-Surfaces erweitern Beobachtbarkeit und Runtime-Kontrolle, bleiben aber bewusst
-   partielle/diagnostische Nebenpfade auf denselben Shared-Core-Contracts.
+1. Der Real-Compute-Referenzkern ist jetzt eindeutig und code-pinned (keine konkurrierende Produktionsreferenz im Kern).
+2. Shared-core Terminologie und Vertragsinvarianten sind über die tragenden Flächen konsolidiert.
+3. Reference-/Status-/Readiness-Surfaces sind als Autoritäts-Split technisch sauber getrennt.
 
-Nicht mehr in diese Reihe zurückziehen:
+Restpunkte sind **nicht mehr load-bearing** für diese Cleanup-Serie:
 
-- Neubau eines verteilten Orchestrierungs- oder Governance-Kontrollplanes,
-- breite Plattform-/Dashboard-/Meta-Programm-Pakete,
-- „zweiter“ konkurrierender Compute-Grundpfad.
+- verbleibende compatibility/internal Seams als dokumentierte Nebenpfade,
+- tiefe Accelerator-/Fleet-Orchestrierungsthemen außerhalb des Cleanup-Scope,
+- roadmap-kontextuelle Formulierungsfeinschliffe ohne Vertragswirkung.
 
-Ab hier ist weitere Arbeit **gezielte Vertiefung** auf dem bestehenden Kern, kein weiterer Grundaufbau.
+Weitere Arbeit wird daher nicht mehr als Cleanup-Serie geführt, sondern als **Konvergenz-/Integrationsserie auf dem stabilen Kern**.
 
-## 3) Nächste Vertiefungsrichtungen (Top-Hebel, 1–3)
+## 4) Nächste Serien nach Serie I (Top-Hebel)
 
-1. **Priorität 1: Replay/Reproducibility-Härtung auf kritischen Pfaden**
-   - Prod-Profil fail-closed auf History-Verfügbarkeit,
-   - engere Replay-Vollständigkeit (canonical request/history) für Compare/Baseline,
-   - klare, testbare Repro-Garantien für Audit-relevante Jobs.
-2. **Priorität 2: Rollout-/Promotion-Automation robuster machen**
-   - stärker deterministische Candidate→Baseline→Promotion-Übergänge,
-   - klarere Blockgründe/Auto-Abbruchkanten bei Gate-Mismatch.
-3. **Priorität 3: Worker-/Placement-Robustheit vertiefen**
-   - additive Capability-Tags und robustere Degradation bei heterogener Worker-Flotte,
-   - ohne neuen Orchestrator-Unterbau.
+1. **Serie J — Final production-readiness convergence**
+   - Fokus: Repro/Replay-/Promotion-Entscheidungssicherheit auf dem kanonischen Pfad und fail-closed Kanten für produktive Readiness.
+2. **Serie K — Compute-facing integration into broader system surfaces**
+   - Fokus: saubere, nicht-duplizierende Anbindung der Compute-Semantik in angrenzende Systemoberflächen (Status/Ops/Consumer-Interfaces).
+3. **Serie L — Narrow exit review / final hardening wrap-up**
+   - Fokus: begrenzte Endhärtung und Exit-Review nach J/K ohne neue Architekturflanken.
 
-## 4) Genau eine nächste Prompt-Reihe
+## 5) Exakt priorisierte nächste Serie
 
-**Nächste Reihe: Replay/Reproducibility-Härtung (Priorität 1).**
+**Priorität jetzt: Serie J — Final production-readiness convergence.**
 
-Warum jetzt höchster Hebel:
+Warum höchster Hebel jetzt:
 
-- Sie erhöht direkt die Verlässlichkeit der bereits gebauten Promotion-/Baseline-Entscheidungen,
-- sie schließt die größte operative Restlücke zwischen „läuft“ und „auditierbar reproduzierbar“,
-- sie nutzt bestehende History/Replay-Strukturen statt neue Architekturflächen zu öffnen.
+- baut direkt auf dem konsolidierten Referenzkern auf,
+- reduziert die wichtigste Restunsicherheit zwischen „konsolidiert“ und „robust produktionsreif“,
+- stärkt sofort die Tragfähigkeit von Promotion-/Replay-/Readiness-Entscheidungen.
 
-Warum die anderen nachrangig:
+Warum K/L nachrangig:
 
-- Rollout-/Promotion-Automation bringt erst dann maximalen Nutzen, wenn Repro-Pfade hart belastbar sind.
-- Worker-/Placement-Vertiefung ist wichtig, aber aktuell weniger kritisch als reproduzierbare Entscheidungsgrundlagen auf dem kanonischen Pfad.
+- K lohnt maximal, wenn Readiness-Konvergenz bereits hart sitzt,
+- L ist ein Abschluss-/Härtungsschritt und sollte auf J (und ggf. K) folgen.
 
-## 5) Minimale Konsistenzchecks für die Abschlussaussage
+## 6) Minimale Konsistenzchecks für diese Abschlussaussage
 
-- Kanonischer Referenzpfad weiterhin vorhanden (Onboarding-Builder + canonical compute contract).
-- Produktiver Entry-Point weiterhin eindeutig (`CanonicalComputeEntryPoint`).
-- `prod` bleibt auf Burn gepinnt und Readiness-Stage-Profile bleiben profilgebunden fail-closed.
-- Canonical Reference Map (`CANONICAL_COMPUTE_REFERENCE_MAP`) und diese Matrix klassifizieren
-  Produktions-, Expert-, Diagnostics- und Internal/Legacy-Lanes ohne konkurrierende Doppelwahrheit.
+- `CANONICAL_COMPUTE_REFERENCE_MAP` bleibt mit genau einer kanonischen `service_entry`-Produktionslane verankert.
+- `stub|candle` bleiben als non-production compatibility lane klassifiziert.
+- Onboarding-Referenz bleibt auf Burn gepinnt (`burn`, `burn_toy_v1`).
+- Stack/Backend-Roadmaps referenzieren weiter denselben Autoritäts-Split (reference/status/readiness) statt konkurrierender Vertragsdefinition.
