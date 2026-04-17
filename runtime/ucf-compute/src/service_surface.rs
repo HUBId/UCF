@@ -239,6 +239,7 @@ pub struct RuntimeOperationOutcome {
     pub detail: String,
     pub completed_jobs: Vec<JobId>,
     pub action_evidence: CanonicalActionEvidenceBundle,
+    pub recovery_comparison: Option<EvidenceAwareComparisonView>,
     pub action_justification: DecisionJustificationView,
 }
 
@@ -481,6 +482,26 @@ pub struct DecisionJustificationView {
     pub primary_trace_slice_refs: Vec<String>,
     pub primary_reasons: Vec<String>,
     pub outcome_or_next_step: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvidenceAwareComparisonClass {
+    Meaningful,
+    Caveated,
+    Inconclusive,
+    NotMeaningful,
+    BlockedMissingPrerequisites,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvidenceAwareComparisonView {
+    pub comparison_id: String,
+    pub compared_entities: Vec<String>,
+    pub shared_evidence_refs: Vec<String>,
+    pub contrasting_evidence_refs: Vec<String>,
+    pub primary_differences: Vec<String>,
+    pub primary_caveats: Vec<String>,
+    pub class: EvidenceAwareComparisonClass,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1177,6 +1198,18 @@ impl CanonicalComputeEntryPoint {
                     detail: "replay record missing".to_string(),
                 }],
                 mismatch_view: ReplayMismatchView {
+                    evidence_comparison: build_evidence_aware_comparison_view(
+                        "replay-preflight-missing-record",
+                        vec![
+                            format!("source_job:{}", handle.job_id.0),
+                            "replay_job:not_started".to_string(),
+                        ],
+                        Vec::new(),
+                        vec!["record_missing".to_string()],
+                        vec!["changed_execution_context".to_string()],
+                        vec!["missing_replay_record".to_string()],
+                        EvidenceAwareComparisonClass::BlockedMissingPrerequisites,
+                    ),
                     class: ReplayMismatchClass::BlockedByMissingPrerequisites,
                     blocked_before_execution: true,
                     divergence_observed_after_execution: false,
@@ -1527,7 +1560,7 @@ impl CanonicalComputeEntryPoint {
             _ => BaselineComparisonOutcome::Equivalent,
         };
 
-        let summary = BaselineComparisonSummary {
+        let mut summary = BaselineComparisonSummary {
             candidate_job_id: candidate.job_id,
             baseline_job_id: baseline_record.job_id,
             outcome,
@@ -1553,7 +1586,46 @@ impl CanonicalComputeEntryPoint {
                 false,
                 false,
             ),
+            evidence_comparison: build_evidence_aware_comparison_view(
+                "rollout-baseline",
+                vec![
+                    format!("baseline_job:{}", baseline_record.job_id.0),
+                    format!("candidate_job:{}", candidate.job_id.0),
+                ],
+                vec![
+                    "canonical_runtime_snapshot".to_string(),
+                    "trace_slice:rollout".to_string(),
+                ],
+                vec!["evidence_bundle:baseline_vs_candidate".to_string()],
+                vec![
+                    format!("outcome={outcome:?}"),
+                    format!("changed_execution_context={}", !config_equal),
+                    format!(
+                        "changed_rollout_context={:?}",
+                        classify_rollout_context_comparability(
+                            baseline_record.rollout_context_hint.as_deref(),
+                            candidate_record.rollout_context_hint.as_deref(),
+                            false,
+                            false,
+                            false,
+                            false
+                        )
+                        .comparability
+                    ),
+                ],
+                Vec::new(),
+                EvidenceAwareComparisonClass::Meaningful,
+            ),
         };
+        if summary.rollout_context.comparability
+            == RolloutReplayComparability::ComparableWithRolloutCaveat
+        {
+            summary.evidence_comparison.class = EvidenceAwareComparisonClass::Caveated;
+            summary
+                .evidence_comparison
+                .primary_caveats
+                .push("rollout_context_has_caveat".to_string());
+        }
         if summary.rollout_context.comparability
             == RolloutReplayComparability::NotMeaningfullyComparableAcrossRolloutBoundary
         {
@@ -1951,6 +2023,7 @@ impl CanonicalComputeEntryPoint {
                     &snapshot,
                     &detail,
                 ),
+                recovery_comparison: None,
                 action_justification: build_action_justification_view(
                     operation,
                     entry_class,
@@ -2384,6 +2457,7 @@ impl CanonicalComputeEntryPoint {
             outcome.service_trust_after,
             outcome.recovery_state,
         );
+        outcome.recovery_comparison = Some(build_recovery_evidence_comparison(&outcome));
         self.record_operation_outcome(outcome.clone());
         Ok(outcome)
     }
@@ -3792,6 +3866,7 @@ fn build_action_justification_view(
     let mut primary_reasons = vec![
         format!("operation_code={code:?}"),
         format!("mutation_boundary={mutation_boundary:?}"),
+        format!("comparison_ref=recovery-op-{operation:?}").to_ascii_lowercase(),
         format!(
             "service_trust_before={}",
             service_trust_state_name(snapshot.service_trust.state)
@@ -4132,6 +4207,7 @@ pub struct ReplayMismatchView {
     pub reasons: Vec<ReplayMismatchReason>,
     pub outcome_comparison: Option<ReplayOutcomeComparison>,
     pub deterministic_subset: DeterministicSubsetAssessment,
+    pub evidence_comparison: EvidenceAwareComparisonView,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4319,9 +4395,11 @@ pub struct BaselineComparisonSummary {
     pub candidate_remaining_global_units: Option<u64>,
     pub baseline_remaining_global_units: Option<u64>,
     pub rollout_context: RolloutReplayComparisonContext,
+    pub evidence_comparison: EvidenceAwareComparisonView,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum BaselineComparisonResult {
     Compared(BaselineComparisonSummary),
     NotComparable {
@@ -4993,6 +5071,18 @@ fn blocked_replay_mismatch_view(
     code: ReplayMismatchReasonCode,
     detail: &str,
 ) -> ReplayMismatchView {
+    let evidence_comparison = build_evidence_aware_comparison_view(
+        "replay-blocked",
+        vec![
+            "source_job:unknown".to_string(),
+            "replay_job:blocked".to_string(),
+        ],
+        Vec::new(),
+        vec!["missing_replay_prerequisite".to_string()],
+        vec![format!("replay_reason={code:?}")],
+        vec![detail.to_string()],
+        EvidenceAwareComparisonClass::BlockedMissingPrerequisites,
+    );
     ReplayMismatchView {
         class: ReplayMismatchClass::BlockedByMissingPrerequisites,
         blocked_before_execution: true,
@@ -5009,7 +5099,89 @@ fn blocked_replay_mismatch_view(
             eligibility: DeterministicSubsetEligibility::StableSubsetExcludedWithReason,
             reasons: vec![DeterministicSubsetReasonCode::IncompleteSnapshotOrContext],
         },
+        evidence_comparison,
     }
+}
+
+fn build_evidence_aware_comparison_view(
+    comparison_id: impl Into<String>,
+    compared_entities: Vec<String>,
+    shared_evidence_refs: Vec<String>,
+    contrasting_evidence_refs: Vec<String>,
+    primary_differences: Vec<String>,
+    primary_caveats: Vec<String>,
+    class: EvidenceAwareComparisonClass,
+) -> EvidenceAwareComparisonView {
+    EvidenceAwareComparisonView {
+        comparison_id: comparison_id.into(),
+        compared_entities,
+        shared_evidence_refs,
+        contrasting_evidence_refs,
+        primary_differences,
+        primary_caveats,
+        class,
+    }
+}
+
+fn build_recovery_evidence_comparison(
+    outcome: &RuntimeOperationOutcome,
+) -> EvidenceAwareComparisonView {
+    let mut primary_differences = vec![
+        format!(
+            "changed_rollout_context={}",
+            matches!(
+                outcome.operation_scope,
+                RuntimeOperationScope::WorkerReadiness | RuntimeOperationScope::ReplayHistory
+            )
+        ),
+        format!("trust_evolution={:?}", outcome.trust_evolution),
+        format!("hardening_evolution={:?}", outcome.hardening_evolution),
+    ];
+    if !outcome.completed_jobs.is_empty() {
+        primary_differences.push(format!("completed_jobs={}", outcome.completed_jobs.len()));
+    }
+    let mut primary_caveats = Vec::new();
+    if let Some(blocker) = outcome.blocked_by {
+        primary_caveats.push(format!("blocked_by={blocker:?}"));
+    }
+    primary_caveats.extend(
+        outcome
+            .action_evidence
+            .replay_recovery_caveats
+            .iter()
+            .cloned(),
+    );
+    let class = match outcome.code {
+        RuntimeOperationCode::Blocked => EvidenceAwareComparisonClass::BlockedMissingPrerequisites,
+        RuntimeOperationCode::Unsupported | RuntimeOperationCode::Failed => {
+            EvidenceAwareComparisonClass::NotMeaningful
+        }
+        RuntimeOperationCode::Completed | RuntimeOperationCode::Accepted
+            if outcome.trust_evolution == ServiceTrustEvolution::ImprovedAfterRecoveryAction =>
+        {
+            EvidenceAwareComparisonClass::Meaningful
+        }
+        RuntimeOperationCode::NoOp => EvidenceAwareComparisonClass::Inconclusive,
+        _ if primary_caveats.is_empty() => EvidenceAwareComparisonClass::Meaningful,
+        _ => EvidenceAwareComparisonClass::Caveated,
+    };
+    build_evidence_aware_comparison_view(
+        format!("recovery-op-{:?}", outcome.operation).to_ascii_lowercase(),
+        vec![
+            format!("before_trust={:?}", outcome.service_trust_before),
+            format!("after_trust={:?}", outcome.service_trust_after),
+        ],
+        vec![outcome.action_evidence.bundle_id.clone()],
+        outcome
+            .action_evidence
+            .trace_slices
+            .iter()
+            .map(|slice| slice.slice_id.clone())
+            .collect(),
+        primary_differences,
+        primary_caveats,
+        class,
+    )
 }
 
 fn status_from_record(
@@ -5531,6 +5703,24 @@ fn classify_preflight_mismatch_view(
         has_snapshot_caveat,
         rollout_context,
     );
+    let primary_caveats = issues
+        .iter()
+        .take(3)
+        .map(|issue| issue.detail.clone())
+        .collect::<Vec<_>>();
+    let evidence_class = if blocked {
+        EvidenceAwareComparisonClass::BlockedMissingPrerequisites
+    } else if matches!(
+        class,
+        ReplayMismatchClass::InsufficientlyComparable
+            | ReplayMismatchClass::ReplayExecutionDivergedTechnically
+    ) {
+        EvidenceAwareComparisonClass::NotMeaningful
+    } else if has_snapshot_caveat {
+        EvidenceAwareComparisonClass::Caveated
+    } else {
+        EvidenceAwareComparisonClass::Inconclusive
+    };
     ReplayMismatchView {
         class,
         blocked_before_execution: blocked,
@@ -5543,6 +5733,18 @@ fn classify_preflight_mismatch_view(
             None
         },
         deterministic_subset,
+        evidence_comparison: build_evidence_aware_comparison_view(
+            "replay-preflight",
+            vec![
+                "source_job:preflight".to_string(),
+                "replay_job:not_started".to_string(),
+            ],
+            vec!["canonical_runtime_snapshot".to_string()],
+            Vec::new(),
+            vec![format!("mismatch_class={class:?}")],
+            primary_caveats,
+            evidence_class,
+        ),
     }
 }
 
@@ -5641,6 +5843,37 @@ fn classify_replay_mismatch_view(
         completion_class_match,
         failure_kind_match,
     );
+    let evidence_class = if !replay_succeeded {
+        EvidenceAwareComparisonClass::NotMeaningful
+    } else if matches!(
+        class,
+        ReplayMismatchClass::ContextChangedWithCaveat
+            | ReplayMismatchClass::MeaningfulReplayButMismatchedExecutionContext
+    ) {
+        EvidenceAwareComparisonClass::Caveated
+    } else if class == ReplayMismatchClass::ExactOrCloseReplayContext {
+        EvidenceAwareComparisonClass::Meaningful
+    } else {
+        EvidenceAwareComparisonClass::Inconclusive
+    };
+    let primary_differences = reasons
+        .iter()
+        .take(3)
+        .map(|reason| format!("replay_reason={:?}", reason.code))
+        .collect::<Vec<_>>();
+    let primary_caveats = reasons
+        .iter()
+        .filter(|reason| {
+            matches!(
+                reason.code,
+                ReplayMismatchReasonCode::SnapshotIncompleteOrStale
+                    | ReplayMismatchReasonCode::RolloutBoundaryCrossed
+                    | ReplayMismatchReasonCode::BackendOrDeviceContextChanged
+            )
+        })
+        .take(3)
+        .map(|reason| reason.detail.clone())
+        .collect::<Vec<_>>();
     ReplayMismatchView {
         class,
         blocked_before_execution: false,
@@ -5651,6 +5884,21 @@ fn classify_replay_mismatch_view(
         reasons,
         outcome_comparison,
         deterministic_subset,
+        evidence_comparison: build_evidence_aware_comparison_view(
+            "replay-runtime",
+            vec![
+                "source_job:executed".to_string(),
+                "replay_job:executed".to_string(),
+            ],
+            vec![
+                "canonical_runtime_snapshot".to_string(),
+                "trace_slice:replay".to_string(),
+            ],
+            vec!["evidence_bundle:source_vs_replay".to_string()],
+            primary_differences,
+            primary_caveats,
+            evidence_class,
+        ),
     }
 }
 
@@ -7599,6 +7847,15 @@ mod tests {
                     eligibility: DeterministicSubsetEligibility::StableSubsetEligible,
                     reasons: Vec::new(),
                 },
+                evidence_comparison: super::build_evidence_aware_comparison_view(
+                    "test-replay",
+                    vec!["source_job:1".to_string(), "replay_job:2".to_string()],
+                    vec!["canonical_runtime_snapshot".to_string()],
+                    Vec::new(),
+                    vec!["same_effective_outcome".to_string()],
+                    Vec::new(),
+                    super::EvidenceAwareComparisonClass::Meaningful,
+                ),
             },
             deterministic_subset: super::DeterministicSubsetAssessment {
                 class: DeterministicSubsetClass::StableReplaySubset,
@@ -8251,5 +8508,66 @@ mod tests {
                 .map(|summary| summary.candidate_job_id),
             Some(candidate_handle.job_id)
         );
+        let comparison = snapshot
+            .latest_baseline_comparison
+            .as_ref()
+            .expect("baseline comparison");
+        assert_eq!(
+            comparison.evidence_comparison.class,
+            super::EvidenceAwareComparisonClass::Meaningful
+        );
+        assert!(comparison
+            .evidence_comparison
+            .primary_differences
+            .iter()
+            .any(|difference| difference.contains("changed_rollout_context")));
+    }
+
+    #[test]
+    fn replay_preflight_exposes_evidence_aware_comparison_class() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":8,"job_id":52,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"standard","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[]}"#,
+        )
+        .expect("history fixture");
+        let entry = CanonicalComputeEntryPoint::with_history_path(
+            InMemoryComputeService::new(crate::pipeline::ComputePipelineBackend::stub()),
+            &history_path,
+        )
+        .expect("entry with history");
+        let preflight = entry.replay_preflight(ComputeJobHandle { job_id: JobId(52) });
+        assert_eq!(
+            preflight.mismatch_view.evidence_comparison.class,
+            super::EvidenceAwareComparisonClass::NotMeaningful
+        );
+        assert!(!preflight
+            .mismatch_view
+            .evidence_comparison
+            .primary_differences
+            .is_empty());
+    }
+
+    #[test]
+    fn runtime_operation_references_recovery_evidence_comparison() {
+        let mut entry = service();
+        let outcome = entry
+            .run_operation(RuntimeOperation::Snapshot)
+            .expect("snapshot operation");
+        let comparison = outcome
+            .recovery_comparison
+            .as_ref()
+            .expect("recovery comparison");
+        assert!(matches!(
+            comparison.class,
+            super::EvidenceAwareComparisonClass::Meaningful
+                | super::EvidenceAwareComparisonClass::Caveated
+        ));
+        assert!(outcome
+            .action_justification
+            .primary_reasons
+            .iter()
+            .any(|reason| reason.contains("comparison_ref=recovery-op-snapshot")));
     }
 }
