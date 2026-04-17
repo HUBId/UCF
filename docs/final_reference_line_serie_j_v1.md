@@ -60,3 +60,37 @@ Not part of this convergence layer:
 - no second reference language for code vs docs
 
 The objective is one readable productive line with explicit extensions and explicit internal boundaries.
+
+## 5) Canonical handoff semantics map (Serie J final alignment)
+
+Source-of-truth constants live in `runtime/ucf-compute/src/contracts.rs`:
+
+- `CANONICAL_RUNTIME_HANDOFF_SEMANTICS_V1`
+- `RuntimeHandoffKind`
+- `RuntimeHandoffState`
+
+Canonical handoffs are intentionally minimal:
+
+1. execution handoff: `submit/compute -> execution_snapshot/diagnostics/evidence`
+2. diagnostics handoff: `runtime snapshot/diagnostics -> expert action preconditions`
+3. replay handoff: `replay preflight -> replay execution -> replay diagnostics`
+4. rollout handoff: `rollout decision -> activation/fallback/rollback outcome`
+5. expert action handoff: `expert runtime op/replay op -> same core runtime state + diagnostics`
+
+Reference objects that are passed consistently at handoff boundaries:
+
+- `job_run_identity`
+- `snapshot_evidence_refs`
+- `active_rollout_state_refs`
+- `replay_context_refs`
+- `trust_diagnostics_refs`
+
+Each handoff explicitly classifies its current result state:
+
+- `complete`
+- `partial`
+- `caveated`
+- `blocked`
+
+These handoff states are derived from existing snapshot/diagnostics/evidence/action
+contracts and **do not create a second error or workflow model**.

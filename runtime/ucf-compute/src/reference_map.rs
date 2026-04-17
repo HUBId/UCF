@@ -243,5 +243,10 @@ mod tests {
         assert!(doc.contains(line.diagnostics_extension));
         assert!(doc.contains(line.cross_cutting_invariants));
         assert!(doc.contains(line.internal_boundary));
+        assert!(doc.contains("CANONICAL_RUNTIME_HANDOFF_SEMANTICS_V1"));
+        assert!(doc.contains("complete"));
+        assert!(doc.contains("partial"));
+        assert!(doc.contains("caveated"));
+        assert!(doc.contains("blocked"));
     }
 }

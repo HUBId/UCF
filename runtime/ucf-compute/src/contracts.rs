@@ -47,6 +47,120 @@ pub const CROSS_CUTTING_PRODUCTION_INVARIANTS_V1: [&str; 5] = [
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum RuntimeHandoffKind {
+    Execution,
+    Diagnostics,
+    Replay,
+    Rollout,
+    ExpertAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeHandoffState {
+    Complete,
+    Partial,
+    Caveated,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HandoffReferenceRequirement {
+    Required,
+    RequiredIfAvailable,
+    Optional,
+    InternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RuntimeHandoffReferenceSet {
+    pub job_run_identity: HandoffReferenceRequirement,
+    pub snapshot_evidence_refs: HandoffReferenceRequirement,
+    pub active_rollout_state_refs: HandoffReferenceRequirement,
+    pub replay_context_refs: HandoffReferenceRequirement,
+    pub trust_diagnostics_refs: HandoffReferenceRequirement,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RuntimeHandoffSemantics {
+    pub kind: RuntimeHandoffKind,
+    pub canonical_transition: &'static str,
+    pub references: RuntimeHandoffReferenceSet,
+    pub side_path_policy: &'static str,
+}
+
+pub const CANONICAL_RUNTIME_HANDOFF_SEMANTICS_V1: [RuntimeHandoffSemantics; 5] = [
+    RuntimeHandoffSemantics {
+        kind: RuntimeHandoffKind::Execution,
+        canonical_transition: "submit/compute -> execution_snapshot/diagnostics/evidence",
+        references: RuntimeHandoffReferenceSet {
+            job_run_identity: HandoffReferenceRequirement::Required,
+            snapshot_evidence_refs: HandoffReferenceRequirement::Required,
+            active_rollout_state_refs: HandoffReferenceRequirement::Optional,
+            replay_context_refs: HandoffReferenceRequirement::Optional,
+            trust_diagnostics_refs: HandoffReferenceRequirement::RequiredIfAvailable,
+        },
+        side_path_policy:
+            "historical or helper paths are extension-only and must not redefine run truth",
+    },
+    RuntimeHandoffSemantics {
+        kind: RuntimeHandoffKind::Diagnostics,
+        canonical_transition: "runtime snapshot/diagnostics -> expert action preconditions",
+        references: RuntimeHandoffReferenceSet {
+            job_run_identity: HandoffReferenceRequirement::RequiredIfAvailable,
+            snapshot_evidence_refs: HandoffReferenceRequirement::Required,
+            active_rollout_state_refs: HandoffReferenceRequirement::RequiredIfAvailable,
+            replay_context_refs: HandoffReferenceRequirement::Optional,
+            trust_diagnostics_refs: HandoffReferenceRequirement::Required,
+        },
+        side_path_policy:
+            "diagnostics adapters may enrich context but cannot bypass trustability gates",
+    },
+    RuntimeHandoffSemantics {
+        kind: RuntimeHandoffKind::Replay,
+        canonical_transition: "replay preflight -> replay execution -> replay diagnostics",
+        references: RuntimeHandoffReferenceSet {
+            job_run_identity: HandoffReferenceRequirement::Required,
+            snapshot_evidence_refs: HandoffReferenceRequirement::RequiredIfAvailable,
+            active_rollout_state_refs: HandoffReferenceRequirement::RequiredIfAvailable,
+            replay_context_refs: HandoffReferenceRequirement::Required,
+            trust_diagnostics_refs: HandoffReferenceRequirement::RequiredIfAvailable,
+        },
+        side_path_policy:
+            "legacy replay shortcuts are non-canonical and must stay explicit/internal-only",
+    },
+    RuntimeHandoffSemantics {
+        kind: RuntimeHandoffKind::Rollout,
+        canonical_transition: "rollout decision -> activation/fallback/rollback outcome",
+        references: RuntimeHandoffReferenceSet {
+            job_run_identity: HandoffReferenceRequirement::RequiredIfAvailable,
+            snapshot_evidence_refs: HandoffReferenceRequirement::RequiredIfAvailable,
+            active_rollout_state_refs: HandoffReferenceRequirement::Required,
+            replay_context_refs: HandoffReferenceRequirement::Optional,
+            trust_diagnostics_refs: HandoffReferenceRequirement::Required,
+        },
+        side_path_policy:
+            "guarded activation/fallback/rollback are canonical; hidden bypasses are not",
+    },
+    RuntimeHandoffSemantics {
+        kind: RuntimeHandoffKind::ExpertAction,
+        canonical_transition:
+            "expert runtime op/replay op -> same core runtime state + diagnostics",
+        references: RuntimeHandoffReferenceSet {
+            job_run_identity: HandoffReferenceRequirement::RequiredIfAvailable,
+            snapshot_evidence_refs: HandoffReferenceRequirement::RequiredIfAvailable,
+            active_rollout_state_refs: HandoffReferenceRequirement::RequiredIfAvailable,
+            replay_context_refs: HandoffReferenceRequirement::RequiredIfAvailable,
+            trust_diagnostics_refs: HandoffReferenceRequirement::Required,
+        },
+        side_path_policy:
+            "expert/high-trust path extends shared contracts and must not create second semantics",
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RuntimeEntryClass {
     StandardCanonical,
     ExpertHighTrust,
@@ -325,6 +439,62 @@ impl CanonicalTraceSliceStatus {
             Self::Partial | Self::StaleOrCaveated => RuntimeDiagnosticsCore::Partial,
             Self::Unavailable => RuntimeDiagnosticsCore::Unavailable,
         }
+    }
+}
+
+pub const fn canonical_runtime_handoff_semantics() -> &'static [RuntimeHandoffSemantics] {
+    &CANONICAL_RUNTIME_HANDOFF_SEMANTICS_V1
+}
+
+pub const fn runtime_handoff_state_from_snapshot_and_diagnostics(
+    snapshot: CanonicalSnapshotConsistency,
+    diagnostics: ExpertDiagnosticsAvailability,
+) -> RuntimeHandoffState {
+    match (snapshot, diagnostics) {
+        (CanonicalSnapshotConsistency::Unavailable, _)
+        | (
+            _,
+            ExpertDiagnosticsAvailability::Unavailable | ExpertDiagnosticsAvailability::Blocked,
+        ) => RuntimeHandoffState::Blocked,
+        (_, ExpertDiagnosticsAvailability::InternalOnly) => RuntimeHandoffState::Caveated,
+        (CanonicalSnapshotConsistency::Current, ExpertDiagnosticsAvailability::Available) => {
+            RuntimeHandoffState::Complete
+        }
+        (
+            CanonicalSnapshotConsistency::Current | CanonicalSnapshotConsistency::Partial,
+            ExpertDiagnosticsAvailability::Partial,
+        ) => RuntimeHandoffState::Caveated,
+        _ => RuntimeHandoffState::Partial,
+    }
+}
+
+pub const fn runtime_handoff_state_from_evidence(
+    evidence: CanonicalEvidenceStatus,
+    trace: CanonicalTraceSliceStatus,
+) -> RuntimeHandoffState {
+    match (evidence, trace) {
+        (CanonicalEvidenceStatus::Insufficient, _)
+        | (_, CanonicalTraceSliceStatus::Unavailable) => RuntimeHandoffState::Blocked,
+        (CanonicalEvidenceStatus::Sufficient, CanonicalTraceSliceStatus::Sufficient) => {
+            RuntimeHandoffState::Complete
+        }
+        (CanonicalEvidenceStatus::Caveated, _)
+        | (_, CanonicalTraceSliceStatus::StaleOrCaveated) => RuntimeHandoffState::Caveated,
+        _ => RuntimeHandoffState::Partial,
+    }
+}
+
+pub const fn runtime_handoff_state_from_action_code(
+    code: RuntimeActionOutcomeCode,
+) -> RuntimeHandoffState {
+    match code {
+        RuntimeActionOutcomeCode::Completed => RuntimeHandoffState::Complete,
+        RuntimeActionOutcomeCode::Accepted | RuntimeActionOutcomeCode::NoOp => {
+            RuntimeHandoffState::Partial
+        }
+        RuntimeActionOutcomeCode::Blocked
+        | RuntimeActionOutcomeCode::Failed
+        | RuntimeActionOutcomeCode::Unsupported => RuntimeHandoffState::Blocked,
     }
 }
 
@@ -1046,5 +1216,114 @@ mod tests {
         assert!(!RuntimeActionOutcomeCode::NoOp.is_blocked_or_failed());
         assert!(RuntimeActionOutcomeCode::NoOp.is_non_terminal_noop());
         assert!(!RuntimeActionOutcomeCode::Completed.is_non_terminal_noop());
+    }
+
+    #[test]
+    fn canonical_runtime_handoff_semantics_cover_required_transitions() {
+        let handoffs = canonical_runtime_handoff_semantics();
+        assert_eq!(handoffs.len(), 5);
+        assert!(handoffs
+            .iter()
+            .any(|handoff| handoff.kind == RuntimeHandoffKind::Execution
+                && handoff.canonical_transition.contains("execution_snapshot")));
+        assert!(handoffs
+            .iter()
+            .any(|handoff| handoff.kind == RuntimeHandoffKind::Diagnostics
+                && handoff
+                    .canonical_transition
+                    .contains("expert action preconditions")));
+        assert!(handoffs
+            .iter()
+            .any(|handoff| handoff.kind == RuntimeHandoffKind::Replay
+                && handoff.canonical_transition.contains("replay execution")));
+        assert!(handoffs
+            .iter()
+            .any(|handoff| handoff.kind == RuntimeHandoffKind::Rollout
+                && handoff
+                    .canonical_transition
+                    .contains("activation/fallback/rollback")));
+        assert!(handoffs
+            .iter()
+            .any(|handoff| handoff.kind == RuntimeHandoffKind::ExpertAction
+                && handoff
+                    .canonical_transition
+                    .contains("same core runtime state")));
+    }
+
+    #[test]
+    fn handoff_states_are_explicit_for_complete_partial_caveated_and_blocked() {
+        assert_eq!(
+            runtime_handoff_state_from_snapshot_and_diagnostics(
+                CanonicalSnapshotConsistency::Current,
+                ExpertDiagnosticsAvailability::Available
+            ),
+            RuntimeHandoffState::Complete
+        );
+        assert_eq!(
+            runtime_handoff_state_from_snapshot_and_diagnostics(
+                CanonicalSnapshotConsistency::Current,
+                ExpertDiagnosticsAvailability::Partial
+            ),
+            RuntimeHandoffState::Caveated
+        );
+        assert_eq!(
+            runtime_handoff_state_from_snapshot_and_diagnostics(
+                CanonicalSnapshotConsistency::Stale,
+                ExpertDiagnosticsAvailability::Available
+            ),
+            RuntimeHandoffState::Partial
+        );
+        assert_eq!(
+            runtime_handoff_state_from_snapshot_and_diagnostics(
+                CanonicalSnapshotConsistency::Unavailable,
+                ExpertDiagnosticsAvailability::Available
+            ),
+            RuntimeHandoffState::Blocked
+        );
+    }
+
+    #[test]
+    fn handoff_state_mapping_reuses_shared_evidence_and_action_semantics() {
+        assert_eq!(
+            runtime_handoff_state_from_evidence(
+                CanonicalEvidenceStatus::Sufficient,
+                CanonicalTraceSliceStatus::Sufficient
+            ),
+            RuntimeHandoffState::Complete
+        );
+        assert_eq!(
+            runtime_handoff_state_from_evidence(
+                CanonicalEvidenceStatus::Caveated,
+                CanonicalTraceSliceStatus::Partial
+            ),
+            RuntimeHandoffState::Caveated
+        );
+        assert_eq!(
+            runtime_handoff_state_from_evidence(
+                CanonicalEvidenceStatus::Partial,
+                CanonicalTraceSliceStatus::Partial
+            ),
+            RuntimeHandoffState::Partial
+        );
+        assert_eq!(
+            runtime_handoff_state_from_evidence(
+                CanonicalEvidenceStatus::Insufficient,
+                CanonicalTraceSliceStatus::Sufficient
+            ),
+            RuntimeHandoffState::Blocked
+        );
+
+        assert_eq!(
+            runtime_handoff_state_from_action_code(RuntimeActionOutcomeCode::Completed),
+            RuntimeHandoffState::Complete
+        );
+        assert_eq!(
+            runtime_handoff_state_from_action_code(RuntimeActionOutcomeCode::NoOp),
+            RuntimeHandoffState::Partial
+        );
+        assert_eq!(
+            runtime_handoff_state_from_action_code(RuntimeActionOutcomeCode::Blocked),
+            RuntimeHandoffState::Blocked
+        );
     }
 }
