@@ -249,4 +249,22 @@ mod tests {
         assert!(doc.contains("caveated"));
         assert!(doc.contains("blocked"));
     }
+
+    #[test]
+    fn production_readiness_evidence_pack_stays_aligned_with_canonical_core_contracts() {
+        let doc =
+            include_str!("../../../docs/final_production_readiness_evidence_pack_serie_j_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains(line.rollout_extension));
+        assert!(doc.contains(line.replay_extension));
+        assert!(doc.contains(line.diagnostics_extension));
+        assert!(doc.contains(line.internal_boundary));
+        assert!(doc.contains("CROSS_CUTTING_PRODUCTION_INVARIANTS_V1"));
+        assert!(doc.contains("CANONICAL_RUNTIME_HANDOFF_SEMANTICS_V1"));
+        assert!(doc.contains("stable production core"));
+        assert!(doc.contains("production-usable but constrained"));
+        assert!(doc.contains("partial / diagnostic"));
+        assert!(doc.contains("intentionally deferred"));
+    }
 }
