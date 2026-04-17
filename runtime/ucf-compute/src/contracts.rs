@@ -118,6 +118,23 @@ pub enum CanonicalEvidenceStatus {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum CanonicalTraceSliceKind {
+    StagePath,
+    PlacementDecision,
+    RolloutActionDecision,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CanonicalTraceSliceStatus {
+    Sufficient,
+    Partial,
+    StaleOrCaveated,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CanonicalEvidenceReasonCode {
     PlacementPathChosen,
     PlacementConstrainedOrFallback,

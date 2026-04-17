@@ -8,9 +8,10 @@ use crate::backend_pack::{
 };
 use crate::contracts::{
     validate_evidence_chain_digest, CanonicalEvidenceKind, CanonicalEvidenceReasonCode,
-    CanonicalEvidenceStatus, ContractRegistry, LfmValidatorV1, NsrContractVersion, NsrFailureKind,
-    NsrRequest, NsrResult, SaeValidatorV1, SsmValidatorV1, StageContractRegistry,
-    StageContractVersion, StageKind, ValidationStatus, ViolationCode, WorldValidatorV1,
+    CanonicalEvidenceStatus, CanonicalTraceSliceKind, CanonicalTraceSliceStatus, ContractRegistry,
+    LfmValidatorV1, NsrContractVersion, NsrFailureKind, NsrRequest, NsrResult, SaeValidatorV1,
+    SsmValidatorV1, StageContractRegistry, StageContractVersion, StageKind, ValidationStatus,
+    ViolationCode, WorldValidatorV1,
 };
 use crate::feature_extractor::{SaeOutput, ToySaeExtractor};
 use crate::lfm::{LfmInput, LfmOutput};
@@ -270,12 +271,25 @@ pub struct CanonicalRunDiagnostics {
     pub stage_cost_attribution: Vec<CanonicalStageCostAttribution>,
     pub hotspots: CanonicalHotspotSummary,
     pub evidence_chain_digest_prefix: Option<String>,
+    pub trace_slices: Vec<CanonicalTraceSlice>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CanonicalEvidenceReason {
     pub code: CanonicalEvidenceReasonCode,
     pub detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalTraceSlice {
+    pub slice_id: String,
+    pub kind: CanonicalTraceSliceKind,
+    pub status: CanonicalTraceSliceStatus,
+    pub decision_path: String,
+    pub primary_inputs: Vec<String>,
+    pub ruled_out: Vec<String>,
+    pub primary_outcome: String,
+    pub primary_caveat: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -292,6 +306,7 @@ pub struct CanonicalRunEvidenceBundle {
     pub primary_reasons: Vec<CanonicalEvidenceReason>,
     pub replay_recovery_caveats: Vec<String>,
     pub evidence_chain_digest_prefix: Option<String>,
+    pub trace_slice_refs: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2163,6 +2178,7 @@ impl ComputePipelineBackend {
                 failed_stage_count: 0,
             },
             evidence_chain_digest_prefix: Some(evidence_chain.digest_prefix_hex()),
+            trace_slices: Vec::new(),
         };
         let stage_cost_attribution =
             build_stage_cost_attribution(&diagnostics.stage_profiles, timing, work, budget);
@@ -2243,6 +2259,20 @@ impl ComputePipelineBackend {
         }
         .bounded();
 
+        let diagnostics = CanonicalRunDiagnostics {
+            trace_slices: build_run_trace_slices(
+                state,
+                failure.as_ref(),
+                &route,
+                &diagnostics.stage_profiles,
+                &diagnostics.hotspots,
+                &world_stage,
+                &lfm_stage,
+                nsr_outcome.status.state,
+                false,
+            ),
+            ..diagnostics
+        };
         let evidence_bundle = build_run_evidence_bundle(
             &input,
             state,
@@ -2348,6 +2378,7 @@ impl ComputePipelineBackend {
                 failed_stage_count: 0,
             },
             evidence_chain_digest_prefix: None,
+            trace_slices: Vec::new(),
         });
         let stage_cost_attribution = if diagnostics.stage_cost_attribution.is_empty() {
             build_stage_cost_attribution(
@@ -2359,9 +2390,11 @@ impl ComputePipelineBackend {
         } else {
             diagnostics.stage_cost_attribution.clone()
         };
+        let hotspots = build_hotspot_summary(&diagnostics.stage_profiles, &stage_cost_attribution);
         let diagnostics = CanonicalRunDiagnostics {
             stage_cost_attribution: stage_cost_attribution.clone(),
-            hotspots: build_hotspot_summary(&diagnostics.stage_profiles, &stage_cost_attribution),
+            hotspots,
+            trace_slices: Vec::new(),
             ..diagnostics
         };
         let resolved_world_stage = world_stage
@@ -2374,6 +2407,20 @@ impl ComputePipelineBackend {
                 NsrMode::Disabled,
             )
         });
+        let diagnostics = CanonicalRunDiagnostics {
+            trace_slices: build_run_trace_slices(
+                CanonicalPipelineState::Unavailable,
+                Some(&failure),
+                &route,
+                &diagnostics.stage_profiles,
+                &diagnostics.hotspots,
+                &resolved_world_stage,
+                &resolved_lfm_stage,
+                resolved_nsr_stage.state,
+                true,
+            ),
+            ..diagnostics
+        };
         let evidence_bundle = build_run_evidence_bundle(
             input,
             CanonicalPipelineState::Unavailable,
@@ -2522,7 +2569,196 @@ fn build_run_evidence_bundle(
         primary_reasons,
         replay_recovery_caveats,
         evidence_chain_digest_prefix: diagnostics.evidence_chain_digest_prefix.clone(),
+        trace_slice_refs: diagnostics
+            .trace_slices
+            .iter()
+            .map(|slice| slice.slice_id.clone())
+            .collect(),
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_run_trace_slices(
+    state: CanonicalPipelineState,
+    failure: Option<&CanonicalPipelineFailure>,
+    route: &CanonicalBackendRoute,
+    stage_profiles: &[CanonicalStageProfile],
+    hotspots: &CanonicalHotspotSummary,
+    world_stage: &WorldStageStatus,
+    lfm_stage: &LfmStageStatus,
+    nsr_state: NsrStageState,
+    unavailable_path: bool,
+) -> Vec<CanonicalTraceSlice> {
+    let stage_status = if unavailable_path {
+        CanonicalTraceSliceStatus::Unavailable
+    } else if hotspots.degraded_stage_count > 0 || hotspots.unavailable_stage_count > 0 {
+        CanonicalTraceSliceStatus::Partial
+    } else if hotspots.skipped_stage_count > 0 || hotspots.fallback_stage.is_some() {
+        CanonicalTraceSliceStatus::StaleOrCaveated
+    } else {
+        CanonicalTraceSliceStatus::Sufficient
+    };
+    let dominant_sequence = stage_profiles
+        .iter()
+        .filter(|profile| {
+            matches!(
+                profile.state,
+                CanonicalStageProfileState::Success
+                    | CanonicalStageProfileState::SlowSuccess
+                    | CanonicalStageProfileState::Degraded
+            )
+        })
+        .map(|profile| format!("{:?}", profile.stage).to_ascii_lowercase())
+        .collect::<Vec<_>>()
+        .join("->");
+    let stage_caveat = stage_profiles
+        .iter()
+        .find(|profile| {
+            matches!(
+                profile.state,
+                CanonicalStageProfileState::Degraded
+                    | CanonicalStageProfileState::Skipped
+                    | CanonicalStageProfileState::Unavailable
+                    | CanonicalStageProfileState::Failed
+            )
+        })
+        .and_then(|profile| {
+            profile
+                .detail
+                .as_ref()
+                .map(|detail| format!("stage={:?}:{detail}", profile.stage).to_ascii_lowercase())
+        })
+        .or_else(|| {
+            hotspots
+                .fallback_stage
+                .map(|stage| format!("fallback_stage={stage:?}").to_ascii_lowercase())
+        });
+
+    let placement_status = if unavailable_path {
+        CanonicalTraceSliceStatus::Unavailable
+    } else if matches!(state, CanonicalPipelineState::Degraded) {
+        CanonicalTraceSliceStatus::Partial
+    } else if hotspots.fallback_stage.is_some() {
+        CanonicalTraceSliceStatus::StaleOrCaveated
+    } else {
+        CanonicalTraceSliceStatus::Sufficient
+    };
+    let placement_caveat = if matches!(state, CanonicalPipelineState::Unavailable) {
+        failure.map(|item| item.detail.clone())
+    } else {
+        hotspots
+            .fallback_stage
+            .map(|stage| format!("fallback_stage={stage:?}").to_ascii_lowercase())
+    };
+
+    let rollout_status = if unavailable_path {
+        CanonicalTraceSliceStatus::Unavailable
+    } else if matches!(
+        nsr_state,
+        NsrStageState::Disabled | NsrStageState::Unavailable
+    ) {
+        CanonicalTraceSliceStatus::StaleOrCaveated
+    } else if matches!(state, CanonicalPipelineState::Degraded) {
+        CanonicalTraceSliceStatus::Partial
+    } else {
+        CanonicalTraceSliceStatus::Sufficient
+    };
+
+    vec![
+        CanonicalTraceSlice {
+            slice_id: format!(
+                "stage-path-pack{}-world{}",
+                route.pack_id, route.world_backend
+            ),
+            kind: CanonicalTraceSliceKind::StagePath,
+            status: stage_status,
+            decision_path: if unavailable_path {
+                "canonical_stage_path_unavailable".to_string()
+            } else {
+                format!("dominant_sequence={dominant_sequence}")
+            },
+            primary_inputs: vec![
+                format!("world_readiness={:?}", world_stage.readiness).to_ascii_lowercase(),
+                format!("lfm_readiness={:?}", lfm_stage.readiness).to_ascii_lowercase(),
+                format!("nsr_state={nsr_state:?}").to_ascii_lowercase(),
+            ],
+            ruled_out: vec![
+                "full_stage_timeline".to_string(),
+                "non_dominant_stage_variants".to_string(),
+            ],
+            primary_outcome: format!(
+                "stage_degraded={} stage_skipped={} stage_unavailable={}",
+                hotspots.degraded_stage_count,
+                hotspots.skipped_stage_count,
+                hotspots.unavailable_stage_count
+            ),
+            primary_caveat: stage_caveat,
+        },
+        CanonicalTraceSlice {
+            slice_id: format!(
+                "placement-pack{}-route{}",
+                route.pack_id, route.world_backend
+            ),
+            kind: CanonicalTraceSliceKind::PlacementDecision,
+            status: placement_status,
+            decision_path: format!(
+                "selected_route=pack:{} world:{} sae:{} ssm:{} lfm:{}",
+                route.pack_id,
+                route.world_backend,
+                route.sae_backend,
+                route.ssm_backend,
+                route.lfm_backend
+            ),
+            primary_inputs: vec![
+                format!("pipeline_state={state:?}").to_ascii_lowercase(),
+                format!("fallback_stage={:?}", hotspots.fallback_stage).to_ascii_lowercase(),
+            ],
+            ruled_out: vec![
+                "alternative_backend_pack".to_string(),
+                "cross_worker_placement_matrix".to_string(),
+            ],
+            primary_outcome: format!(
+                "placement_support={}",
+                if unavailable_path {
+                    "unavailable"
+                } else if matches!(state, CanonicalPipelineState::Degraded) {
+                    "constrained_or_degraded"
+                } else {
+                    "full_or_constrained"
+                }
+            ),
+            primary_caveat: placement_caveat,
+        },
+        CanonicalTraceSlice {
+            slice_id: format!(
+                "rollout-runtime-{}",
+                world_stage.predictor.to_ascii_lowercase()
+            ),
+            kind: CanonicalTraceSliceKind::RolloutActionDecision,
+            status: rollout_status,
+            decision_path: format!(
+                "context=world:{} lfm:{} nsr:{nsr_state:?}",
+                world_stage.predictor, lfm_stage.runtime
+            )
+            .to_ascii_lowercase(),
+            primary_inputs: vec![
+                format!("world_used={}", world_stage.used),
+                format!("lfm_used={}", lfm_stage.used),
+            ],
+            ruled_out: vec![
+                "governance_release_workflow".to_string(),
+                "global_rollout_timeline".to_string(),
+            ],
+            primary_outcome: format!("pipeline_state={state:?}").to_ascii_lowercase(),
+            primary_caveat: failure.map(|item| item.detail.clone()).or_else(|| {
+                matches!(
+                    nsr_state,
+                    NsrStageState::Disabled | NsrStageState::Unavailable
+                )
+                .then(|| format!("nsr_state={nsr_state:?}").to_ascii_lowercase())
+            }),
+        },
+    ]
 }
 
 fn stage_timing_for(stage: CanonicalStageId, timing: CanonicalTimingSummary) -> Option<u64> {
@@ -3323,6 +3559,31 @@ mod tests {
             result.violation_reason_mask
         );
         assert!(result.diagnostics.evidence_chain_digest_prefix.is_some());
+        assert_eq!(result.diagnostics.trace_slices.len(), 3);
+        assert_eq!(
+            result.evidence_bundle.trace_slice_refs.len(),
+            result.diagnostics.trace_slices.len()
+        );
+        assert!(result
+            .diagnostics
+            .trace_slices
+            .iter()
+            .any(|slice| slice.kind == CanonicalTraceSliceKind::StagePath));
+        assert!(result
+            .diagnostics
+            .trace_slices
+            .iter()
+            .any(|slice| slice.kind == CanonicalTraceSliceKind::PlacementDecision));
+        assert!(result
+            .diagnostics
+            .trace_slices
+            .iter()
+            .any(|slice| slice.kind == CanonicalTraceSliceKind::RolloutActionDecision));
+        assert!(result.diagnostics.trace_slices.iter().all(|slice| {
+            !slice.primary_inputs.is_empty()
+                && !slice.primary_outcome.is_empty()
+                && !slice.decision_path.is_empty()
+        }));
     }
 
     #[test]
@@ -3357,6 +3618,35 @@ mod tests {
             .iter()
             .any(|entry| entry.pattern == CanonicalStageCostPattern::DegradedPathDriver));
         assert!(canonical.diagnostics.hotspots.degraded_stage.is_some());
+        assert!(canonical.diagnostics.trace_slices.iter().any(|slice| {
+            matches!(
+                slice.status,
+                CanonicalTraceSliceStatus::Partial | CanonicalTraceSliceStatus::StaleOrCaveated
+            )
+        }));
+    }
+
+    #[test]
+    fn unavailable_trace_slices_are_explicitly_marked() {
+        let backend = ComputePipelineBackend::stub();
+        let budget = ComputeBudget {
+            sae_units: 100,
+            degrade_policy: DegradePolicy::FailFast,
+            ..ComputeBudget::default()
+        };
+        let canonical = backend
+            .compute_canonical(CanonicalPipelineRequest {
+                input: input(),
+                budget,
+            })
+            .expect("canonical compute");
+        assert_eq!(canonical.state, CanonicalPipelineState::Unavailable);
+        assert!(!canonical.diagnostics.trace_slices.is_empty());
+        assert!(canonical
+            .diagnostics
+            .trace_slices
+            .iter()
+            .all(|slice| slice.status == CanonicalTraceSliceStatus::Unavailable));
     }
 
     #[test]

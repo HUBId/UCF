@@ -23,12 +23,14 @@ use crate::job_history::{
 use crate::pipeline::{
     classify_failure_kind, CanonicalFailureKind, CanonicalFaultDomain, CanonicalHotspotSummary,
     CanonicalIsolationDisposition, CanonicalPipelineFailure, CanonicalPipelineRequest,
-    CanonicalPipelineState, CanonicalStageCostAttribution, CanonicalStageId, CanonicalWorkSummary,
+    CanonicalPipelineState, CanonicalStageCostAttribution, CanonicalStageId, CanonicalTraceSlice,
+    CanonicalWorkSummary,
 };
 use crate::{
     CanonicalEvidenceKind, CanonicalEvidenceReasonCode, CanonicalEvidenceStatus,
-    CanonicalSnapshotConsistency, DeploymentProfile, ExpertDiagnosticsAvailability,
-    ExpertMutationBlocker, ExpertMutationBoundary, ExpertMutationResult, ExpertWorkflowClass,
+    CanonicalSnapshotConsistency, CanonicalTraceSliceKind, CanonicalTraceSliceStatus,
+    DeploymentProfile, ExpertDiagnosticsAvailability, ExpertMutationBlocker,
+    ExpertMutationBoundary, ExpertMutationResult, ExpertWorkflowClass,
     ExpertWorkflowTransitionState, ModelSlot, ModelSlotProvenance, RuntimeContractSafety,
     RuntimeContractShape, RuntimeDiagnosticFlags, RuntimeDriftClass, RuntimeEntryClass,
     RuntimeFreshnessClass, RuntimeMode, RuntimeProfile, SlotRuntimeStatus,
@@ -463,6 +465,7 @@ pub struct CanonicalEvidenceBundleRef {
     pub status: CanonicalEvidenceStatus,
     pub bundle_id: String,
     pub summary: String,
+    pub trace_slice_refs: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -475,6 +478,7 @@ pub struct CanonicalActionEvidenceBundle {
     pub outcome_summary: String,
     pub replay_recovery_caveats: Vec<String>,
     pub primary_reasons: Vec<CanonicalEvidenceReason>,
+    pub trace_slices: Vec<CanonicalTraceSlice>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3408,6 +3412,10 @@ fn build_snapshot_evidence_refs(
             "runtime snapshot evidence follows canonical consistency={}",
             canonical_snapshot_consistency_name(consistency)
         ),
+        trace_slice_refs: vec![format!(
+            "runtime-snapshot-{}",
+            canonical_snapshot_consistency_name(consistency)
+        )],
     }];
 
     refs.extend(recent_operations.iter().rev().take(2).map(|operation| {
@@ -3416,6 +3424,12 @@ fn build_snapshot_evidence_refs(
             status: operation.action_evidence.status,
             bundle_id: operation.action_evidence.bundle_id.clone(),
             summary: operation.action_evidence.outcome_summary.clone(),
+            trace_slice_refs: operation
+                .action_evidence
+                .trace_slices
+                .iter()
+                .map(|slice| slice.slice_id.clone())
+                .collect(),
         }
     }));
     refs
@@ -3495,6 +3509,47 @@ fn build_action_evidence_bundle(
             CanonicalEvidenceStatus::Partial
         }
     };
+    let action_trace_slices = vec![CanonicalTraceSlice {
+        slice_id: format!("rollout-action-{operation:?}").to_ascii_lowercase(),
+        kind: CanonicalTraceSliceKind::RolloutActionDecision,
+        status: match code {
+            RuntimeOperationCode::Blocked => CanonicalTraceSliceStatus::Unavailable,
+            RuntimeOperationCode::Failed | RuntimeOperationCode::Unsupported => {
+                CanonicalTraceSliceStatus::Partial
+            }
+            RuntimeOperationCode::NoOp => CanonicalTraceSliceStatus::StaleOrCaveated,
+            RuntimeOperationCode::Completed | RuntimeOperationCode::Accepted => {
+                if snapshot.stale_runtime.needs_refresh {
+                    CanonicalTraceSliceStatus::StaleOrCaveated
+                } else {
+                    CanonicalTraceSliceStatus::Sufficient
+                }
+            }
+        },
+        decision_path: format!("operation={operation:?};code={code:?}").to_ascii_lowercase(),
+        primary_inputs: vec![
+            format!(
+                "rollout_diagnostics={:?}",
+                snapshot.canonical.subsystems.rollout.availability
+            )
+            .to_ascii_lowercase(),
+            format!("mutation_result={mutation_result:?}").to_ascii_lowercase(),
+        ],
+        ruled_out: vec![
+            "release_governance_pipeline".to_string(),
+            "cross_action_planning_graph".to_string(),
+        ],
+        primary_outcome: detail.to_string(),
+        primary_caveat: blocked_by
+            .map(|blocker| format!("blocked_by={blocker:?}"))
+            .or_else(|| {
+                snapshot
+                    .stale_runtime
+                    .needs_refresh
+                    .then_some("stale_runtime_needs_refresh".to_string())
+            }),
+    }];
+
     CanonicalActionEvidenceBundle {
         kind: CanonicalEvidenceKind::MutatingAction,
         status,
@@ -3519,6 +3574,7 @@ fn build_action_evidence_bundle(
         outcome_summary: detail.to_string(),
         replay_recovery_caveats,
         primary_reasons,
+        trace_slices: action_trace_slices,
     }
 }
 
@@ -5754,11 +5810,11 @@ mod tests {
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{
         compute_service::SchedulerConfig, CanonicalEvidenceKind, CanonicalEvidenceStatus,
-        CanonicalSnapshotConsistency, ExpertDiagnosticsAvailability, ExpertMutationBlocker,
-        ExpertMutationBoundary, ExpertMutationResult, ExpertWorkflowClass,
-        ExpertWorkflowTransitionState, InMemoryComputeService, JobExecutionPath, JobHistoryStore,
-        JobId, JobLifecycleState, RuntimeContractShape, RuntimeDriftClass, RuntimeEntryClass,
-        RuntimeFreshnessClass,
+        CanonicalSnapshotConsistency, CanonicalTraceSliceKind, CanonicalTraceSliceStatus,
+        ExpertDiagnosticsAvailability, ExpertMutationBlocker, ExpertMutationBoundary,
+        ExpertMutationResult, ExpertWorkflowClass, ExpertWorkflowTransitionState,
+        InMemoryComputeService, JobExecutionPath, JobHistoryStore, JobId, JobLifecycleState,
+        RuntimeContractShape, RuntimeDriftClass, RuntimeEntryClass, RuntimeFreshnessClass,
     };
 
     fn service() -> CanonicalComputeEntryPoint {
@@ -6468,6 +6524,14 @@ mod tests {
             CanonicalEvidenceStatus::Sufficient | CanonicalEvidenceStatus::Caveated
         ));
         assert!(!drained.action_evidence.primary_reasons.is_empty());
+        assert_eq!(drained.action_evidence.trace_slices.len(), 1);
+        let action_trace = &drained.action_evidence.trace_slices[0];
+        assert_eq!(
+            action_trace.kind,
+            CanonicalTraceSliceKind::RolloutActionDecision
+        );
+        assert!(!action_trace.primary_inputs.is_empty());
+        assert!(!action_trace.primary_outcome.is_empty());
 
         let unsupported = entry
             .run_operation(RuntimeOperation::RefreshRuntime)
@@ -6481,6 +6545,10 @@ mod tests {
         assert_eq!(
             unsupported.action_evidence.status,
             CanonicalEvidenceStatus::Partial
+        );
+        assert_eq!(
+            unsupported.action_evidence.trace_slices[0].status,
+            CanonicalTraceSliceStatus::Partial
         );
     }
 
@@ -6701,6 +6769,11 @@ mod tests {
             .evidence_bundle_refs
             .iter()
             .any(|bundle| bundle.kind == CanonicalEvidenceKind::MutatingAction));
+        assert!(snapshot
+            .canonical
+            .evidence_bundle_refs
+            .iter()
+            .all(|bundle| !bundle.trace_slice_refs.is_empty()));
     }
 
     #[test]

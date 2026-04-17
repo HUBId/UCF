@@ -143,6 +143,34 @@ The same load-bearing profile is threaded into job/history views:
 
 This keeps one canonical diagnostics surface across runtime execution, job accounting, and replay/history summaries.
 
+## Narrow trace-slice semantics (Serie H)
+
+To make load-bearing decisions compactly referenzierbar without introducing an APM/tracing platform, canonical runtime diagnostics now include `diagnostics.trace_slices`.
+
+Canonical slice kinds:
+
+- `stage_path`: dominant stage/path progression (`dominant_sequence`) plus skipped/degraded/unavailable caveat hook.
+- `placement_decision`: decisive backend route selection (pack + stage backend ids), with ruled-out alternatives kept as compact tokens.
+- `rollout_action_decision`: runtime rollout/action context slice (world predictor, lfm runtime, nsr state) as a narrow decision summary.
+
+Canonical slice status semantics:
+
+- `sufficient`: slice is load-bearing and uncaveated for this decision window.
+- `partial`: load-bearing, but degraded/incomplete technical path was used.
+- `stale_or_caveated`: technically usable slice with caveated/stale basis.
+- `unavailable`: decision slice unavailable on the canonical path.
+
+Evidence coupling (no parallel world):
+
+- `CanonicalRunEvidenceBundle.trace_slice_refs` references the load-bearing trace slice ids emitted in `diagnostics.trace_slices`.
+- Runtime snapshot/action evidence also carries trace-slice references so diagnostics/replay/justification surfaces can anchor to the same compact decision cuts.
+
+Intentional limits:
+
+- no full span tree, no general timeline reconstruction,
+- no global decision matrix or release-governance engine,
+- no duplication of full diagnostics/evidence payloads inside slices.
+
 ## Runtime mode/profile consolidation
 
 Runtime config semantics are consolidated in `runtime_profile` (`RuntimeProfile::from_env`) and documented in:
