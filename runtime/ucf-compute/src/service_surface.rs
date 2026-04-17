@@ -239,6 +239,7 @@ pub struct RuntimeOperationOutcome {
     pub detail: String,
     pub completed_jobs: Vec<JobId>,
     pub action_evidence: CanonicalActionEvidenceBundle,
+    pub action_justification: DecisionJustificationView,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -450,7 +451,36 @@ pub struct CanonicalRuntimeSnapshot {
     pub diagnostics_availability: ExpertDiagnosticsAvailability,
     pub top_level_caveats: Vec<String>,
     pub evidence_bundle_refs: Vec<CanonicalEvidenceBundleRef>,
+    pub justification_anchors: Vec<DecisionJustificationView>,
     pub subsystems: CanonicalRuntimeSubsystemDiagnostics,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecisionJustificationDisposition {
+    Allowed,
+    Blocked,
+    Caveated,
+    Informational,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JustificationEvidencePosture {
+    EvidenceBacked,
+    PartialEvidence,
+    StaleOrCaveated,
+    InsufficientForHighTrustMutation,
+    NoMeaningfulJustificationAvailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecisionJustificationView {
+    pub decision_target: String,
+    pub disposition: DecisionJustificationDisposition,
+    pub evidence_posture: JustificationEvidencePosture,
+    pub primary_evidence_refs: Vec<String>,
+    pub primary_trace_slice_refs: Vec<String>,
+    pub primary_reasons: Vec<String>,
+    pub outcome_or_next_step: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1912,6 +1942,24 @@ impl CanonicalComputeEntryPoint {
                     "runtime operation core semantics drift: code={code:?}, mutation_result={mutation_result:?}"
                 );
             RuntimeOperationOutcome {
+                action_evidence: build_action_evidence_bundle(
+                    operation,
+                    entry_class,
+                    code,
+                    mutation_result,
+                    blocked_by,
+                    &snapshot,
+                    &detail,
+                ),
+                action_justification: build_action_justification_view(
+                    operation,
+                    entry_class,
+                    code,
+                    mutation_boundary,
+                    blocked_by,
+                    &snapshot,
+                    &detail,
+                ),
                 operation,
                 operation_class,
                 operation_scope,
@@ -1934,15 +1982,6 @@ impl CanonicalComputeEntryPoint {
                 hardening_after: hardening_before,
                 hardening_evolution: ServiceHardeningEvolution::Unchanged,
                 trust_evolution: ServiceTrustEvolution::Unchanged,
-                action_evidence: build_action_evidence_bundle(
-                    operation,
-                    entry_class,
-                    code,
-                    mutation_result,
-                    blocked_by,
-                    &snapshot,
-                    &detail,
-                ),
                 detail,
                 completed_jobs,
             }
@@ -3379,6 +3418,15 @@ fn build_canonical_runtime_snapshot(
         diagnostics_availability,
         top_level_caveats,
         evidence_bundle_refs: build_snapshot_evidence_refs(consistency, recent_operations),
+        justification_anchors: build_snapshot_justification_anchors(
+            consistency,
+            &placement_capacity,
+            &rollout,
+            &replay_history,
+            stale_runtime,
+            service_trust,
+            recent_operations,
+        ),
         subsystems: CanonicalRuntimeSubsystemDiagnostics {
             worker,
             placement_capacity,
@@ -3433,6 +3481,145 @@ fn build_snapshot_evidence_refs(
         }
     }));
     refs
+}
+
+fn build_snapshot_justification_anchors(
+    consistency: CanonicalSnapshotConsistency,
+    placement_capacity: &RuntimeSubsystemDiagnosticSummary,
+    rollout: &RuntimeSubsystemDiagnosticSummary,
+    replay_history: &RuntimeSubsystemDiagnosticSummary,
+    stale_runtime: &RuntimeStaleDriftView,
+    service_trust: &ServiceTrustStateView,
+    recent_operations: &[RuntimeOperationOutcome],
+) -> Vec<DecisionJustificationView> {
+    let snapshot_ref = format!(
+        "snapshot-consistency-{}",
+        canonical_snapshot_consistency_name(consistency)
+    );
+    let stale_signal_refs: Vec<String> = stale_runtime
+        .signals
+        .iter()
+        .map(|signal| format!("stale-drift-{:?}", signal.code).to_ascii_lowercase())
+        .collect();
+    let mut anchors = vec![
+        build_subsystem_justification_anchor(
+            "placement_capacity_decision",
+            placement_capacity,
+            &snapshot_ref,
+            vec![
+                format!("placement-capacity-{:?}", placement_capacity.availability)
+                    .to_ascii_lowercase(),
+            ],
+            "refresh queue/capacity basis before high-impact placement mutation",
+        ),
+        build_subsystem_justification_anchor(
+            "rollout_path_decision",
+            rollout,
+            &snapshot_ref,
+            vec![format!("rollout-{:?}", rollout.availability).to_ascii_lowercase()],
+            "recheck rollout guardrails and warmup context before activation/fallback",
+        ),
+        build_subsystem_justification_anchor(
+            "replay_repro_decision",
+            replay_history,
+            &snapshot_ref,
+            vec![format!("replay-history-{:?}", replay_history.availability).to_ascii_lowercase()],
+            "refresh canonical snapshot or replay context bridge before replay",
+        ),
+    ];
+
+    let mut recovery_reasons = vec![format!(
+        "service_trust_state={}",
+        service_trust_state_name(service_trust.state)
+    )];
+    if stale_runtime.needs_refresh {
+        recovery_reasons.push("runtime diagnostics basis is stale and needs refresh".to_string());
+    }
+    anchors.push(DecisionJustificationView {
+        decision_target: "recovery_readiness_decision".to_string(),
+        disposition: if service_trust.mutating_action == ServiceMutationTrustDisposition::Blocked {
+            DecisionJustificationDisposition::Blocked
+        } else if stale_runtime.needs_refresh {
+            DecisionJustificationDisposition::Caveated
+        } else {
+            DecisionJustificationDisposition::Allowed
+        },
+        evidence_posture: if service_trust.mutating_action
+            == ServiceMutationTrustDisposition::Blocked
+        {
+            JustificationEvidencePosture::InsufficientForHighTrustMutation
+        } else if stale_runtime.needs_refresh {
+            JustificationEvidencePosture::StaleOrCaveated
+        } else if stale_runtime.signals.is_empty() {
+            JustificationEvidencePosture::EvidenceBacked
+        } else {
+            JustificationEvidencePosture::PartialEvidence
+        },
+        primary_evidence_refs: vec![snapshot_ref],
+        primary_trace_slice_refs: stale_signal_refs,
+        primary_reasons: recovery_reasons,
+        outcome_or_next_step: service_trust
+            .recommendation
+            .map(|recommendation| format!("recommended_preflight={recommendation:?}")),
+    });
+
+    if let Some(last_mutating) = recent_operations.iter().rev().find(|operation| {
+        matches!(
+            operation.operation_class,
+            RuntimeOperationClass::ControlledMutating | RuntimeOperationClass::HighImpactMutating
+        )
+    }) {
+        anchors.push(last_mutating.action_justification.clone());
+    }
+    anchors
+}
+
+fn build_subsystem_justification_anchor(
+    decision_target: &str,
+    subsystem: &RuntimeSubsystemDiagnosticSummary,
+    snapshot_ref: &str,
+    trace_refs: Vec<String>,
+    blocked_or_caveated_next_step: &str,
+) -> DecisionJustificationView {
+    let mut reasons = vec![format!(
+        "diagnostics_availability={:?}",
+        subsystem.availability
+    )];
+    if let Some(caveat) = subsystem.caveat.as_deref() {
+        reasons.push(format!("primary_caveat={caveat}"));
+    }
+    let (disposition, evidence_posture, outcome_or_next_step) = match subsystem.availability {
+        ExpertDiagnosticsAvailability::Available => (
+            DecisionJustificationDisposition::Allowed,
+            JustificationEvidencePosture::EvidenceBacked,
+            None,
+        ),
+        ExpertDiagnosticsAvailability::Partial => (
+            DecisionJustificationDisposition::Caveated,
+            JustificationEvidencePosture::PartialEvidence,
+            Some(blocked_or_caveated_next_step.to_string()),
+        ),
+        ExpertDiagnosticsAvailability::Unavailable | ExpertDiagnosticsAvailability::Blocked => (
+            DecisionJustificationDisposition::Blocked,
+            JustificationEvidencePosture::NoMeaningfulJustificationAvailable,
+            Some(blocked_or_caveated_next_step.to_string()),
+        ),
+        ExpertDiagnosticsAvailability::InternalOnly => (
+            DecisionJustificationDisposition::Informational,
+            JustificationEvidencePosture::NoMeaningfulJustificationAvailable,
+            Some("internal-only justification context".to_string()),
+        ),
+    };
+
+    DecisionJustificationView {
+        decision_target: decision_target.to_string(),
+        disposition,
+        evidence_posture,
+        primary_evidence_refs: vec![snapshot_ref.to_string()],
+        primary_trace_slice_refs: trace_refs,
+        primary_reasons: reasons,
+        outcome_or_next_step,
+    }
 }
 
 fn build_action_evidence_bundle(
@@ -3575,6 +3762,113 @@ fn build_action_evidence_bundle(
         replay_recovery_caveats,
         primary_reasons,
         trace_slices: action_trace_slices,
+    }
+}
+
+fn build_action_justification_view(
+    operation: RuntimeOperation,
+    entry_class: RuntimeEntryClass,
+    code: RuntimeOperationCode,
+    mutation_boundary: ExpertMutationBoundary,
+    blocked_by: Option<ExpertMutationBlocker>,
+    snapshot: &RuntimeOpsSnapshot,
+    detail: &str,
+) -> DecisionJustificationView {
+    let primary_evidence_refs = vec![format!(
+        "action-{operation:?}-{:?}-{:?}",
+        entry_class, snapshot.canonical.consistency
+    )
+    .to_ascii_lowercase()];
+    let mut primary_trace_slice_refs =
+        vec![format!("rollout-action-{operation:?}").to_ascii_lowercase()];
+    primary_trace_slice_refs.extend(
+        snapshot
+            .stale_runtime
+            .signals
+            .iter()
+            .map(|signal| format!("stale-drift-{:?}", signal.code).to_ascii_lowercase()),
+    );
+
+    let mut primary_reasons = vec![
+        format!("operation_code={code:?}"),
+        format!("mutation_boundary={mutation_boundary:?}"),
+        format!(
+            "service_trust_before={}",
+            service_trust_state_name(snapshot.service_trust.state)
+        ),
+    ];
+    if let Some(blocker) = blocked_by {
+        primary_reasons.push(format!("blocked_by={blocker:?}"));
+    }
+    if snapshot.stale_runtime.needs_refresh {
+        primary_reasons.push("diagnostic_basis=stale_needs_refresh".to_string());
+    }
+    if snapshot.canonical.subsystems.replay_history.availability
+        != ExpertDiagnosticsAvailability::Available
+    {
+        primary_reasons.push(format!(
+            "replay_history={:?}",
+            snapshot.canonical.subsystems.replay_history.availability
+        ));
+    }
+
+    let disposition = match code {
+        RuntimeOperationCode::Completed | RuntimeOperationCode::Accepted => {
+            if snapshot.stale_runtime.needs_refresh {
+                DecisionJustificationDisposition::Caveated
+            } else {
+                DecisionJustificationDisposition::Allowed
+            }
+        }
+        RuntimeOperationCode::NoOp => DecisionJustificationDisposition::Caveated,
+        RuntimeOperationCode::Blocked => DecisionJustificationDisposition::Blocked,
+        RuntimeOperationCode::Unsupported | RuntimeOperationCode::Failed => {
+            DecisionJustificationDisposition::Caveated
+        }
+    };
+    let evidence_posture = match code {
+        RuntimeOperationCode::Completed | RuntimeOperationCode::Accepted
+            if !snapshot.stale_runtime.needs_refresh =>
+        {
+            JustificationEvidencePosture::EvidenceBacked
+        }
+        RuntimeOperationCode::Completed
+        | RuntimeOperationCode::Accepted
+        | RuntimeOperationCode::NoOp => JustificationEvidencePosture::StaleOrCaveated,
+        RuntimeOperationCode::Unsupported | RuntimeOperationCode::Failed => {
+            JustificationEvidencePosture::PartialEvidence
+        }
+        RuntimeOperationCode::Blocked
+            if mutation_boundary == ExpertMutationBoundary::HighImpactMutable =>
+        {
+            JustificationEvidencePosture::InsufficientForHighTrustMutation
+        }
+        RuntimeOperationCode::Blocked => {
+            JustificationEvidencePosture::NoMeaningfulJustificationAvailable
+        }
+    };
+    let outcome_or_next_step = if code == RuntimeOperationCode::Blocked {
+        Some(
+            snapshot
+                .service_trust
+                .recommendation
+                .map(|recommendation| format!("blocked; recommended_preflight={recommendation:?}"))
+                .unwrap_or_else(|| "blocked; refresh or resync required before retry".to_string()),
+        )
+    } else if snapshot.stale_runtime.needs_refresh {
+        Some("refresh runtime diagnostics snapshot before next mutating action".to_string())
+    } else {
+        None
+    };
+
+    DecisionJustificationView {
+        decision_target: format!("runtime_operation:{operation:?}").to_ascii_lowercase(),
+        disposition,
+        evidence_posture,
+        primary_evidence_refs,
+        primary_trace_slice_refs,
+        primary_reasons,
+        outcome_or_next_step: outcome_or_next_step.or_else(|| Some(detail.to_string())),
     }
 }
 
@@ -5793,14 +6087,14 @@ mod tests {
         ComputeExecutionMode, ComputeHistoryLookupError, ComputeJobHandle, ComputeJobHistoryLookup,
         ComputeRecoverySnapshot, ComputeReplayOutcome, ComputeReplayPreflight,
         ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
-        DeterministicSubsetClass, DeterministicSubsetEligibility, PersistedSnapshotReadiness,
-        QueueHygieneAction, QueueHygieneClass, QueueHygieneSnapshot, QueueHygieneWaitingClass,
-        RecoveryDisposition, ReplayContextConsistencyClass, ReplayContextTransition,
-        ReplayDeterminismClass, ReplayExecutionMode, ReplayFailureCode, ReplayMismatchClass,
-        ReplayPreflightIssueCode, ReplayRegressionReasonCode, ReplayRegressionSignal,
-        ReplayRemoteContextReproducibility, ReplayabilityClass, RolloutReplayComparability,
-        RuntimeOperation, RuntimeOperationClass, RuntimeOperationCode,
-        RuntimeOperationSnapshotEffect, RuntimeOpsState, RuntimeRecoveryFlow,
+        DecisionJustificationDisposition, DeterministicSubsetClass, DeterministicSubsetEligibility,
+        JustificationEvidencePosture, PersistedSnapshotReadiness, QueueHygieneAction,
+        QueueHygieneClass, QueueHygieneSnapshot, QueueHygieneWaitingClass, RecoveryDisposition,
+        ReplayContextConsistencyClass, ReplayContextTransition, ReplayDeterminismClass,
+        ReplayExecutionMode, ReplayFailureCode, ReplayMismatchClass, ReplayPreflightIssueCode,
+        ReplayRegressionReasonCode, ReplayRegressionSignal, ReplayRemoteContextReproducibility,
+        ReplayabilityClass, RolloutReplayComparability, RuntimeOperation, RuntimeOperationClass,
+        RuntimeOperationCode, RuntimeOperationSnapshotEffect, RuntimeOpsState, RuntimeRecoveryFlow,
         RuntimeRecoveryResultState, RuntimeRecoveryTrustState, RuntimeSignalState,
         RuntimeStaleDriftView, RuntimeWarmupState, ServiceHardeningActionPosture,
         ServiceHardeningState, ServiceMutationTrustDisposition, ServiceTrustEvolution,
@@ -6532,6 +6826,22 @@ mod tests {
         );
         assert!(!action_trace.primary_inputs.is_empty());
         assert!(!action_trace.primary_outcome.is_empty());
+        assert_eq!(
+            drained.action_justification.disposition,
+            DecisionJustificationDisposition::Allowed
+        );
+        assert_eq!(
+            drained.action_justification.evidence_posture,
+            JustificationEvidencePosture::EvidenceBacked
+        );
+        assert!(!drained
+            .action_justification
+            .primary_evidence_refs
+            .is_empty());
+        assert!(!drained
+            .action_justification
+            .primary_trace_slice_refs
+            .is_empty());
 
         let unsupported = entry
             .run_operation(RuntimeOperation::RefreshRuntime)
@@ -6549,6 +6859,10 @@ mod tests {
         assert_eq!(
             unsupported.action_evidence.trace_slices[0].status,
             CanonicalTraceSliceStatus::Partial
+        );
+        assert_eq!(
+            unsupported.action_justification.evidence_posture,
+            JustificationEvidencePosture::PartialEvidence
         );
     }
 
@@ -6712,6 +7026,10 @@ mod tests {
             outcome.action_evidence.status,
             CanonicalEvidenceStatus::Insufficient
         );
+        assert_eq!(
+            outcome.action_justification.evidence_posture,
+            JustificationEvidencePosture::InsufficientForHighTrustMutation
+        );
     }
 
     #[test]
@@ -6774,6 +7092,26 @@ mod tests {
             .evidence_bundle_refs
             .iter()
             .all(|bundle| !bundle.trace_slice_refs.is_empty()));
+        assert!(snapshot
+            .canonical
+            .justification_anchors
+            .iter()
+            .any(|anchor| anchor.decision_target == "placement_capacity_decision"));
+        assert!(snapshot
+            .canonical
+            .justification_anchors
+            .iter()
+            .any(|anchor| anchor.decision_target == "rollout_path_decision"));
+        assert!(snapshot
+            .canonical
+            .justification_anchors
+            .iter()
+            .any(|anchor| anchor.decision_target == "replay_repro_decision"));
+        assert!(snapshot
+            .canonical
+            .justification_anchors
+            .iter()
+            .any(|anchor| anchor.decision_target == "recovery_readiness_decision"));
     }
 
     #[test]
