@@ -5,6 +5,9 @@ Status: technical reference for the current `runtime/ucf-compute` kernel surface
 The code-level canonical map for this document now lives in
 `runtime/ucf-compute/src/reference_map.rs` (`CANONICAL_COMPUTE_REFERENCE_MAP` plus
 workflow path constants). This doc mirrors that map and must not diverge from it.
+The Serie-J final convergence line is pinned in
+`docs/final_reference_line_serie_j_v1.md` and in
+`CANONICAL_FINAL_REFERENCE_LINE` from the same source file.
 
 ## 1) Canonical real-compute kernel (load-bearing)
 

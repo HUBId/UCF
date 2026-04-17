@@ -26,6 +26,35 @@ pub const WORKFLOW_PATH_ROLLOUT_ORIENTED: &str =
 pub const WORKFLOW_PATH_INTERNAL_DEV_TEST_ONLY: &str =
     "run_operation_with_entry(..., InternalDevTest)";
 
+pub const FINAL_REFERENCE_LINE_EXECUTION_CORE: &str =
+    "submit -> compute_canonical -> result/fault/status -> execution_snapshot";
+pub const FINAL_REFERENCE_LINE_ROLLOUT_EXTENSION: &str =
+    "rollout diagnostics -> activation/fallback/rollback -> active production line";
+pub const FINAL_REFERENCE_LINE_REPLAY_EXTENSION: &str =
+    "replay_preflight -> replay_with_entry -> comparison/evidence on same result/fault/status core";
+pub const FINAL_REFERENCE_LINE_DIAGNOSTICS_EXTENSION: &str =
+    "runtime snapshot/diagnostics + expert workflow surface -> same canonical core state";
+pub const FINAL_REFERENCE_NON_CANONICAL_INTERNAL_BOUNDARY: &str =
+    "compatibility backends + internal/legacy worker/domain lanes are extension/internal only";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanonicalFinalReferenceLine {
+    pub execution_core: &'static str,
+    pub rollout_extension: &'static str,
+    pub replay_extension: &'static str,
+    pub diagnostics_extension: &'static str,
+    pub internal_boundary: &'static str,
+}
+
+pub const CANONICAL_FINAL_REFERENCE_LINE: CanonicalFinalReferenceLine =
+    CanonicalFinalReferenceLine {
+        execution_core: FINAL_REFERENCE_LINE_EXECUTION_CORE,
+        rollout_extension: FINAL_REFERENCE_LINE_ROLLOUT_EXTENSION,
+        replay_extension: FINAL_REFERENCE_LINE_REPLAY_EXTENSION,
+        diagnostics_extension: FINAL_REFERENCE_LINE_DIAGNOSTICS_EXTENSION,
+        internal_boundary: FINAL_REFERENCE_NON_CANONICAL_INTERNAL_BOUNDARY,
+    };
+
 pub const CANONICAL_COMPUTE_REFERENCE_MAP: [ComputeReferenceLane; 7] = [
     ComputeReferenceLane {
         class: ComputeReferenceClass::CanonicalProduction,
@@ -92,6 +121,14 @@ pub fn canonical_production_reference_lane() -> ComputeReferenceLane {
     CANONICAL_COMPUTE_REFERENCE_MAP[0]
 }
 
+pub fn canonical_final_reference_line() -> CanonicalFinalReferenceLine {
+    CANONICAL_FINAL_REFERENCE_LINE
+}
+
+pub fn is_canonical_core_or_extension_lane(class: ComputeReferenceClass) -> bool {
+    !matches!(class, ComputeReferenceClass::InternalOrLegacy)
+}
+
 pub fn canonical_onboarding_reference_summary() -> (&'static str, &'static str) {
     (
         CANONICAL_ONBOARDING_BACKEND.as_env_str(),
@@ -154,5 +191,46 @@ mod tests {
         let (backend, pack) = canonical_onboarding_reference_summary();
         assert_eq!(backend, "burn");
         assert_eq!(pack, "burn_toy_v1");
+    }
+
+    #[test]
+    fn final_reference_line_covers_execution_rollout_replay_diagnostics_and_boundary() {
+        let line = canonical_final_reference_line();
+        assert!(line.execution_core.contains("submit -> compute_canonical"));
+        assert!(line.execution_core.contains("result/fault/status"));
+        assert!(line.execution_core.contains("execution_snapshot"));
+        assert!(line
+            .rollout_extension
+            .contains("activation/fallback/rollback"));
+        assert!(line.rollout_extension.contains("active production line"));
+        assert!(line
+            .replay_extension
+            .contains("replay_preflight -> replay_with_entry"));
+        assert!(line
+            .replay_extension
+            .contains("same result/fault/status core"));
+        assert!(line
+            .diagnostics_extension
+            .contains("expert workflow surface -> same canonical core state"));
+        assert!(line.internal_boundary.contains("extension/internal only"));
+    }
+
+    #[test]
+    fn internal_lanes_remain_non_canonical_in_reference_line() {
+        assert!(canonical_compute_reference_map().iter().all(|lane| {
+            let expected = lane.class != ComputeReferenceClass::InternalOrLegacy;
+            is_canonical_core_or_extension_lane(lane.class) == expected
+        }));
+    }
+
+    #[test]
+    fn final_reference_doc_and_code_constants_are_kept_in_sync() {
+        let doc = include_str!("../../../docs/final_reference_line_serie_j_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains(line.rollout_extension));
+        assert!(doc.contains(line.replay_extension));
+        assert!(doc.contains(line.diagnostics_extension));
+        assert!(doc.contains(line.internal_boundary));
     }
 }
