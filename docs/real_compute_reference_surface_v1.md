@@ -42,7 +42,8 @@ They remain valid for validation and rollout diagnostics but are not the canonic
 
 ## Canonical reference map (single source, compact)
 
-`CANONICAL_COMPUTE_REFERENCE_MAP` classifies lanes into four explicit buckets:
+`CANONICAL_COMPUTE_REFERENCE_MAP` classifies lanes into four explicit buckets and pins each lane to
+an explicit `shared_core_invariants` string so the reference map and core semantics stay aligned:
 
 - `canonical_production`
   - service entry lane
@@ -67,12 +68,22 @@ Load-bearing terminology used consistently across service + pipeline + history:
 - `job` = admitted lifecycle entity
 - `run` = execution attempt of a job
 - `replay` = history-backed rerun/verification path
+- `action` = bounded runtime intervention (`RuntimeOperation*`) on the same shared core
 
 State and failure semantics are kept explicit:
 
 - runtime/pipeline state: `ok`, `degraded`, `unavailable`
 - lifecycle terminal classification: completed / degraded_completed / failed / timed_out / rejected_before_execution
 - rollout path state: `active`, `candidate`, `compare`, `shadow`, `disabled`, `blocked`
+
+Shared core invariant anchors:
+
+- action-result compatibility is centralized in contracts (`runtime_action_core_semantics_consistent`)
+  and reused by runtime operation paths (no per-path reinterpretation)
+- evidence and trace statuses both normalize into one diagnostics availability core
+  (`available|partial|unavailable`)
+- stale/partial/freshness and drift refresh semantics remain explicit and bounded
+  (`current|partial|stale` + `none|drift_suspected|inconsistent_needs_refresh`)
 
 ## 5) Canonical vs side-entry guidance
 
