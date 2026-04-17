@@ -322,6 +322,95 @@ pub struct RuntimeOpsSnapshot {
     pub bounded_recovery: RuntimeBoundedRecoveryView,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComputeIntegrationPathContext {
+    ActiveProductionPath,
+    CandidateCompareShadowPath,
+    NoActivePath,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeIntegrationActionSignal {
+    pub operation: RuntimeOperation,
+    pub outcome: RuntimeOperationCode,
+    pub trust_evolution: ServiceTrustEvolution,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeIntegrationSignals {
+    pub service_state: RuntimeOpsState,
+    pub runtime_mode: RuntimeMode,
+    pub state_signal: RuntimeSignalState,
+    pub execution_path: JobExecutionPath,
+    pub snapshot_consistency: CanonicalSnapshotConsistency,
+    pub diagnostics_availability: ExpertDiagnosticsAvailability,
+    pub active_path_context: ComputeIntegrationPathContext,
+    pub constrained_or_caveated: bool,
+    pub degraded_or_unavailable: bool,
+    pub evidence_bundle_refs: Vec<String>,
+    pub latest_actions: Vec<ComputeIntegrationActionSignal>,
+}
+
+impl RuntimeOpsSnapshot {
+    pub fn integration_signals(&self) -> ComputeIntegrationSignals {
+        let active_path_context = if self.active_job.is_some() {
+            ComputeIntegrationPathContext::ActiveProductionPath
+        } else if self.candidate_job.is_some()
+            || self.compare_job.is_some()
+            || self.shadow_job.is_some()
+        {
+            ComputeIntegrationPathContext::CandidateCompareShadowPath
+        } else {
+            ComputeIntegrationPathContext::NoActivePath
+        };
+
+        let constrained_or_caveated = matches!(
+            self.canonical.consistency,
+            CanonicalSnapshotConsistency::Partial
+                | CanonicalSnapshotConsistency::Stale
+                | CanonicalSnapshotConsistency::DriftAffected
+        ) || !self.canonical.top_level_caveats.is_empty()
+            || self.service_trust.state != ServiceTrustState::TrustedCurrent;
+
+        let degraded_or_unavailable = matches!(
+            self.state,
+            RuntimeOpsState::Degraded
+                | RuntimeOpsState::PartiallyUnavailable
+                | RuntimeOpsState::Unavailable
+        ) || matches!(
+            self.canonical.consistency,
+            CanonicalSnapshotConsistency::DriftAffected | CanonicalSnapshotConsistency::Unavailable
+        );
+
+        ComputeIntegrationSignals {
+            service_state: self.state,
+            runtime_mode: self.runtime_mode,
+            state_signal: self.state_signal,
+            execution_path: self.execution_path,
+            snapshot_consistency: self.canonical.consistency,
+            diagnostics_availability: self.canonical.diagnostics_availability,
+            active_path_context,
+            constrained_or_caveated,
+            degraded_or_unavailable,
+            evidence_bundle_refs: self
+                .canonical
+                .evidence_bundle_refs
+                .iter()
+                .map(|bundle| bundle.bundle_id.clone())
+                .collect(),
+            latest_actions: self
+                .recent_operations
+                .iter()
+                .map(|op| ComputeIntegrationActionSignal {
+                    operation: op.operation,
+                    outcome: op.code,
+                    trust_evolution: op.trust_evolution,
+                })
+                .collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeBoundedRecoveryView {
     pub recommended_flow: RuntimeRecoveryFlow,
@@ -8663,5 +8752,53 @@ mod tests {
             .primary_reasons
             .iter()
             .any(|reason| reason.contains("comparison_ref=recovery-op-snapshot")));
+    }
+
+    #[test]
+    fn integration_signals_surface_top_level_status_diagnostics_and_evidence() {
+        let mut entry = service();
+        let _ = entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(100),
+                execution_mode: ComputeExecutionMode::ExecuteInline,
+            })
+            .expect("submit");
+        let _ = entry
+            .run_operation(RuntimeOperation::Snapshot)
+            .expect("snapshot operation");
+        let snapshot = entry.operations_snapshot();
+        let integration = snapshot.integration_signals();
+        assert_eq!(integration.service_state, snapshot.state);
+        assert_eq!(
+            integration.snapshot_consistency,
+            snapshot.canonical.consistency
+        );
+        assert_eq!(
+            integration.diagnostics_availability,
+            snapshot.canonical.diagnostics_availability
+        );
+        assert!(!integration.evidence_bundle_refs.is_empty());
+        assert!(!integration.latest_actions.is_empty());
+    }
+
+    #[test]
+    fn integration_signals_mark_rollout_side_paths_without_exposing_internal_semantics() {
+        let entry = service();
+        let snapshot = entry.operations_snapshot();
+        let integration = snapshot.integration_signals();
+        assert_eq!(
+            integration.active_path_context,
+            super::ComputeIntegrationPathContext::NoActivePath
+        );
+        assert!(integration
+            .latest_actions
+            .iter()
+            .all(|signal| signal.outcome != RuntimeOperationCode::Unsupported
+                || !matches!(
+                    signal.operation,
+                    RuntimeOperation::InternalClearReplayRegression
+                )));
     }
 }
