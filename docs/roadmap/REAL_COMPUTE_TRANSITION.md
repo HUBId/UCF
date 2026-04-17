@@ -2,6 +2,17 @@
 
 This file defines the repo-based transition point between **Real Compute Onboarding** and **Real Compute Stack** work.
 
+## Canonical role in docs/status/readiness surfaces
+
+This file is the transition decision surface and must align with:
+
+- technical reference surface: `docs/real_compute_reference_surface_v1.md`
+- code-level lane authority: `runtime/ucf-compute/src/reference_map.rs`
+- readiness classification surface: `docs/real_compute_readiness_sweep_v26.md`
+- status companion: `docs/roadmap/AI_MODEL_PIPELINE_STATUS.md`
+
+It records transition criteria and scope boundaries; it does not redefine runtime contracts.
+
 ## 1) Repo truth: onboarding target areas vs current state
 
 | Area | Repo-based status | Evidence anchor (code/tests/docs) |

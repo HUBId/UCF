@@ -4,6 +4,22 @@ Stand: Repo-Zustand am 2026-04-08.
 
 Ziel: harte technische Abschlusslinie für die aktuelle Real-Compute-Ausbaustufe und Priorisierung der **nächsten** Vertiefungsreihe.
 
+## Canonical readiness authority (für diese Ausbaustufe)
+
+Diese Datei ist die kanonische **Readiness-Klassifikationsfläche** für den aktuellen Real-Compute-Stand.
+
+Sie ist absichtlich gekoppelt mit:
+
+- technischer Referenzfläche:
+  - `docs/real_compute_reference_surface_v1.md`
+  - `runtime/ucf-compute/src/reference_map.rs`
+- Status-/Transition-Fläche:
+  - `docs/roadmap/AI_MODEL_PIPELINE_STATUS.md`
+  - `docs/roadmap/REAL_COMPUTE_TRANSITION.md`
+
+Roadmap-Dateien (`docs/roadmap/AI_STACK.md`, `docs/roadmap/AI_BACKENDS.md`) bleiben Kontext und
+dürfen diese Readiness-Klassifikation nicht neu definieren.
+
 ## 1) Abschlussmatrix (repo-basiert, kurz)
 
 | Bereich | Einstufung | Harte Repo-Basis |
@@ -16,6 +32,7 @@ Ziel: harte technische Abschlusslinie für die aktuelle Real-Compute-Ausbaustufe
 | Promotion/Rollout/Gates/Baselines | **production-usable but constrained** | Slot-Pfade (`active/candidate/compare/shadow`), Readiness-Gates inkl. `required_stage_profile`, Baseline-Compare vorhanden; bewusst schmaler Automationsgrad. |
 | Ops/History/Replay/Recovery | **production-usable but constrained** | History-store, Replay, Recovery-Dispositionen und Runtime-Operationen vorhanden; Failures bei fehlender Persistenz bleiben explizit sichtbar. |
 | Config/Modes/Readiness/Isolation | **production-usable but constrained** | `configs/prod.toml` pinnt Burn; Readiness-Gate erzwingt profilgebundene Stage-Checks; Isolation/Fault-Domain-Semantik ist typisiert. |
+| Expert-/Runtime-Control + Diagnostics/Evidence Surfaces | **partial / diagnostic** | Expert-Workflow, Replay-Preflight, Snapshot/Evidence-Hinweise sind kanonisch angebunden, aber explizit Nebenpfade (keine zweite Produktionswahrheit). |
 | Tiefe heterogene Device-/Accelerator-Spezialisierung | **intentionally deferred** | Nicht Teil des aktuellen Placement-Designs; keine feingranulare Accelerator-Klassifikation im Kernpfad. |
 | Vollautomatische verteilte Orchestrierung/Fleet-Scheduling | **intentionally deferred** | Kein Cluster-Orchestrator in dieser Ausbaustufe; bounded local scheduler + optional worker lane bleiben die Grenze. |
 
@@ -26,6 +43,8 @@ Diese Reihe ist technisch **abgeschlossen** für den Grundaufbau des Real Comput
 1. Der kanonische produktive Pfad ist gebaut, eindeutig und belastbar.
 2. Der bounded compute service inkl. Admission/Lifecycle/Placement-/Failure-/Provenance-Semantik ist tragfähig.
 3. Promotion-/Rollout-/Readiness-/Replay-/Recovery-Flächen sind produktiv nutzbar, aber bewusst mit engen Grenzen.
+4. Expert-/Diagnostics-Surfaces erweitern Beobachtbarkeit und Runtime-Kontrolle, bleiben aber bewusst
+   partielle/diagnostische Nebenpfade auf denselben Shared-Core-Contracts.
 
 Nicht mehr in diese Reihe zurückziehen:
 
@@ -68,3 +87,5 @@ Warum die anderen nachrangig:
 - Kanonischer Referenzpfad weiterhin vorhanden (Onboarding-Builder + canonical compute contract).
 - Produktiver Entry-Point weiterhin eindeutig (`CanonicalComputeEntryPoint`).
 - `prod` bleibt auf Burn gepinnt und Readiness-Stage-Profile bleiben profilgebunden fail-closed.
+- Canonical Reference Map (`CANONICAL_COMPUTE_REFERENCE_MAP`) und diese Matrix klassifizieren
+  Produktions-, Expert-, Diagnostics- und Internal/Legacy-Lanes ohne konkurrierende Doppelwahrheit.
