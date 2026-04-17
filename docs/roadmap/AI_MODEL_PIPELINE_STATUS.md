@@ -11,6 +11,20 @@ This status file fixes the canonical architecture for Real Compute Onboarding ba
    - `domains/ai-backends`
 3. Canonical manifest path for runtime model loading: `models/manifest.toml`
 
+## Canonical surface role of this file
+
+This file is the status/transition surface for the current repo state.
+
+It is intentionally paired with:
+
+- technical reference + lane map:
+  - `docs/real_compute_reference_surface_v1.md`
+  - `runtime/ucf-compute/src/reference_map.rs`
+- readiness classification:
+  - `docs/real_compute_readiness_sweep_v26.md`
+
+This file reports repo-truth status and blockers, but does not redefine runtime contracts.
+
 ### Compute surface status (canonical vs legacy/internal)
 
 - **Canonical production compute path**: `runtime/ucf-compute` via Burn onboarding lane
@@ -21,6 +35,12 @@ This status file fixes the canonical architecture for Real Compute Onboarding ba
 - **Compatibility/dev lanes**: `build_backend(kind=stub|candle)` and `domains/ai*` adapter crates.
 - **Internal-only lane**: `build_backend(kind=worker)` for process-isolated worker execution wiring.
 - **Removed legacy entry aliases**: `cpu_stub`, `candle_dummy`, `burn_dummy`, `worker_v1` are no longer accepted backend names.
+
+### Shared-core invariant anchor
+
+Across production, expert/runtime-control, diagnostics/evidence, and internal/legacy lanes, one
+invariant remains fixed: canonical request/job/run contracts and canonical result/failure semantics
+stay authoritative and are not redefined by compatibility or diagnostic lanes.
 
 ## Inventory and gap matrix (repo-truth only)
 
@@ -119,3 +139,8 @@ This section records JEPA against the canonical readiness ladder:
 ## Transition checkpoint
 
 The canonical onboarding->stack transition decision is recorded in `docs/roadmap/REAL_COMPUTE_TRANSITION.md`.
+
+## Historical naming note
+
+`Phase A canonicalization` in the title is historical naming. The active interpretation is current
+real-compute stack status and transition framing as documented above.
