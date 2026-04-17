@@ -26,6 +26,7 @@ use crate::pipeline::{
     CanonicalPipelineState, CanonicalStageCostAttribution, CanonicalStageId, CanonicalWorkSummary,
 };
 use crate::{
+    CanonicalEvidenceKind, CanonicalEvidenceReasonCode, CanonicalEvidenceStatus,
     CanonicalSnapshotConsistency, DeploymentProfile, ExpertDiagnosticsAvailability,
     ExpertMutationBlocker, ExpertMutationBoundary, ExpertMutationResult, ExpertWorkflowClass,
     ExpertWorkflowTransitionState, ModelSlot, ModelSlotProvenance, RuntimeContractSafety,
@@ -235,6 +236,7 @@ pub struct RuntimeOperationOutcome {
     pub trust_evolution: ServiceTrustEvolution,
     pub detail: String,
     pub completed_jobs: Vec<JobId>,
+    pub action_evidence: CanonicalActionEvidenceBundle,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -445,7 +447,34 @@ pub struct CanonicalRuntimeSnapshot {
     pub stale_runtime_sources: Vec<String>,
     pub diagnostics_availability: ExpertDiagnosticsAvailability,
     pub top_level_caveats: Vec<String>,
+    pub evidence_bundle_refs: Vec<CanonicalEvidenceBundleRef>,
     pub subsystems: CanonicalRuntimeSubsystemDiagnostics,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalEvidenceReason {
+    pub code: CanonicalEvidenceReasonCode,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalEvidenceBundleRef {
+    pub kind: CanonicalEvidenceKind,
+    pub status: CanonicalEvidenceStatus,
+    pub bundle_id: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalActionEvidenceBundle {
+    pub kind: CanonicalEvidenceKind,
+    pub status: CanonicalEvidenceStatus,
+    pub bundle_id: String,
+    pub action_identity: String,
+    pub rollout_enablement_context: Option<String>,
+    pub outcome_summary: String,
+    pub replay_recovery_caveats: Vec<String>,
+    pub primary_reasons: Vec<CanonicalEvidenceReason>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1749,6 +1778,8 @@ impl CanonicalComputeEntryPoint {
             has_missing_required_slot,
             failed_total,
         );
+        let recent_operations: Vec<RuntimeOperationOutcome> =
+            self.recent_operations.iter().cloned().collect();
         let canonical_snapshot = build_canonical_runtime_snapshot(
             state,
             runtime_profile.mode,
@@ -1764,6 +1795,7 @@ impl CanonicalComputeEntryPoint {
             &stale_runtime,
             &service_trust,
             &hardening,
+            recent_operations.as_slice(),
         );
         let workflow_view = build_workflow_view_snapshot(
             &canonical_snapshot,
@@ -1898,6 +1930,15 @@ impl CanonicalComputeEntryPoint {
                 hardening_after: hardening_before,
                 hardening_evolution: ServiceHardeningEvolution::Unchanged,
                 trust_evolution: ServiceTrustEvolution::Unchanged,
+                action_evidence: build_action_evidence_bundle(
+                    operation,
+                    entry_class,
+                    code,
+                    mutation_result,
+                    blocked_by,
+                    &snapshot,
+                    &detail,
+                ),
                 detail,
                 completed_jobs,
             }
@@ -3185,6 +3226,7 @@ fn build_canonical_runtime_snapshot(
     stale_runtime: &RuntimeStaleDriftView,
     service_trust: &ServiceTrustStateView,
     hardening: &ServiceHardeningView,
+    recent_operations: &[RuntimeOperationOutcome],
 ) -> CanonicalRuntimeSnapshot {
     let consistency = if state == RuntimeOpsState::Unavailable {
         CanonicalSnapshotConsistency::Unavailable
@@ -3332,6 +3374,7 @@ fn build_canonical_runtime_snapshot(
             .collect(),
         diagnostics_availability,
         top_level_caveats,
+        evidence_bundle_refs: build_snapshot_evidence_refs(consistency, recent_operations),
         subsystems: CanonicalRuntimeSubsystemDiagnostics {
             worker,
             placement_capacity,
@@ -3340,6 +3383,142 @@ fn build_canonical_runtime_snapshot(
             replay_history,
             specialization: specialization_diag,
         },
+    }
+}
+
+fn build_snapshot_evidence_refs(
+    consistency: CanonicalSnapshotConsistency,
+    recent_operations: &[RuntimeOperationOutcome],
+) -> Vec<CanonicalEvidenceBundleRef> {
+    let mut refs = vec![CanonicalEvidenceBundleRef {
+        kind: CanonicalEvidenceKind::ExecutionRun,
+        status: match consistency {
+            CanonicalSnapshotConsistency::Current => CanonicalEvidenceStatus::Sufficient,
+            CanonicalSnapshotConsistency::Partial => CanonicalEvidenceStatus::Partial,
+            CanonicalSnapshotConsistency::Stale | CanonicalSnapshotConsistency::DriftAffected => {
+                CanonicalEvidenceStatus::Caveated
+            }
+            CanonicalSnapshotConsistency::Unavailable => CanonicalEvidenceStatus::Insufficient,
+        },
+        bundle_id: format!(
+            "snapshot-consistency-{}",
+            canonical_snapshot_consistency_name(consistency)
+        ),
+        summary: format!(
+            "runtime snapshot evidence follows canonical consistency={}",
+            canonical_snapshot_consistency_name(consistency)
+        ),
+    }];
+
+    refs.extend(recent_operations.iter().rev().take(2).map(|operation| {
+        CanonicalEvidenceBundleRef {
+            kind: CanonicalEvidenceKind::MutatingAction,
+            status: operation.action_evidence.status,
+            bundle_id: operation.action_evidence.bundle_id.clone(),
+            summary: operation.action_evidence.outcome_summary.clone(),
+        }
+    }));
+    refs
+}
+
+fn build_action_evidence_bundle(
+    operation: RuntimeOperation,
+    entry_class: RuntimeEntryClass,
+    code: RuntimeOperationCode,
+    mutation_result: ExpertMutationResult,
+    blocked_by: Option<ExpertMutationBlocker>,
+    snapshot: &RuntimeOpsSnapshot,
+    detail: &str,
+) -> CanonicalActionEvidenceBundle {
+    let mut primary_reasons = Vec::new();
+    if code == RuntimeOperationCode::Blocked {
+        primary_reasons.push(CanonicalEvidenceReason {
+            code: CanonicalEvidenceReasonCode::RolloutActionBlocked,
+            detail: blocked_by
+                .map(|blocker| format!("blocked_by={blocker:?}"))
+                .unwrap_or_else(|| "blocked_by=unspecified".to_string()),
+        });
+    } else {
+        primary_reasons.push(CanonicalEvidenceReason {
+            code: CanonicalEvidenceReasonCode::RolloutActionAllowed,
+            detail: format!("operation_code={code:?}"),
+        });
+    }
+    if snapshot.stale_runtime.needs_refresh {
+        primary_reasons.push(CanonicalEvidenceReason {
+            code: CanonicalEvidenceReasonCode::StaleDiagnosticBasis,
+            detail: "runtime diagnostics recommend refresh before strong mutation".to_string(),
+        });
+    }
+    let mut replay_recovery_caveats = Vec::new();
+    if snapshot.canonical.subsystems.replay_history.availability
+        != ExpertDiagnosticsAvailability::Available
+    {
+        replay_recovery_caveats.push(format!(
+            "replay_history={:?}",
+            snapshot.canonical.subsystems.replay_history.availability
+        ));
+        primary_reasons.push(CanonicalEvidenceReason {
+            code: if matches!(
+                snapshot.canonical.subsystems.replay_history.availability,
+                ExpertDiagnosticsAvailability::Blocked | ExpertDiagnosticsAvailability::Unavailable
+            ) {
+                CanonicalEvidenceReasonCode::ReplayBlocked
+            } else {
+                CanonicalEvidenceReasonCode::ReplayCaveated
+            },
+            detail: "replay/history context is not fully available".to_string(),
+        });
+    }
+    primary_reasons.push(CanonicalEvidenceReason {
+        code: if matches!(
+            mutation_result,
+            ExpertMutationResult::StateChanged | ExpertMutationResult::PartialEffect
+        ) {
+            CanonicalEvidenceReasonCode::RecoveryTrustImproved
+        } else {
+            CanonicalEvidenceReasonCode::RecoveryTrustNotImproved
+        },
+        detail: format!("mutation_result={mutation_result:?}"),
+    });
+    let status = match code {
+        RuntimeOperationCode::Completed | RuntimeOperationCode::Accepted
+            if replay_recovery_caveats.is_empty() =>
+        {
+            CanonicalEvidenceStatus::Sufficient
+        }
+        RuntimeOperationCode::Completed
+        | RuntimeOperationCode::Accepted
+        | RuntimeOperationCode::NoOp => CanonicalEvidenceStatus::Caveated,
+        RuntimeOperationCode::Blocked => CanonicalEvidenceStatus::Insufficient,
+        RuntimeOperationCode::Unsupported | RuntimeOperationCode::Failed => {
+            CanonicalEvidenceStatus::Partial
+        }
+    };
+    CanonicalActionEvidenceBundle {
+        kind: CanonicalEvidenceKind::MutatingAction,
+        status,
+        bundle_id: format!(
+            "action-{operation:?}-{:?}-{:?}",
+            entry_class, snapshot.canonical.consistency
+        )
+        .to_ascii_lowercase(),
+        action_identity: format!("{operation:?} via {entry_class:?}").to_ascii_lowercase(),
+        rollout_enablement_context: snapshot
+            .canonical
+            .subsystems
+            .rollout
+            .caveat
+            .clone()
+            .or_else(|| {
+                Some(format!(
+                    "rollout_diagnostics={:?}",
+                    snapshot.canonical.subsystems.rollout.availability
+                ))
+            }),
+        outcome_summary: detail.to_string(),
+        replay_recovery_caveats,
+        primary_reasons,
     }
 }
 
@@ -5574,11 +5753,12 @@ mod tests {
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{
-        compute_service::SchedulerConfig, CanonicalSnapshotConsistency,
-        ExpertDiagnosticsAvailability, ExpertMutationBlocker, ExpertMutationBoundary,
-        ExpertMutationResult, ExpertWorkflowClass, ExpertWorkflowTransitionState,
-        InMemoryComputeService, JobExecutionPath, JobHistoryStore, JobId, JobLifecycleState,
-        RuntimeContractShape, RuntimeDriftClass, RuntimeEntryClass, RuntimeFreshnessClass,
+        compute_service::SchedulerConfig, CanonicalEvidenceKind, CanonicalEvidenceStatus,
+        CanonicalSnapshotConsistency, ExpertDiagnosticsAvailability, ExpertMutationBlocker,
+        ExpertMutationBoundary, ExpertMutationResult, ExpertWorkflowClass,
+        ExpertWorkflowTransitionState, InMemoryComputeService, JobExecutionPath, JobHistoryStore,
+        JobId, JobLifecycleState, RuntimeContractShape, RuntimeDriftClass, RuntimeEntryClass,
+        RuntimeFreshnessClass,
     };
 
     fn service() -> CanonicalComputeEntryPoint {
@@ -6279,6 +6459,15 @@ mod tests {
             ExpertMutationBoundary::ControlledMutable
         );
         assert_eq!(drained.mutation_result, ExpertMutationResult::StateChanged);
+        assert_eq!(
+            drained.action_evidence.kind,
+            CanonicalEvidenceKind::MutatingAction
+        );
+        assert!(matches!(
+            drained.action_evidence.status,
+            CanonicalEvidenceStatus::Sufficient | CanonicalEvidenceStatus::Caveated
+        ));
+        assert!(!drained.action_evidence.primary_reasons.is_empty());
 
         let unsupported = entry
             .run_operation(RuntimeOperation::RefreshRuntime)
@@ -6288,6 +6477,10 @@ mod tests {
         assert_eq!(
             unsupported.mutation_result,
             ExpertMutationResult::UnsupportedInRuntimeContext
+        );
+        assert_eq!(
+            unsupported.action_evidence.status,
+            CanonicalEvidenceStatus::Partial
         );
     }
 
@@ -6447,6 +6640,10 @@ mod tests {
         );
         assert!(outcome.detail.contains("refresh/recheck required"));
         assert!(outcome.detail.contains("freshness=Stale"));
+        assert_eq!(
+            outcome.action_evidence.status,
+            CanonicalEvidenceStatus::Insufficient
+        );
     }
 
     #[test]
@@ -6498,6 +6695,12 @@ mod tests {
             RuntimeOperationSnapshotEffect::NoSnapshotChange
                 | RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh
         ));
+        assert!(!snapshot.canonical.evidence_bundle_refs.is_empty());
+        assert!(snapshot
+            .canonical
+            .evidence_bundle_refs
+            .iter()
+            .any(|bundle| bundle.kind == CanonicalEvidenceKind::MutatingAction));
     }
 
     #[test]

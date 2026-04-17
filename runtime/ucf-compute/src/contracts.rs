@@ -100,6 +100,37 @@ pub enum RuntimeDiagnosticsCore {
     Blocked,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CanonicalEvidenceKind {
+    ExecutionRun,
+    MutatingAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CanonicalEvidenceStatus {
+    Sufficient,
+    Partial,
+    Caveated,
+    Insufficient,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CanonicalEvidenceReasonCode {
+    PlacementPathChosen,
+    PlacementConstrainedOrFallback,
+    RolloutActionAllowed,
+    RolloutActionBlocked,
+    ReplayCaveated,
+    ReplayBlocked,
+    RecoveryTrustImproved,
+    RecoveryTrustNotImproved,
+    WarmupCapabilityCaveat,
+    StaleDiagnosticBasis,
+}
+
 impl RuntimeEntryClass {
     pub const fn extension(self) -> RuntimeSurfaceExtension {
         match self {
