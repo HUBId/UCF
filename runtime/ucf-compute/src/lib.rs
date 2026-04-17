@@ -65,6 +65,7 @@ pub mod job_history;
 pub mod lfm;
 pub mod model_store;
 pub mod pipeline;
+pub mod reference_map;
 #[cfg(feature = "remote-compute")]
 pub mod remote_compute;
 pub mod risk_contract;
@@ -134,6 +135,13 @@ pub use pipeline::{
     CanonicalPipelineFailure, CanonicalPipelineRequest, CanonicalPipelineResult,
     CanonicalPipelineState, CanonicalStageId, ComputePipelineBackend, WorldStageReadiness,
     WorldStageStatus, CANONICAL_STAGE_SEQUENCE,
+};
+pub use reference_map::{
+    canonical_compute_reference_map, canonical_onboarding_reference_summary,
+    canonical_production_reference_lane, ComputeReferenceClass, ComputeReferenceLane,
+    CANONICAL_COMPUTE_REFERENCE_MAP, WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT,
+    WORKFLOW_PATH_INTERNAL_DEV_TEST_ONLY, WORKFLOW_PATH_REPLAY_ORIENTED,
+    WORKFLOW_PATH_ROLLOUT_ORIENTED,
 };
 #[cfg(feature = "remote-compute")]
 pub use remote_compute::{

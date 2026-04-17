@@ -15,6 +15,9 @@ This status file fixes the canonical architecture for Real Compute Onboarding ba
 
 - **Canonical production compute path**: `runtime/ucf-compute` via Burn onboarding lane
   (`build_onboarding_reference_backend` / `build_canonical_production_backend`).
+- **Canonical reference-map authority**: `runtime/ucf-compute/src/reference_map.rs`
+  (`CANONICAL_COMPUTE_REFERENCE_MAP`) classifies production, expert, diagnostics/evidence,
+  and internal/legacy lanes as one code-pinned map.
 - **Compatibility/dev lanes**: `build_backend(kind=stub|candle)` and `domains/ai*` adapter crates.
 - **Internal-only lane**: `build_backend(kind=worker)` for process-isolated worker execution wiring.
 - **Removed legacy entry aliases**: `cpu_stub`, `candle_dummy`, `burn_dummy`, `worker_v1` are no longer accepted backend names.

@@ -15,6 +15,14 @@ The runtime snapshot now exposes one explicit workflow view (`workflow_view`) wi
 4. `internal_dev_test_only`
    - canonical path: `run_operation_with_entry(..., InternalDevTest)`
 
+The canonical path strings above are code-pinned in
+`runtime/ucf-compute/src/reference_map.rs`:
+`WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT`,
+`WORKFLOW_PATH_REPLAY_ORIENTED`,
+`WORKFLOW_PATH_ROLLOUT_ORIENTED`,
+`WORKFLOW_PATH_INTERNAL_DEV_TEST_ONLY`.
+`service_surface` consumes these constants directly so docs do not become a second truth source.
+
 Each class reports transition state as one of:
 - `supported`
 - `partial`
