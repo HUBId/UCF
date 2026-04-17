@@ -7,6 +7,8 @@ Deterministic offline compute pipeline used by the runtime.
 For a compact, repo-based reference map of the canonical kernel, extension
 paths, and diagnostic/test-near seams, see
 `docs/real_compute_reference_surface_v1.md`.
+The corresponding code-pinned map lives in
+`src/reference_map.rs` (`CANONICAL_COMPUTE_REFERENCE_MAP`).
 
 ## Capability model
 

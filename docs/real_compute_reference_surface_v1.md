@@ -2,6 +2,10 @@
 
 Status: technical reference for the current `runtime/ucf-compute` kernel surface.
 
+The code-level canonical map for this document now lives in
+`runtime/ucf-compute/src/reference_map.rs` (`CANONICAL_COMPUTE_REFERENCE_MAP` plus
+workflow path constants). This doc mirrors that map and must not diverge from it.
+
 ## 1) Canonical real-compute kernel (load-bearing)
 
 The canonical productive path is the combination of:
@@ -35,6 +39,25 @@ Diagnostic and compatibility paths are intentionally separated from production d
 - test-only harness helpers (e.g. `test_env`)
 
 They remain valid for validation and rollout diagnostics but are not the canonical productive default.
+
+## Canonical reference map (single source, compact)
+
+`CANONICAL_COMPUTE_REFERENCE_MAP` classifies lanes into four explicit buckets:
+
+- `canonical_production`
+  - service entry lane
+  - canonical pipeline execution core
+  - rollout/activation/fallback/rollback core
+- `canonical_expert_runtime_control`
+  - replay/runtime-ops workflow lane on explicit expert contracts
+- `canonical_diagnostics_evidence`
+  - snapshot/evidence/history/replay-comparison lane
+- `internal_or_legacy`
+  - compatibility backends (`stub|candle`)
+  - internal worker lane + `domains/ai*` compatibility boundary
+
+This keeps canonical, expert, diagnostics, and internal/legacy lanes explicit without adding
+another architecture layer.
 
 ## 4) Contract and terminology alignment
 

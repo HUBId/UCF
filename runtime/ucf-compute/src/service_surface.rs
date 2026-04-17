@@ -34,6 +34,8 @@ use crate::{
     ExpertWorkflowTransitionState, ModelSlot, ModelSlotProvenance, RuntimeContractSafety,
     RuntimeContractShape, RuntimeDiagnosticFlags, RuntimeDriftClass, RuntimeEntryClass,
     RuntimeFreshnessClass, RuntimeMode, RuntimeProfile, SlotRuntimeStatus,
+    WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT, WORKFLOW_PATH_INTERNAL_DEV_TEST_ONLY,
+    WORKFLOW_PATH_REPLAY_ORIENTED, WORKFLOW_PATH_ROLLOUT_ORIENTED,
 };
 use std::collections::{BTreeMap, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -4809,7 +4811,7 @@ fn build_workflow_view_snapshot(
             SupportedExpertWorkflowPath {
                 class: ExpertWorkflowClass::InspectDiagnoseAct,
                 state: inspect_state,
-                canonical_path: "operations_snapshot -> diagnostics assessment -> runtime operation",
+                canonical_path: WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT,
                 transitions: vec![WorkflowTransitionSummary {
                     transition: WorkflowTransitionType::SnapshotDiagnosticsBeforeMutatingAction,
                     state: inspect_state,
@@ -4825,7 +4827,7 @@ fn build_workflow_view_snapshot(
             SupportedExpertWorkflowPath {
                 class: ExpertWorkflowClass::ReplayOriented,
                 state: replay_state,
-                canonical_path: "operations_snapshot -> replay_preflight -> replay_with_entry",
+                canonical_path: WORKFLOW_PATH_REPLAY_ORIENTED,
                 transitions: vec![WorkflowTransitionSummary {
                     transition: WorkflowTransitionType::ReplayPreflightBeforeReplayAction,
                     state: replay_state,
@@ -4841,8 +4843,7 @@ fn build_workflow_view_snapshot(
             SupportedExpertWorkflowPath {
                 class: ExpertWorkflowClass::RolloutOriented,
                 state: rollout_state,
-                canonical_path:
-                    "operations_snapshot.rollout diagnostics -> activation/fallback/rollback action",
+                canonical_path: WORKFLOW_PATH_ROLLOUT_ORIENTED,
                 transitions: vec![WorkflowTransitionSummary {
                     transition:
                         WorkflowTransitionType::RolloutDiagnosticsBeforeActivationFallbackRollback,
@@ -4859,7 +4860,7 @@ fn build_workflow_view_snapshot(
             SupportedExpertWorkflowPath {
                 class: ExpertWorkflowClass::InternalDevTestOnly,
                 state: ExpertWorkflowTransitionState::InternalOnly,
-                canonical_path: "run_operation_with_entry(..., InternalDevTest)",
+                canonical_path: WORKFLOW_PATH_INTERNAL_DEV_TEST_ONLY,
                 transitions: vec![WorkflowTransitionSummary {
                     transition: WorkflowTransitionType::SnapshotDiagnosticsBeforeMutatingAction,
                     state: ExpertWorkflowTransitionState::InternalOnly,
@@ -6357,6 +6358,8 @@ mod tests {
         ExpertMutationResult, ExpertWorkflowClass, ExpertWorkflowTransitionState,
         InMemoryComputeService, JobExecutionPath, JobHistoryStore, JobId, JobLifecycleState,
         RuntimeContractShape, RuntimeDriftClass, RuntimeEntryClass, RuntimeFreshnessClass,
+        WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT, WORKFLOW_PATH_INTERNAL_DEV_TEST_ONLY,
+        WORKFLOW_PATH_REPLAY_ORIENTED, WORKFLOW_PATH_ROLLOUT_ORIENTED,
     };
 
     fn service() -> CanonicalComputeEntryPoint {
@@ -7377,6 +7380,7 @@ mod tests {
         assert_eq!(view.paths.len(), 4);
         assert!(view.paths.iter().any(|path| {
             path.class == ExpertWorkflowClass::InspectDiagnoseAct
+                && path.canonical_path == WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT
                 && path.transitions.iter().any(|transition| {
                     transition.transition
                         == WorkflowTransitionType::SnapshotDiagnosticsBeforeMutatingAction
@@ -7384,6 +7388,7 @@ mod tests {
         }));
         assert!(view.paths.iter().any(|path| {
             path.class == ExpertWorkflowClass::ReplayOriented
+                && path.canonical_path == WORKFLOW_PATH_REPLAY_ORIENTED
                 && path.transitions.iter().any(|transition| {
                     transition.transition
                         == WorkflowTransitionType::ReplayPreflightBeforeReplayAction
@@ -7391,11 +7396,16 @@ mod tests {
         }));
         assert!(view.paths.iter().any(|path| {
             path.class == ExpertWorkflowClass::RolloutOriented
+                && path.canonical_path == WORKFLOW_PATH_ROLLOUT_ORIENTED
                 && path
                     .transitions
                     .iter()
                     .any(|transition| transition.transition
                         == WorkflowTransitionType::RolloutDiagnosticsBeforeActivationFallbackRollback)
+        }));
+        assert!(view.paths.iter().any(|path| {
+            path.class == ExpertWorkflowClass::InternalDevTestOnly
+                && path.canonical_path == WORKFLOW_PATH_INTERNAL_DEV_TEST_ONLY
         }));
     }
 
