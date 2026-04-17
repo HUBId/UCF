@@ -110,15 +110,19 @@ pub use compute_service::{
     WorkerRuntimeStatus,
 };
 pub use contracts::{
-    runtime_action_core_semantics_consistent, CanonicalEvidenceKind, CanonicalEvidenceReasonCode,
-    CanonicalEvidenceStatus, CanonicalSnapshotConsistency, CanonicalTraceSliceKind,
-    CanonicalTraceSliceStatus, CapabilityConstraint, CapabilitySupportLevel,
-    ExpertDiagnosticsAvailability, ExpertMutationBlocker, ExpertMutationBoundary,
-    ExpertMutationResult, ExpertWorkflowClass, ExpertWorkflowTransitionState,
-    RuntimeActionOutcomeCode, RuntimeContractSafety, RuntimeContractShape, RuntimeDiagnosticsCore,
-    RuntimeDriftClass, RuntimeEntryClass, RuntimeFreshnessClass, RuntimeStatusCore,
-    RuntimeSurfaceExtension, StageContractVersion, StageKind, StagePathCapability,
-    StagePathSupportLevel, ValidationStatus, CROSS_CUTTING_PRODUCTION_INVARIANTS_V1,
+    canonical_runtime_handoff_semantics, runtime_action_core_semantics_consistent,
+    runtime_handoff_state_from_action_code, runtime_handoff_state_from_evidence,
+    runtime_handoff_state_from_snapshot_and_diagnostics, CanonicalEvidenceKind,
+    CanonicalEvidenceReasonCode, CanonicalEvidenceStatus, CanonicalSnapshotConsistency,
+    CanonicalTraceSliceKind, CanonicalTraceSliceStatus, CapabilityConstraint,
+    CapabilitySupportLevel, ExpertDiagnosticsAvailability, ExpertMutationBlocker,
+    ExpertMutationBoundary, ExpertMutationResult, ExpertWorkflowClass,
+    ExpertWorkflowTransitionState, HandoffReferenceRequirement, RuntimeActionOutcomeCode,
+    RuntimeContractSafety, RuntimeContractShape, RuntimeDiagnosticsCore, RuntimeDriftClass,
+    RuntimeEntryClass, RuntimeFreshnessClass, RuntimeHandoffKind, RuntimeHandoffReferenceSet,
+    RuntimeHandoffSemantics, RuntimeHandoffState, RuntimeStatusCore, RuntimeSurfaceExtension,
+    StageContractVersion, StageKind, StagePathCapability, StagePathSupportLevel, ValidationStatus,
+    CANONICAL_RUNTIME_HANDOFF_SEMANTICS_V1, CROSS_CUTTING_PRODUCTION_INVARIANTS_V1,
 };
 pub use enablement::{
     EnablementComputeBackend, EnablementConfig, RealEnablementMode, SlotEnablement, SlotMode,
