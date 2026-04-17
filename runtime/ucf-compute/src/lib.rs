@@ -107,6 +107,7 @@ pub use compute_service::{
     WorkerRuntimeStatus,
 };
 pub use contracts::{
+    CanonicalEvidenceKind, CanonicalEvidenceReasonCode, CanonicalEvidenceStatus,
     CanonicalSnapshotConsistency, CapabilityConstraint, CapabilitySupportLevel,
     ExpertDiagnosticsAvailability, ExpertMutationBlocker, ExpertMutationBoundary,
     ExpertMutationResult, ExpertWorkflowClass, ExpertWorkflowTransitionState,

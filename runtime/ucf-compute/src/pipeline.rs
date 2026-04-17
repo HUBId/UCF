@@ -7,8 +7,9 @@ use crate::backend_pack::{
     SlotRuntimeStatus,
 };
 use crate::contracts::{
-    validate_evidence_chain_digest, ContractRegistry, LfmValidatorV1, NsrContractVersion,
-    NsrFailureKind, NsrRequest, NsrResult, SaeValidatorV1, SsmValidatorV1, StageContractRegistry,
+    validate_evidence_chain_digest, CanonicalEvidenceKind, CanonicalEvidenceReasonCode,
+    CanonicalEvidenceStatus, ContractRegistry, LfmValidatorV1, NsrContractVersion, NsrFailureKind,
+    NsrRequest, NsrResult, SaeValidatorV1, SsmValidatorV1, StageContractRegistry,
     StageContractVersion, StageKind, ValidationStatus, ViolationCode, WorldValidatorV1,
 };
 use crate::feature_extractor::{SaeOutput, ToySaeExtractor};
@@ -272,6 +273,28 @@ pub struct CanonicalRunDiagnostics {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalEvidenceReason {
+    pub code: CanonicalEvidenceReasonCode,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalRunEvidenceBundle {
+    pub kind: CanonicalEvidenceKind,
+    pub status: CanonicalEvidenceStatus,
+    pub bundle_id: String,
+    pub request_identity: String,
+    pub executed_path_summary: String,
+    pub rollout_context: Option<String>,
+    pub placement_summary: String,
+    pub readiness_caveats: Vec<String>,
+    pub outcome_summary: String,
+    pub primary_reasons: Vec<CanonicalEvidenceReason>,
+    pub replay_recovery_caveats: Vec<String>,
+    pub evidence_chain_digest_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CanonicalPipelineFailure {
     pub kind: CanonicalFailureKind,
     pub stage: Option<CanonicalStageId>,
@@ -305,6 +328,7 @@ pub struct CanonicalPipelineResult {
     pub violation_reason_mask: u32,
     pub validation: CanonicalValidationSummary,
     pub diagnostics: CanonicalRunDiagnostics,
+    pub evidence_bundle: CanonicalRunEvidenceBundle,
     pub world_stage: WorldStageStatus,
     pub lfm_stage: LfmStageStatus,
     pub nsr_stage: NsrStageStatus,
@@ -2219,6 +2243,17 @@ impl ComputePipelineBackend {
         }
         .bounded();
 
+        let evidence_bundle = build_run_evidence_bundle(
+            &input,
+            state,
+            failure.as_ref(),
+            &route,
+            &world_stage,
+            &lfm_stage,
+            &nsr_outcome.status,
+            &diagnostics,
+            false,
+        );
         Ok(CanonicalPipelineResult {
             request: input,
             stage_order: CANONICAL_STAGE_SEQUENCE,
@@ -2230,6 +2265,7 @@ impl ComputePipelineBackend {
             violation_reason_mask: signals.violation_reason_mask,
             validation,
             diagnostics,
+            evidence_bundle,
             world_stage,
             lfm_stage,
             nsr_stage: nsr_outcome.status,
@@ -2245,17 +2281,30 @@ impl ComputePipelineBackend {
         route: CanonicalBackendRoute,
         ctx: UnavailableResultContext,
     ) -> CanonicalPipelineResult {
+        let UnavailableResultContext {
+            validation_status,
+            violation_reason_mask,
+            validation,
+            failure,
+            world_stage,
+            lfm_stage,
+            nsr_stage,
+            backend_id,
+            budget_stage,
+            stage_profiles,
+            diagnostics,
+        } = ctx;
         let mut signals = ComputeSignals::unavailable(input, budget, self.name());
-        signals.validation_status = ctx.validation_status;
-        signals.violation_reason_mask = ctx.violation_reason_mask;
-        if let Some(id) = ctx.backend_id {
+        signals.validation_status = validation_status;
+        signals.violation_reason_mask = violation_reason_mask;
+        if let Some(id) = backend_id {
             signals.backend_id = id;
         }
-        signals.budget_exceeded_stage = ctx.budget_stage;
+        signals.budget_exceeded_stage = budget_stage;
         signals
             .notes
-            .push(format!("pipeline_failure={:?}", ctx.failure.kind).to_ascii_lowercase());
-        let classification = ctx.failure.classification();
+            .push(format!("pipeline_failure={:?}", failure.kind).to_ascii_lowercase());
+        let classification = failure.classification();
         signals
             .notes
             .push(format!("fault_domain={:?}", classification.domain).to_ascii_lowercase());
@@ -2265,10 +2314,8 @@ impl ComputePipelineBackend {
         signals
             .notes
             .push(format!("fault_systemic={}", classification.systemic));
-        let validation = ctx
-            .validation
-            .unwrap_or_else(CanonicalValidationSummary::unavailable);
-        let diagnostics = ctx.diagnostics.unwrap_or(CanonicalRunDiagnostics {
+        let validation = validation.unwrap_or_else(CanonicalValidationSummary::unavailable);
+        let diagnostics = diagnostics.unwrap_or(CanonicalRunDiagnostics {
             timing: CanonicalTimingSummary::default(),
             work: CanonicalWorkSummary {
                 global_budget_units: budget.global_work_units,
@@ -2277,13 +2324,13 @@ impl ComputePipelineBackend {
                 sae_remaining_units: budget.sae_units,
                 ssm_remaining_units: budget.ssm_units,
                 lfm_remaining_units: budget.lfm_units,
-                budget_exceeded_stage: ctx.budget_stage,
+                budget_exceeded_stage: budget_stage,
             },
-            stage_profiles: ctx.stage_profiles.unwrap_or_else(|| {
+            stage_profiles: stage_profiles.unwrap_or_else(|| {
                 default_unavailable_stage_profiles(
-                    ctx.failure.stage,
-                    ctx.failure.kind == CanonicalFailureKind::ExecutionError
-                        || ctx.failure.kind == CanonicalFailureKind::Timeout,
+                    failure.stage,
+                    failure.kind == CanonicalFailureKind::ExecutionError
+                        || failure.kind == CanonicalFailureKind::Timeout,
                 )
             }),
             stage_cost_attribution: Vec::new(),
@@ -2317,32 +2364,164 @@ impl ComputePipelineBackend {
             hotspots: build_hotspot_summary(&diagnostics.stage_profiles, &stage_cost_attribution),
             ..diagnostics
         };
+        let resolved_world_stage = world_stage
+            .unwrap_or_else(|| world_stage_from_slots(self.pack.model_slot_provenance()));
+        let resolved_lfm_stage =
+            lfm_stage.unwrap_or_else(|| lfm_stage_from_slots(self.pack.model_slot_provenance()));
+        let resolved_nsr_stage = nsr_stage.unwrap_or_else(|| {
+            nsr_disabled_stage(
+                nsr_slot_provenance(self.pack.model_slot_provenance()),
+                NsrMode::Disabled,
+            )
+        });
+        let evidence_bundle = build_run_evidence_bundle(
+            input,
+            CanonicalPipelineState::Unavailable,
+            Some(&failure),
+            &route,
+            &resolved_world_stage,
+            &resolved_lfm_stage,
+            &resolved_nsr_stage,
+            &diagnostics,
+            true,
+        );
         CanonicalPipelineResult {
             request: input.clone(),
             stage_order: CANONICAL_STAGE_SEQUENCE,
             executed_stages: Vec::new(),
             route,
             state: CanonicalPipelineState::Unavailable,
-            failure: Some(ctx.failure),
-            validation_status: ctx.validation_status,
-            violation_reason_mask: ctx.violation_reason_mask,
+            failure: Some(failure.clone()),
+            validation_status,
+            violation_reason_mask,
             validation,
             diagnostics,
-            world_stage: ctx
-                .world_stage
-                .unwrap_or_else(|| world_stage_from_slots(self.pack.model_slot_provenance())),
-            lfm_stage: ctx
-                .lfm_stage
-                .unwrap_or_else(|| lfm_stage_from_slots(self.pack.model_slot_provenance())),
-            nsr_stage: ctx.nsr_stage.unwrap_or_else(|| {
-                nsr_disabled_stage(
-                    nsr_slot_provenance(self.pack.model_slot_provenance()),
-                    NsrMode::Disabled,
-                )
-            }),
+            world_stage: resolved_world_stage.clone(),
+            lfm_stage: resolved_lfm_stage.clone(),
+            nsr_stage: resolved_nsr_stage.clone(),
+            evidence_bundle,
             model_slots: self.pack.model_slot_provenance().to_vec(),
             signals,
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_run_evidence_bundle(
+    input: &ComputeInput,
+    state: CanonicalPipelineState,
+    failure: Option<&CanonicalPipelineFailure>,
+    route: &CanonicalBackendRoute,
+    world_stage: &WorldStageStatus,
+    lfm_stage: &LfmStageStatus,
+    nsr_stage: &NsrStageStatus,
+    diagnostics: &CanonicalRunDiagnostics,
+    unavailable_path: bool,
+) -> CanonicalRunEvidenceBundle {
+    let mut readiness_caveats = Vec::new();
+    if !matches!(world_stage.readiness, WorldStageReadiness::ArtifactReady) {
+        readiness_caveats.push(format!("world_stage_readiness={:?}", world_stage.readiness));
+    }
+    if !matches!(lfm_stage.readiness, LfmStageReadiness::ArtifactReady) {
+        readiness_caveats.push(format!("lfm_stage_readiness={:?}", lfm_stage.readiness));
+    }
+    if !matches!(nsr_stage.state, NsrStageState::Used) {
+        readiness_caveats.push(format!("nsr_state={:?}", nsr_stage.state));
+    }
+    if diagnostics.hotspots.degraded_stage_count > 0 {
+        readiness_caveats.push(format!(
+            "degraded_stage_count={}",
+            diagnostics.hotspots.degraded_stage_count
+        ));
+    }
+    if diagnostics.hotspots.unavailable_stage_count > 0 {
+        readiness_caveats.push(format!(
+            "unavailable_stage_count={}",
+            diagnostics.hotspots.unavailable_stage_count
+        ));
+    }
+    if diagnostics.work.budget_exceeded_stage.is_some() {
+        readiness_caveats.push("budget_exceeded".to_string());
+    }
+
+    let mut primary_reasons = vec![CanonicalEvidenceReason {
+        code: if unavailable_path {
+            CanonicalEvidenceReasonCode::PlacementConstrainedOrFallback
+        } else {
+            CanonicalEvidenceReasonCode::PlacementPathChosen
+        },
+        detail: format!(
+            "pack={} route(world={},sae={},ssm={},lfm={})",
+            route.pack_id,
+            route.world_backend,
+            route.sae_backend,
+            route.ssm_backend,
+            route.lfm_backend
+        ),
+    }];
+    if !readiness_caveats.is_empty() {
+        primary_reasons.push(CanonicalEvidenceReason {
+            code: CanonicalEvidenceReasonCode::WarmupCapabilityCaveat,
+            detail: readiness_caveats[0].clone(),
+        });
+    }
+
+    let replay_recovery_caveats = failure
+        .map(|f| vec![format!("pipeline_failure={:?}", f.kind)])
+        .unwrap_or_default();
+    let status = match state {
+        CanonicalPipelineState::Ok if readiness_caveats.is_empty() => {
+            CanonicalEvidenceStatus::Sufficient
+        }
+        CanonicalPipelineState::Ok => CanonicalEvidenceStatus::Caveated,
+        CanonicalPipelineState::Degraded => CanonicalEvidenceStatus::Partial,
+        CanonicalPipelineState::Unavailable => CanonicalEvidenceStatus::Insufficient,
+    };
+
+    CanonicalRunEvidenceBundle {
+        kind: CanonicalEvidenceKind::ExecutionRun,
+        status,
+        bundle_id: format!(
+            "run-{}-{}",
+            input.frame_id.0,
+            diagnostics
+                .evidence_chain_digest_prefix
+                .as_deref()
+                .unwrap_or("none")
+        ),
+        request_identity: format!("frame={} t={}", input.frame_id.0, input.t),
+        executed_path_summary: if unavailable_path {
+            "canonical_stage_path_unavailable".to_string()
+        } else {
+            format!(
+                "canonical_stage_path_executed={}",
+                diagnostics
+                    .stage_profiles
+                    .iter()
+                    .filter(|stage| {
+                        matches!(
+                            stage.state,
+                            CanonicalStageProfileState::Success
+                                | CanonicalStageProfileState::SlowSuccess
+                                | CanonicalStageProfileState::Degraded
+                        )
+                    })
+                    .count()
+            )
+        },
+        rollout_context: Some(format!(
+            "world_predictor={} lfm_runtime={}",
+            world_stage.predictor, lfm_stage.runtime
+        )),
+        placement_summary: format!(
+            "backend_pack={} world_backend={}",
+            route.pack_id, route.world_backend
+        ),
+        readiness_caveats,
+        outcome_summary: format!("pipeline_state={state:?}"),
+        primary_reasons,
+        replay_recovery_caveats,
+        evidence_chain_digest_prefix: diagnostics.evidence_chain_digest_prefix.clone(),
     }
 }
 
@@ -2909,6 +3088,18 @@ mod tests {
             CANONICAL_STAGE_SEQUENCE.len()
         );
         assert!(result.diagnostics.hotspots.slowest_stage.is_some());
+        assert_eq!(
+            result.evidence_bundle.kind,
+            CanonicalEvidenceKind::ExecutionRun
+        );
+        assert!(matches!(
+            result.evidence_bundle.status,
+            CanonicalEvidenceStatus::Sufficient
+                | CanonicalEvidenceStatus::Caveated
+                | CanonicalEvidenceStatus::Partial
+        ));
+        assert!(!result.evidence_bundle.bundle_id.is_empty());
+        assert!(!result.evidence_bundle.primary_reasons.is_empty());
     }
 
     #[test]
@@ -2942,6 +3133,10 @@ mod tests {
             CanonicalStageProfileState::Unavailable | CanonicalStageProfileState::Failed
         ));
         assert!(result.diagnostics.hotspots.unavailable_stage_count >= 1);
+        assert_eq!(
+            result.evidence_bundle.status,
+            CanonicalEvidenceStatus::Insufficient
+        );
     }
 
     #[test]
@@ -2978,6 +3173,10 @@ mod tests {
             })
             .expect("canonical compute");
         assert_eq!(canonical.state, CanonicalPipelineState::Degraded);
+        assert_eq!(
+            canonical.evidence_bundle.status,
+            CanonicalEvidenceStatus::Partial
+        );
     }
 
     #[test]

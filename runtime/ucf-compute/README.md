@@ -237,6 +237,35 @@ to keep a single snapshot truth. `RuntimeOperationOutcome` now also records
 `hardening_before`, `hardening_after`, and `hardening_evolution` so expert diagnostics/history can
 see if runtime interventions improved or degraded long-run hardening posture.
 
+### Canonical evidence bundles (Serie H Prompt 1)
+
+Load-bearing runs and mutating runtime actions now expose a narrow canonical evidence-bundle view
+without creating a second audit platform.
+
+- Shared core semantics (`contracts`):
+  - `canonical_evidence_kind`: `execution_run | mutating_action`
+  - `canonical_evidence_status`: `sufficient | partial | caveated | insufficient`
+  - compact primary-reason codes for placement/rollout/replay/recovery/warmup/stale-basis.
+- Run evidence (`CanonicalPipelineResult.evidence_bundle`):
+  - request identity + executed path summary
+  - backend/placement summary
+  - rollout/runtime scope hint and readiness caveats
+  - top-level outcome + primary reasons + replay/recovery caveat surface
+  - evidence-chain digest prefix reference (when available)
+- Action evidence (`RuntimeOperationOutcome.action_evidence`):
+  - action identity + rollout enablement context
+  - compact allow/block reasons and replay/recovery caveats
+  - outcome-classified evidence status
+- Runtime snapshots (`CanonicalRuntimeSnapshot.evidence_bundle_refs`) now point to relevant recent
+  action/run evidence references so diagnostics and operations views can anchor on one canonical
+  evidence seam.
+
+Intentional boundaries:
+
+- no full raw-data duplication (bundles are summary/reference surfaces),
+- no timeline/forensics/audit reconstruction platform,
+- no reasoning-engine explanation chain.
+
 ## Execution-device classes (bounded service placement)
 
 `MultiWorkerComputeService` now keeps a narrow execution-device layer for placement:
