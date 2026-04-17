@@ -27,6 +27,24 @@ pub enum RuntimeActionOutcomeCode {
     Failed,
 }
 
+/// Canonical cross-cutting runtime invariants for load-bearing core paths.
+///
+/// These rules intentionally stay compact and are shared across execution,
+/// rollout, replay, diagnostics, and expert runtime-op surfaces:
+/// - `blocked`, `failed`, and `no_op` are distinct outcome classes.
+/// - `partial`, `stale`, `caveated`, and `degraded` are not interchangeable.
+/// - mutating actions require a trustable/current-enough state basis.
+/// - snapshots/diagnostics/evidence extend canonical run truth and must not
+///   become a competing source of truth.
+/// - rollout/replay/expert paths extend the shared core; they do not replace it.
+pub const CROSS_CUTTING_PRODUCTION_INVARIANTS_V1: [&str; 5] = [
+    "blocked!=failed!=no_op",
+    "partial/stale/caveated/degraded_separated",
+    "mutating_actions_require_trustable_state_basis",
+    "snapshot_diagnostics_evidence_extend_canonical_truth",
+    "rollout_replay_expert_extend_shared_core",
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeEntryClass {
@@ -271,6 +289,16 @@ pub enum ExpertMutationResult {
 impl RuntimeFreshnessClass {
     pub const fn is_stale_or_partial(self) -> bool {
         matches!(self, Self::Partial | Self::Stale)
+    }
+}
+
+impl RuntimeActionOutcomeCode {
+    pub const fn is_blocked_or_failed(self) -> bool {
+        matches!(self, Self::Blocked | Self::Failed)
+    }
+
+    pub const fn is_non_terminal_noop(self) -> bool {
+        matches!(self, Self::NoOp)
     }
 }
 
@@ -1006,5 +1034,17 @@ mod tests {
         assert!(!RuntimeDriftClass::NoDriftDetected.needs_refresh());
         assert!(!RuntimeDriftClass::DriftSuspected.needs_refresh());
         assert!(RuntimeDriftClass::InconsistentNeedsRefresh.needs_refresh());
+    }
+
+    #[test]
+    fn cross_cutting_invariants_and_outcome_classes_are_explicit() {
+        assert!(CROSS_CUTTING_PRODUCTION_INVARIANTS_V1.contains(&"blocked!=failed!=no_op"));
+        assert!(CROSS_CUTTING_PRODUCTION_INVARIANTS_V1
+            .contains(&"partial/stale/caveated/degraded_separated"));
+        assert!(RuntimeActionOutcomeCode::Blocked.is_blocked_or_failed());
+        assert!(RuntimeActionOutcomeCode::Failed.is_blocked_or_failed());
+        assert!(!RuntimeActionOutcomeCode::NoOp.is_blocked_or_failed());
+        assert!(RuntimeActionOutcomeCode::NoOp.is_non_terminal_noop());
+        assert!(!RuntimeActionOutcomeCode::Completed.is_non_terminal_noop());
     }
 }

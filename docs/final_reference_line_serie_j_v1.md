@@ -20,6 +20,8 @@ This file is intentionally short and load-bearing only.
   - `replay_preflight -> replay_with_entry -> comparison/evidence on same result/fault/status core`
 - Diagnostics/expert extension on top of same core:
   - `runtime snapshot/diagnostics + expert workflow surface -> same canonical core state`
+- Cross-cutting production invariants on top of same core:
+  - `blocked!=failed!=no_op; partial/stale/caveated/degraded remain distinct; rollout/replay/expert extend shared core`
 - Non-canonical boundary (explicit):
   - `compatibility backends + internal/legacy worker/domain lanes are extension/internal only`
 
@@ -47,6 +49,7 @@ Internal/non-canonical lanes remain explicit:
 - `current|partial|stale|drift|unavailable` style runtime semantics stay normalized through canonical snapshot + diagnostics views.
 - `active|candidate|compare|shadow|fallback|rollback|guarded` rollout semantics remain explicit in rollout lanes and do not redefine execution core semantics.
 - replay/comparison/evidence remains anchored to the same canonical run contracts and snapshot evidence.
+- replay caveats do not override hard blockers, rollout guardrails do not redefine healthy-active core status, and expert mutations without trustable state basis remain blocked.
 
 ## 4) Intentional boundaries
 

@@ -1356,32 +1356,6 @@ impl CanonicalComputeEntryPoint {
             }
         }
 
-        let blocked = issues.iter().any(|issue| {
-            matches!(
-                issue.code,
-                ReplayPreflightIssueCode::RecordMissing
-                    | ReplayPreflightIssueCode::MissingArtifactOrSlot
-                    | ReplayPreflightIssueCode::ChangedBackendDeviceWorkerContext
-                    | ReplayPreflightIssueCode::MissingRemoteExecutionContext
-                    | ReplayPreflightIssueCode::OriginalContextUnavailable
-                    | ReplayPreflightIssueCode::ContextBridgeTooLossy
-            )
-        });
-        let insufficient = issues.iter().any(|issue| {
-            matches!(
-                issue.code,
-                ReplayPreflightIssueCode::SnapshotIncomplete
-                    | ReplayPreflightIssueCode::CanonicalRequestMissing
-            )
-        });
-        let changed_context = issues.iter().any(|issue| {
-            matches!(
-                issue.code,
-                ReplayPreflightIssueCode::RolloutContextChangedTooMuch
-                    | ReplayPreflightIssueCode::LocalRemoteConstraintMismatch
-                    | ReplayPreflightIssueCode::AlternativeContextWithCaveats
-            )
-        });
         let has_caveat = source.snapshot_readiness == PersistedSnapshotReadiness::Partial;
         if source_mode != current_mode && has_caveat {
             issues.push(ReplayPreflightIssue {
@@ -1395,6 +1369,15 @@ impl CanonicalComputeEntryPoint {
                 detail: "snapshot readiness is partial; replay may complete without fidelity equivalence".to_string(),
             });
         }
+        let blocked = issues
+            .iter()
+            .any(|issue| replay_preflight_issue_is_hard_blocker(issue.code));
+        let insufficient = issues
+            .iter()
+            .any(|issue| replay_preflight_issue_is_insufficient_basis(issue.code));
+        let changed_context = issues
+            .iter()
+            .any(|issue| replay_preflight_issue_is_changed_context(issue.code));
 
         let replayability = if blocked {
             ReplayabilityClass::BlockedForReplay
@@ -2089,6 +2072,29 @@ impl CanonicalComputeEntryPoint {
                         "drain scheduler run queue".to_string(),
                         "blocked before mutating: standard entry path".to_string(),
                         "drain_scheduler requires expert/high-trust entry contract".to_string(),
+                        Vec::new(),
+                    )
+                } else if snapshot.stale_runtime.needs_refresh {
+                    make_outcome(
+                        RuntimeOperationClass::ControlledMutating,
+                        RuntimeOperationScope::WorkerReadiness,
+                        RuntimeOperationCode::Blocked,
+                        ExpertMutationBoundary::ControlledMutable,
+                        ExpertMutationResult::BlockedBySafetyRail,
+                        Some(ExpertMutationBlocker::StaleDiagnosticBasis),
+                        RuntimeOperationSnapshotEffect::NoSnapshotChange,
+                        "drain scheduler run queue".to_string(),
+                        "blocked by stale/drift diagnostic basis".to_string(),
+                        format!(
+                            "drain_scheduler blocked: refresh/recheck required before mutation (freshness={:?}, drift={:?}, source={})",
+                            snapshot.stale_runtime.freshness,
+                            snapshot.stale_runtime.drift,
+                            snapshot
+                                .stale_runtime
+                                .primary_source
+                                .as_deref()
+                                .unwrap_or("unspecified")
+                        ),
                         Vec::new(),
                     )
                 } else if snapshot.service_trust.mutating_action
@@ -5094,6 +5100,35 @@ fn blocked_replay_mismatch_view(
     }
 }
 
+const fn replay_preflight_issue_is_hard_blocker(code: ReplayPreflightIssueCode) -> bool {
+    matches!(
+        code,
+        ReplayPreflightIssueCode::RecordMissing
+            | ReplayPreflightIssueCode::MissingArtifactOrSlot
+            | ReplayPreflightIssueCode::ChangedBackendDeviceWorkerContext
+            | ReplayPreflightIssueCode::MissingRemoteExecutionContext
+            | ReplayPreflightIssueCode::OriginalContextUnavailable
+            | ReplayPreflightIssueCode::ContextBridgeTooLossy
+    )
+}
+
+const fn replay_preflight_issue_is_insufficient_basis(code: ReplayPreflightIssueCode) -> bool {
+    matches!(
+        code,
+        ReplayPreflightIssueCode::SnapshotIncomplete
+            | ReplayPreflightIssueCode::CanonicalRequestMissing
+    )
+}
+
+const fn replay_preflight_issue_is_changed_context(code: ReplayPreflightIssueCode) -> bool {
+    matches!(
+        code,
+        ReplayPreflightIssueCode::RolloutContextChangedTooMuch
+            | ReplayPreflightIssueCode::LocalRemoteConstraintMismatch
+            | ReplayPreflightIssueCode::AlternativeContextWithCaveats
+    )
+}
+
 fn build_evidence_aware_comparison_view(
     comparison_id: impl Into<String>,
     compared_entities: Vec<String>,
@@ -7133,6 +7168,30 @@ mod tests {
     }
 
     #[test]
+    fn drain_scheduler_blocks_when_stale_runtime_basis_requires_refresh() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":8,"job_id":121,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"standard","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[],"execution_snapshot":{"request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request_available":true,"backend_route_available":true,"model_slot_count":0,"path":{"requested_execution_path":"LocalCanonical","executed_execution_path":"LocalCanonical","execution_lane":"standard","resource_class":"standard","was_remote":false,"redispatched_to_local":false,"retry_attempts":0},"rollout":{"active_or_warm_slots":0,"candidate_or_guarded_slots":0,"stale_or_blocked_slots":1,"rollout_context_hint":"blocked_or_stale"},"result":{"lifecycle_state":"completed","completion_class":"completed","pipeline_state":"ok","failure_kind":null},"readiness":"stale_or_incomplete"}}"#,
+        )
+        .expect("seed stale record");
+        let mut entry = service_with_history(&history_path);
+
+        let blocked = entry
+            .run_operation(RuntimeOperation::DrainScheduler { max_jobs: 1 })
+            .expect("drain outcome");
+        assert_eq!(blocked.code, RuntimeOperationCode::Blocked);
+        assert_eq!(
+            blocked.blocked_by,
+            Some(ExpertMutationBlocker::StaleDiagnosticBasis)
+        );
+        assert!(blocked
+            .detail
+            .contains("refresh/recheck required before mutation"));
+    }
+
+    #[test]
     fn trust_evolution_is_recorded_across_operations() {
         assert_eq!(
             super::classify_service_trust_evolution(
@@ -8210,6 +8269,41 @@ mod tests {
             .constrained_backend_device_context
             .as_deref()
             .is_some_and(|ctx| ctx.contains("source=") && ctx.contains("current=")));
+    }
+
+    #[test]
+    fn replay_preflight_partial_snapshot_with_changed_context_remains_blocked() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":8,"job_id":151,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"standard","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[],"execution_snapshot":{"request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request_available":true,"backend_route_available":true,"model_slot_count":0,"path":{"requested_execution_path":"LocalCanonical","executed_execution_path":"LocalCanonical","execution_lane":"standard","resource_class":"standard","was_remote":false,"redispatched_to_local":false,"retry_attempts":0},"rollout":{"active_or_warm_slots":1,"candidate_or_guarded_slots":0,"stale_or_blocked_slots":0,"rollout_context_hint":"active_or_warm"},"result":{"lifecycle_state":"completed","completion_class":"completed","pipeline_state":"ok","failure_kind":null},"readiness":"partial"}}"#,
+        )
+        .expect("history fixture");
+        let entry = CanonicalComputeEntryPoint::with_history_path(
+            InMemoryComputeService::with_scheduler(
+                crate::pipeline::ComputePipelineBackend::stub(),
+                SchedulerConfig {
+                    max_concurrent_jobs: 1,
+                    execution_path: JobExecutionPath::WorkerIpc,
+                },
+            ),
+            &history_path,
+        )
+        .expect("entry with history");
+        let preflight = entry.replay_preflight(ComputeJobHandle { job_id: JobId(151) });
+        assert_eq!(
+            preflight.replayability,
+            ReplayabilityClass::BlockedForReplay
+        );
+        assert!(preflight
+            .issues
+            .iter()
+            .any(|issue| issue.code == ReplayPreflightIssueCode::ContextBridgeTooLossy));
+        assert!(preflight
+            .issues
+            .iter()
+            .any(|issue| issue.code == ReplayPreflightIssueCode::ReplayNotFidelityEquivalent));
     }
 
     #[test]
