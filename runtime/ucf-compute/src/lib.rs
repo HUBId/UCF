@@ -138,9 +138,13 @@ pub use pipeline::{
     WorldStageStatus, CANONICAL_STAGE_SEQUENCE,
 };
 pub use reference_map::{
-    canonical_compute_reference_map, canonical_onboarding_reference_summary,
-    canonical_production_reference_lane, ComputeReferenceClass, ComputeReferenceLane,
-    CANONICAL_COMPUTE_REFERENCE_MAP, WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT,
+    canonical_compute_reference_map, canonical_final_reference_line,
+    canonical_onboarding_reference_summary, canonical_production_reference_lane,
+    is_canonical_core_or_extension_lane, CanonicalFinalReferenceLine, ComputeReferenceClass,
+    ComputeReferenceLane, CANONICAL_COMPUTE_REFERENCE_MAP, CANONICAL_FINAL_REFERENCE_LINE,
+    FINAL_REFERENCE_LINE_DIAGNOSTICS_EXTENSION, FINAL_REFERENCE_LINE_EXECUTION_CORE,
+    FINAL_REFERENCE_LINE_REPLAY_EXTENSION, FINAL_REFERENCE_LINE_ROLLOUT_EXTENSION,
+    FINAL_REFERENCE_NON_CANONICAL_INTERNAL_BOUNDARY, WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT,
     WORKFLOW_PATH_INTERNAL_DEV_TEST_ONLY, WORKFLOW_PATH_REPLAY_ORIENTED,
     WORKFLOW_PATH_ROLLOUT_ORIENTED,
 };
