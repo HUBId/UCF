@@ -17,6 +17,29 @@ pub struct ComputeReferenceLane {
     pub shared_core_invariants: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComputeIntegrationContractClass {
+    Execution,
+    DiagnosticsStatus,
+    EvidenceReference,
+    ExpertInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComputeIntegrationBoundary {
+    OutwardFacing,
+    ExpertInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ComputeIntegrationContractLane {
+    pub class: ComputeIntegrationContractClass,
+    pub boundary: ComputeIntegrationBoundary,
+    pub lane: &'static str,
+    pub canonical_anchor: &'static str,
+    pub semantic_scope: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -58,6 +81,52 @@ pub const CANONICAL_FINAL_REFERENCE_LINE: CanonicalFinalReferenceLine =
         cross_cutting_invariants: FINAL_REFERENCE_LINE_CROSS_CUTTING_INVARIANTS,
         internal_boundary: FINAL_REFERENCE_NON_CANONICAL_INTERNAL_BOUNDARY,
     };
+
+pub const CANONICAL_COMPUTE_INTEGRATION_CONTRACT_VIEW: [ComputeIntegrationContractLane; 6] = [
+    ComputeIntegrationContractLane {
+        class: ComputeIntegrationContractClass::Execution,
+        boundary: ComputeIntegrationBoundary::OutwardFacing,
+        lane: "compute_execution_contract",
+        canonical_anchor:
+            "service_surface::CanonicalComputeEntryPoint::{submit,status,drain_scheduler}",
+        semantic_scope: "request/job/run execution on canonical result/fault/status core",
+    },
+    ComputeIntegrationContractLane {
+        class: ComputeIntegrationContractClass::DiagnosticsStatus,
+        boundary: ComputeIntegrationBoundary::OutwardFacing,
+        lane: "compute_status_diagnostics_contract",
+        canonical_anchor: "service_surface::{operations_snapshot,workflow_view}",
+        semantic_scope: "runtime state/freshness/drift + top-level diagnostics signals",
+    },
+    ComputeIntegrationContractLane {
+        class: ComputeIntegrationContractClass::EvidenceReference,
+        boundary: ComputeIntegrationBoundary::OutwardFacing,
+        lane: "compute_evidence_reference_contract",
+        canonical_anchor: "service_surface + evidence + job_history",
+        semantic_scope: "snapshot/evidence/trace/history references without redefining run truth",
+    },
+    ComputeIntegrationContractLane {
+        class: ComputeIntegrationContractClass::ExpertInternalOnly,
+        boundary: ComputeIntegrationBoundary::ExpertInternalOnly,
+        lane: "compute_expert_runtime_control_contract",
+        canonical_anchor: "service_surface::{replay_with_entry,run_operation_with_entry}",
+        semantic_scope: "expert high-trust replay/runtime operations on shared core invariants",
+    },
+    ComputeIntegrationContractLane {
+        class: ComputeIntegrationContractClass::ExpertInternalOnly,
+        boundary: ComputeIntegrationBoundary::ExpertInternalOnly,
+        lane: "compatibility_backend_internal_lane",
+        canonical_anchor: "backends::build_backend(kind=stub|candle)",
+        semantic_scope: "compatibility/dev lane and not an outward-facing contract",
+    },
+    ComputeIntegrationContractLane {
+        class: ComputeIntegrationContractClass::ExpertInternalOnly,
+        boundary: ComputeIntegrationBoundary::ExpertInternalOnly,
+        lane: "legacy_domains_internal_lane",
+        canonical_anchor: "build_backend(kind=worker) + domains/ai*",
+        semantic_scope: "legacy compatibility boundary and internal execution entry",
+    },
+];
 
 pub const CANONICAL_COMPUTE_REFERENCE_MAP: [ComputeReferenceLane; 7] = [
     ComputeReferenceLane {
@@ -138,6 +207,16 @@ pub fn canonical_onboarding_reference_summary() -> (&'static str, &'static str) 
         CANONICAL_ONBOARDING_BACKEND.as_env_str(),
         CANONICAL_ONBOARDING_PACK.as_str(),
     )
+}
+
+pub fn canonical_compute_integration_contract_view() -> &'static [ComputeIntegrationContractLane] {
+    &CANONICAL_COMPUTE_INTEGRATION_CONTRACT_VIEW
+}
+
+pub fn is_outward_facing_compute_integration_boundary(
+    boundary: ComputeIntegrationBoundary,
+) -> bool {
+    matches!(boundary, ComputeIntegrationBoundary::OutwardFacing)
 }
 
 #[cfg(test)]
@@ -279,5 +358,54 @@ mod tests {
         assert!(doc.contains("partial / diagnostic"));
         assert!(doc.contains("intentionally deferred"));
         assert!(doc.contains("Priorität jetzt: Serie K"));
+    }
+
+    #[test]
+    fn integration_contract_view_keeps_minimal_classes_explicit() {
+        let view = canonical_compute_integration_contract_view();
+        assert!(view.iter().any(|lane| {
+            lane.class == ComputeIntegrationContractClass::Execution
+                && lane.boundary == ComputeIntegrationBoundary::OutwardFacing
+        }));
+        assert!(view.iter().any(|lane| {
+            lane.class == ComputeIntegrationContractClass::DiagnosticsStatus
+                && lane.boundary == ComputeIntegrationBoundary::OutwardFacing
+        }));
+        assert!(view.iter().any(|lane| {
+            lane.class == ComputeIntegrationContractClass::EvidenceReference
+                && lane.boundary == ComputeIntegrationBoundary::OutwardFacing
+        }));
+        assert!(view.iter().any(|lane| {
+            lane.class == ComputeIntegrationContractClass::ExpertInternalOnly
+                && lane.boundary == ComputeIntegrationBoundary::ExpertInternalOnly
+        }));
+    }
+
+    #[test]
+    fn outward_facing_integration_contracts_stay_pinned_to_final_execution_line() {
+        let line = canonical_final_reference_line();
+        let outward: Vec<_> = canonical_compute_integration_contract_view()
+            .iter()
+            .filter(|lane| is_outward_facing_compute_integration_boundary(lane.boundary))
+            .collect();
+        assert!(!outward.is_empty());
+        assert!(outward
+            .iter()
+            .any(|lane| lane.class == ComputeIntegrationContractClass::Execution));
+        assert!(line.execution_core.contains("submit -> compute_canonical"));
+        assert!(line.execution_core.contains("result/fault/status"));
+    }
+
+    #[test]
+    fn integration_contract_view_keeps_internal_paths_out_of_outward_boundary() {
+        assert!(canonical_compute_integration_contract_view()
+            .iter()
+            .filter(|lane| lane.boundary == ComputeIntegrationBoundary::OutwardFacing)
+            .all(|lane| {
+                !lane
+                    .canonical_anchor
+                    .contains("build_backend(kind=stub|candle)")
+                    && !lane.canonical_anchor.contains("domains/ai*")
+            }));
     }
 }

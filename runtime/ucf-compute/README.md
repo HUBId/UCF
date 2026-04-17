@@ -9,6 +9,10 @@ paths, and diagnostic/test-near seams, see
 `docs/real_compute_reference_surface_v1.md`.
 The corresponding code-pinned map lives in
 `src/reference_map.rs` (`CANONICAL_COMPUTE_REFERENCE_MAP`).
+For the Serie-K compute-facing integration boundary (execution vs status/diagnostics vs
+evidence/reference vs expert/internal-only contracts), see
+`docs/compute_facing_integration_contracts_serie_k_v1.md` and
+`CANONICAL_COMPUTE_INTEGRATION_CONTRACT_VIEW` in the same source file.
 
 ## Capability model
 
