@@ -34,6 +34,8 @@ pub const FINAL_REFERENCE_LINE_REPLAY_EXTENSION: &str =
     "replay_preflight -> replay_with_entry -> comparison/evidence on same result/fault/status core";
 pub const FINAL_REFERENCE_LINE_DIAGNOSTICS_EXTENSION: &str =
     "runtime snapshot/diagnostics + expert workflow surface -> same canonical core state";
+pub const FINAL_REFERENCE_LINE_CROSS_CUTTING_INVARIANTS: &str =
+    "blocked!=failed!=no_op; partial/stale/caveated/degraded remain distinct; rollout/replay/expert extend shared core";
 pub const FINAL_REFERENCE_NON_CANONICAL_INTERNAL_BOUNDARY: &str =
     "compatibility backends + internal/legacy worker/domain lanes are extension/internal only";
 
@@ -43,6 +45,7 @@ pub struct CanonicalFinalReferenceLine {
     pub rollout_extension: &'static str,
     pub replay_extension: &'static str,
     pub diagnostics_extension: &'static str,
+    pub cross_cutting_invariants: &'static str,
     pub internal_boundary: &'static str,
 }
 
@@ -52,6 +55,7 @@ pub const CANONICAL_FINAL_REFERENCE_LINE: CanonicalFinalReferenceLine =
         rollout_extension: FINAL_REFERENCE_LINE_ROLLOUT_EXTENSION,
         replay_extension: FINAL_REFERENCE_LINE_REPLAY_EXTENSION,
         diagnostics_extension: FINAL_REFERENCE_LINE_DIAGNOSTICS_EXTENSION,
+        cross_cutting_invariants: FINAL_REFERENCE_LINE_CROSS_CUTTING_INVARIANTS,
         internal_boundary: FINAL_REFERENCE_NON_CANONICAL_INTERNAL_BOUNDARY,
     };
 
@@ -85,7 +89,7 @@ pub const CANONICAL_COMPUTE_REFERENCE_MAP: [ComputeReferenceLane; 7] = [
             "service_surface::{workflow_view,replay_with_entry,run_operation_with_entry}",
         scope: "expert replay/runtime-control path on canonical contracts",
         shared_core_invariants:
-            "expert/internal extend shared action/result invariants; no second core",
+            "expert/internal extend shared action/result invariants; blocked/failed/no-op stay distinct",
     },
     ComputeReferenceLane {
         class: ComputeReferenceClass::CanonicalDiagnosticsEvidence,
@@ -93,7 +97,7 @@ pub const CANONICAL_COMPUTE_REFERENCE_MAP: [ComputeReferenceLane; 7] = [
         canonical_path: "service_surface + evidence + job_history",
         scope: "snapshot/evidence/diagnostics/replay comparability core",
         shared_core_invariants:
-            "current/partial/stale + evidence sufficient/partial/caveated/insufficient alignment",
+            "current/partial/stale + evidence sufficient/partial/caveated/insufficient + degraded alignment",
     },
     ComputeReferenceLane {
         class: ComputeReferenceClass::InternalOrLegacy,
@@ -212,6 +216,12 @@ mod tests {
         assert!(line
             .diagnostics_extension
             .contains("expert workflow surface -> same canonical core state"));
+        assert!(line
+            .cross_cutting_invariants
+            .contains("blocked!=failed!=no_op"));
+        assert!(line
+            .cross_cutting_invariants
+            .contains("partial/stale/caveated/degraded"));
         assert!(line.internal_boundary.contains("extension/internal only"));
     }
 
@@ -231,6 +241,7 @@ mod tests {
         assert!(doc.contains(line.rollout_extension));
         assert!(doc.contains(line.replay_extension));
         assert!(doc.contains(line.diagnostics_extension));
+        assert!(doc.contains(line.cross_cutting_invariants));
         assert!(doc.contains(line.internal_boundary));
     }
 }

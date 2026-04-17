@@ -16,6 +16,8 @@
 //! - Ops/history/recovery/replay-facing persistence: [`job_history`], [`service_surface`]
 //! - Expert/high-trust runtime contracts for replay + runtime ops:
 //!   [`RuntimeEntryClass`], [`RuntimeContractShape`], [`service_surface`]
+//! - Cross-cutting production invariants for shared core semantics:
+//!   [`CROSS_CUTTING_PRODUCTION_INVARIANTS_V1`]
 //!
 //! ## Diagnostic/test seams (not production defaults)
 //! - Compatibility/dev backend lane (`stub`, `candle` compatibility seam): [`backends`]
@@ -116,7 +118,7 @@ pub use contracts::{
     RuntimeActionOutcomeCode, RuntimeContractSafety, RuntimeContractShape, RuntimeDiagnosticsCore,
     RuntimeDriftClass, RuntimeEntryClass, RuntimeFreshnessClass, RuntimeStatusCore,
     RuntimeSurfaceExtension, StageContractVersion, StageKind, StagePathCapability,
-    StagePathSupportLevel, ValidationStatus,
+    StagePathSupportLevel, ValidationStatus, CROSS_CUTTING_PRODUCTION_INVARIANTS_V1,
 };
 pub use enablement::{
     EnablementComputeBackend, EnablementConfig, RealEnablementMode, SlotEnablement, SlotMode,
@@ -142,11 +144,11 @@ pub use reference_map::{
     canonical_onboarding_reference_summary, canonical_production_reference_lane,
     is_canonical_core_or_extension_lane, CanonicalFinalReferenceLine, ComputeReferenceClass,
     ComputeReferenceLane, CANONICAL_COMPUTE_REFERENCE_MAP, CANONICAL_FINAL_REFERENCE_LINE,
-    FINAL_REFERENCE_LINE_DIAGNOSTICS_EXTENSION, FINAL_REFERENCE_LINE_EXECUTION_CORE,
-    FINAL_REFERENCE_LINE_REPLAY_EXTENSION, FINAL_REFERENCE_LINE_ROLLOUT_EXTENSION,
-    FINAL_REFERENCE_NON_CANONICAL_INTERNAL_BOUNDARY, WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT,
-    WORKFLOW_PATH_INTERNAL_DEV_TEST_ONLY, WORKFLOW_PATH_REPLAY_ORIENTED,
-    WORKFLOW_PATH_ROLLOUT_ORIENTED,
+    FINAL_REFERENCE_LINE_CROSS_CUTTING_INVARIANTS, FINAL_REFERENCE_LINE_DIAGNOSTICS_EXTENSION,
+    FINAL_REFERENCE_LINE_EXECUTION_CORE, FINAL_REFERENCE_LINE_REPLAY_EXTENSION,
+    FINAL_REFERENCE_LINE_ROLLOUT_EXTENSION, FINAL_REFERENCE_NON_CANONICAL_INTERNAL_BOUNDARY,
+    WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT, WORKFLOW_PATH_INTERNAL_DEV_TEST_ONLY,
+    WORKFLOW_PATH_REPLAY_ORIENTED, WORKFLOW_PATH_ROLLOUT_ORIENTED,
 };
 #[cfg(feature = "remote-compute")]
 pub use remote_compute::{
