@@ -45,6 +45,6 @@ It is the smallest real load-bearing E2E path in the current repo that:
 2. carries model/backend provenance in the top-level typed result,
 3. keeps optional/blocked surfaces explicit instead of claiming full multi-path parity.
 
-## v26 hard-readiness sweep
+## v27 hard-readiness sweep
 
-For the current hard closeout matrix (productive vs constrained surfaces, residual contradictions, and only high-leverage next steps), see `docs/real_compute_readiness_sweep_v26.md`.
+For the current hard closeout matrix (productive vs constrained surfaces, residual contradictions, and only high-leverage next steps), see `docs/real_compute_readiness_sweep_v27.md`.

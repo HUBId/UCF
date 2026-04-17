@@ -267,4 +267,17 @@ mod tests {
         assert!(doc.contains("partial / diagnostic"));
         assert!(doc.contains("intentionally deferred"));
     }
+    #[test]
+    fn serie_j_final_readiness_sweep_stays_aligned_with_canonical_production_line() {
+        let doc = include_str!("../../../docs/real_compute_readiness_sweep_v27.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CROSS_CUTTING_PRODUCTION_INVARIANTS_V1"));
+        assert!(doc.contains("CANONICAL_RUNTIME_HANDOFF_SEMANTICS_V1"));
+        assert!(doc.contains("stable technical production line"));
+        assert!(doc.contains("production-usable but constrained"));
+        assert!(doc.contains("partial / diagnostic"));
+        assert!(doc.contains("intentionally deferred"));
+        assert!(doc.contains("Priorität jetzt: Serie K"));
+    }
 }
