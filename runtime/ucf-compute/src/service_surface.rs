@@ -31,9 +31,9 @@ use crate::{
     CanonicalSnapshotConsistency, CanonicalTraceSliceKind, CanonicalTraceSliceStatus,
     DeploymentProfile, ExpertDiagnosticsAvailability, ExpertMutationBlocker,
     ExpertMutationBoundary, ExpertMutationResult, ExpertWorkflowClass,
-    ExpertWorkflowTransitionState, ModelSlot, ModelSlotProvenance, RuntimeContractSafety,
-    RuntimeContractShape, RuntimeDiagnosticFlags, RuntimeDriftClass, RuntimeEntryClass,
-    RuntimeFreshnessClass, RuntimeMode, RuntimeProfile, SlotRuntimeStatus,
+    ExpertWorkflowTransitionState, ModelSlot, ModelSlotProvenance, RuntimeActionOutcomeCode,
+    RuntimeContractSafety, RuntimeContractShape, RuntimeDiagnosticFlags, RuntimeDriftClass,
+    RuntimeEntryClass, RuntimeFreshnessClass, RuntimeMode, RuntimeProfile, SlotRuntimeStatus,
     WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT, WORKFLOW_PATH_INTERNAL_DEV_TEST_ONLY,
     WORKFLOW_PATH_REPLAY_ORIENTED, WORKFLOW_PATH_ROLLOUT_ORIENTED,
 };
@@ -5047,25 +5047,15 @@ fn runtime_operation_core_semantics_consistent(
     code: RuntimeOperationCode,
     mutation_result: ExpertMutationResult,
 ) -> bool {
-    match code {
-        RuntimeOperationCode::Accepted => mutation_result == ExpertMutationResult::GuardedMutation,
-        RuntimeOperationCode::Completed => matches!(
-            mutation_result,
-            ExpertMutationResult::NoMutationReadOnly
-                | ExpertMutationResult::StateChanged
-                | ExpertMutationResult::PartialEffect
-        ),
-        RuntimeOperationCode::NoOp => matches!(
-            mutation_result,
-            ExpertMutationResult::NoOp | ExpertMutationResult::GuardedMutation
-        ),
-        RuntimeOperationCode::Blocked | RuntimeOperationCode::Failed => {
-            mutation_result == ExpertMutationResult::BlockedBySafetyRail
-        }
-        RuntimeOperationCode::Unsupported => {
-            mutation_result == ExpertMutationResult::UnsupportedInRuntimeContext
-        }
-    }
+    let core_code = match code {
+        RuntimeOperationCode::Accepted => RuntimeActionOutcomeCode::Accepted,
+        RuntimeOperationCode::Completed => RuntimeActionOutcomeCode::Completed,
+        RuntimeOperationCode::NoOp => RuntimeActionOutcomeCode::NoOp,
+        RuntimeOperationCode::Blocked => RuntimeActionOutcomeCode::Blocked,
+        RuntimeOperationCode::Unsupported => RuntimeActionOutcomeCode::Unsupported,
+        RuntimeOperationCode::Failed => RuntimeActionOutcomeCode::Failed,
+    };
+    crate::contracts::runtime_action_core_semantics_consistent(core_code, mutation_result)
 }
 
 fn blocked_replay_mismatch_view(

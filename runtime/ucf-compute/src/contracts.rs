@@ -12,6 +12,21 @@ pub const MAX_REASON_CODES: usize = 8;
 pub const MAX_STAGE_ENCODED_BYTES: usize = 64 * 1024;
 pub const NSR_CONTRACT_VERSION_V1: &str = "v1";
 
+/// Shared-core action outcome code used by runtime operation/result invariants.
+///
+/// This is intentionally contract-only and reused across standard/expert/internal
+/// surfaces to avoid path-local semantic drift.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeActionOutcomeCode {
+    Accepted,
+    Completed,
+    NoOp,
+    Blocked,
+    Unsupported,
+    Failed,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeEntryClass {
@@ -251,6 +266,73 @@ pub enum ExpertMutationResult {
     PartialEffect,
     BlockedBySafetyRail,
     UnsupportedInRuntimeContext,
+}
+
+impl RuntimeFreshnessClass {
+    pub const fn is_stale_or_partial(self) -> bool {
+        matches!(self, Self::Partial | Self::Stale)
+    }
+}
+
+impl RuntimeDriftClass {
+    pub const fn needs_refresh(self) -> bool {
+        matches!(self, Self::InconsistentNeedsRefresh)
+    }
+}
+
+impl CanonicalEvidenceStatus {
+    pub const fn diagnostics_core(self) -> RuntimeDiagnosticsCore {
+        match self {
+            Self::Sufficient => RuntimeDiagnosticsCore::Available,
+            Self::Partial | Self::Caveated => RuntimeDiagnosticsCore::Partial,
+            Self::Insufficient => RuntimeDiagnosticsCore::Unavailable,
+        }
+    }
+}
+
+impl CanonicalTraceSliceStatus {
+    pub const fn diagnostics_core(self) -> RuntimeDiagnosticsCore {
+        match self {
+            Self::Sufficient => RuntimeDiagnosticsCore::Available,
+            Self::Partial | Self::StaleOrCaveated => RuntimeDiagnosticsCore::Partial,
+            Self::Unavailable => RuntimeDiagnosticsCore::Unavailable,
+        }
+    }
+}
+
+/// Shared-core compatibility rule for action-result semantics.
+///
+/// Invariants:
+/// - `blocked` and `failed` map to `blocked_by_safety_rail`
+/// - `no_op` maps to `no_op` or `guarded_mutation`
+/// - `completed` maps to read-only completion, state change, or partial effect
+/// - `unsupported` maps to `unsupported_in_runtime_context`
+/// - `accepted` maps to `guarded_mutation`
+pub fn runtime_action_core_semantics_consistent(
+    code: RuntimeActionOutcomeCode,
+    mutation_result: ExpertMutationResult,
+) -> bool {
+    match code {
+        RuntimeActionOutcomeCode::Accepted => {
+            mutation_result == ExpertMutationResult::GuardedMutation
+        }
+        RuntimeActionOutcomeCode::Completed => matches!(
+            mutation_result,
+            ExpertMutationResult::NoMutationReadOnly
+                | ExpertMutationResult::StateChanged
+                | ExpertMutationResult::PartialEffect
+        ),
+        RuntimeActionOutcomeCode::NoOp => matches!(
+            mutation_result,
+            ExpertMutationResult::NoOp | ExpertMutationResult::GuardedMutation
+        ),
+        RuntimeActionOutcomeCode::Blocked | RuntimeActionOutcomeCode::Failed => {
+            mutation_result == ExpertMutationResult::BlockedBySafetyRail
+        }
+        RuntimeActionOutcomeCode::Unsupported => {
+            mutation_result == ExpertMutationResult::UnsupportedInRuntimeContext
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -840,5 +922,89 @@ mod tests {
             Some(RuntimeDiagnosticsCore::Blocked)
         );
         assert_eq!(ExpertDiagnosticsAvailability::InternalOnly.core(), None);
+    }
+
+    #[test]
+    fn runtime_action_core_semantics_are_stable() {
+        assert!(runtime_action_core_semantics_consistent(
+            RuntimeActionOutcomeCode::Accepted,
+            ExpertMutationResult::GuardedMutation
+        ));
+        assert!(runtime_action_core_semantics_consistent(
+            RuntimeActionOutcomeCode::Completed,
+            ExpertMutationResult::StateChanged
+        ));
+        assert!(runtime_action_core_semantics_consistent(
+            RuntimeActionOutcomeCode::Completed,
+            ExpertMutationResult::NoMutationReadOnly
+        ));
+        assert!(runtime_action_core_semantics_consistent(
+            RuntimeActionOutcomeCode::NoOp,
+            ExpertMutationResult::NoOp
+        ));
+        assert!(runtime_action_core_semantics_consistent(
+            RuntimeActionOutcomeCode::Blocked,
+            ExpertMutationResult::BlockedBySafetyRail
+        ));
+        assert!(runtime_action_core_semantics_consistent(
+            RuntimeActionOutcomeCode::Unsupported,
+            ExpertMutationResult::UnsupportedInRuntimeContext
+        ));
+        assert!(!runtime_action_core_semantics_consistent(
+            RuntimeActionOutcomeCode::Completed,
+            ExpertMutationResult::BlockedBySafetyRail
+        ));
+        assert!(!runtime_action_core_semantics_consistent(
+            RuntimeActionOutcomeCode::NoOp,
+            ExpertMutationResult::StateChanged
+        ));
+    }
+
+    #[test]
+    fn evidence_and_trace_partial_caveat_semantics_are_aligned() {
+        assert_eq!(
+            CanonicalEvidenceStatus::Sufficient.diagnostics_core(),
+            RuntimeDiagnosticsCore::Available
+        );
+        assert_eq!(
+            CanonicalEvidenceStatus::Partial.diagnostics_core(),
+            RuntimeDiagnosticsCore::Partial
+        );
+        assert_eq!(
+            CanonicalEvidenceStatus::Caveated.diagnostics_core(),
+            RuntimeDiagnosticsCore::Partial
+        );
+        assert_eq!(
+            CanonicalEvidenceStatus::Insufficient.diagnostics_core(),
+            RuntimeDiagnosticsCore::Unavailable
+        );
+
+        assert_eq!(
+            CanonicalTraceSliceStatus::Sufficient.diagnostics_core(),
+            RuntimeDiagnosticsCore::Available
+        );
+        assert_eq!(
+            CanonicalTraceSliceStatus::Partial.diagnostics_core(),
+            RuntimeDiagnosticsCore::Partial
+        );
+        assert_eq!(
+            CanonicalTraceSliceStatus::StaleOrCaveated.diagnostics_core(),
+            RuntimeDiagnosticsCore::Partial
+        );
+        assert_eq!(
+            CanonicalTraceSliceStatus::Unavailable.diagnostics_core(),
+            RuntimeDiagnosticsCore::Unavailable
+        );
+    }
+
+    #[test]
+    fn freshness_and_drift_refresh_invariants_are_explicit() {
+        assert!(!RuntimeFreshnessClass::Current.is_stale_or_partial());
+        assert!(RuntimeFreshnessClass::Partial.is_stale_or_partial());
+        assert!(RuntimeFreshnessClass::Stale.is_stale_or_partial());
+
+        assert!(!RuntimeDriftClass::NoDriftDetected.needs_refresh());
+        assert!(!RuntimeDriftClass::DriftSuspected.needs_refresh());
+        assert!(RuntimeDriftClass::InconsistentNeedsRefresh.needs_refresh());
     }
 }

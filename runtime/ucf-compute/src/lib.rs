@@ -108,14 +108,15 @@ pub use compute_service::{
     WorkerRuntimeStatus,
 };
 pub use contracts::{
-    CanonicalEvidenceKind, CanonicalEvidenceReasonCode, CanonicalEvidenceStatus,
-    CanonicalSnapshotConsistency, CanonicalTraceSliceKind, CanonicalTraceSliceStatus,
-    CapabilityConstraint, CapabilitySupportLevel, ExpertDiagnosticsAvailability,
-    ExpertMutationBlocker, ExpertMutationBoundary, ExpertMutationResult, ExpertWorkflowClass,
-    ExpertWorkflowTransitionState, RuntimeContractSafety, RuntimeContractShape,
-    RuntimeDiagnosticsCore, RuntimeDriftClass, RuntimeEntryClass, RuntimeFreshnessClass,
-    RuntimeStatusCore, RuntimeSurfaceExtension, StageContractVersion, StageKind,
-    StagePathCapability, StagePathSupportLevel, ValidationStatus,
+    runtime_action_core_semantics_consistent, CanonicalEvidenceKind, CanonicalEvidenceReasonCode,
+    CanonicalEvidenceStatus, CanonicalSnapshotConsistency, CanonicalTraceSliceKind,
+    CanonicalTraceSliceStatus, CapabilityConstraint, CapabilitySupportLevel,
+    ExpertDiagnosticsAvailability, ExpertMutationBlocker, ExpertMutationBoundary,
+    ExpertMutationResult, ExpertWorkflowClass, ExpertWorkflowTransitionState,
+    RuntimeActionOutcomeCode, RuntimeContractSafety, RuntimeContractShape, RuntimeDiagnosticsCore,
+    RuntimeDriftClass, RuntimeEntryClass, RuntimeFreshnessClass, RuntimeStatusCore,
+    RuntimeSurfaceExtension, StageContractVersion, StageKind, StagePathCapability,
+    StagePathSupportLevel, ValidationStatus,
 };
 pub use enablement::{
     EnablementComputeBackend, EnablementConfig, RealEnablementMode, SlotEnablement, SlotMode,

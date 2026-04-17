@@ -93,6 +93,34 @@ Shared surface core (drift guard, Serie F Prompt 6):
     compatibility rule (`accepted/completed/no_op/blocked/failed/unsupported` vs mutation result),
     reducing silent contract drift across entry paths.
 
+### Shared-core terminology and invariants (Serie I Prompt 2)
+
+The final shared-core terminology is intentionally compact and load-bearing:
+
+- `request -> job -> run`:
+  - `request`: submission envelope (`ComputeSubmitRequest`)
+  - `job`: admitted lifecycle/accounting unit (`ComputeJobStatus`)
+  - `run`: canonical execution attempt through pipeline core
+- `action`: runtime intervention on the same core (`RuntimeOperation*`)
+- `result/fault/status`:
+  - run returns canonical `result` or `fault` on one stage contract path
+  - snapshot status core stays `current|partial|stale|drift_affected|unavailable`
+- evidence + trace:
+  - `evidence`: `sufficient|partial|caveated|insufficient`
+  - `trace slice`: `sufficient|partial|stale_or_caveated|unavailable`
+  - both map into one diagnostics core (`available|partial|unavailable`)
+
+Load-bearing action semantics now stay explicitly shared:
+
+- `blocked`/`failed` => safety rail blocked mutation outcome
+- `no_op` => no-op or guarded mutation
+- `completed` => read-only completion, state change, or partial effect
+- `unsupported` => unsupported-in-context outcome
+- `accepted` => guarded mutation
+
+Extensions (`expert`, `diagnostic`, `internal`) remain extensions on this shared core and do not
+redefine it.
+
 For the hard, repo-based closure matrix of Expert Runtime Surface / API Hardening (Serie F), see
 `docs/ops/serie_f_expert_runtime_surface_closure.md`.
 

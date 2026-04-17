@@ -14,6 +14,7 @@ pub struct ComputeReferenceLane {
     pub lane: &'static str,
     pub canonical_path: &'static str,
     pub scope: &'static str,
+    pub shared_core_invariants: &'static str,
 }
 
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
@@ -31,18 +32,22 @@ pub const CANONICAL_COMPUTE_REFERENCE_MAP: [ComputeReferenceLane; 7] = [
         lane: "service_entry",
         canonical_path: "service_surface::CanonicalComputeEntryPoint::submit",
         scope: "request/job/run canonical submission and execution",
+        shared_core_invariants: "request->job admission; run result/fault/status stays canonical",
     },
     ComputeReferenceLane {
         class: ComputeReferenceClass::CanonicalProduction,
         lane: "pipeline_execution_core",
         canonical_path: "pipeline::ComputePipelineBackend::compute_canonical",
         scope: "result/fault/status core for canonical stage sequence",
+        shared_core_invariants: "every run returns canonical pipeline result or failure contract",
     },
     ComputeReferenceLane {
         class: ComputeReferenceClass::CanonicalProduction,
         lane: "rollout_activation_core",
         canonical_path: "enablement::{active,candidate,compare,shadow} + model_store activation",
         scope: "rollout/activation/fallback/rollback core",
+        shared_core_invariants:
+            "active/candidate/guarded/fallback/rollback semantics stay explicit",
     },
     ComputeReferenceLane {
         class: ComputeReferenceClass::CanonicalExpertRuntimeControl,
@@ -50,24 +55,32 @@ pub const CANONICAL_COMPUTE_REFERENCE_MAP: [ComputeReferenceLane; 7] = [
         canonical_path:
             "service_surface::{workflow_view,replay_with_entry,run_operation_with_entry}",
         scope: "expert replay/runtime-control path on canonical contracts",
+        shared_core_invariants:
+            "expert/internal extend shared action/result invariants; no second core",
     },
     ComputeReferenceLane {
         class: ComputeReferenceClass::CanonicalDiagnosticsEvidence,
         lane: "diagnostics_evidence_history",
         canonical_path: "service_surface + evidence + job_history",
         scope: "snapshot/evidence/diagnostics/replay comparability core",
+        shared_core_invariants:
+            "current/partial/stale + evidence sufficient/partial/caveated/insufficient alignment",
     },
     ComputeReferenceLane {
         class: ComputeReferenceClass::InternalOrLegacy,
         lane: "compatibility_backend_lane",
         canonical_path: "backends::build_backend(kind=stub|candle)",
         scope: "compatibility/dev lane; never canonical production default",
+        shared_core_invariants:
+            "extension lane only; cannot redefine canonical request/job/run contracts",
     },
     ComputeReferenceLane {
         class: ComputeReferenceClass::InternalOrLegacy,
         lane: "internal_worker_legacy_domain_lane",
         canonical_path: "build_backend(kind=worker) + domains/ai* compatibility crates",
         scope: "internal execution lane and legacy compatibility boundary",
+        shared_core_invariants:
+            "internal/legacy boundary; shared-core contracts remain authoritative",
     },
 ];
 
@@ -104,6 +117,9 @@ mod tests {
             production_entries[0].canonical_path,
             "service_surface::CanonicalComputeEntryPoint::submit"
         );
+        assert!(production_entries[0]
+            .shared_core_invariants
+            .contains("request->job admission"));
     }
 
     #[test]
