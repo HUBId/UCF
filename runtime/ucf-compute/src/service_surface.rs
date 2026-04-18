@@ -8504,6 +8504,30 @@ mod tests {
     }
 
     #[test]
+    fn runtime_operations_keep_core_semantics_aligned_on_real_outcomes() {
+        let mut entry = service();
+        let cases = [
+            RuntimeOperation::Snapshot,
+            RuntimeOperation::DrainScheduler { max_jobs: 1 },
+            RuntimeOperation::RefreshRuntime,
+        ];
+        for operation in cases {
+            let outcome = entry
+                .run_operation_with_entry(operation, RuntimeEntryClass::ExpertHighTrust)
+                .expect("runtime operation");
+            assert!(
+                runtime_operation_core_semantics_consistent(
+                    outcome.code,
+                    outcome.mutation_result
+                ),
+                "runtime operation semantics drift for {operation:?}: code={:?} mutation_result={:?}",
+                outcome.code,
+                outcome.mutation_result
+            );
+        }
+    }
+
+    #[test]
     fn replay_from_legacy_history_without_request_is_configuration_incomplete() {
         let dir = tempfile::tempdir().expect("tempdir");
         let history_path = dir.path().join("job_history.jsonl");
