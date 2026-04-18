@@ -417,6 +417,44 @@ pub struct ComputeStatusEvidenceExportSurface {
     pub evidence: ComputeEvidenceExportSurface,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComputeIntegrationHookClass {
+    ReadOnlyIntegrationSafe,
+    CaveatedConditional,
+    ExpertOnly,
+    InternalDevTestOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComputeIntegrationHookExposure {
+    OutwardFacing,
+    ExpertOnly,
+    InternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComputeIntegrationHookMutationSemantics {
+    ReadOnly,
+    Mutating,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeIntegrationHookDescriptor {
+    pub hook_id: String,
+    pub class: ComputeIntegrationHookClass,
+    pub exposure: ComputeIntegrationHookExposure,
+    pub mutation_semantics: ComputeIntegrationHookMutationSemantics,
+    pub canonical_anchor: String,
+    pub based_on_final_reference_line: bool,
+    pub tied_to_status_evidence_export_surface: bool,
+    pub caveat: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeIntegrationHookView {
+    pub hooks: Vec<ComputeIntegrationHookDescriptor>,
+}
+
 impl RuntimeOpsSnapshot {
     pub fn status_export_surface(&self) -> ComputeStatusExportSurface {
         let active_path_context = if self.active_job.is_some() {
@@ -557,6 +595,82 @@ impl RuntimeOpsSnapshot {
                 })
                 .collect(),
         }
+    }
+
+    pub fn integration_hook_view(&self) -> ComputeIntegrationHookView {
+        let status = self.status_export_surface();
+        let mut hooks = vec![
+            ComputeIntegrationHookDescriptor {
+                hook_id: "status_evidence_export_surface".to_string(),
+                class: ComputeIntegrationHookClass::ReadOnlyIntegrationSafe,
+                exposure: ComputeIntegrationHookExposure::OutwardFacing,
+                mutation_semantics: ComputeIntegrationHookMutationSemantics::ReadOnly,
+                canonical_anchor: "CanonicalComputeEntryPoint::status_evidence_export_surface"
+                    .to_string(),
+                based_on_final_reference_line: true,
+                tied_to_status_evidence_export_surface: true,
+                caveat: None,
+            },
+            ComputeIntegrationHookDescriptor {
+                hook_id: "integration_signals".to_string(),
+                class: ComputeIntegrationHookClass::ReadOnlyIntegrationSafe,
+                exposure: ComputeIntegrationHookExposure::OutwardFacing,
+                mutation_semantics: ComputeIntegrationHookMutationSemantics::ReadOnly,
+                canonical_anchor: "RuntimeOpsSnapshot::integration_signals".to_string(),
+                based_on_final_reference_line: true,
+                tied_to_status_evidence_export_surface: true,
+                caveat: None,
+            },
+        ];
+
+        if status.constrained_or_caveated || status.degraded_or_unavailable {
+            hooks.push(ComputeIntegrationHookDescriptor {
+                hook_id: "runtime_inspection_caveated".to_string(),
+                class: ComputeIntegrationHookClass::CaveatedConditional,
+                exposure: ComputeIntegrationHookExposure::OutwardFacing,
+                mutation_semantics: ComputeIntegrationHookMutationSemantics::ReadOnly,
+                canonical_anchor: "ComputeStatusExportSurface::{constrained_or_caveated,degraded_or_unavailable,top_level_caveats}".to_string(),
+                based_on_final_reference_line: true,
+                tied_to_status_evidence_export_surface: true,
+                caveat: status.top_level_caveats.first().cloned().or_else(|| {
+                    if status.degraded_or_unavailable {
+                        Some("runtime_degraded_or_unavailable".to_string())
+                    } else {
+                        Some("runtime_is_constrained_or_caveated".to_string())
+                    }
+                }),
+            });
+        }
+
+        hooks.extend([
+            ComputeIntegrationHookDescriptor {
+                hook_id: "expert_runtime_operation".to_string(),
+                class: ComputeIntegrationHookClass::ExpertOnly,
+                exposure: ComputeIntegrationHookExposure::ExpertOnly,
+                mutation_semantics: ComputeIntegrationHookMutationSemantics::Mutating,
+                canonical_anchor:
+                    "CanonicalComputeEntryPoint::run_operation_with_entry(..., ExpertHighTrust)"
+                        .to_string(),
+                based_on_final_reference_line: true,
+                tied_to_status_evidence_export_surface: false,
+                caveat: Some(
+                    "expert-only high-trust mutation path; non-generic outward integration"
+                        .to_string(),
+                ),
+            },
+            ComputeIntegrationHookDescriptor {
+                hook_id: "internal_clear_replay_regression".to_string(),
+                class: ComputeIntegrationHookClass::InternalDevTestOnly,
+                exposure: ComputeIntegrationHookExposure::InternalOnly,
+                mutation_semantics: ComputeIntegrationHookMutationSemantics::Mutating,
+                canonical_anchor: "RuntimeOperation::InternalClearReplayRegression".to_string(),
+                based_on_final_reference_line: true,
+                tied_to_status_evidence_export_surface: false,
+                caveat: Some("internal/dev/test-only mutation hook".to_string()),
+            },
+        ]);
+
+        ComputeIntegrationHookView { hooks }
     }
 }
 
@@ -2205,6 +2319,10 @@ impl CanonicalComputeEntryPoint {
 
     pub fn status_evidence_export_surface(&self) -> ComputeStatusEvidenceExportSurface {
         self.operations_snapshot().status_evidence_export_surface()
+    }
+
+    pub fn integration_hook_view(&self) -> ComputeIntegrationHookView {
+        self.operations_snapshot().integration_hook_view()
     }
 
     pub fn run_operation(
@@ -9021,5 +9139,69 @@ mod tests {
                 && !slice.slice_id.contains("ruled_out")
                 && !slice.slice_id.contains("decision_path")
         }));
+    }
+
+    #[test]
+    fn integration_hook_view_keeps_outward_hooks_read_only_or_caveated() {
+        let entry = service();
+        let hooks = entry.integration_hook_view();
+        let outward: Vec<_> = hooks
+            .hooks
+            .iter()
+            .filter(|hook| hook.exposure == super::ComputeIntegrationHookExposure::OutwardFacing)
+            .collect();
+        assert!(!outward.is_empty());
+        assert!(outward.iter().all(|hook| {
+            hook.mutation_semantics == super::ComputeIntegrationHookMutationSemantics::ReadOnly
+                && matches!(
+                    hook.class,
+                    super::ComputeIntegrationHookClass::ReadOnlyIntegrationSafe
+                        | super::ComputeIntegrationHookClass::CaveatedConditional
+                )
+        }));
+    }
+
+    #[test]
+    fn integration_hook_view_keeps_expert_and_internal_mutation_hooks_non_outward() {
+        let entry = service();
+        let hooks = entry.integration_hook_view();
+        assert!(hooks.hooks.iter().any(|hook| {
+            hook.class == super::ComputeIntegrationHookClass::ExpertOnly
+                && hook.exposure == super::ComputeIntegrationHookExposure::ExpertOnly
+                && hook.mutation_semantics
+                    == super::ComputeIntegrationHookMutationSemantics::Mutating
+                && hook.canonical_anchor.contains("run_operation_with_entry")
+        }));
+        assert!(hooks.hooks.iter().any(|hook| {
+            hook.class == super::ComputeIntegrationHookClass::InternalDevTestOnly
+                && hook.exposure == super::ComputeIntegrationHookExposure::InternalOnly
+                && hook.mutation_semantics
+                    == super::ComputeIntegrationHookMutationSemantics::Mutating
+                && hook.hook_id == "internal_clear_replay_regression"
+        }));
+    }
+
+    #[test]
+    fn integration_hook_view_reuses_status_evidence_export_semantics() {
+        let mut entry = service();
+        let _ = entry
+            .run_operation(RuntimeOperation::Snapshot)
+            .expect("snapshot operation");
+        let snapshot = entry.operations_snapshot();
+        let export = snapshot.status_evidence_export_surface();
+        let hooks = snapshot.integration_hook_view();
+        let status_hook = hooks
+            .hooks
+            .iter()
+            .find(|hook| hook.hook_id == "status_evidence_export_surface")
+            .expect("status hook");
+        assert!(status_hook.tied_to_status_evidence_export_surface);
+        assert!(status_hook.based_on_final_reference_line);
+        if export.status.constrained_or_caveated || export.status.degraded_or_unavailable {
+            assert!(hooks
+                .hooks
+                .iter()
+                .any(|hook| hook.class == super::ComputeIntegrationHookClass::CaveatedConditional));
+        }
     }
 }
