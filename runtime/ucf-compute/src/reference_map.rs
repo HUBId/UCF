@@ -49,12 +49,28 @@ pub enum DomainFacingConsumerAlignment {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DomainFacingStatusConsumptionPattern {
+    CanonicalStatusConsumer,
+    MixedLegacyConsumption,
+    InternalDevTestOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DomainFacingEvidenceConsumptionPattern {
+    CanonicalEvidenceReferenceConsumer,
+    MixedLegacyConsumption,
+    InternalDevTestOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DomainFacingComputeConsumerLane {
     pub consumer: &'static str,
     pub repo_surface: &'static str,
     pub execution_contract_path: &'static str,
     pub status_diagnostics_path: &'static str,
     pub evidence_reference_path: &'static str,
+    pub status_pattern: DomainFacingStatusConsumptionPattern,
+    pub evidence_pattern: DomainFacingEvidenceConsumptionPattern,
     pub alignment: DomainFacingConsumerAlignment,
     pub caveat: &'static str,
 }
@@ -214,6 +230,8 @@ pub const CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP: [DomainFacingComputeCons
         execution_contract_path: "build_backend(cfg from env)",
         status_diagnostics_path: "compute summary -> runtime orchestration state",
         evidence_reference_path: "compute_summary.compute_chain_digest + runtime evidence chain",
+        status_pattern: DomainFacingStatusConsumptionPattern::MixedLegacyConsumption,
+        evidence_pattern: DomainFacingEvidenceConsumptionPattern::MixedLegacyConsumption,
         alignment: DomainFacingConsumerAlignment::NeedsFinalIntegrationAdjustment,
         caveat:
             "load-bearing runtime consumer; supports compat backend kinds and needs progressive canonical submit/status-evidence surface adoption",
@@ -227,6 +245,9 @@ pub const CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP: [DomainFacingComputeCons
             "CanonicalComputeEntryPoint::status + status_evidence_export_surface (status)",
         evidence_reference_path:
             "CanonicalComputeEntryPoint::status_evidence_export_surface (evidence refs)",
+        status_pattern: DomainFacingStatusConsumptionPattern::CanonicalStatusConsumer,
+        evidence_pattern:
+            DomainFacingEvidenceConsumptionPattern::CanonicalEvidenceReferenceConsumer,
         alignment: DomainFacingConsumerAlignment::AlignedCanonicalOutward,
         caveat:
             "constrained probe: consumes top-level status/evidence signals only, not deep internals",
@@ -238,6 +259,8 @@ pub const CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP: [DomainFacingComputeCons
         status_diagnostics_path: "summary/diff policy comparison (no runtime snapshot contract)",
         evidence_reference_path:
             "persisted replay evidence refs + drift reasons (reference-level, not full runtime export)",
+        status_pattern: DomainFacingStatusConsumptionPattern::MixedLegacyConsumption,
+        evidence_pattern: DomainFacingEvidenceConsumptionPattern::MixedLegacyConsumption,
         alignment: DomainFacingConsumerAlignment::LegacyCompatPath,
         caveat:
             "compatibility-oriented replay recompute lane; intentionally not treated as outward-facing runtime service contract",
@@ -248,6 +271,8 @@ pub const CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP: [DomainFacingComputeCons
         execution_contract_path: "build_backend(cfg) -> backend.compute(...) loop",
         status_diagnostics_path: "latency/alloc benchmark aggregation only",
         evidence_reference_path: "none (performance harness)",
+        status_pattern: DomainFacingStatusConsumptionPattern::InternalDevTestOnly,
+        evidence_pattern: DomainFacingEvidenceConsumptionPattern::InternalDevTestOnly,
         alignment: DomainFacingConsumerAlignment::InternalDevTestOnly,
         caveat:
             "benchmark harness path; internal/dev-test only and never a canonical domain integration contract",
@@ -258,6 +283,8 @@ pub const CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP: [DomainFacingComputeCons
         execution_contract_path: "legacy host ABI adapters",
         status_diagnostics_path: "legacy compatibility signals only",
         evidence_reference_path: "compat adapter outputs (non-canonical evidence surface)",
+        status_pattern: DomainFacingStatusConsumptionPattern::MixedLegacyConsumption,
+        evidence_pattern: DomainFacingEvidenceConsumptionPattern::MixedLegacyConsumption,
         alignment: DomainFacingConsumerAlignment::LegacyCompatPath,
         caveat:
             "retained compatibility seam explicitly outside outward-facing canonical compute contracts",
@@ -552,6 +579,10 @@ mod tests {
             consumer
                 .execution_contract_path
                 .contains("CanonicalComputeEntryPoint::submit")
+                && consumer.status_pattern
+                    == DomainFacingStatusConsumptionPattern::CanonicalStatusConsumer
+                && consumer.evidence_pattern
+                    == DomainFacingEvidenceConsumptionPattern::CanonicalEvidenceReferenceConsumer
                 && consumer
                     .status_diagnostics_path
                     .contains("status_evidence_export_surface")
@@ -572,5 +603,8 @@ mod tests {
         assert!(doc.contains("legacy_compat_path"));
         assert!(doc.contains("needs_final_integration_adjustment"));
         assert!(doc.contains("internal_dev_test_only"));
+        assert!(doc.contains("canonical_status_consumer"));
+        assert!(doc.contains("canonical_evidence_reference_consumer"));
+        assert!(doc.contains("mixed_legacy_consumption_pattern"));
     }
 }

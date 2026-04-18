@@ -707,6 +707,7 @@ use ucf_compute::{
     BackendPackKind, CanonicalComputeEntryPoint, CanonicalPipelineRequest, CanonicalPipelineState,
     ComputeBackendConfig, ComputeBackendKind, ComputeError, ComputeExecutionMode,
     ComputeSubmitOutcome, ComputeSubmitRequest, DomainFacingConsumerAlignment,
+    DomainFacingEvidenceConsumptionPattern, DomainFacingStatusConsumptionPattern,
     InMemoryComputeService, ModelSlot, ModelStore, ReleaseFeatureMatrix,
 };
 use ucf_core::types::Tick;
@@ -9301,24 +9302,53 @@ fn run_compute_probe(cfg: &OpsConfig) -> Result<DiagCheck, OpsError> {
     let consumer_alignment = canonical_domain_facing_compute_consumer_map()
         .iter()
         .find(|consumer| consumer.consumer == "ops_compute_probe")
-        .map(|consumer| consumer.alignment)
-        .unwrap_or(DomainFacingConsumerAlignment::NeedsFinalIntegrationAdjustment);
-    let contract_lane =
-        if consumer_alignment == DomainFacingConsumerAlignment::AlignedCanonicalOutward {
-            "aligned_canonical_outward"
-        } else {
-            "non_aligned"
-        };
+        .copied();
+    let contract_lane = if consumer_alignment
+        .map(|consumer| {
+            consumer.alignment == DomainFacingConsumerAlignment::AlignedCanonicalOutward
+        })
+        .unwrap_or(false)
+    {
+        "aligned_canonical_outward"
+    } else {
+        "non_aligned"
+    };
+    let status_pattern = if consumer_alignment
+        .map(|consumer| {
+            consumer.status_pattern == DomainFacingStatusConsumptionPattern::CanonicalStatusConsumer
+        })
+        .unwrap_or(false)
+    {
+        "canonical_status_consumer"
+    } else {
+        "mixed_legacy_status"
+    };
+    let evidence_pattern = if consumer_alignment
+        .map(|consumer| {
+            consumer.evidence_pattern
+                == DomainFacingEvidenceConsumptionPattern::CanonicalEvidenceReferenceConsumer
+        })
+        .unwrap_or(false)
+    {
+        "canonical_evidence_reference_consumer"
+    } else {
+        "mixed_legacy_evidence"
+    };
+    let consumer_view = export.canonical_consumer_view();
 
     Ok(DiagCheck {
         name: "compute_probe".to_string(),
         pass,
         detail: format!(
-            "pipeline_state={:?} contract_lane={} evidence_bundle_refs={} constrained_status={}",
+            "pipeline_state={:?} contract_lane={} status_pattern={} evidence_pattern={} status_semantic={:?} evidence_semantic={:?} active_path_context={:?} evidence_bundle_refs={}",
             status_surface.pipeline_state,
             contract_lane,
+            status_pattern,
+            evidence_pattern,
+            consumer_view.status_semantic,
+            consumer_view.evidence_semantic,
+            consumer_view.active_production_context,
             export.evidence.bundle_refs.len(),
-            export.status.constrained_or_caveated
         ),
         remediation:
             "ensure compute backend feature flags and canonical status/evidence export usage are set."

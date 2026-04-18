@@ -418,6 +418,72 @@ pub struct ComputeStatusEvidenceExportSurface {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalConsumerStatusSemantic {
+    CurrentTrusted,
+    CaveatedOrPartial,
+    DegradedOrUnavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalConsumerEvidenceSemantic {
+    SufficientReferences,
+    CaveatedOrPartialReferences,
+    InsufficientReferences,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalConsumerStatusEvidenceView {
+    pub status_semantic: CanonicalConsumerStatusSemantic,
+    pub evidence_semantic: CanonicalConsumerEvidenceSemantic,
+    pub active_production_context: ComputeIntegrationPathContext,
+    pub service_state: RuntimeOpsState,
+}
+
+impl ComputeStatusEvidenceExportSurface {
+    pub fn canonical_consumer_view(&self) -> CanonicalConsumerStatusEvidenceView {
+        let status_semantic = if self.status.degraded_or_unavailable {
+            CanonicalConsumerStatusSemantic::DegradedOrUnavailable
+        } else if self.status.constrained_or_caveated
+            || self.status.snapshot_consistency != CanonicalSnapshotConsistency::Current
+            || self.status.service_trust != ServiceTrustState::TrustedCurrent
+        {
+            CanonicalConsumerStatusSemantic::CaveatedOrPartial
+        } else {
+            CanonicalConsumerStatusSemantic::CurrentTrusted
+        };
+
+        let evidence_semantic = if self.evidence.bundle_refs.is_empty()
+            || self
+                .evidence
+                .bundle_refs
+                .iter()
+                .all(|bundle| bundle.status == CanonicalEvidenceStatus::Insufficient)
+        {
+            CanonicalConsumerEvidenceSemantic::InsufficientReferences
+        } else if self.evidence.bundle_refs.iter().any(|bundle| {
+            matches!(
+                bundle.status,
+                CanonicalEvidenceStatus::Partial
+                    | CanonicalEvidenceStatus::Caveated
+                    | CanonicalEvidenceStatus::Insufficient
+            )
+        }) || !self.evidence.caveat_refs.is_empty()
+        {
+            CanonicalConsumerEvidenceSemantic::CaveatedOrPartialReferences
+        } else {
+            CanonicalConsumerEvidenceSemantic::SufficientReferences
+        };
+
+        CanonicalConsumerStatusEvidenceView {
+            status_semantic,
+            evidence_semantic,
+            active_production_context: self.status.active_path_context,
+            service_state: self.status.service_state,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComputeIntegrationHookClass {
     ReadOnlyIntegrationSafe,
     CaveatedConditional,
@@ -9163,6 +9229,41 @@ mod tests {
                 && !slice.slice_id.contains("ruled_out")
                 && !slice.slice_id.contains("decision_path")
         }));
+    }
+
+    #[test]
+    fn canonical_consumer_view_uses_shared_status_semantics() {
+        let entry = service();
+        let export = entry.status_evidence_export_surface();
+        let consumer = export.canonical_consumer_view();
+        let expected = if export.status.degraded_or_unavailable {
+            super::CanonicalConsumerStatusSemantic::DegradedOrUnavailable
+        } else if export.status.constrained_or_caveated
+            || export.status.snapshot_consistency != CanonicalSnapshotConsistency::Current
+            || export.status.service_trust != ServiceTrustState::TrustedCurrent
+        {
+            super::CanonicalConsumerStatusSemantic::CaveatedOrPartial
+        } else {
+            super::CanonicalConsumerStatusSemantic::CurrentTrusted
+        };
+        assert_eq!(consumer.status_semantic, expected);
+        assert_eq!(consumer.service_state, export.status.service_state);
+        assert_eq!(
+            consumer.active_production_context,
+            export.status.active_path_context
+        );
+    }
+
+    #[test]
+    fn canonical_consumer_view_marks_insufficient_evidence_without_bundle_refs() {
+        let entry = service();
+        let mut export = entry.status_evidence_export_surface();
+        export.evidence.bundle_refs.clear();
+        let consumer = export.canonical_consumer_view();
+        assert_eq!(
+            consumer.evidence_semantic,
+            super::CanonicalConsumerEvidenceSemantic::InsufficientReferences
+        );
     }
 
     #[test]
