@@ -64,3 +64,10 @@ Nächster unmittelbarer Schritt nach dieser Boundary-Klärung:
 1. verbleibende Serie-L-Runde nur noch auf punktuelle Konsistenz-Driftchecks der akzeptierten Linien,
 2. keine Wiedereröffnung bereits als `not accepted` markierter outward-Authority-Restkanten,
 3. Abschlussfokus auf reproduzierbare technische Exit-Stabilität der kanonischen Linie.
+
+
+## 6) Alignment mit finalem Exit-Dossier (Prompt 3)
+
+Diese Prompt-2-Boundary bleibt die detailierte Accept/Not-Accept-Abgrenzung und ist auf
+`docs/real_compute_exit_dossier_serie_l_v1.md` als finalen kompakten Abschluss ausgerichtet.
+Die kanonische Autorität bleibt die final reference line plus code-pinned invariants/contracts.
