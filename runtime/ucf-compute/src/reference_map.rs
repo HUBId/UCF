@@ -410,4 +410,20 @@ mod tests {
                     && !lane.canonical_anchor.contains("domains/ai*")
             }));
     }
+
+    #[test]
+    fn serie_k_closure_doc_stays_aligned_with_outward_integration_boundaries() {
+        let doc = include_str!("../../../docs/ops/serie_k_compute_facing_integration_closure.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains("stable outward-facing integration surface"));
+        assert!(doc.contains("integration-usable but constrained"));
+        assert!(doc.contains("partial / internal-facing"));
+        assert!(doc.contains("intentionally deferred"));
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("status_evidence_export_surface"));
+        assert!(doc.contains("integration_hook_view"));
+        assert!(doc.contains("run_operation_with_entry(..., ExpertHighTrust)"));
+        assert!(doc.contains("build_backend kind=stub|candle"));
+        assert!(doc.contains("Priorität: Serie L zuerst."));
+    }
 }
