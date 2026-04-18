@@ -75,6 +75,8 @@ Finale minimale Härtung:
 
 - compatibility/internal Nebenpfade außerhalb kanonischer Produktionsautorität
 
+Hinweis: die explizite constrained-vs-accepted Finalgrenze wird in `docs/real_compute_exit_boundary_serie_l_prompt2_v1.md` fortgeführt.
+
 ## 6) Kleine Konsistenzchecks (für Exit-Claims)
 
 Minimaler Prüfblock für diese Runde:

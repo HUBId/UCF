@@ -426,4 +426,17 @@ mod tests {
         assert!(doc.contains("build_backend kind=stub|candle"));
         assert!(doc.contains("Priorität: Serie L zuerst."));
     }
+
+    #[test]
+    fn serie_l_prompt2_boundary_doc_keeps_final_acceptance_line_explicit() {
+        let doc = include_str!("../../../docs/real_compute_exit_boundary_serie_l_prompt2_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains(line.replay_extension));
+        assert!(doc.contains(line.internal_boundary));
+        assert!(doc.contains("stable"));
+        assert!(doc.contains("constrained but accepted"));
+        assert!(doc.contains("not accepted for final exit"));
+        assert!(doc.contains("build_backend(kind=stub|candle)"));
+    }
 }
