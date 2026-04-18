@@ -173,6 +173,8 @@ pub use service_surface::{
     CanonicalRuntimeSnapshot, CanonicalRuntimeSubsystemDiagnostics, ComputeEvidenceBundleExportRef,
     ComputeEvidenceComparisonExportRef, ComputeEvidenceExportSurface, ComputeExecutionMode,
     ComputeHistoryLookupError, ComputeHistoryStoreStatus, ComputeIntegrationActionSignal,
+    ComputeIntegrationHookClass, ComputeIntegrationHookDescriptor, ComputeIntegrationHookExposure,
+    ComputeIntegrationHookMutationSemantics, ComputeIntegrationHookView,
     ComputeIntegrationPathContext, ComputeIntegrationSignals, ComputeInvalidRequest,
     ComputeJobHandle, ComputeJobHistoryLookup, ComputeJobStatus, ComputeProductionLineContext,
     ComputeRecoverySnapshot, ComputeReplayOutcome, ComputeReplayPreflight, ComputeReplayReport,

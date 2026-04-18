@@ -76,3 +76,33 @@ Kept intentionally out-of-scope:
 - auth/tenant/billing/governance systems
 - message-bus/orchestration redesign
 - second contract world beside canonical compute core
+
+## 6) Integration-safe hook view (Serie K Prompt 3)
+
+Source anchors:
+
+- `runtime/ucf-compute/src/service_surface.rs`
+  - `RuntimeOpsSnapshot::integration_hook_view`
+  - `CanonicalComputeEntryPoint::integration_hook_view`
+  - `ComputeIntegrationHook{Class,Exposure,MutationSemantics}`
+
+Minimal hook classes are now explicit and intentionally narrow:
+
+1. `read_only_integration_safe`
+   - outward-facing
+   - read-only only
+   - anchored on status/evidence export adapters
+2. `caveated_conditional`
+   - outward-facing
+   - read-only only
+   - emitted only when snapshot/trust semantics are constrained or degraded
+3. `expert_only`
+   - expert-only boundary
+   - mutating/high-trust path
+   - anchored on `run_operation_with_entry(..., ExpertHighTrust)`
+4. `internal_dev_test_only`
+   - internal-only boundary
+   - mutating path
+   - anchored on `InternalClearReplayRegression`
+
+This hook view is an integration classifier over existing runtime surfaces, not a new plugin/control-plane.

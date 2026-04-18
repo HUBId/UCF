@@ -61,3 +61,16 @@ subviews) instead of depending on deep internals such as:
 
 Those deeper structures remain available for expert workflows, but are not the canonical
 cross-subsystem integration baseline.
+
+## 5) Hook alignment with export semantics
+
+`RuntimeOpsSnapshot::integration_hook_view()` classifies runtime/expert-near hooks using the same
+status/evidence semantics:
+
+- outward-facing hooks are `read_only_integration_safe` or `caveated_conditional` and stay
+  read-only
+- caveated hooks are derived from export status flags
+  (`constrained_or_caveated`, `degraded_or_unavailable`, `top_level_caveats`)
+- mutating hooks remain non-outward (`expert_only`, `internal_dev_test_only`)
+
+This prevents hook semantics from creating a second outward-facing signal layer.
