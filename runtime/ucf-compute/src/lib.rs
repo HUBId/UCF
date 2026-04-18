@@ -150,7 +150,7 @@ pub use reference_map::{
     is_canonical_core_or_extension_lane, is_outward_facing_compute_integration_boundary,
     CanonicalFinalReferenceLine, ComputeIntegrationBoundary, ComputeIntegrationContractClass,
     ComputeIntegrationContractLane, ComputeReferenceClass, ComputeReferenceLane,
-    DomainFacingComputeConsumerLane, DomainFacingConsumerAlignment,
+    DomainFacingCompletionStatus, DomainFacingComputeConsumerLane, DomainFacingConsumerAlignment,
     DomainFacingEvidenceConsumptionPattern, DomainFacingStatusConsumptionPattern,
     CANONICAL_COMPUTE_INTEGRATION_CONTRACT_VIEW, CANONICAL_COMPUTE_REFERENCE_MAP,
     CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP, CANONICAL_FINAL_REFERENCE_LINE,

@@ -49,6 +49,14 @@ pub enum DomainFacingConsumerAlignment {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DomainFacingCompletionStatus {
+    AlignedToFinalComputeLine,
+    MostlyAlignedWithCaveats,
+    MixedTransitional,
+    InternalOnlyNotTrueOutwardConsumer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DomainFacingStatusConsumptionPattern {
     CanonicalStatusConsumer,
     MixedLegacyConsumption,
@@ -72,6 +80,7 @@ pub struct DomainFacingComputeConsumerLane {
     pub status_pattern: DomainFacingStatusConsumptionPattern,
     pub evidence_pattern: DomainFacingEvidenceConsumptionPattern,
     pub alignment: DomainFacingConsumerAlignment,
+    pub completion_status: DomainFacingCompletionStatus,
     pub caveat: &'static str,
 }
 
@@ -233,6 +242,7 @@ pub const CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP: [DomainFacingComputeCons
         status_pattern: DomainFacingStatusConsumptionPattern::MixedLegacyConsumption,
         evidence_pattern: DomainFacingEvidenceConsumptionPattern::MixedLegacyConsumption,
         alignment: DomainFacingConsumerAlignment::NeedsFinalIntegrationAdjustment,
+        completion_status: DomainFacingCompletionStatus::MostlyAlignedWithCaveats,
         caveat:
             "load-bearing runtime consumer; supports compat backend kinds and needs progressive canonical submit/status-evidence surface adoption",
     },
@@ -249,6 +259,7 @@ pub const CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP: [DomainFacingComputeCons
         evidence_pattern:
             DomainFacingEvidenceConsumptionPattern::CanonicalEvidenceReferenceConsumer,
         alignment: DomainFacingConsumerAlignment::AlignedCanonicalOutward,
+        completion_status: DomainFacingCompletionStatus::AlignedToFinalComputeLine,
         caveat:
             "constrained probe: consumes top-level status/evidence signals only, not deep internals",
     },
@@ -262,6 +273,7 @@ pub const CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP: [DomainFacingComputeCons
         status_pattern: DomainFacingStatusConsumptionPattern::MixedLegacyConsumption,
         evidence_pattern: DomainFacingEvidenceConsumptionPattern::MixedLegacyConsumption,
         alignment: DomainFacingConsumerAlignment::LegacyCompatPath,
+        completion_status: DomainFacingCompletionStatus::MixedTransitional,
         caveat:
             "compatibility-oriented replay recompute lane; intentionally not treated as outward-facing runtime service contract",
     },
@@ -274,6 +286,7 @@ pub const CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP: [DomainFacingComputeCons
         status_pattern: DomainFacingStatusConsumptionPattern::InternalDevTestOnly,
         evidence_pattern: DomainFacingEvidenceConsumptionPattern::InternalDevTestOnly,
         alignment: DomainFacingConsumerAlignment::InternalDevTestOnly,
+        completion_status: DomainFacingCompletionStatus::InternalOnlyNotTrueOutwardConsumer,
         caveat:
             "benchmark harness path; internal/dev-test only and never a canonical domain integration contract",
     },
@@ -286,6 +299,7 @@ pub const CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP: [DomainFacingComputeCons
         status_pattern: DomainFacingStatusConsumptionPattern::MixedLegacyConsumption,
         evidence_pattern: DomainFacingEvidenceConsumptionPattern::MixedLegacyConsumption,
         alignment: DomainFacingConsumerAlignment::LegacyCompatPath,
+        completion_status: DomainFacingCompletionStatus::InternalOnlyNotTrueOutwardConsumer,
         caveat:
             "retained compatibility seam explicitly outside outward-facing canonical compute contracts",
     },
@@ -593,6 +607,37 @@ mod tests {
     }
 
     #[test]
+    fn completion_status_classifies_outward_vs_mixed_vs_internal_without_false_positive() {
+        let map = canonical_domain_facing_compute_consumer_map();
+        assert!(map.iter().any(|consumer| {
+            consumer.completion_status == DomainFacingCompletionStatus::AlignedToFinalComputeLine
+                && consumer.consumer == "ops_compute_probe"
+        }));
+        assert!(map.iter().any(|consumer| {
+            consumer.completion_status == DomainFacingCompletionStatus::MostlyAlignedWithCaveats
+                && consumer.consumer == "runtime_orchestrator_env_bootstrap"
+        }));
+        assert!(map.iter().any(|consumer| {
+            consumer.completion_status == DomainFacingCompletionStatus::MixedTransitional
+        }));
+        assert!(map.iter().any(|consumer| {
+            consumer.completion_status
+                == DomainFacingCompletionStatus::InternalOnlyNotTrueOutwardConsumer
+        }));
+        assert!(map
+            .iter()
+            .filter(|consumer| {
+                matches!(
+                    consumer.completion_status,
+                    DomainFacingCompletionStatus::MixedTransitional
+                        | DomainFacingCompletionStatus::InternalOnlyNotTrueOutwardConsumer
+                )
+            })
+            .all(|consumer| consumer.alignment
+                != DomainFacingConsumerAlignment::AlignedCanonicalOutward));
+    }
+
+    #[test]
     fn serie_m_consumer_map_doc_stays_in_sync_with_code() {
         let doc = include_str!("../../../docs/compute_consumer_integration_map_serie_m_v1.md");
         for consumer in canonical_domain_facing_compute_consumer_map() {
@@ -603,6 +648,10 @@ mod tests {
         assert!(doc.contains("legacy_compat_path"));
         assert!(doc.contains("needs_final_integration_adjustment"));
         assert!(doc.contains("internal_dev_test_only"));
+        assert!(doc.contains("aligned_to_final_compute_line"));
+        assert!(doc.contains("mostly_aligned_with_caveats"));
+        assert!(doc.contains("mixed_transitional"));
+        assert!(doc.contains("internal_only_not_true_outward_consumer"));
         assert!(doc.contains("canonical_status_consumer"));
         assert!(doc.contains("canonical_evidence_reference_consumer"));
         assert!(doc.contains("mixed_legacy_consumption_pattern"));
