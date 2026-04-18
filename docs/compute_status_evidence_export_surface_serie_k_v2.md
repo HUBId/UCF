@@ -12,6 +12,7 @@ Source of truth:
 - `runtime/ucf-compute/src/service_surface.rs`
   - `CanonicalComputeEntryPoint::status_evidence_export_surface()`
   - `RuntimeOpsSnapshot::{status_export_surface,evidence_export_surface,status_evidence_export_surface}`
+  - `ComputeStatusEvidenceExportSurface::canonical_consumer_view()`
   - `ComputeStatusEvidenceExportSurface`
 
 The export layer is an adapter over canonical runtime snapshot/evidence state. It does **not**
@@ -49,6 +50,23 @@ snapshot/trust semantics:
 
 This surface intentionally exports reference-grade evidence metadata, not full internal diagnostic
 objects.
+
+## 3.1) Canonical consumer semantics adapter (Serie M)
+
+`ComputeStatusEvidenceExportSurface::canonical_consumer_view()` normalisiert für domain-facing
+Consumers dieselbe Top-Level-Lesesemantik:
+
+- status semantic:
+  - `current_trusted`
+  - `caveated_or_partial`
+  - `degraded_or_unavailable`
+- evidence semantic:
+  - `sufficient_references`
+  - `caveated_or_partial_references`
+  - `insufficient_references`
+
+Damit müssen angrenzende Consumer nicht jeweils eigene Caveat-/Partial-/Degraded-Interpretationen
+aufbauen und bleiben auf outward-facing status/evidence surfaces.
 
 ## 4) Outward-facing vs internal-only boundary
 

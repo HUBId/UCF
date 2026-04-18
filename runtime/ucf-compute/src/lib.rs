@@ -151,6 +151,7 @@ pub use reference_map::{
     CanonicalFinalReferenceLine, ComputeIntegrationBoundary, ComputeIntegrationContractClass,
     ComputeIntegrationContractLane, ComputeReferenceClass, ComputeReferenceLane,
     DomainFacingComputeConsumerLane, DomainFacingConsumerAlignment,
+    DomainFacingEvidenceConsumptionPattern, DomainFacingStatusConsumptionPattern,
     CANONICAL_COMPUTE_INTEGRATION_CONTRACT_VIEW, CANONICAL_COMPUTE_REFERENCE_MAP,
     CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP, CANONICAL_FINAL_REFERENCE_LINE,
     FINAL_REFERENCE_LINE_CROSS_CUTTING_INVARIANTS, FINAL_REFERENCE_LINE_DIAGNOSTICS_EXTENSION,
@@ -172,7 +173,9 @@ pub use runtime_profile::{DeploymentProfile, RuntimeDiagnosticFlags, RuntimeMode
 pub use service_surface::{
     BaselineComparisonFailureCode, BaselineComparisonOutcome, BaselineComparisonResult,
     BaselineComparisonSummary, BaselineReference, CanonicalComputeEntryPoint,
-    CanonicalRuntimeSnapshot, CanonicalRuntimeSubsystemDiagnostics, ComputeEvidenceBundleExportRef,
+    CanonicalConsumerEvidenceSemantic, CanonicalConsumerStatusEvidenceView,
+    CanonicalConsumerStatusSemantic, CanonicalRuntimeSnapshot,
+    CanonicalRuntimeSubsystemDiagnostics, ComputeEvidenceBundleExportRef,
     ComputeEvidenceComparisonExportRef, ComputeEvidenceExportSurface, ComputeExecutionMode,
     ComputeHistoryLookupError, ComputeHistoryStoreStatus, ComputeIntegrationActionSignal,
     ComputeIntegrationHookClass, ComputeIntegrationHookDescriptor, ComputeIntegrationHookExposure,
