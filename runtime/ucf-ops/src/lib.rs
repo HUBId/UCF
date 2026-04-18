@@ -702,9 +702,12 @@ use ucf_compute::model_store::VerifiedModelSlot;
 use ucf_compute::ssm::SsmInput;
 use ucf_compute::world_model::{StageQuality, WorldModelInput};
 use ucf_compute::{
-    build_backend, compute_input_from_control, stable_budget_profile_id, BackendPackConfig,
-    BackendPackFactory, BackendPackKind, ComputeBackendConfig, ComputeBackendKind, ComputeError,
-    ModelSlot, ModelStore, ReleaseFeatureMatrix,
+    build_service_compute_backend, canonical_domain_facing_compute_consumer_map,
+    compute_input_from_control, stable_budget_profile_id, BackendPackConfig, BackendPackFactory,
+    BackendPackKind, CanonicalComputeEntryPoint, CanonicalPipelineRequest, CanonicalPipelineState,
+    ComputeBackendConfig, ComputeBackendKind, ComputeError, ComputeExecutionMode,
+    ComputeSubmitOutcome, ComputeSubmitRequest, DomainFacingConsumerAlignment,
+    InMemoryComputeService, ModelSlot, ModelStore, ReleaseFeatureMatrix,
 };
 use ucf_core::types::Tick;
 use ucf_core::types::{SimTime, WindowId};
@@ -9247,7 +9250,8 @@ fn run_compute_probe(cfg: &OpsConfig) -> Result<DiagCheck, OpsError> {
         ..ComputeBackendConfig::default()
     };
     let budget = backend_cfg.to_budget();
-    let backend = build_backend(&backend_cfg)?;
+    let pipeline_backend = build_service_compute_backend(&backend_cfg)?;
+    let mut entry = CanonicalComputeEntryPoint::new(InMemoryComputeService::new(pipeline_backend));
     let ctrl = ControlFrame::new_text(
         SimTime {
             tick: Tick::new(1),
@@ -9259,18 +9263,66 @@ fn run_compute_probe(cfg: &OpsConfig) -> Result<DiagCheck, OpsError> {
         "compute_probe",
     );
     let input = compute_input_from_control(&ctrl);
-    let out = backend.compute(&input, budget)?;
-    let in_unit_interval = |value: f32| (-1.0e-6..=1.0 + 1.0e-6).contains(&value);
-    let pass = out.risk.is_finite()
-        && out.confidence.is_finite()
-        && in_unit_interval(out.risk)
-        && in_unit_interval(out.confidence);
+    let submission = entry.submit(ComputeSubmitRequest {
+        pipeline_request: CanonicalPipelineRequest { input, budget },
+        submitted_by: Some("ucf-ops/diag".to_string()),
+        submitted_at_unix_ms: Some(0),
+        execution_mode: ComputeExecutionMode::ExecuteInline,
+    })?;
+    let status = match submission {
+        ComputeSubmitOutcome::Accepted {
+            completion: Some(status),
+            ..
+        } => status,
+        ComputeSubmitOutcome::Accepted {
+            status,
+            completion: None,
+            ..
+        } => status,
+        ComputeSubmitOutcome::Rejected { status } => status,
+        ComputeSubmitOutcome::Invalid(invalid) => {
+            return Ok(DiagCheck {
+                name: "compute_probe".to_string(),
+                pass: false,
+                detail: format!("invalid_compute_probe_request:{:?}", invalid.code),
+                remediation: "ensure probe submission uses canonical request constraints."
+                    .to_string(),
+            })
+        }
+    };
+    let status_surface = entry
+        .status(status.handle)
+        .ok_or_else(|| OpsError::Invalid("compute probe status not found".to_string()))?;
+    let export = entry.status_evidence_export_surface();
+    let pass = !matches!(
+        status_surface.pipeline_state,
+        Some(CanonicalPipelineState::Unavailable)
+    );
+    let consumer_alignment = canonical_domain_facing_compute_consumer_map()
+        .iter()
+        .find(|consumer| consumer.consumer == "ops_compute_probe")
+        .map(|consumer| consumer.alignment)
+        .unwrap_or(DomainFacingConsumerAlignment::NeedsFinalIntegrationAdjustment);
+    let contract_lane =
+        if consumer_alignment == DomainFacingConsumerAlignment::AlignedCanonicalOutward {
+            "aligned_canonical_outward"
+        } else {
+            "non_aligned"
+        };
 
     Ok(DiagCheck {
         name: "compute_probe".to_string(),
         pass,
-        detail: format!("risk={:.3} confidence={:.3}", out.risk, out.confidence),
-        remediation: "ensure compute backend feature flags and seed are set.".to_string(),
+        detail: format!(
+            "pipeline_state={:?} contract_lane={} evidence_bundle_refs={} constrained_status={}",
+            status_surface.pipeline_state,
+            contract_lane,
+            export.evidence.bundle_refs.len(),
+            export.status.constrained_or_caveated
+        ),
+        remediation:
+            "ensure compute backend feature flags and canonical status/evidence export usage are set."
+                .to_string(),
     })
 }
 

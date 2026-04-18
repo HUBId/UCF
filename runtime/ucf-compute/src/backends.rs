@@ -164,44 +164,9 @@ impl ComputeBackendConfig {
 pub fn build_backend(
     cfg: &ComputeBackendConfig,
 ) -> Result<Box<dyn AiComputeBackend + Send + Sync>, ComputeError> {
+    let backend = build_service_compute_backend(cfg)?;
     let fusion = FusionConfig::default();
     let limits = LimitsConfig::default();
-
-    let pack_kind = match cfg.kind {
-        ComputeBackendKind::Stub => BackendPackKind::ToyV1,
-        ComputeBackendKind::Candle => BackendPackKind::CandleToyV1,
-        ComputeBackendKind::Burn => BackendPackKind::BurnToyV1,
-        ComputeBackendKind::Worker => BackendPackKind::WorkerV1,
-    };
-    let pack = BackendPackFactory::build(BackendPackConfig {
-        pack: pack_kind,
-        seed: cfg.seed,
-    })?;
-
-    let backend = match cfg.kind {
-        ComputeBackendKind::Stub => ComputePipelineBackend::new(pack, fusion, limits),
-        ComputeBackendKind::Candle => {
-            #[cfg(feature = "compute-candle")]
-            {
-                ComputePipelineBackend::new(pack, fusion, limits)
-            }
-            #[cfg(not(feature = "compute-candle"))]
-            {
-                return Err(ComputeError::BackendDisabled);
-            }
-        }
-        ComputeBackendKind::Burn => {
-            #[cfg(feature = "compute-burn")]
-            {
-                ComputePipelineBackend::new(pack, fusion, limits)
-            }
-            #[cfg(not(feature = "compute-burn"))]
-            {
-                return Err(ComputeError::BackendDisabled);
-            }
-        }
-        ComputeBackendKind::Worker => ComputePipelineBackend::new(pack, fusion, limits),
-    };
 
     let primary: Box<dyn AiComputeBackend + Send + Sync> = Box::new(backend);
     let runtime_profile = RuntimeProfile::from_env(cfg)?;
@@ -230,6 +195,53 @@ pub fn build_backend(
         shadow_backend,
         enablement,
     )))
+}
+
+/// Build a pipeline backend that can be mounted behind `CanonicalComputeEntryPoint`.
+///
+/// This keeps consumer integration on the canonical service contracts while
+/// still honoring configured backend kinds (including compatibility/internal lanes).
+pub fn build_service_compute_backend(
+    cfg: &ComputeBackendConfig,
+) -> Result<ComputePipelineBackend, ComputeError> {
+    let fusion = FusionConfig::default();
+    let limits = LimitsConfig::default();
+
+    let pack_kind = match cfg.kind {
+        ComputeBackendKind::Stub => BackendPackKind::ToyV1,
+        ComputeBackendKind::Candle => BackendPackKind::CandleToyV1,
+        ComputeBackendKind::Burn => BackendPackKind::BurnToyV1,
+        ComputeBackendKind::Worker => BackendPackKind::WorkerV1,
+    };
+    let pack = BackendPackFactory::build(BackendPackConfig {
+        pack: pack_kind,
+        seed: cfg.seed,
+    })?;
+
+    match cfg.kind {
+        ComputeBackendKind::Stub => Ok(ComputePipelineBackend::new(pack, fusion, limits)),
+        ComputeBackendKind::Candle => {
+            #[cfg(feature = "compute-candle")]
+            {
+                Ok(ComputePipelineBackend::new(pack, fusion, limits))
+            }
+            #[cfg(not(feature = "compute-candle"))]
+            {
+                Err(ComputeError::BackendDisabled)
+            }
+        }
+        ComputeBackendKind::Burn => {
+            #[cfg(feature = "compute-burn")]
+            {
+                Ok(ComputePipelineBackend::new(pack, fusion, limits))
+            }
+            #[cfg(not(feature = "compute-burn"))]
+            {
+                Err(ComputeError::BackendDisabled)
+            }
+        }
+        ComputeBackendKind::Worker => Ok(ComputePipelineBackend::new(pack, fusion, limits)),
+    }
 }
 
 /// Build the canonical production onboarding backend.

@@ -92,8 +92,8 @@ pub use backend_pack::{
 };
 pub use backends::{
     build_backend, build_canonical_production_backend, build_onboarding_reference_backend,
-    ComputeBackendConfig, ComputeBackendKind, CANONICAL_ONBOARDING_BACKEND,
-    CANONICAL_ONBOARDING_PACK,
+    build_service_compute_backend, ComputeBackendConfig, ComputeBackendKind,
+    CANONICAL_ONBOARDING_BACKEND, CANONICAL_ONBOARDING_PACK,
 };
 pub use compute_service::{
     CapacityPressure, CapacityQueueDisposition, ComputeJob, CoordinationFreshness,
@@ -145,12 +145,14 @@ pub use pipeline::{
 };
 pub use reference_map::{
     canonical_compute_integration_contract_view, canonical_compute_reference_map,
-    canonical_final_reference_line, canonical_onboarding_reference_summary,
-    canonical_production_reference_lane, is_canonical_core_or_extension_lane,
-    is_outward_facing_compute_integration_boundary, CanonicalFinalReferenceLine,
-    ComputeIntegrationBoundary, ComputeIntegrationContractClass, ComputeIntegrationContractLane,
-    ComputeReferenceClass, ComputeReferenceLane, CANONICAL_COMPUTE_INTEGRATION_CONTRACT_VIEW,
-    CANONICAL_COMPUTE_REFERENCE_MAP, CANONICAL_FINAL_REFERENCE_LINE,
+    canonical_domain_facing_compute_consumer_map, canonical_final_reference_line,
+    canonical_onboarding_reference_summary, canonical_production_reference_lane,
+    is_canonical_core_or_extension_lane, is_outward_facing_compute_integration_boundary,
+    CanonicalFinalReferenceLine, ComputeIntegrationBoundary, ComputeIntegrationContractClass,
+    ComputeIntegrationContractLane, ComputeReferenceClass, ComputeReferenceLane,
+    DomainFacingComputeConsumerLane, DomainFacingConsumerAlignment,
+    CANONICAL_COMPUTE_INTEGRATION_CONTRACT_VIEW, CANONICAL_COMPUTE_REFERENCE_MAP,
+    CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP, CANONICAL_FINAL_REFERENCE_LINE,
     FINAL_REFERENCE_LINE_CROSS_CUTTING_INVARIANTS, FINAL_REFERENCE_LINE_DIAGNOSTICS_EXTENSION,
     FINAL_REFERENCE_LINE_EXECUTION_CORE, FINAL_REFERENCE_LINE_REPLAY_EXTENSION,
     FINAL_REFERENCE_LINE_ROLLOUT_EXTENSION, FINAL_REFERENCE_NON_CANONICAL_INTERNAL_BOUNDARY,

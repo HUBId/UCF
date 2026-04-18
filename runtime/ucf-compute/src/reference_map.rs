@@ -40,6 +40,25 @@ pub struct ComputeIntegrationContractLane {
     pub semantic_scope: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DomainFacingConsumerAlignment {
+    AlignedCanonicalOutward,
+    LegacyCompatPath,
+    NeedsFinalIntegrationAdjustment,
+    InternalDevTestOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DomainFacingComputeConsumerLane {
+    pub consumer: &'static str,
+    pub repo_surface: &'static str,
+    pub execution_contract_path: &'static str,
+    pub status_diagnostics_path: &'static str,
+    pub evidence_reference_path: &'static str,
+    pub alignment: DomainFacingConsumerAlignment,
+    pub caveat: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -188,6 +207,63 @@ pub const CANONICAL_COMPUTE_REFERENCE_MAP: [ComputeReferenceLane; 7] = [
     },
 ];
 
+pub const CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP: [DomainFacingComputeConsumerLane; 5] = [
+    DomainFacingComputeConsumerLane {
+        consumer: "runtime_orchestrator_env_bootstrap",
+        repo_surface: "runtime/ucf-runtime/src/orchestrator.rs::RuntimeOrchestrator::try_new_from_env",
+        execution_contract_path: "build_backend(cfg from env)",
+        status_diagnostics_path: "compute summary -> runtime orchestration state",
+        evidence_reference_path: "compute_summary.compute_chain_digest + runtime evidence chain",
+        alignment: DomainFacingConsumerAlignment::NeedsFinalIntegrationAdjustment,
+        caveat:
+            "load-bearing runtime consumer; supports compat backend kinds and needs progressive canonical submit/status-evidence surface adoption",
+    },
+    DomainFacingComputeConsumerLane {
+        consumer: "ops_compute_probe",
+        repo_surface: "runtime/ucf-ops/src/lib.rs::run_compute_probe",
+        execution_contract_path:
+            "CanonicalComputeEntryPoint::submit(ComputeSubmitRequest{ExecuteInline})",
+        status_diagnostics_path:
+            "CanonicalComputeEntryPoint::status + status_evidence_export_surface (status)",
+        evidence_reference_path:
+            "CanonicalComputeEntryPoint::status_evidence_export_surface (evidence refs)",
+        alignment: DomainFacingConsumerAlignment::AlignedCanonicalOutward,
+        caveat:
+            "constrained probe: consumes top-level status/evidence signals only, not deep internals",
+    },
+    DomainFacingComputeConsumerLane {
+        consumer: "replay_diff_backend_recompute",
+        repo_surface: "runtime/ucf-replay/src/lib.rs::replay_records",
+        execution_contract_path: "build_backend(cfg from replay spec) -> backend.compute(...)",
+        status_diagnostics_path: "summary/diff policy comparison (no runtime snapshot contract)",
+        evidence_reference_path:
+            "persisted replay evidence refs + drift reasons (reference-level, not full runtime export)",
+        alignment: DomainFacingConsumerAlignment::LegacyCompatPath,
+        caveat:
+            "compatibility-oriented replay recompute lane; intentionally not treated as outward-facing runtime service contract",
+    },
+    DomainFacingComputeConsumerLane {
+        consumer: "bench_compute_subcommand",
+        repo_surface: "runtime/ucf-bench/src/main.rs::run_compute",
+        execution_contract_path: "build_backend(cfg) -> backend.compute(...) loop",
+        status_diagnostics_path: "latency/alloc benchmark aggregation only",
+        evidence_reference_path: "none (performance harness)",
+        alignment: DomainFacingConsumerAlignment::InternalDevTestOnly,
+        caveat:
+            "benchmark harness path; internal/dev-test only and never a canonical domain integration contract",
+    },
+    DomainFacingComputeConsumerLane {
+        consumer: "domains_ai_compat_lane",
+        repo_surface: "domains/ai* + domains/ai-backends compatibility crates",
+        execution_contract_path: "legacy host ABI adapters",
+        status_diagnostics_path: "legacy compatibility signals only",
+        evidence_reference_path: "compat adapter outputs (non-canonical evidence surface)",
+        alignment: DomainFacingConsumerAlignment::LegacyCompatPath,
+        caveat:
+            "retained compatibility seam explicitly outside outward-facing canonical compute contracts",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -219,6 +295,11 @@ pub fn is_outward_facing_compute_integration_boundary(
     boundary: ComputeIntegrationBoundary,
 ) -> bool {
     matches!(boundary, ComputeIntegrationBoundary::OutwardFacing)
+}
+
+pub fn canonical_domain_facing_compute_consumer_map() -> &'static [DomainFacingComputeConsumerLane]
+{
+    &CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP
 }
 
 #[cfg(test)]
@@ -438,5 +519,58 @@ mod tests {
         assert!(doc.contains("constrained but accepted"));
         assert!(doc.contains("not accepted for final exit"));
         assert!(doc.contains("build_backend(kind=stub|candle)"));
+    }
+
+    #[test]
+    fn domain_facing_consumer_map_keeps_alignment_classes_explicit() {
+        let map = canonical_domain_facing_compute_consumer_map();
+        assert!(map.iter().any(|c| {
+            c.alignment == DomainFacingConsumerAlignment::AlignedCanonicalOutward
+                && c.consumer == "ops_compute_probe"
+        }));
+        assert!(map
+            .iter()
+            .any(|c| c.alignment == DomainFacingConsumerAlignment::LegacyCompatPath));
+        assert!(map.iter().any(|c| {
+            c.alignment == DomainFacingConsumerAlignment::NeedsFinalIntegrationAdjustment
+        }));
+        assert!(map
+            .iter()
+            .any(|c| c.alignment == DomainFacingConsumerAlignment::InternalDevTestOnly));
+    }
+
+    #[test]
+    fn outward_aligned_consumers_use_canonical_status_and_evidence_exports() {
+        let aligned: Vec<_> = canonical_domain_facing_compute_consumer_map()
+            .iter()
+            .filter(|consumer| {
+                consumer.alignment == DomainFacingConsumerAlignment::AlignedCanonicalOutward
+            })
+            .collect();
+        assert!(!aligned.is_empty());
+        assert!(aligned.iter().all(|consumer| {
+            consumer
+                .execution_contract_path
+                .contains("CanonicalComputeEntryPoint::submit")
+                && consumer
+                    .status_diagnostics_path
+                    .contains("status_evidence_export_surface")
+                && consumer
+                    .evidence_reference_path
+                    .contains("status_evidence_export_surface")
+        }));
+    }
+
+    #[test]
+    fn serie_m_consumer_map_doc_stays_in_sync_with_code() {
+        let doc = include_str!("../../../docs/compute_consumer_integration_map_serie_m_v1.md");
+        for consumer in canonical_domain_facing_compute_consumer_map() {
+            assert!(doc.contains(consumer.consumer));
+            assert!(doc.contains(consumer.repo_surface));
+        }
+        assert!(doc.contains("aligned_canonical_outward"));
+        assert!(doc.contains("legacy_compat_path"));
+        assert!(doc.contains("needs_final_integration_adjustment"));
+        assert!(doc.contains("internal_dev_test_only"));
     }
 }
