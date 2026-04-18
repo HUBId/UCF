@@ -16,6 +16,9 @@ evidence/reference vs expert/internal-only contracts), see
 For the consolidated status/evidence export layer for adjacent UCF subsystems, see
 `docs/compute_status_evidence_export_surface_serie_k_v2.md` and
 `CanonicalComputeEntryPoint::status_evidence_export_surface`.
+For the narrow map of real domain-facing compute consumers and their alignment class, see
+`docs/compute_consumer_integration_map_serie_m_v1.md` and
+`CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP` in `src/reference_map.rs`.
 
 ## Capability model
 

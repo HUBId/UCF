@@ -106,3 +106,22 @@ Minimal hook classes are now explicit and intentionally narrow:
    - anchored on `InternalClearReplayRegression`
 
 This hook view is an integration classifier over existing runtime surfaces, not a new plugin/control-plane.
+
+## 7) Real domain-facing consumer map (Serie M follow-up)
+
+The compute-facing contract classes above remain the canonical boundary model. Serie M binds this
+boundary to real consumers in-repo via a narrow consumer map:
+
+- `docs/compute_consumer_integration_map_serie_m_v1.md`
+- `runtime/ucf-compute/src/reference_map.rs`
+  - `CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP`
+  - `DomainFacingConsumerAlignment`
+
+The map keeps exactly four alignment classes:
+
+- `aligned_canonical_outward`
+- `legacy_compat_path`
+- `needs_final_integration_adjustment`
+- `internal_dev_test_only`
+
+This is a small integration-tracking surface only. It does not introduce a second contract world.
