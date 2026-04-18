@@ -88,3 +88,10 @@ Minimaler Prüfblock für diese Runde:
 5. Docs-/Readiness-Gates via `ucf-ops` (`docs lint`, `readiness-gate`).
 
 Diese Checks bleiben absichtlich klein und schließen keine neue Testwelle auf.
+
+
+## 7) Alignment mit finalem Exit-Dossier (Prompt 3)
+
+Diese Prompt-1-Edge-Review bleibt gültig als Load-bearing-Vorstufe und ist auf
+`docs/real_compute_exit_dossier_serie_l_v1.md` als finale knappe Exit-Synthese ausgerichtet.
+Bei Abweichung gilt die code-pinned Referenzlinie (`CANONICAL_FINAL_REFERENCE_LINE`) als Autorität.
