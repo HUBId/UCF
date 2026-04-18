@@ -13,6 +13,9 @@ For the Serie-K compute-facing integration boundary (execution vs status/diagnos
 evidence/reference vs expert/internal-only contracts), see
 `docs/compute_facing_integration_contracts_serie_k_v1.md` and
 `CANONICAL_COMPUTE_INTEGRATION_CONTRACT_VIEW` in the same source file.
+For the consolidated status/evidence export layer for adjacent UCF subsystems, see
+`docs/compute_status_evidence_export_surface_serie_k_v2.md` and
+`CanonicalComputeEntryPoint::status_evidence_export_surface`.
 
 ## Capability model
 

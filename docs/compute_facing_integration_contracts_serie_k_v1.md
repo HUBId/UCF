@@ -44,7 +44,11 @@ Internal/expert-only boundaries remain explicit:
 
 ## 3) Integration signals for adjacent UCF surfaces
 
-`RuntimeOpsSnapshot::integration_signals()` provides a compact integration signal frame:
+`CanonicalComputeEntryPoint::status_evidence_export_surface()` now provides the canonical
+status/evidence export envelope for adjacent UCF subsystems.
+
+`RuntimeOpsSnapshot::integration_signals()` remains available as a compact compatibility signal
+frame and is derived from the canonical export surfaces.
 
 - current service/runtime state (`service_state`, `runtime_mode`, `state_signal`)
 - active production path context (`active_path_context`)
@@ -53,8 +57,8 @@ Internal/expert-only boundaries remain explicit:
 - evidence bundle references (`evidence_bundle_refs`)
 - latest action outcomes (`latest_actions`) as controlled top-level action signals
 
-The signal frame is a contract adapter over canonical runtime data; it does not introduce a
-separate diagnostics or monitoring platform.
+The export/envelope and signal frame are contract adapters over canonical runtime data; they do not
+introduce a separate diagnostics or monitoring platform.
 
 ## 4) Binding to Serie-J final production line
 

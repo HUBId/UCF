@@ -95,14 +95,16 @@ pub const CANONICAL_COMPUTE_INTEGRATION_CONTRACT_VIEW: [ComputeIntegrationContra
         class: ComputeIntegrationContractClass::DiagnosticsStatus,
         boundary: ComputeIntegrationBoundary::OutwardFacing,
         lane: "compute_status_diagnostics_contract",
-        canonical_anchor: "service_surface::{operations_snapshot,workflow_view}",
+        canonical_anchor:
+            "service_surface::CanonicalComputeEntryPoint::status_evidence_export_surface (status)",
         semantic_scope: "runtime state/freshness/drift + top-level diagnostics signals",
     },
     ComputeIntegrationContractLane {
         class: ComputeIntegrationContractClass::EvidenceReference,
         boundary: ComputeIntegrationBoundary::OutwardFacing,
         lane: "compute_evidence_reference_contract",
-        canonical_anchor: "service_surface + evidence + job_history",
+        canonical_anchor:
+            "service_surface::CanonicalComputeEntryPoint::status_evidence_export_surface (evidence)",
         semantic_scope: "snapshot/evidence/trace/history references without redefining run truth",
     },
     ComputeIntegrationContractLane {
