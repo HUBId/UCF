@@ -114,6 +114,7 @@ Ab hier ist weitere Arbeit **breitere Systemintegration** auf UCF-Ebene (Consume
 
 1. **Serie N (priorisiert): broader UCF system integration review**
    - Hebel: `runtime_orchestrator_env_bootstrap` ist load-bearing und aktuell der wichtigste caveated Consumer.
+   - Konsolidierte Kartierung: `docs/broader_system_integration_map_serie_n_v1.md`.
 2. **Serie P (nachrangig): targeted domain rollout auf stabilisierter Compute-Integration**
    - Hebel: weitere domain-facing Consumers nacheinander auf canonical submit + canonical status/evidence semantics bringen.
 3. **Serie O (nachrangig): maintenance-only follow-up lane**
