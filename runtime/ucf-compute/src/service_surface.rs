@@ -351,8 +351,74 @@ pub struct ComputeIntegrationSignals {
     pub latest_actions: Vec<ComputeIntegrationActionSignal>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComputeProductionLineContext {
+    LocalCanonical,
+    WorkerIpc,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeStatusExportSurface {
+    pub service_state: RuntimeOpsState,
+    pub runtime_mode: RuntimeMode,
+    pub deployment_profile: DeploymentProfile,
+    pub state_signal: RuntimeSignalState,
+    pub snapshot_consistency: CanonicalSnapshotConsistency,
+    pub diagnostics_availability: ExpertDiagnosticsAvailability,
+    pub service_trust: ServiceTrustState,
+    pub hardening_state: ServiceHardeningState,
+    pub recovery_recommendation: Option<RuntimeRecoveryFlow>,
+    pub active_path_context: ComputeIntegrationPathContext,
+    pub active_production_line: ComputeProductionLineContext,
+    pub worker_health: ExpertDiagnosticsAvailability,
+    pub placement_health: ExpertDiagnosticsAvailability,
+    pub runtime_health: ExpertDiagnosticsAvailability,
+    pub constrained_or_caveated: bool,
+    pub degraded_or_unavailable: bool,
+    pub top_level_caveats: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeEvidenceBundleExportRef {
+    pub kind: CanonicalEvidenceKind,
+    pub status: CanonicalEvidenceStatus,
+    pub bundle_id: String,
+    pub summary: String,
+    pub trace_slice_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeTraceSliceExportRef {
+    pub slice_id: String,
+    pub kind: CanonicalTraceSliceKind,
+    pub status: CanonicalTraceSliceStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeEvidenceComparisonExportRef {
+    pub comparison_id: String,
+    pub class: EvidenceAwareComparisonClass,
+    pub shared_evidence_refs: Vec<String>,
+    pub contrasting_evidence_refs: Vec<String>,
+    pub caveat_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeEvidenceExportSurface {
+    pub bundle_refs: Vec<ComputeEvidenceBundleExportRef>,
+    pub trace_slice_refs: Vec<ComputeTraceSliceExportRef>,
+    pub comparison_refs: Vec<ComputeEvidenceComparisonExportRef>,
+    pub caveat_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeStatusEvidenceExportSurface {
+    pub status: ComputeStatusExportSurface,
+    pub evidence: ComputeEvidenceExportSurface,
+}
+
 impl RuntimeOpsSnapshot {
-    pub fn integration_signals(&self) -> ComputeIntegrationSignals {
+    pub fn status_export_surface(&self) -> ComputeStatusExportSurface {
         let active_path_context = if self.active_job.is_some() {
             ComputeIntegrationPathContext::ActiveProductionPath
         } else if self.candidate_job.is_some()
@@ -382,19 +448,102 @@ impl RuntimeOpsSnapshot {
             CanonicalSnapshotConsistency::DriftAffected | CanonicalSnapshotConsistency::Unavailable
         );
 
-        ComputeIntegrationSignals {
+        ComputeStatusExportSurface {
             service_state: self.state,
             runtime_mode: self.runtime_mode,
+            deployment_profile: self.deployment_profile,
             state_signal: self.state_signal,
-            execution_path: self.execution_path,
             snapshot_consistency: self.canonical.consistency,
             diagnostics_availability: self.canonical.diagnostics_availability,
+            service_trust: self.canonical.service_trust,
+            hardening_state: self.canonical.hardening_state,
+            recovery_recommendation: self.service_trust.recommendation,
             active_path_context,
+            active_production_line: match self.execution_path {
+                JobExecutionPath::LocalCanonical => ComputeProductionLineContext::LocalCanonical,
+                JobExecutionPath::WorkerIpc => ComputeProductionLineContext::WorkerIpc,
+            },
+            worker_health: self.canonical.subsystems.worker.availability,
+            placement_health: self.canonical.subsystems.placement_capacity.availability,
+            runtime_health: self.canonical.diagnostics_availability,
             constrained_or_caveated,
             degraded_or_unavailable,
-            evidence_bundle_refs: self
+            top_level_caveats: self.canonical.top_level_caveats.clone(),
+        }
+    }
+
+    pub fn evidence_export_surface(&self) -> ComputeEvidenceExportSurface {
+        let mut trace_slice_refs = Vec::new();
+        let mut comparison_refs = Vec::new();
+        let mut caveat_refs = self.canonical.top_level_caveats.clone();
+        for op in &self.recent_operations {
+            trace_slice_refs.extend(op.action_evidence.trace_slices.iter().map(|slice| {
+                ComputeTraceSliceExportRef {
+                    slice_id: slice.slice_id.clone(),
+                    kind: slice.kind,
+                    status: slice.status,
+                }
+            }));
+            caveat_refs.extend(op.action_evidence.replay_recovery_caveats.iter().cloned());
+            if let Some(comparison) = op.recovery_comparison.as_ref() {
+                comparison_refs.push(ComputeEvidenceComparisonExportRef {
+                    comparison_id: comparison.comparison_id.clone(),
+                    class: comparison.class,
+                    shared_evidence_refs: comparison.shared_evidence_refs.clone(),
+                    contrasting_evidence_refs: comparison.contrasting_evidence_refs.clone(),
+                    caveat_refs: comparison.primary_caveats.clone(),
+                });
+            }
+        }
+        trace_slice_refs.sort_unstable_by(|a, b| a.slice_id.cmp(&b.slice_id));
+        trace_slice_refs.dedup_by(|a, b| a.slice_id == b.slice_id);
+        comparison_refs.sort_unstable_by(|a, b| a.comparison_id.cmp(&b.comparison_id));
+        comparison_refs.dedup_by(|a, b| a.comparison_id == b.comparison_id);
+        caveat_refs.sort_unstable();
+        caveat_refs.dedup();
+
+        ComputeEvidenceExportSurface {
+            bundle_refs: self
                 .canonical
                 .evidence_bundle_refs
+                .iter()
+                .map(|bundle| ComputeEvidenceBundleExportRef {
+                    kind: bundle.kind,
+                    status: bundle.status,
+                    bundle_id: bundle.bundle_id.clone(),
+                    summary: bundle.summary.clone(),
+                    trace_slice_refs: bundle.trace_slice_refs.clone(),
+                })
+                .collect(),
+            trace_slice_refs,
+            comparison_refs,
+            caveat_refs,
+        }
+    }
+
+    pub fn status_evidence_export_surface(&self) -> ComputeStatusEvidenceExportSurface {
+        ComputeStatusEvidenceExportSurface {
+            status: self.status_export_surface(),
+            evidence: self.evidence_export_surface(),
+        }
+    }
+
+    pub fn integration_signals(&self) -> ComputeIntegrationSignals {
+        let status = self.status_export_surface();
+        let evidence = self.evidence_export_surface();
+
+        ComputeIntegrationSignals {
+            service_state: status.service_state,
+            runtime_mode: status.runtime_mode,
+            state_signal: status.state_signal,
+            execution_path: self.execution_path,
+            snapshot_consistency: status.snapshot_consistency,
+            diagnostics_availability: status.diagnostics_availability,
+            active_path_context: status.active_path_context,
+            constrained_or_caveated: status.constrained_or_caveated,
+            degraded_or_unavailable: status.degraded_or_unavailable,
+            evidence_bundle_refs: evidence
+                .bundle_refs
                 .iter()
                 .map(|bundle| bundle.bundle_id.clone())
                 .collect(),
@@ -2052,6 +2201,10 @@ impl CanonicalComputeEntryPoint {
 
     pub fn workflow_view(&self) -> WorkflowViewSnapshot {
         self.operations_snapshot().workflow_view
+    }
+
+    pub fn status_evidence_export_surface(&self) -> ComputeStatusEvidenceExportSurface {
+        self.operations_snapshot().status_evidence_export_surface()
     }
 
     pub fn run_operation(
@@ -8800,5 +8953,73 @@ mod tests {
                     signal.operation,
                     RuntimeOperation::InternalClearReplayRegression
                 )));
+    }
+
+    #[test]
+    fn status_export_surface_reuses_runtime_snapshot_and_trust_semantics() {
+        let entry = service();
+        let snapshot = entry.operations_snapshot();
+        let export = snapshot.status_export_surface();
+        assert_eq!(export.service_state, snapshot.state);
+        assert_eq!(export.snapshot_consistency, snapshot.canonical.consistency);
+        assert_eq!(
+            export.diagnostics_availability,
+            snapshot.canonical.diagnostics_availability
+        );
+        assert_eq!(export.service_trust, snapshot.canonical.service_trust);
+        assert_eq!(export.hardening_state, snapshot.canonical.hardening_state);
+        assert_eq!(
+            export.worker_health,
+            snapshot.canonical.subsystems.worker.availability
+        );
+        assert_eq!(
+            export.placement_health,
+            snapshot
+                .canonical
+                .subsystems
+                .placement_capacity
+                .availability
+        );
+    }
+
+    #[test]
+    fn evidence_export_surface_tracks_canonical_bundle_refs_and_trace_refs() {
+        let mut entry = service();
+        let _ = entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(100),
+                execution_mode: ComputeExecutionMode::ExecuteInline,
+            })
+            .expect("submit");
+        let _ = entry
+            .run_operation(RuntimeOperation::Snapshot)
+            .expect("snapshot operation");
+        let snapshot = entry.operations_snapshot();
+        let export = snapshot.evidence_export_surface();
+        assert_eq!(
+            export.bundle_refs.len(),
+            snapshot.canonical.evidence_bundle_refs.len()
+        );
+        assert!(export
+            .bundle_refs
+            .iter()
+            .all(|bundle| !bundle.bundle_id.is_empty()));
+        assert!(export
+            .trace_slice_refs
+            .iter()
+            .all(|slice| !slice.slice_id.is_empty()));
+    }
+
+    #[test]
+    fn status_evidence_export_surface_keeps_internal_runtime_details_out_of_default_surface() {
+        let entry = service();
+        let export = entry.status_evidence_export_surface();
+        assert!(export.evidence.trace_slice_refs.iter().all(|slice| {
+            !slice.slice_id.contains("primary_inputs")
+                && !slice.slice_id.contains("ruled_out")
+                && !slice.slice_id.contains("decision_path")
+        }));
     }
 }
