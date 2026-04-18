@@ -20,6 +20,13 @@ Sie ist absichtlich gekoppelt mit:
 Roadmap-Dateien (`docs/roadmap/AI_STACK.md`, `docs/roadmap/AI_BACKENDS.md`) bleiben Kontext und
 müssen mit den oben genannten Flächen ausgerichtet bleiben.
 
+
+## Hinweis zur Serie-L Exit-Prüfung
+
+Die schmale finale Exit-Review-Schicht wird in `docs/real_compute_exit_edge_review_serie_l_v1.md`
+geführt und ergänzt diese Readiness-Fläche um die letzte load-bearing Edge-Klassifikation
+(stable/constrained/load-bearing/residual) für den technischen Abschluss.
+
 ## 1) Serie-I Kernprüfung (repo-basiert)
 
 ### 1.1 Canonical reference map
