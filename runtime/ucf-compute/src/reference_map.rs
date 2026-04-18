@@ -638,6 +638,19 @@ mod tests {
     }
 
     #[test]
+    fn only_ops_probe_is_marked_aligned_to_final_compute_line() {
+        let aligned: Vec<_> = canonical_domain_facing_compute_consumer_map()
+            .iter()
+            .filter(|consumer| {
+                consumer.completion_status
+                    == DomainFacingCompletionStatus::AlignedToFinalComputeLine
+            })
+            .collect();
+        assert_eq!(aligned.len(), 1);
+        assert_eq!(aligned[0].consumer, "ops_compute_probe");
+    }
+
+    #[test]
     fn serie_m_consumer_map_doc_stays_in_sync_with_code() {
         let doc = include_str!("../../../docs/compute_consumer_integration_map_serie_m_v1.md");
         for consumer in canonical_domain_facing_compute_consumer_map() {
