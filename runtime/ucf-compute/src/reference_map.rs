@@ -669,4 +669,25 @@ mod tests {
         assert!(doc.contains("canonical_evidence_reference_consumer"));
         assert!(doc.contains("mixed_legacy_consumption_pattern"));
     }
+
+    #[test]
+    fn serie_n_broader_system_map_stays_pinned_to_final_compute_line_and_classes() {
+        let doc = include_str!("../../../docs/broader_system_integration_map_serie_n_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("status_evidence_export_surface"));
+        assert!(doc.contains("integration_hook_view"));
+        assert!(doc.contains(line.internal_boundary));
+
+        assert!(doc.contains("real_compute_facing_candidate"));
+        assert!(doc.contains("indirect_or_compatibility_touching_surface"));
+        assert!(doc.contains("internal_only_relation"));
+        assert!(doc.contains("no_meaningful_compute_integration_candidate"));
+
+        assert!(doc.contains("ops_compute_probe"));
+        assert!(doc.contains("runtime_orchestrator_env_bootstrap"));
+        assert!(doc.contains("replay_diff_backend_recompute"));
+        assert!(doc.contains("bench_compute_subcommand"));
+        assert!(doc.contains("domains_ai_compat_lane"));
+    }
 }
