@@ -14,6 +14,13 @@ Code source of truth:
 - `needs_final_integration_adjustment`
 - `internal_dev_test_only`
 
+## Completion-Status-Map (schmal, outward-orientiert)
+
+- `aligned_to_final_compute_line`
+- `mostly_aligned_with_caveats`
+- `mixed_transitional`
+- `internal_only_not_true_outward_consumer`
+
 ## Consumer-seitige Consumption-Pattern (schmal)
 
 - status pattern:
@@ -34,7 +41,8 @@ Code source of truth:
    - status pattern: `mixed_legacy_consumption_pattern`
    - evidence pattern: `mixed_legacy_consumption_pattern`
    - alignment: `needs_final_integration_adjustment`
-   - caveat: load-bearing Runtime-Consumer mit weiter bestehender Compat-Backend-Unterstützung.
+   - completion status: `mostly_aligned_with_caveats`
+   - caveat: load-bearing Runtime-Consumer; Status/Evidence läuft über dieselbe top-level Semantik, Execution bleibt wegen Env/Compat-Backends noch nicht vollständig auf `CanonicalComputeEntryPoint::submit`.
 
 2. `ops_compute_probe`
    - repo surface: `runtime/ucf-ops/src/lib.rs::run_compute_probe`
@@ -43,6 +51,7 @@ Code source of truth:
    - status pattern: `canonical_status_consumer`
    - evidence pattern: `canonical_evidence_reference_consumer`
    - alignment: `aligned_canonical_outward`
+   - completion status: `aligned_to_final_compute_line`
    - caveat: bewusst constrained; konsumiert top-level Status-/Evidence-Refs statt tiefer Internals.
 
 3. `replay_diff_backend_recompute`
@@ -52,6 +61,7 @@ Code source of truth:
    - status pattern: `mixed_legacy_consumption_pattern`
    - evidence pattern: `mixed_legacy_consumption_pattern`
    - alignment: `legacy_compat_path`
+   - completion status: `mixed_transitional`
    - caveat: bewusst compat-orientierte Recompute-Lane, nicht als outward Runtime-Servicevertrag führen.
 
 4. `bench_compute_subcommand`
@@ -61,6 +71,7 @@ Code source of truth:
    - status pattern: `internal_dev_test_only`
    - evidence pattern: `internal_dev_test_only`
    - alignment: `internal_dev_test_only`
+   - completion status: `internal_only_not_true_outward_consumer`
    - caveat: internes Harness, kein normaler Domänenanschluss.
 
 5. `domains_ai_compat_lane`
@@ -69,7 +80,20 @@ Code source of truth:
    - status pattern: `mixed_legacy_consumption_pattern`
    - evidence pattern: `mixed_legacy_consumption_pattern`
    - alignment: `legacy_compat_path`
+   - completion status: `internal_only_not_true_outward_consumer`
    - caveat: explizite Compatibility-Grenze außerhalb outward-facing Compute-Verträge.
+
+## Completion-Evidence-Sicht (ausgewählte reale Flächen)
+
+- **Aligned zur finalen Compute-Linie**
+  - `ops_compute_probe`
+- **Mostly aligned mit Caveats**
+  - `runtime_orchestrator_env_bootstrap`
+- **Mixed / transitional**
+  - `replay_diff_backend_recompute`
+- **Internal-only / kein true outward consumer**
+  - `bench_compute_subcommand`
+  - `domains_ai_compat_lane`
 
 ## Deliberate limits
 
