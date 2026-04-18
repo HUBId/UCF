@@ -84,3 +84,47 @@ Optionaler Voll-Check bei Übergabe:
 5. `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json`
 
 Kein neuer Plattformaufbau, keine zweite Wahrheitsquelle, keine Governance-/Release-Nebenstruktur.
+
+## 8) Serie-L-Abschlussmatrix (Prompt 4 Readiness Sweep)
+
+| Bereich | Status | Repo-basierte Abschlussaussage |
+|---|---|---|
+| Canonical compute kernel path (`submit -> compute_canonical -> result/fault/status -> execution_snapshot`) | **final stable technical exit line** | Final abgeschlossen als einzige outward Produktionslinie des Real-Compute-Kerns. |
+| Cross-cutting runtime invariants + canonical handoff semantics (`CROSS_CUTTING_PRODUCTION_INVARIANTS_V1`, `CANONICAL_RUNTIME_HANDOFF_SEMANTICS_V1`) | **final stable technical exit line** | Final abgeschlossen als semantische Kernbindung über Execution/Replay/Diagnostics/Expert-Handoffs. |
+| Outward status/evidence + integration-safe hooks (`status_evidence_export_surface`, `integration_hook_view`) | **final stable technical exit line** | Final abgeschlossen als read-only/caveated Exportadapter auf den selben Kernzustand. |
+| Replay strictness boundary (`replay_preflight -> replay_with_entry`, `insufficient`/`blocked`) | **constrained but accepted** | Bewusst fail-closed; akzeptierte Schutzkante statt weicher Erfolgssemantik. |
+| Expert runtime control (`run_operation_with_entry`, `replay_with_entry`) | **constrained but accepted** | High-trust/internal by design; akzeptiert, solange auf shared core invariants gebunden. |
+| Compatibility/legacy lanes (`stub|candle`, worker/domain compatibility) als outward authority | **intentionally deferred** | Bleibt absichtlich außerhalb finaler outward Autorität des Compute-Kerns. |
+| Deep accelerator/fleet orchestration platform logic | **intentionally deferred** | Kein Bestandteil des Compute-Core-Exits; Folgearbeit außerhalb der Serie-L-Kernlinie. |
+
+## 9) Expliziter finaler technischer Exit (Real-Compute-Kern)
+
+Der finale technische Exit ist hiermit gezogen:
+
+1. **Final technisch abgeschlossen** sind die Kernpfade des Real-Compute-Kerns:
+   - kanonische Compute-Ausführungslinie,
+   - zentrale Kerninvarianten/Handoff-Semantik,
+   - outward status/evidence/hook-Export auf derselben Kernsemantik.
+2. **Bewusst akzeptierte Caveats** bleiben:
+   - fail-closed Replay-Strictness,
+   - high-trust/internal Expert-Runtime-Control.
+3. **Bewusst deferred** bleibt:
+   - Nutzung von compatibility/internal Lanes als outward Produktionsautorität,
+   - tiefe Accelerator-/Fleet-Plattformorchestrierung.
+
+Damit ist weitere Arbeit ab jetzt **Folgeintegration bzw. spätere Domänenanbindung** und **nicht mehr Compute-Core-Abschlussarbeit**.
+
+## 10) Nächste Richtungen nach dem Exit (1–3, mit Hebel)
+
+1. **Serie M (priorisiert): targeted domain integration after compute-core completion.**
+2. **Serie N: breiter UCF-Systemintegrations-Review über Compute-adjazente Flächen.**
+3. **Serie O: maintenance-only lane (Driftkontrolle, keine Capability-Expansion).**
+
+### Priorisierte nächste Richtung
+
+**Priorität: Serie M.**
+
+Kurzbegründung:
+- Höchster Hebel direkt nach dem Exit, weil der abgeschlossene Compute-Kern jetzt gezielt in Domain-Integrationen mit realen Nutzenpfaden überführt werden kann, ohne die Kernlinie neu zu öffnen.
+- Serie N ist nachrangig, da ein breiter Systemreview erst nach ersten fokussierten Integrationssignalen den besseren Nutzwert liefert.
+- Serie O ist nachrangig, weil reine Maintenance kurzfristig weniger Produkthebel hat als gezielte Folgeintegration auf bereits stabiler Kernbasis.
