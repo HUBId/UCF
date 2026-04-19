@@ -890,4 +890,25 @@ mod tests {
             assert!(doc.contains("compute_core_maintenance_boundary_serie_o_v1.md"));
         }
     }
+
+    #[test]
+    fn serie_o_prompt4_readiness_sweep_keeps_matrix_follow_up_line_and_priority_explicit() {
+        let doc = include_str!("../../../docs/serie_o_readiness_sweep_prompt4_v1.md");
+        let line = canonical_final_reference_line();
+
+        assert!(doc.contains(line.execution_core));
+
+        assert!(doc.contains("maintenance-safe"));
+        assert!(doc.contains("maintenance-safe with care"));
+        assert!(doc.contains("outside maintenance lane"));
+
+        assert!(doc.contains("maintenance_safe_change"));
+        assert!(doc.contains("maintenance_safe_with_care"));
+        assert!(doc.contains("not_maintenance_only_requires_new_integration_or_buildout"));
+
+        assert!(doc.contains("Serie P"));
+        assert!(doc.contains("Serie Q"));
+        assert!(doc.contains("Serie R"));
+        assert!(doc.contains("Priorität: Serie P"));
+    }
 }
