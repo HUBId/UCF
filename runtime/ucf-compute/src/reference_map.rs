@@ -690,6 +690,11 @@ mod tests {
         assert!(doc.contains("bench_compute_subcommand"));
         assert!(doc.contains("domains_ai_compat_lane"));
         assert!(doc.contains("Keine Wunschliste"));
+        assert!(doc.contains("already_aligned"));
+        assert!(doc.contains("first_post_core_aligned"));
+        assert!(doc.contains("broader_review_candidate"));
+        assert!(doc.contains("not_pursued_now"));
+        assert!(doc.contains("nicht vorweg implementiert"));
     }
 
     #[test]
