@@ -157,3 +157,44 @@ Für priorisierte Kandidaten gilt als Mindestcheck:
 - Die bestehende `candidate_priority_view`-Klassifikation bleibt rein ergänzend und darf keine implizite Implementierungszusage erzeugen.
 
 Diese Konsistenz ist über die bestehende Code-/Doku-Kopplung in `runtime/ucf-compute/src/reference_map.rs` Tests abgesichert.
+
+## 12) Serie-N-Abschlussmatrix (harte Abschlussprüfung, repo-basiert)
+
+Die Abschlussmatrix zieht nur die bereits im Repo belegten Flächen zusammen; keine neuen Kandidaten:
+
+| Fläche | Abschlussstatus | Repo-basierte Kurzbegründung |
+|---|---|---|
+| `runtime_orchestrator_env_bootstrap` | `genuine next integration candidate` | In `CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP` als `needs_final_integration_adjustment` + `mostly_aligned_with_caveats` geführt; hoher Hebel bei schmaler Canonicalisierung möglich. |
+| `replay_diff_backend_recompute` | `plausible but deferred` | Als `legacy_compat_path` + `mixed_transitional` klassifiziert; technisch nützlich, aber kein outward service contract uplift. |
+| `domains_ai_compat_lane` | `reviewed and not pursued now` | Explizite Legacy-/Compat-Grenze (`legacy_compat_path`, `internal_only_not_true_outward_consumer`), kein sinnvoller Anschluss an outward canonical status/evidence. |
+| `bench_compute_subcommand` | `not meaningful as compute-facing integration` | Internal/dev-test benchmark harness (`internal_dev_test_only`), kein outward execution/status/evidence Ziel. |
+| `runtime hooks / frame helpers` | `not meaningful as compute-facing integration` | Hilfspfad ohne stabile outward Vertragsbindung (`integration_hook_view` bleibt read-only/caveated boundary). |
+| `ops_compute_probe` | bereits integriert (Referenzanker, kein nächster Kandidat) | Einziger Consumer mit `aligned_to_final_compute_line`; bleibt Baseline, nicht neuer Ausbaukandidat. |
+
+## 13) Explizite breitere Systemintegrations-Review-Linie nach Abschluss
+
+Nach Serie N gilt explizit und abschließend:
+
+- **Realer breiter Anschlusskandidat:** nur `runtime_orchestrator_env_bootstrap`.
+- **Bewusst reviewt, jetzt nicht verfolgt:** `replay_diff_backend_recompute`, `domains_ai_compat_lane`.
+- **Bewusst außerhalb compute-facing Integrationsarbeit:** `bench_compute_subcommand`, `runtime hooks / frame helpers`.
+- **Kein Rückfall in Compute-Core-Arbeit:** Diese Linie ist ausschließlich Review/Priorisierung auf bestehenden finalen Contracts (`submit`, `status`, `status_evidence_export_surface`), nicht neue Core-Ausbauarbeit.
+
+## 14) Nächste Richtungen nach Serie N (1-3), mit harter Priorisierung
+
+Keine Wunschliste; nur technische Hebel auf Basis der Abschlussmatrix:
+
+1. **Serie O (priorisiert): maintenance-only follow-up lane für `runtime_orchestrator_env_bootstrap` Canonicalisierung**
+   - Höchster Hebel jetzt: reduziert Mixed-Intake am load-bearing Runtime-Einstieg ohne neuen Compute-Kern.
+   - Liefert direkte Stabilisierung der ersten breiteren Integrationslinie bei minimalem Scope.
+2. **Serie P (nachrangig): targeted rollout-Checks auf stabilisiertem `ops_compute_probe` + orchestrator outcome**
+   - Sinnvoll erst nach Serie O, damit Checks auf einer klareren Canonicalisierung aufsetzen.
+3. **Serie Q (nachrangig): erneuter broader adoption review nach Stabilisierung**
+   - Erst danach belastbar, sonst droht Wiederholung derselben Review-Befunde ohne neuen Integrationsfortschritt.
+
+**Exakte Priorität zuerst: Serie O.**
+
+Kurzbegründung gegen Alternativen:
+- Serie O zuerst, weil sie den einzigen `genuine next integration candidate` direkt bearbeitet und den höchsten technischen Hebel pro Änderungseinheit hat.
+- Serie P ist nachrangig, weil ohne O noch zu viel Mixed-Intake verbleibt.
+- Serie Q ist nachrangig, weil breitere Adoption-Reviews vor O primär Re-Labeling statt Integrationsergebnis erzeugen würden.
