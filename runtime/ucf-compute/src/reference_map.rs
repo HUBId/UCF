@@ -451,6 +451,7 @@ mod tests {
         assert!(doc.contains("partial"));
         assert!(doc.contains("caveated"));
         assert!(doc.contains("blocked"));
+        assert!(doc.contains("compute_core_maintenance_boundary_serie_o_v1.md"));
     }
 
     #[test]
@@ -695,6 +696,7 @@ mod tests {
         assert!(doc.contains("broader_review_candidate"));
         assert!(doc.contains("not_pursued_now"));
         assert!(doc.contains("nicht vorweg implementiert"));
+        assert!(doc.contains("compute_core_maintenance_boundary_serie_o_v1.md"));
     }
 
     #[test]
@@ -718,5 +720,31 @@ mod tests {
         }));
         assert!(doc.contains("low_value_or_legacy_driven_candidate"));
         assert!(doc.contains("not_worth_broader_integration_now"));
+    }
+
+    #[test]
+    fn serie_o_maintenance_boundary_doc_keeps_minimal_change_classes_explicit() {
+        let doc = include_str!("../../../docs/compute_core_maintenance_boundary_serie_o_v1.md");
+        let line = canonical_final_reference_line();
+
+        assert!(doc.contains(line.execution_core));
+
+        assert!(doc.contains("maintenance_safe_change"));
+        assert!(doc.contains("maintenance_safe_with_care"));
+        assert!(doc.contains("not_maintenance_only_requires_new_integration_or_buildout"));
+
+        assert!(doc.contains("bug fix"));
+        assert!(doc.contains("small contract consistency fix"));
+        assert!(doc.contains("narrow drift correction"));
+        assert!(doc.contains("doc/readiness/reference alignment"));
+        assert!(doc.contains("small guard/check hardening"));
+
+        assert!(doc.contains("new runtime feature"));
+        assert!(doc.contains("broader new integration"));
+        assert!(doc.contains("new backend/device capability expansion"));
+        assert!(doc.contains("new workflow/control surface"));
+        assert!(doc.contains("architectural reshaping"));
+
+        assert!(doc.contains("keine zweite Wahrheitsquelle"));
     }
 }
