@@ -85,6 +85,7 @@ Für Serie O genügt ein kleiner Check:
 - Alle maintenance-safe Änderungsarten bleiben explizit benannt.
 - Out-of-scope Klassen bleiben explizit benannt.
 - Referenz auf finale Kernlinie (`submit -> compute_canonical -> result/fault/status -> execution_snapshot`) bleibt enthalten.
+- Drift-Prevention Check-Map bleibt auf vier Klassen begrenzt (siehe `docs/compute_core_drift_prevention_checks_serie_o_v1.md`).
 
 ## 7) Konkrete Within-vs-Outside Beispiele
 

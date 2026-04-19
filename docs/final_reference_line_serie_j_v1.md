@@ -103,3 +103,5 @@ Nach dem technischen Core-Abschluss gilt für `runtime/ucf-compute/*` ausdrückl
 - nicht zulässig in dieser Spur: neue Runtime-Features, neue breitere Integrationen, neue Backend-/Device-Capability-Expansion, neue Workflow-/Control-Surfaces, Architekturumbau
 
 Die explizite Boundary-Definition steht in `docs/compute_core_maintenance_boundary_serie_o_v1.md` und bleibt auf dieselbe finale Referenzlinie gebunden (keine zweite Wahrheitsquelle).
+
+Die dazugehörige minimale Drift-Prevention-Check-Map steht in `docs/compute_core_drift_prevention_checks_serie_o_v1.md` und bleibt ebenfalls auf derselben finalen Referenzlinie verankert.
