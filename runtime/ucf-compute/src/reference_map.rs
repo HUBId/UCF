@@ -671,7 +671,7 @@ mod tests {
     }
 
     #[test]
-    fn serie_n_broader_system_map_stays_pinned_to_final_compute_line_and_classes() {
+    fn serie_n_broader_system_map_stays_pinned_to_final_compute_line_and_priority_view() {
         let doc = include_str!("../../../docs/broader_system_integration_map_serie_n_v1.md");
         let line = canonical_final_reference_line();
         assert!(doc.contains(line.execution_core));
@@ -679,15 +679,39 @@ mod tests {
         assert!(doc.contains("integration_hook_view"));
         assert!(doc.contains(line.internal_boundary));
 
-        assert!(doc.contains("real_compute_facing_candidate"));
-        assert!(doc.contains("indirect_or_compatibility_touching_surface"));
-        assert!(doc.contains("internal_only_relation"));
-        assert!(doc.contains("no_meaningful_compute_integration_candidate"));
+        assert!(doc.contains("high_leverage_aligned_candidate"));
+        assert!(doc.contains("plausible_but_caveated_candidate"));
+        assert!(doc.contains("low_value_or_legacy_driven_candidate"));
+        assert!(doc.contains("not_worth_broader_integration_now"));
 
         assert!(doc.contains("ops_compute_probe"));
         assert!(doc.contains("runtime_orchestrator_env_bootstrap"));
         assert!(doc.contains("replay_diff_backend_recompute"));
         assert!(doc.contains("bench_compute_subcommand"));
         assert!(doc.contains("domains_ai_compat_lane"));
+        assert!(doc.contains("Keine Wunschliste"));
+    }
+
+    #[test]
+    fn serie_n_priority_view_does_not_mark_legacy_or_internal_paths_as_aligned() {
+        let doc = include_str!("../../../docs/broader_system_integration_map_serie_n_v1.md");
+        let map = canonical_domain_facing_compute_consumer_map();
+        let legacy_or_internal: Vec<_> = map
+            .iter()
+            .filter(|consumer| {
+                matches!(
+                    consumer.consumer,
+                    "domains_ai_compat_lane"
+                        | "bench_compute_subcommand"
+                        | "replay_diff_backend_recompute"
+                )
+            })
+            .collect();
+        assert!(!legacy_or_internal.is_empty());
+        assert!(legacy_or_internal.iter().all(|consumer| {
+            consumer.alignment != DomainFacingConsumerAlignment::AlignedCanonicalOutward
+        }));
+        assert!(doc.contains("low_value_or_legacy_driven_candidate"));
+        assert!(doc.contains("not_worth_broader_integration_now"));
     }
 }
