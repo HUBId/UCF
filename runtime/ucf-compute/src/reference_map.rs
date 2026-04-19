@@ -116,6 +116,23 @@ pub struct CanonicalFinalReferenceLine {
     pub internal_boundary: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DriftPreventionCheckClass {
+    ReferenceLineConsistency,
+    OutwardFacingContractConsistency,
+    SharedCoreSemantics,
+    DocCodeAlignment,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DriftPreventionCheckLane {
+    pub class: DriftPreventionCheckClass,
+    pub check_id: &'static str,
+    pub guarded_line: &'static str,
+    pub check_surface: &'static str,
+    pub drift_risk: &'static str,
+}
+
 pub const CANONICAL_FINAL_REFERENCE_LINE: CanonicalFinalReferenceLine =
     CanonicalFinalReferenceLine {
         execution_core: FINAL_REFERENCE_LINE_EXECUTION_CORE,
@@ -125,6 +142,41 @@ pub const CANONICAL_FINAL_REFERENCE_LINE: CanonicalFinalReferenceLine =
         cross_cutting_invariants: FINAL_REFERENCE_LINE_CROSS_CUTTING_INVARIANTS,
         internal_boundary: FINAL_REFERENCE_NON_CANONICAL_INTERNAL_BOUNDARY,
     };
+
+pub const CANONICAL_DRIFT_PREVENTION_CHECK_MAP: [DriftPreventionCheckLane; 4] = [
+    DriftPreventionCheckLane {
+        class: DriftPreventionCheckClass::ReferenceLineConsistency,
+        check_id: "reference_line_consistency",
+        guarded_line: FINAL_REFERENCE_LINE_EXECUTION_CORE,
+        check_surface: "reference_map::final_reference_doc_and_code_constants_are_kept_in_sync",
+        drift_risk: "final reference line text and canonical execution path silently diverge",
+    },
+    DriftPreventionCheckLane {
+        class: DriftPreventionCheckClass::OutwardFacingContractConsistency,
+        check_id: "outward_facing_contract_consistency",
+        guarded_line: "status_evidence_export_surface + integration_hook_view remain outward-facing",
+        check_surface:
+            "service_surface::{integration_hook_view_keeps_outward_hooks_read_only_or_caveated,status_evidence_export_surface_keeps_internal_runtime_details_out_of_default_surface}",
+        drift_risk: "outward hooks drift into internal/expert-only semantics",
+    },
+    DriftPreventionCheckLane {
+        class: DriftPreventionCheckClass::SharedCoreSemantics,
+        check_id: "shared_core_semantics_consistency",
+        guarded_line:
+            "blocked/failed/no_op and current/partial/stale/caveated/degraded stay non-interchangeable",
+        check_surface:
+            "contracts::{cross_cutting_invariants_and_outcome_classes_are_explicit,runtime_action_core_semantics_are_stable,evidence_and_trace_partial_caveat_semantics_are_aligned}",
+        drift_risk: "load-bearing semantic classes collapse into path-local synonyms",
+    },
+    DriftPreventionCheckLane {
+        class: DriftPreventionCheckClass::DocCodeAlignment,
+        check_id: "doc_code_alignment",
+        guarded_line: "Serie O maintenance-only boundary stays tied to final reference line",
+        check_surface:
+            "reference_map::{serie_o_maintenance_boundary_doc_keeps_minimal_change_classes_explicit,serie_o_drift_prevention_checks_doc_stays_tied_to_canonical_line}",
+        drift_risk: "docs become a second truth detached from code-pinned invariants",
+    },
+];
 
 pub const CANONICAL_COMPUTE_INTEGRATION_CONTRACT_VIEW: [ComputeIntegrationContractLane; 6] = [
     ComputeIntegrationContractLane {
@@ -341,6 +393,10 @@ pub fn is_outward_facing_compute_integration_boundary(
 pub fn canonical_domain_facing_compute_consumer_map() -> &'static [DomainFacingComputeConsumerLane]
 {
     &CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP
+}
+
+pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
+    &CANONICAL_DRIFT_PREVENTION_CHECK_MAP
 }
 
 #[cfg(test)]
@@ -746,5 +802,77 @@ mod tests {
         assert!(doc.contains("architectural reshaping"));
 
         assert!(doc.contains("keine zweite Wahrheitsquelle"));
+        assert!(doc.contains("compute_core_drift_prevention_checks_serie_o_v1.md"));
+    }
+
+    #[test]
+    fn drift_prevention_check_map_keeps_four_minimal_load_bearing_classes() {
+        let checks = canonical_drift_prevention_check_map();
+        assert_eq!(checks.len(), 4);
+        assert!(checks.iter().any(|check| {
+            check.class == DriftPreventionCheckClass::ReferenceLineConsistency
+                && check.check_id == "reference_line_consistency"
+        }));
+        assert!(checks.iter().any(|check| {
+            check.class == DriftPreventionCheckClass::OutwardFacingContractConsistency
+                && check.check_id == "outward_facing_contract_consistency"
+        }));
+        assert!(checks.iter().any(|check| {
+            check.class == DriftPreventionCheckClass::SharedCoreSemantics
+                && check.check_id == "shared_core_semantics_consistency"
+        }));
+        assert!(checks.iter().any(|check| {
+            check.class == DriftPreventionCheckClass::DocCodeAlignment
+                && check.check_id == "doc_code_alignment"
+        }));
+    }
+
+    #[test]
+    fn drift_prevention_checks_stay_pinned_to_canonical_outward_and_shared_semantics() {
+        let line = canonical_final_reference_line();
+        let checks = canonical_drift_prevention_check_map();
+
+        let reference = checks
+            .iter()
+            .find(|check| check.class == DriftPreventionCheckClass::ReferenceLineConsistency)
+            .expect("reference check");
+        assert_eq!(reference.guarded_line, line.execution_core);
+
+        let outward = checks
+            .iter()
+            .find(|check| {
+                check.class == DriftPreventionCheckClass::OutwardFacingContractConsistency
+            })
+            .expect("outward check");
+        assert!(outward
+            .guarded_line
+            .contains("status_evidence_export_surface"));
+        assert!(outward.guarded_line.contains("integration_hook_view"));
+
+        let shared = checks
+            .iter()
+            .find(|check| check.class == DriftPreventionCheckClass::SharedCoreSemantics)
+            .expect("shared-core check");
+        assert!(shared.guarded_line.contains("blocked/failed/no_op"));
+        assert!(shared
+            .guarded_line
+            .contains("current/partial/stale/caveated/degraded"));
+    }
+
+    #[test]
+    fn serie_o_drift_prevention_checks_doc_stays_tied_to_canonical_line() {
+        let doc = include_str!("../../../docs/compute_core_drift_prevention_checks_serie_o_v1.md");
+        let line = canonical_final_reference_line();
+
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("reference_line_consistency"));
+        assert!(doc.contains("outward_facing_contract_consistency"));
+        assert!(doc.contains("shared_core_semantics_consistency"));
+        assert!(doc.contains("doc_code_alignment"));
+        assert!(doc.contains("blocked/failed/no_op"));
+        assert!(doc.contains("current/partial/stale/caveated/degraded"));
+        assert!(doc.contains("status_evidence_export_surface"));
+        assert!(doc.contains("integration_hook_view"));
+        assert!(doc.contains("keine CI-/Governance-/Policy-Plattform"));
     }
 }
