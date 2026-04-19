@@ -184,20 +184,14 @@ Nach Serie N gilt explizit und abschließend:
 
 Keine Wunschliste; nur technische Hebel auf Basis der Abschlussmatrix:
 
-1. **Serie O (priorisiert): maintenance-only follow-up lane für `runtime_orchestrator_env_bootstrap` Canonicalisierung**
-   - Höchster Hebel jetzt: reduziert Mixed-Intake am load-bearing Runtime-Einstieg ohne neuen Compute-Kern.
-   - Liefert direkte Stabilisierung der ersten breiteren Integrationslinie bei minimalem Scope.
-2. **Serie P (nachrangig): targeted rollout-Checks auf stabilisiertem `ops_compute_probe` + orchestrator outcome**
-   - Sinnvoll erst nach Serie O, damit Checks auf einer klareren Canonicalisierung aufsetzen.
-3. **Serie Q (nachrangig): erneuter broader adoption review nach Stabilisierung**
-   - Erst danach belastbar, sonst droht Wiederholung derselben Review-Befunde ohne neuen Integrationsfortschritt.
+1. **Serie P (priorisiert): targeted rollout-Checks auf stabilisiertem `ops_compute_probe` + orchestrator outcome**
+   - nächster direkte Integrationshebel auf bestehender Abschlussmatrix.
+2. **Serie Q (nachrangig): erneuter broader adoption review nach Integrationsschritt**
+   - erst danach belastbar, sonst droht Wiederholung derselben Review-Befunde ohne neuen Integrationsfortschritt.
+3. **Serie O (geschlossen, nicht Ausbaupfad): maintenance-only Nachlaufkanon am Compute-Kern**
+   - nur kleine maintenance-safe Korrekturen, keine Integrations- oder Capability-Erweiterung.
 
-**Exakte Priorität zuerst: Serie O.**
-
-Kurzbegründung gegen Alternativen:
-- Serie O zuerst, weil sie den einzigen `genuine next integration candidate` direkt bearbeitet und den höchsten technischen Hebel pro Änderungseinheit hat.
-- Serie P ist nachrangig, weil ohne O noch zu viel Mixed-Intake verbleibt.
-- Serie Q ist nachrangig, weil breitere Adoption-Reviews vor O primär Re-Labeling statt Integrationsergebnis erzeugen würden.
+**Exakte Priorität zuerst: Serie P.**
 
 ## 15) Maintenance-only guardrail für den abgeschlossenen Compute-Kern (Serie O)
 
@@ -207,5 +201,5 @@ Die Maintenance-only Grenze für den abgeschlossenen Compute-Kern ist separat ex
 
 Dabei gilt für Folgearbeit nach Serie N:
 - `broader_review_candidate` bleibt Integrationsarbeit und ist **nicht automatisch** maintenance-only.
-- Core-nahe Änderungen in `runtime/ucf-compute/*` müssen als `maintenance_safe_change`, `maintenance_safe_with_care` oder `not_maintenance_only_requires_new_integration_or_buildout` eingeordnet werden.
+- Core-nahe Änderungen in `runtime/ucf-compute/*` müssen in den Minimal-Nachlaufkanon eingeordnet werden (`allowed_maintenance_safe_changes`, `discouraged_but_possible_with_care`, `not_in_maintenance_lane`; code-seitig gespiegelt durch `maintenance_safe_change`, `maintenance_safe_with_care`, `not_maintenance_only_requires_new_integration_or_buildout`).
 - Alles außerhalb maintenance-only bleibt als neue Integration/Buildout zu behandeln.

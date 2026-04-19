@@ -97,11 +97,13 @@ contracts and **do not create a second error or workflow model**.
 
 ## 6) Maintenance-only boundary after core completion (Serie O)
 
-Nach dem technischen Core-Abschluss gilt für `runtime/ucf-compute/*` ausdrücklich eine schmale Maintenance-only-Spur:
+Nach dem technischen Core-Abschluss gilt für `runtime/ucf-compute/*` ein geschlossener, minimaler Nachlaufkanon:
 
-- zulässig: kleine Reparaturen, Konsistenz-/Drift-Korrekturen, kleine Guard-Härtungen auf bestehender Kernlinie
-- nicht zulässig in dieser Spur: neue Runtime-Features, neue breitere Integrationen, neue Backend-/Device-Capability-Expansion, neue Workflow-/Control-Surfaces, Architekturumbau
+- `allowed_maintenance_safe_changes`: kleine Reparaturen, Konsistenz-/Drift-Korrekturen, kleine Guard-Härtungen auf bestehender Kernlinie
+- `discouraged_but_possible_with_care`: nur enge Kantenkorrekturen ohne neue Semantik-/Contract-Schicht
+- `not_in_maintenance_lane`: Runtime-Feature-Ausbau, neue breitere Integration, Backend-/Device-Capability-Expansion, neue Workflow-/Control-Surfaces, Architekturumbau
+
+Serie O ist damit als Maintenance-Follow-up technisch abgeschlossen; weitere Ausbauarbeit bleibt außerhalb dieser Spur.
 
 Die explizite Boundary-Definition steht in `docs/compute_core_maintenance_boundary_serie_o_v1.md` und bleibt auf dieselbe finale Referenzlinie gebunden (keine zweite Wahrheitsquelle).
-
-Die dazugehörige minimale Drift-Prevention-Check-Map steht in `docs/compute_core_drift_prevention_checks_serie_o_v1.md` und bleibt ebenfalls auf derselben finalen Referenzlinie verankert.
+Die minimale Drift-Prevention-Check-Map steht in `docs/compute_core_drift_prevention_checks_serie_o_v1.md` und bleibt ebenfalls auf derselben finalen Referenzlinie verankert.

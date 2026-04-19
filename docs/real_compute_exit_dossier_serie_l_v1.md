@@ -131,9 +131,12 @@ Kurzbegründung:
 
 ## 11) Maintenance-only boundary nach Core-Exit (Serie O Spiegelung)
 
-Unabhängig von den priorisierten Integrationsreihen bleibt der finalisierte Compute-Kern (`runtime/ucf-compute/*`) ab jetzt als maintenance-only markiert:
+Unabhängig von priorisierten Integrationsreihen gilt für den finalisierten Compute-Kern (`runtime/ucf-compute/*`) ein abgeschlossener Minimal-Nachlaufkanon:
 
-- **innerhalb**: bug fixes, kleine contract consistency fixes, narrow drift corrections, doc/readiness/reference alignment, kleine guard/check hardening Maßnahmen.
-- **außerhalb**: new runtime feature, broader new integration, new backend/device capability expansion, new workflow/control surface, architectural reshaping.
+- **allowed_maintenance_safe_changes**: bug fixes, small contract consistency fixes, narrow drift corrections, doc/readiness/reference alignment, small guard/check hardening.
+- **discouraged_but_possible_with_care**: nur enge Kantenkorrekturen ohne neue Semantik-/Contract-Schicht.
+- **not_in_maintenance_lane**: new runtime feature, broader new integration, new backend/device capability expansion, new workflow/control surface, architectural reshaping.
+
+Serie O ist damit als Maintenance-Follow-up geschlossen; alles außerhalb dieses Kanons bleibt neue Integrations-/Buildout-Arbeit.
 
 Die konkrete Boundary-Definition ist in `docs/compute_core_maintenance_boundary_serie_o_v1.md` dokumentiert und bindet weiter an dieselbe finale Referenzlinie.
