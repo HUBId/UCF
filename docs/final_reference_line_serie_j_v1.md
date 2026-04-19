@@ -94,3 +94,12 @@ Each handoff explicitly classifies its current result state:
 
 These handoff states are derived from existing snapshot/diagnostics/evidence/action
 contracts and **do not create a second error or workflow model**.
+
+## 6) Maintenance-only boundary after core completion (Serie O)
+
+Nach dem technischen Core-Abschluss gilt für `runtime/ucf-compute/*` ausdrücklich eine schmale Maintenance-only-Spur:
+
+- zulässig: kleine Reparaturen, Konsistenz-/Drift-Korrekturen, kleine Guard-Härtungen auf bestehender Kernlinie
+- nicht zulässig in dieser Spur: neue Runtime-Features, neue breitere Integrationen, neue Backend-/Device-Capability-Expansion, neue Workflow-/Control-Surfaces, Architekturumbau
+
+Die explizite Boundary-Definition steht in `docs/compute_core_maintenance_boundary_serie_o_v1.md` und bleibt auf dieselbe finale Referenzlinie gebunden (keine zweite Wahrheitsquelle).

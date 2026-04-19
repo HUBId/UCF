@@ -198,3 +198,14 @@ Kurzbegründung gegen Alternativen:
 - Serie O zuerst, weil sie den einzigen `genuine next integration candidate` direkt bearbeitet und den höchsten technischen Hebel pro Änderungseinheit hat.
 - Serie P ist nachrangig, weil ohne O noch zu viel Mixed-Intake verbleibt.
 - Serie Q ist nachrangig, weil breitere Adoption-Reviews vor O primär Re-Labeling statt Integrationsergebnis erzeugen würden.
+
+## 15) Maintenance-only guardrail für den abgeschlossenen Compute-Kern (Serie O)
+
+Serie N bleibt eine Review-/Priorisierungslinie für breitere Integration.
+Die Maintenance-only Grenze für den abgeschlossenen Compute-Kern ist separat explizit festgezogen in:
+- `docs/compute_core_maintenance_boundary_serie_o_v1.md`
+
+Dabei gilt für Folgearbeit nach Serie N:
+- `broader_review_candidate` bleibt Integrationsarbeit und ist **nicht automatisch** maintenance-only.
+- Core-nahe Änderungen in `runtime/ucf-compute/*` müssen als `maintenance_safe_change`, `maintenance_safe_with_care` oder `not_maintenance_only_requires_new_integration_or_buildout` eingeordnet werden.
+- Alles außerhalb maintenance-only bleibt als neue Integration/Buildout zu behandeln.

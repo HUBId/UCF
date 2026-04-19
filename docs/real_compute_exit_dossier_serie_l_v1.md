@@ -128,3 +128,12 @@ Kurzbegründung:
 - Höchster Hebel direkt nach dem Exit, weil der abgeschlossene Compute-Kern jetzt gezielt in Domain-Integrationen mit realen Nutzenpfaden überführt werden kann, ohne die Kernlinie neu zu öffnen.
 - Serie N ist nachrangig, da ein breiter Systemreview erst nach ersten fokussierten Integrationssignalen den besseren Nutzwert liefert.
 - Serie O ist nachrangig, weil reine Maintenance kurzfristig weniger Produkthebel hat als gezielte Folgeintegration auf bereits stabiler Kernbasis.
+
+## 11) Maintenance-only boundary nach Core-Exit (Serie O Spiegelung)
+
+Unabhängig von den priorisierten Integrationsreihen bleibt der finalisierte Compute-Kern (`runtime/ucf-compute/*`) ab jetzt als maintenance-only markiert:
+
+- **innerhalb**: bug fixes, kleine contract consistency fixes, narrow drift corrections, doc/readiness/reference alignment, kleine guard/check hardening Maßnahmen.
+- **außerhalb**: new runtime feature, broader new integration, new backend/device capability expansion, new workflow/control surface, architectural reshaping.
+
+Die konkrete Boundary-Definition ist in `docs/compute_core_maintenance_boundary_serie_o_v1.md` dokumentiert und bindet weiter an dieselbe finale Referenzlinie.
