@@ -875,4 +875,19 @@ mod tests {
         assert!(doc.contains("integration_hook_view"));
         assert!(doc.contains("keine CI-/Governance-/Policy-Plattform"));
     }
+
+    #[test]
+    fn serie_o_minimal_follow_up_canon_is_consistent_across_reference_and_exit_docs() {
+        let final_reference_doc = include_str!("../../../docs/final_reference_line_serie_j_v1.md");
+        let exit_doc = include_str!("../../../docs/real_compute_exit_dossier_serie_l_v1.md");
+
+        for doc in [final_reference_doc, exit_doc] {
+            assert!(doc.contains("allowed_maintenance_safe_changes"));
+            assert!(doc.contains("discouraged_but_possible_with_care"));
+            assert!(doc.contains("not_in_maintenance_lane"));
+            assert!(doc.contains("Serie O"));
+            assert!(doc.contains("geschlossen"));
+            assert!(doc.contains("compute_core_maintenance_boundary_serie_o_v1.md"));
+        }
+    }
 }

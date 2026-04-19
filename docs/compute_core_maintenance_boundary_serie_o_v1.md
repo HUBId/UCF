@@ -30,15 +30,21 @@ Als abgeschlossen gelten und bleiben unverändert maßgeblich:
 
 ## 2) Maintenance-only boundary view (minimal)
 
-Nur drei Klassen:
+Der Nachlaufkanon bleibt absichtlich klein und dreiteilig:
+
+- `allowed_maintenance_safe_changes`
+- `discouraged_but_possible_with_care`
+- `not_in_maintenance_lane`
+
+Zur Code-/Check-Anbindung bleiben die bestehenden Klassen erhalten:
 
 - `maintenance_safe_change`
 - `maintenance_safe_with_care`
 - `not_maintenance_only_requires_new_integration_or_buildout`
 
-## 3) Zulässige maintenance-only Änderungsarten
+## 3) Minimaler Nachlaufkanon (Serie O Abschluss)
 
-### `maintenance_safe_change`
+### `allowed_maintenance_safe_changes` (`maintenance_safe_change`)
 
 1. **bug fix**
    - eng begrenzte Fehlerkorrektur innerhalb bestehender Kernsemantik, ohne neue Laufzeitfähigkeit.
@@ -51,7 +57,7 @@ Nur drei Klassen:
 5. **small guard/check hardening**
    - kleine fail-closed Guard-/Check-Härtung auf bereits bestehenden Pfaden.
 
-### `maintenance_safe_with_care`
+### `discouraged_but_possible_with_care` (`maintenance_safe_with_care`)
 
 Änderungen sind nur dann in Serie O zulässig, wenn sie strikt schmal bleiben:
 - Korrekturen an load-bearing Integrationskanten (z. B. orchestrator intake),
@@ -59,7 +65,7 @@ Nur drei Klassen:
 - keine neuen outward contracts,
 - kein Umbau der finalen Kernlinie.
 
-## 4) Explizit außerhalb maintenance-only
+## 4) `not_in_maintenance_lane`
 
 Folgende Klassen sind **nicht** Serie O:
 
@@ -102,10 +108,13 @@ Außerhalb (`not_maintenance_only_requires_new_integration_or_buildout`):
 - Neue Workflow-/Control-Surface für Experten oder Operator.
 - Architekturumbau, der die Kernlinie oder ihre Autoritätsgrenzen neu ordnet.
 
-## 8) Serie-O Folgearbeit (3–5 direkte nächste Schritte)
+## 8) Serie-O Abschlussaussage (maintenance follow-up closed)
 
-1. Kleine Drift-/Konsistenzkorrekturen auf der finalen Referenzlinie kontinuierlich sammeln und schmal halten.
-2. Bei Änderungen an load-bearing Integrationskanten immer gegen die drei Boundary-Klassen prüfen.
-3. `ops_compute_probe` als canonical Referenzanker unverändert klar halten.
-4. Outward Contracts (`submit`, `status_evidence_export_surface`, `integration_hook_view`) nicht stillschweigend erweitern.
-5. Nur dann aus Serie O aussteigen, wenn bewusst neue Integration/Buildout freigegeben wird.
+Serie O gilt damit als technisch abgeschlossen.
+
+Nachlauf ist nur noch als kleiner Kanon erlaubt:
+1. kleine Drift-/Konsistenzkorrekturen auf der finalen Referenzlinie,
+2. Boundary-Prüfung gegen die drei Klassen vor jeder Core-nahen Änderung,
+3. keine stillschweigende Erweiterung der outward Contracts (`submit`, `status_evidence_export_surface`, `integration_hook_view`).
+
+Alles andere ist explizit neue Integration/Buildout und liegt außerhalb dieser Maintenance-Spur.

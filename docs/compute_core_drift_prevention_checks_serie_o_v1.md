@@ -37,7 +37,7 @@ Genau vier Check-Klassen gelten als kanonisch:
 - **Semantic collapse drift**: wenn `blocked`, `failed`, `no_op` oder freshness/caveat/degraded Klassen vermischt werden.
 - **Maintenance-boundary drift**: wenn Serie-O-Grenzen aus der finalen Referenzlinie herausdriften.
 
-## 3) Bewusst enge Grenzen
+## 3) Bewusst enge Grenzen (Nachlaufkanon-Schutz)
 
 Diese Schicht macht **keine** neue Plattform auf:
 - keine CI-/Governance-/Policy-Plattform,
@@ -46,3 +46,7 @@ Diese Schicht macht **keine** neue Plattform auf:
 - keine neue Integrations- oder Capability-Welle.
 
 Sie hält nur die load-bearing Linie stabil und macht kleine Divergenzen früh sichtbar.
+
+## 4) Abschlusslinie
+
+Diese Checks halten nur den minimalen Nachlaufkanon stabil (`allowed`, `discouraged_with_care`, `not_in_lane`) und eröffnen keinen neuen Ausbaupfad.
