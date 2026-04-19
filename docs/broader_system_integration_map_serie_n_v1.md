@@ -1,6 +1,6 @@
 # Serie N: Broader UCF System Integration Map v1 (repo-basiert, schmal, hart priorisiert)
 
-Status: repo-basierte, technisch harte Priorisierung breiterer UCF-Systemflächen gegen die **finale Compute-Linie**. Fokus bleibt Review/Priorisierung, nicht Ausbauprogramm.
+Status: repo-basierte, technisch harte Priorisierung breiterer UCF-Systemflächen gegen die **finale Compute-Linie**. Fokus bleibt Review/Priorisierung und eine reviewbare Anschlusslinie; kein vorgezogener breiter Ausbau.
 
 Diese Datei bleibt auf derselben Referenzsprache aus Serie K/M/L:
 
@@ -21,7 +21,19 @@ Code source of truth (keine zweite Integrationswelt):
 - `runtime/ucf-replay/src/lib.rs` (`replay_records`)
 - `runtime/ucf-bench/src/main.rs` (`run_compute`)
 
-## 1) Prompt-1 Kandidaten hart gegengeprüft (ohne neue hypothetische Kandidaten)
+## 1) Linien nebeneinander: finaler Kern, erste Post-Core-Linie, breitere Kandidaten
+
+Die Einordnung bleibt ausdrücklich dreigeteilt:
+
+| Linie | Inhalt | Status |
+|---|---|---|
+| finale Compute-Linie | `submit -> compute_canonical -> result/fault/status -> execution_snapshot` + canonical status/evidence export | abgeschlossen / Referenzkern |
+| erste Post-Core-Integrationslinie | `ops_compute_probe` über `submit` + `status_evidence_export_surface` + `canonical_consumer_view` | aligned post-core integration (aus Serie M) |
+| spätere breitere Systemintegration | weitere Serie-N-Kandidaten (`runtime_orchestrator_env_bootstrap`, `replay_diff_backend_recompute`, etc.) | nur reviewbar, nicht vorweg implementiert |
+
+Damit ist klar: Serie N dokumentiert Anschlussfähigkeit, baut aber keine zweite Integrationswelle.
+
+## 2) Prompt-1 Kandidaten hart gegengeprüft (ohne neue hypothetische Kandidaten)
 
 Bewertungsachsen (rein technisch):
 1. **Semantikpassung** zu outward execution/status/evidence semantics.
@@ -37,7 +49,28 @@ Bewertungsachsen (rein technisch):
 | `domains_ai_compat_lane` | niedrig: historische ABI/compat Signale statt canonical export semantics | nein, würde legacy Richtung stärken | legacy/compat boundary | für breitere Integration jetzt nicht sinnvoll |
 | `runtime hooks / frame helpers` | sehr niedrig: summary/frame Leser ohne stabile outward contract-Bindung | nein | runtime-internal helper paths | kein meaningful candidate |
 
-## 2) Schmale `candidate_priority_view` (minimal, nicht als Portfolio-Matrix)
+## 3) Schmale Anschlusslinien-Sicht (`integration_follow_on_view`)
+
+Nur vier reviewbare Klassen, ohne Roadmap- oder Governance-Overlay:
+
+- `already_aligned`
+- `first_post_core_aligned`
+- `broader_review_candidate`
+- `not_pursued_now`
+
+Abbildung (schmal, technisch):
+
+| candidate/lane | integration_follow_on_view | Kurzbegründung |
+|---|---|---|
+| `final_compute_reference_line` | `already_aligned` | Finaler Referenzkern ist abgeschlossen und bleibt unverändert maßgeblich. |
+| `ops_compute_probe` | `first_post_core_aligned` | Erste Post-Core-Integration ist bereits auf canonical submit/status/evidence gebunden. |
+| `runtime_orchestrator_env_bootstrap` | `broader_review_candidate` | Breiter Runtime-Hebel, aber heute Mixed-Intake; nur als reviewbarer Anschlusskandidat geführt. |
+| `replay_diff_backend_recompute` | `broader_review_candidate` | Vergleichspfad mit Nutzen, aber nicht als outward Service-Contract. |
+| `domains_ai_compat_lane` | `not_pursued_now` | Legacy-/Compat-getrieben, nicht über canonical outward semantics motiviert. |
+| `bench_compute_subcommand` | `not_pursued_now` | Interner Benchmark-Pfad ohne outward execution/status/evidence-Ziel. |
+| `runtime hooks / frame helpers` | `not_pursued_now` | Hilfssignale ohne stabile outward Vertragsbindung. |
+
+## 4) Schmale `candidate_priority_view` (minimal, nicht als Portfolio-Matrix)
 
 Nur minimale Prioritätsklassen:
 - `high_leverage_aligned_candidate`
@@ -56,7 +89,7 @@ Abbildung der bestehenden Serie-N-Kandidaten:
 | `bench_compute_subcommand` | `not_worth_broader_integration_now` | Benchmark-Harness; kein outward execution/status/evidence Mehrwert. |
 | `runtime hooks / frame helpers` | `not_worth_broader_integration_now` | Nähe ist rein daten-/helper-basiert, nicht contract-basiert. |
 
-## 3) Priorisierungskriterium explizit (gegen Nähe-Bias)
+## 5) Priorisierungskriterium explizit (gegen Nähe-Bias)
 
 Priorisierung erfolgt **nicht** über historische Nähe, sondern nur wenn zusammen erfüllt:
 
@@ -67,7 +100,21 @@ Priorisierung erfolgt **nicht** über historische Nähe, sondern nur wenn zusamm
 
 Fehlt einer dieser Punkte deutlich, wird ein Kandidat zurückgestuft.
 
-## 4) Versteckte Legacy-Abhängigkeit explizit zurückgestuft
+## 6) Priorisierte breitere Kandidaten: minimale reviewbare Anschlussaussagen
+
+Nur minimale Aussagen, keine Vorab-Implementierung:
+
+1. `runtime_orchestrator_env_bootstrap` (`broader_review_candidate`)
+   - warum anschlussfähig: load-bearing Runtime-Intake mit realer Systemhebelwirkung.
+   - genügende outward-facing Contracts: canonical `submit` + `status_evidence_export_surface` (status/evidence), ohne neue Sonderverträge.
+   - warum jetzt nicht implementiert: Mixed-Intake braucht separaten Review-Entscheid; Serie N hält nur den Anschlusskorridor fest.
+
+2. `replay_diff_backend_recompute` (`broader_review_candidate`)
+   - warum anschlussfähig: technisch wertvoll für Drift-/Vergleichssicht.
+   - genügende outward-facing Contracts: kein neuer outward Runtime-Contract; nur Referenz auf bestehende status/evidence Linien zur Vergleichbarkeit.
+   - warum jetzt nicht implementiert: uplift zu produktivem Outward-Consumer würde die boundary semantisch überdehnen.
+
+## 7) Versteckte Legacy-Abhängigkeit explizit zurückgestuft
 
 Bewusst zurückgestuft/ausgeschlossen für breitere Integration jetzt:
 
@@ -78,7 +125,13 @@ Bewusst zurückgestuft/ausgeschlossen für breitere Integration jetzt:
 - `bench_compute_subcommand`, `runtime hooks / frame helpers` → `not_worth_broader_integration_now`
   - rein interne/dev-nahe Pfade ohne semantisch sauberen Anschluss an finale Compute-Linie.
 
-## 5) Nur 1-3 echte nächste breite Integrationsrichtungen
+## 8) Keine implizite "schon gebaut"-Sprache
+
+- `broader_review_candidate` bedeutet ausschließlich reviewbarer Anschlusskandidat.
+- Es wird kein Kandidat als bereits integriert markiert, wenn er nicht `already_aligned` oder `first_post_core_aligned` ist.
+- Serie N dokumentiert bewusst Anschlusslinien statt Ausbauarbeit.
+
+## 9) Nur 1-3 echte nächste breite Integrationsrichtungen
 
 Keine Wunschliste; nur technisch sinnvolle nächste Richtungen:
 
@@ -89,17 +142,18 @@ Keine Wunschliste; nur technisch sinnvolle nächste Richtungen:
 3. **`replay_diff_backend_recompute` boundary-klar halten statt upliften** (`plausible_but_caveated_candidate`)
    - Warum: nützlich als technische Vergleichsfläche, aber bewusst kein outward Integrationsziel.
 
-## 6) Doku-Rückbindung (keine zweite Wahrheitsquelle)
+## 10) Doku-Rückbindung (keine zweite Wahrheitsquelle)
 
 - Serie N priorisiert nur die bereits in `CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP` sichtbaren Kandidaten.
 - Serien K/M/L bleiben semantische Leitplanken; diese Datei ergänzt nur die **harte Priorisierungsschicht**.
 - Keine zusätzliche Governance-/Portfolio-/Roadmap-Struktur.
 
-## 7) Kleine Konsistenzchecks (nur nötig für final-line Anschlussfähigkeit)
+## 11) Kleine Konsistenzchecks (nur nötig für final-line Anschlussfähigkeit)
 
 Für priorisierte Kandidaten gilt als Mindestcheck:
-- `high_leverage_aligned_candidate` muss canonical status+evidence Exportpfad enthalten.
-- `plausible_but_caveated_candidate` darf nicht als bereits aligned zur finalen Linie markiert sein.
-- `low_value_or_legacy_driven_candidate` / `not_worth_broader_integration_now` dürfen nicht als outward aligned auftauchen.
+- `already_aligned` und `first_post_core_aligned` müssen auf canonical submit/status/evidence Bezug halten.
+- `broader_review_candidate` darf nicht als bereits integriert/formal aligned zur finalen Linie formuliert sein.
+- `not_pursued_now` bleibt explizit außerhalb aktueller Integrationsarbeit.
+- Die bestehende `candidate_priority_view`-Klassifikation bleibt rein ergänzend und darf keine implizite Implementierungszusage erzeugen.
 
 Diese Konsistenz ist über die bestehende Code-/Doku-Kopplung in `runtime/ucf-compute/src/reference_map.rs` Tests abgesichert.
