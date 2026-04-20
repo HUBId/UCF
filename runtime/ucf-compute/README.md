@@ -19,6 +19,10 @@ For the consolidated status/evidence export layer for adjacent UCF subsystems, s
 For the narrow map of real domain-facing compute consumers and their alignment class, see
 `docs/compute_consumer_integration_map_serie_m_v1.md` and
 `CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP` in `src/reference_map.rs`.
+For the narrow Blue-Brain integration classification (core candidate vs adjacent vs
+compat/internal surfaces) pinned to the same outward compute contracts, see
+`docs/blue_brain_integration_map_serie_bb1_prompt1_v1.md` and
+`CANONICAL_BLUE_BRAIN_INTEGRATION_MAP` in `src/reference_map.rs`.
 
 ## Capability model
 

@@ -140,3 +140,22 @@ Unabhängig von priorisierten Integrationsreihen gilt für den finalisierten Com
 Serie O ist damit als Maintenance-Follow-up geschlossen; alles außerhalb dieses Kanons bleibt neue Integrations-/Buildout-Arbeit.
 
 Die konkrete Boundary-Definition ist in `docs/compute_core_maintenance_boundary_serie_o_v1.md` dokumentiert und bindet weiter an dieselbe finale Referenzlinie.
+
+## 12) Blue-Brain Integrationsanschluss nach Compute-Core-Exit (Serie BB1)
+
+Der abgeschlossene Compute-Kern bleibt die feste Integrationsbasis auch für BB1:
+
+- `submit -> compute_canonical -> result/fault/status -> execution_snapshot`
+- outward-facing `compute_execution_contract` / `compute_status_diagnostics_contract` /
+  `compute_evidence_reference_contract`
+- `integration_hook_view` als read-only/caveated Grenzfläche
+
+Die schmale repo-basierte Blue-Brain-Kartierung ist in
+`docs/blue_brain_integration_map_serie_bb1_prompt1_v1.md` dokumentiert und über
+`CANONICAL_BLUE_BRAIN_INTEGRATION_MAP` in `runtime/ucf-compute/src/reference_map.rs`
+code-seitig rückgebunden.
+
+Damit gilt explizit:
+- keine zweite Integrationssprache neben der finalen Compute-Linie,
+- keine implizite Re-Öffnung von Compute-Core-Ausbau,
+- Blue-Brain-Integration startet als Folgeintegration auf derselben outward Vertragsbasis.
