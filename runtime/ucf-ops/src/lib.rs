@@ -704,11 +704,12 @@ use ucf_compute::world_model::{StageQuality, WorldModelInput};
 use ucf_compute::{
     build_service_compute_backend, canonical_domain_facing_compute_consumer_map,
     compute_input_from_control, stable_budget_profile_id, BackendPackConfig, BackendPackFactory,
-    BackendPackKind, CanonicalComputeEntryPoint, CanonicalPipelineRequest, CanonicalPipelineState,
-    ComputeBackendConfig, ComputeBackendKind, ComputeError, ComputeExecutionMode,
-    ComputeSubmitOutcome, ComputeSubmitRequest, DomainFacingConsumerAlignment,
-    DomainFacingEvidenceConsumptionPattern, DomainFacingStatusConsumptionPattern,
-    InMemoryComputeService, ModelSlot, ModelStore, ReleaseFeatureMatrix,
+    BackendPackKind, CanonicalComputeEntryPoint, CanonicalConsumerStatusEvidenceView,
+    CanonicalPipelineRequest, CanonicalPipelineState, ComputeBackendConfig, ComputeBackendKind,
+    ComputeError, ComputeExecutionMode, ComputeStatusEvidenceExportSurface, ComputeSubmitOutcome,
+    ComputeSubmitRequest, DomainFacingConsumerAlignment, DomainFacingEvidenceConsumptionPattern,
+    DomainFacingStatusConsumptionPattern, InMemoryComputeService, ModelSlot, ModelStore,
+    ReleaseFeatureMatrix,
 };
 use ucf_core::types::Tick;
 use ucf_core::types::{SimTime, WindowId};
@@ -9339,21 +9340,45 @@ fn run_compute_probe(cfg: &OpsConfig) -> Result<DiagCheck, OpsError> {
     Ok(DiagCheck {
         name: "compute_probe".to_string(),
         pass,
-        detail: format!(
-            "pipeline_state={:?} contract_lane={} status_pattern={} evidence_pattern={} status_semantic={:?} evidence_semantic={:?} active_path_context={:?} evidence_bundle_refs={}",
-            status_surface.pipeline_state,
+        detail: build_rollout_probe_semantics_detail(
+            &export,
+            &consumer_view,
             contract_lane,
             status_pattern,
             evidence_pattern,
-            consumer_view.status_semantic,
-            consumer_view.evidence_semantic,
-            consumer_view.active_production_context,
-            export.evidence.bundle_refs.len(),
+            status_surface.pipeline_state,
         ),
         remediation:
             "ensure compute backend feature flags and canonical status/evidence export usage are set."
                 .to_string(),
     })
+}
+
+fn build_rollout_probe_semantics_detail(
+    export: &ComputeStatusEvidenceExportSurface,
+    consumer_view: &CanonicalConsumerStatusEvidenceView,
+    contract_lane: &str,
+    status_pattern: &str,
+    evidence_pattern: &str,
+    internal_pipeline_state: Option<CanonicalPipelineState>,
+) -> String {
+    let status = &export.status;
+    let evidence = &export.evidence;
+    format!(
+        "outward_contract_lane={} outward_status_pattern={} outward_evidence_pattern={} outward_status_semantic={:?} outward_evidence_semantic={:?} outward_service_trust={:?} outward_snapshot_consistency={:?} outward_caveat_refs={} outward_evidence_bundle_refs={} outward_evidence_caveat_refs={} outward_active_path_context={:?} internal_diag_pipeline_state={:?}",
+        contract_lane,
+        status_pattern,
+        evidence_pattern,
+        consumer_view.status_semantic,
+        consumer_view.evidence_semantic,
+        status.service_trust,
+        status.snapshot_consistency,
+        status.top_level_caveats.len(),
+        evidence.bundle_refs.len(),
+        evidence.caveat_refs.len(),
+        consumer_view.active_production_context,
+        internal_pipeline_state,
+    )
 }
 
 fn ensure_policy_bundle_root() -> Result<(), OpsError> {
@@ -9887,6 +9912,62 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::env::set_current_dir(&self.prev);
         }
+    }
+
+    #[test]
+    fn rollout_probe_semantics_detail_uses_outward_keys() {
+        let backend_cfg = ComputeBackendConfig::default();
+        let pipeline_backend = build_service_compute_backend(&backend_cfg).expect("backend");
+        let mut entry =
+            CanonicalComputeEntryPoint::new(InMemoryComputeService::new(pipeline_backend));
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(1),
+                window: WindowId::new(0),
+            },
+            CorrelationId(99),
+            ChannelCode::ExternalOutput,
+            Intent::new(IntentId(99), IntentKind::Speak, "diag"),
+            "compute_probe",
+        );
+        let input = compute_input_from_control(&ctrl);
+        let budget = backend_cfg.to_budget();
+        let submission = entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: CanonicalPipelineRequest { input, budget },
+                submitted_by: Some("ucf-ops/test".to_string()),
+                submitted_at_unix_ms: Some(0),
+                execution_mode: ComputeExecutionMode::ExecuteInline,
+            })
+            .expect("submit");
+        let status = match submission {
+            ComputeSubmitOutcome::Accepted {
+                completion: Some(status),
+                ..
+            }
+            | ComputeSubmitOutcome::Accepted { status, .. }
+            | ComputeSubmitOutcome::Rejected { status } => status,
+            ComputeSubmitOutcome::Invalid(invalid) => {
+                panic!("unexpected invalid submit in test: {:?}", invalid.code)
+            }
+        };
+        let status_surface = entry.status(status.handle).expect("status");
+        let export = entry.status_evidence_export_surface();
+        let consumer = export.canonical_consumer_view();
+
+        let detail = build_rollout_probe_semantics_detail(
+            &export,
+            &consumer,
+            "aligned_canonical_outward",
+            "canonical_status_consumer",
+            "canonical_evidence_reference_consumer",
+            status_surface.pipeline_state,
+        );
+        assert!(detail.contains("outward_status_semantic="));
+        assert!(detail.contains("outward_service_trust="));
+        assert!(detail.contains("outward_caveat_refs="));
+        assert!(detail.contains("outward_evidence_bundle_refs="));
+        assert!(detail.contains("internal_diag_pipeline_state="));
     }
 
     #[test]

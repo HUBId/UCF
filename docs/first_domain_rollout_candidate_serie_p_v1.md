@@ -76,7 +76,26 @@ Only narrow consolidation/hardening is included:
 - tests that prevent mixed/legacy/internal paths from appearing as rollout-ready,
 - no second integration language and no core architecture expansion.
 
-## 5) Explicit rollout caveats
+## 5) Rollout status/evidence semantics (Prompt 2 hardening)
+
+For the selected candidate (`ops_compute_probe`) rollout semantics now stay explicitly anchored on
+the same outward-facing compute surface as the finalized core line:
+
+- status semantic source:
+  - `status_evidence_export_surface.status` (`service_trust`, `snapshot_consistency`, top-level caveats)
+- evidence semantic source:
+  - `status_evidence_export_surface.evidence` (`bundle_refs`, evidence caveat refs)
+- canonical outward aggregation:
+  - `status_evidence_export_surface.canonical_consumer_view()`
+
+`ucf-ops::run_compute_probe` reports these as outward rollout keys (`outward_*`) and keeps any
+internal-only signal clearly segregated as diagnostic-only (`internal_diag_pipeline_state`), so
+rollout semantics do not drift into expert/internal details.
+
+This keeps one semantic line for status/trust/caveat/evidence-reference usage and avoids adding a
+parallel domain-specific status model.
+
+## 6) Explicit rollout caveats
 
 Stable now:
 - canonical execution/status/evidence contract line,
@@ -91,7 +110,7 @@ Deliberately out of this rollout:
 - legacy `domains/ai*` compatibility lanes,
 - any new platform/control/governance layer.
 
-## 6) Integration doc continuity
+## 7) Integration doc continuity
 
 This document extends existing M/N/O lines without replacing them:
 - Serie M: first post-core consumer alignment map.
@@ -100,7 +119,7 @@ This document extends existing M/N/O lines without replacing them:
 
 Serie P adds one precise thing only: a real first domain rollout candidate anchored on canonical outward contracts.
 
-## 7) Targeted check intent
+## 8) Targeted check intent
 
 Checks in `reference_map` enforce at minimum:
 - rollout-ready candidate is actually canonical outward (`submit`, `status_evidence_export_surface`),
