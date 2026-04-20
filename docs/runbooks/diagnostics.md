@@ -11,7 +11,7 @@ cargo run -p ucf-ops -- diag --json
 - `config_resolved`: deterministic/safe config loaded.
 - `ess_health`: fixture ESS can be opened and parsed.
 - `audit_chain`: audit checkpoints readable if present.
-- `compute_probe`: one deterministic compute call succeeds.
+- `compute_probe`: one deterministic compute call succeeds and emits rollout-facing status/evidence semantics from canonical outward fields (`outward_status_semantic`, `outward_evidence_semantic`, `outward_service_trust`, caveat/evidence-ref counts).
 - `sandbox_runtime`: isolation mode validated.
 - `metrics_tracing`: log/telemetry artifacts available.
 
