@@ -29,6 +29,10 @@ expert lane), see `docs/blue_brain_facing_contracts_serie_bb1_prompt2_v1.md` and
 For the first canonical Blue-Brain-to-compute handoff map (inference/status/evidence/state-adjacent
 non-canonical boundary), see `docs/blue_brain_compute_handoffs_serie_bb1_prompt3_v1.md` and
 `CANONICAL_BLUE_BRAIN_COMPUTE_HANDOFF_MAP`.
+For the first real Blue-Brain integration candidate consolidation (selected candidate + caveats +
+explicit contract/handoff bindings + legacy exclusions), see
+`docs/blue_brain_integration_candidate_serie_bb1_prompt4_v1.md` and
+`CANONICAL_BLUE_BRAIN_INTEGRATION_CANDIDATE_MAP`.
 
 ## Capability model
 

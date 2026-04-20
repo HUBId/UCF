@@ -154,6 +154,12 @@ Die schmale repo-basierte Blue-Brain-Kartierung ist in
 `docs/blue_brain_integration_map_serie_bb1_prompt1_v1.md` dokumentiert und über
 `CANONICAL_BLUE_BRAIN_INTEGRATION_MAP` in `runtime/ucf-compute/src/reference_map.rs`
 code-seitig rückgebunden.
+Die Contract-/Handoff-Linie ist zusätzlich in
+`docs/blue_brain_facing_contracts_serie_bb1_prompt2_v1.md` und
+`docs/blue_brain_compute_handoffs_serie_bb1_prompt3_v1.md` konkretisiert.
+Der erste echte Kandidaten-Fixpunkt ist in
+`docs/blue_brain_integration_candidate_serie_bb1_prompt4_v1.md` dokumentiert und über
+`CANONICAL_BLUE_BRAIN_INTEGRATION_CANDIDATE_MAP` code-seitig fixiert.
 
 Damit gilt explizit:
 - keine zweite Integrationssprache neben der finalen Compute-Linie,
