@@ -703,13 +703,14 @@ use ucf_compute::ssm::SsmInput;
 use ucf_compute::world_model::{StageQuality, WorldModelInput};
 use ucf_compute::{
     build_service_compute_backend, canonical_domain_facing_compute_consumer_map,
-    compute_input_from_control, stable_budget_profile_id, BackendPackConfig, BackendPackFactory,
-    BackendPackKind, CanonicalComputeEntryPoint, CanonicalConsumerStatusEvidenceView,
-    CanonicalPipelineRequest, CanonicalPipelineState, ComputeBackendConfig, ComputeBackendKind,
-    ComputeError, ComputeExecutionMode, ComputeStatusEvidenceExportSurface, ComputeSubmitOutcome,
+    canonical_first_domain_rollout_completion_map, compute_input_from_control,
+    stable_budget_profile_id, BackendPackConfig, BackendPackFactory, BackendPackKind,
+    CanonicalComputeEntryPoint, CanonicalConsumerStatusEvidenceView, CanonicalPipelineRequest,
+    CanonicalPipelineState, ComputeBackendConfig, ComputeBackendKind, ComputeError,
+    ComputeExecutionMode, ComputeStatusEvidenceExportSurface, ComputeSubmitOutcome,
     ComputeSubmitRequest, DomainFacingConsumerAlignment, DomainFacingEvidenceConsumptionPattern,
-    DomainFacingStatusConsumptionPattern, InMemoryComputeService, ModelSlot, ModelStore,
-    ReleaseFeatureMatrix,
+    DomainFacingStatusConsumptionPattern, FirstDomainRolloutCompletionStatus,
+    InMemoryComputeService, ModelSlot, ModelStore, ReleaseFeatureMatrix,
 };
 use ucf_core::types::Tick;
 use ucf_core::types::{SimTime, WindowId};
@@ -9335,6 +9336,18 @@ fn run_compute_probe(cfg: &OpsConfig) -> Result<DiagCheck, OpsError> {
     } else {
         "mixed_legacy_evidence"
     };
+    let rollout_completion_status = canonical_first_domain_rollout_completion_map()
+        .iter()
+        .find(|lane| lane.rollout_case == "ops_compute_probe")
+        .map(|lane| match lane.completion_status {
+            FirstDomainRolloutCompletionStatus::Aligned => "aligned",
+            FirstDomainRolloutCompletionStatus::AlignedWithCaveats => "aligned_with_caveats",
+            FirstDomainRolloutCompletionStatus::MixedTransitional => "mixed_transitional",
+            FirstDomainRolloutCompletionStatus::NotYetTrueRolloutCompletion => {
+                "not_yet_true_rollout_completion"
+            }
+        })
+        .unwrap_or("unknown");
     let consumer_view = export.canonical_consumer_view();
 
     Ok(DiagCheck {
@@ -9346,6 +9359,7 @@ fn run_compute_probe(cfg: &OpsConfig) -> Result<DiagCheck, OpsError> {
             contract_lane,
             status_pattern,
             evidence_pattern,
+            rollout_completion_status,
             status_surface.pipeline_state,
         ),
         remediation:
@@ -9360,15 +9374,17 @@ fn build_rollout_probe_semantics_detail(
     contract_lane: &str,
     status_pattern: &str,
     evidence_pattern: &str,
+    rollout_completion_status: &str,
     internal_pipeline_state: Option<CanonicalPipelineState>,
 ) -> String {
     let status = &export.status;
     let evidence = &export.evidence;
     format!(
-        "outward_contract_lane={} outward_status_pattern={} outward_evidence_pattern={} outward_status_semantic={:?} outward_evidence_semantic={:?} outward_service_trust={:?} outward_snapshot_consistency={:?} outward_caveat_refs={} outward_evidence_bundle_refs={} outward_evidence_caveat_refs={} outward_active_path_context={:?} internal_diag_pipeline_state={:?}",
+        "outward_contract_lane={} outward_status_pattern={} outward_evidence_pattern={} rollout_completion_status={} outward_status_semantic={:?} outward_evidence_semantic={:?} outward_service_trust={:?} outward_snapshot_consistency={:?} outward_caveat_refs={} outward_evidence_bundle_refs={} outward_evidence_caveat_refs={} outward_active_path_context={:?} internal_diag_pipeline_state={:?}",
         contract_lane,
         status_pattern,
         evidence_pattern,
+        rollout_completion_status,
         consumer_view.status_semantic,
         consumer_view.evidence_semantic,
         status.service_trust,
@@ -9961,8 +9977,10 @@ mod tests {
             "aligned_canonical_outward",
             "canonical_status_consumer",
             "canonical_evidence_reference_consumer",
+            "aligned",
             status_surface.pipeline_state,
         );
+        assert!(detail.contains("rollout_completion_status=aligned"));
         assert!(detail.contains("outward_status_semantic="));
         assert!(detail.contains("outward_service_trust="));
         assert!(detail.contains("outward_caveat_refs="));
