@@ -56,3 +56,8 @@ Use this proof case as the baseline for next domain rollouts:
 - require the same four checks (execution contract, outward status/evidence export, integration-safe hook, hidden dependency exclusion),
 - classify only with the same four statuses,
 - avoid introducing parallel rollout semantics or platform layers.
+
+## 6) Continuity to Prompt 4 closure
+
+Prompt 3 provides the single-case completion proof anchor.
+Final Serie-P closure matrix, explicit first rollout line statement, and next-direction prioritization are recorded in `docs/serie_p_readiness_sweep_prompt4_v1.md`.
