@@ -1379,10 +1379,10 @@ mod tests {
         let doc = include_str!("../../../docs/serie_q_post_rollout_adoption_map_v1.md");
         let line = canonical_final_reference_line();
         assert!(doc.contains(line.execution_core));
-        assert!(doc.contains("already aligned"));
-        assert!(doc.contains("first real rollout established"));
-        assert!(doc.contains("broader adoption review candidate"));
-        assert!(doc.contains("not pursued now"));
+        assert!(doc.contains("genuine next adoption candidate"));
+        assert!(doc.contains("plausible but deferred"));
+        assert!(doc.contains("reviewed and not pursued now"));
+        assert!(doc.contains("not meaningful as compute-backed adoption"));
         assert!(doc.contains("ops_compute_probe"));
         assert!(doc.contains("runtime_orchestrator_env_bootstrap"));
         assert!(doc.contains("replay_diff_backend_recompute"));
@@ -1390,8 +1390,8 @@ mod tests {
         assert!(doc.contains("domains_ai_compat_lane"));
         assert!(doc.contains("status_evidence_export_surface"));
         assert!(doc.contains("integration_hook_view"));
-        assert!(doc.contains("build_backend(kind=stub|candle|worker)"));
-        assert!(doc.contains("reviewable follow-up option"));
+        assert!(doc.contains("Prioritized next direction: Serie S"));
+        assert!(doc.contains("review + prioritization only"));
         assert!(doc.contains("no unplanned rollout"));
     }
 }
