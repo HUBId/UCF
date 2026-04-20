@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use tempfile::tempdir;
 use ucf_ops::{
@@ -6,13 +7,26 @@ use ucf_ops::{
     DocsLintStatus,
 };
 
-fn repo_root() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("runtime parent")
-        .parent()
-        .expect("repo root")
-        .to_path_buf()
+fn has_workspace_manifest(path: &Path) -> bool {
+    let manifest = path.join("Cargo.toml");
+    let Ok(contents) = fs::read_to_string(manifest) else {
+        return false;
+    };
+    contents.contains("[workspace]")
+}
+
+fn repo_root() -> PathBuf {
+    let start = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for candidate in start.ancestors() {
+        if has_workspace_manifest(candidate) {
+            return candidate.to_path_buf();
+        }
+    }
+
+    panic!(
+        "failed to locate workspace root from CARGO_MANIFEST_DIR={}",
+        env!("CARGO_MANIFEST_DIR")
+    );
 }
 
 fn repo_path(rel: &str) -> std::path::PathBuf {
