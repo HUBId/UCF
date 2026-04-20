@@ -161,6 +161,24 @@ pub struct BlueBrainIntegrationLane {
     pub caveat: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFacingContractClass {
+    InferenceFacing,
+    StateFacing,
+    StatusHealthTrustFacing,
+    EvidenceReferenceFacing,
+    ExpertInternalOnlyNonBlueBrain,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainFacingContractLane {
+    pub class: BlueBrainFacingContractClass,
+    pub lane: &'static str,
+    pub canonical_anchor: &'static str,
+    pub allowed_semantics: &'static str,
+    pub excluded_semantics: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -680,6 +698,59 @@ pub const CANONICAL_BLUE_BRAIN_INTEGRATION_MAP: [BlueBrainIntegrationLane; 6] = 
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_FACING_CONTRACT_MAP: [BlueBrainFacingContractLane; 5] = [
+    BlueBrainFacingContractLane {
+        class: BlueBrainFacingContractClass::InferenceFacing,
+        lane: "blue_brain_inference_facing_execution_contract",
+        canonical_anchor:
+            "service_surface::CanonicalComputeEntryPoint::submit(ComputeSubmitRequest{ExecuteInline})",
+        allowed_semantics:
+            "canonical execution via submit -> compute_canonical -> result/fault/status; no second execution world",
+        excluded_semantics:
+            "no direct build_backend(kind=stub|candle|worker) authority and no replay/expert operation semantics as default inference API",
+    },
+    BlueBrainFacingContractLane {
+        class: BlueBrainFacingContractClass::StateFacing,
+        lane: "blue_brain_state_facing_context_reference_contract",
+        canonical_anchor:
+            "compute request context_digest + runtime_handoff_state_from_evidence/runtime_handoff_state_from_action_code",
+        allowed_semantics:
+            "state-adjacent reference/context handoff only; outward context linkage without leaking runtime-internal structs",
+        excluded_semantics:
+            "no speculative cognitive-state architecture and no direct runtime scheduler or in-memory orchestration internals exposed",
+    },
+    BlueBrainFacingContractLane {
+        class: BlueBrainFacingContractClass::StatusHealthTrustFacing,
+        lane: "blue_brain_status_health_trust_contract",
+        canonical_anchor:
+            "service_surface::CanonicalComputeEntryPoint::status + status_evidence_export_surface (status)",
+        allowed_semantics:
+            "top-level current/partial/stale/caveated/degraded plus trust/service state signals on canonical surface",
+        excluded_semantics:
+            "no internal diagnostic graph ownership and no expert workflow control semantics in outward status contract",
+    },
+    BlueBrainFacingContractLane {
+        class: BlueBrainFacingContractClass::EvidenceReferenceFacing,
+        lane: "blue_brain_evidence_reference_contract",
+        canonical_anchor:
+            "service_surface::CanonicalComputeEntryPoint::status_evidence_export_surface (evidence refs)",
+        allowed_semantics:
+            "snapshot/evidence/trace/history references including partial/caveated evidence posture",
+        excluded_semantics:
+            "no raw internal diagnostics/trace object export as required Blue-Brain-facing contract payload",
+    },
+    BlueBrainFacingContractLane {
+        class: BlueBrainFacingContractClass::ExpertInternalOnlyNonBlueBrain,
+        lane: "blue_brain_expert_internal_only_non_contract",
+        canonical_anchor:
+            "service_surface::{replay_with_entry,run_operation_with_entry} + backends::build_backend(kind=stub|candle|worker) + domains/ai*",
+        allowed_semantics:
+            "expert/internal diagnostics-control and compatibility execution lanes remain explicitly non Blue-Brain-facing",
+        excluded_semantics:
+            "must not be presented as canonical Blue-Brain-facing integration contract",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -733,6 +804,10 @@ pub fn canonical_post_rollout_adoption_map() -> &'static [PostRolloutAdoptionLan
 
 pub fn canonical_blue_brain_integration_map() -> &'static [BlueBrainIntegrationLane] {
     &CANONICAL_BLUE_BRAIN_INTEGRATION_MAP
+}
+
+pub fn canonical_blue_brain_facing_contract_map() -> &'static [BlueBrainFacingContractLane] {
+    &CANONICAL_BLUE_BRAIN_FACING_CONTRACT_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -1172,6 +1247,98 @@ mod tests {
         assert!(doc.contains("bench_compute_subcommand"));
         assert!(doc.contains("runtime_hooks_and_frame_helpers"));
         assert!(doc.contains("keine zweite Integrationssprache"));
+        assert!(doc.contains("keine zweite Wahrheitsquelle"));
+    }
+
+    #[test]
+    fn blue_brain_facing_contract_map_keeps_state_inference_status_evidence_split_explicit() {
+        let map = canonical_blue_brain_facing_contract_map();
+        assert_eq!(map.len(), 5);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFacingContractClass::InferenceFacing));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFacingContractClass::StateFacing));
+        assert!(map
+            .iter()
+            .any(|lane| { lane.class == BlueBrainFacingContractClass::StatusHealthTrustFacing }));
+        assert!(map
+            .iter()
+            .any(|lane| { lane.class == BlueBrainFacingContractClass::EvidenceReferenceFacing }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainFacingContractClass::ExpertInternalOnlyNonBlueBrain
+        }));
+    }
+
+    #[test]
+    fn blue_brain_inference_contract_stays_pinned_to_canonical_submit_and_fault_status_core() {
+        let lane = canonical_blue_brain_facing_contract_map()
+            .iter()
+            .find(|lane| lane.class == BlueBrainFacingContractClass::InferenceFacing)
+            .expect("inference-facing lane");
+        assert!(lane
+            .canonical_anchor
+            .contains("CanonicalComputeEntryPoint::submit"));
+        assert!(lane
+            .allowed_semantics
+            .contains("submit -> compute_canonical -> result/fault/status"));
+        assert!(lane.excluded_semantics.contains("no direct build_backend"));
+    }
+
+    #[test]
+    fn blue_brain_status_and_evidence_contracts_reuse_canonical_export_surface() {
+        let status_lane = canonical_blue_brain_facing_contract_map()
+            .iter()
+            .find(|lane| lane.class == BlueBrainFacingContractClass::StatusHealthTrustFacing)
+            .expect("status-facing lane");
+        assert!(status_lane
+            .canonical_anchor
+            .contains("status_evidence_export_surface"));
+        assert!(status_lane
+            .allowed_semantics
+            .contains("current/partial/stale/caveated/degraded"));
+
+        let evidence_lane = canonical_blue_brain_facing_contract_map()
+            .iter()
+            .find(|lane| lane.class == BlueBrainFacingContractClass::EvidenceReferenceFacing)
+            .expect("evidence-facing lane");
+        assert!(evidence_lane
+            .canonical_anchor
+            .contains("status_evidence_export_surface"));
+        assert!(evidence_lane
+            .allowed_semantics
+            .contains("partial/caveated evidence"));
+    }
+
+    #[test]
+    fn blue_brain_expert_internal_only_lane_is_explicitly_non_contract() {
+        let lane = canonical_blue_brain_facing_contract_map()
+            .iter()
+            .find(|lane| lane.class == BlueBrainFacingContractClass::ExpertInternalOnlyNonBlueBrain)
+            .expect("expert/internal lane");
+        assert!(lane.canonical_anchor.contains("run_operation_with_entry"));
+        assert!(lane
+            .canonical_anchor
+            .contains("build_backend(kind=stub|candle|worker)"));
+        assert!(lane.excluded_semantics.contains("must not be presented"));
+    }
+
+    #[test]
+    fn serie_bb1_prompt2_contract_doc_stays_pinned_to_single_compute_contract_language() {
+        let doc = include_str!("../../../docs/blue_brain_facing_contracts_serie_bb1_prompt2_v1.md");
+        let line = canonical_final_reference_line();
+
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("blue_brain_inference_facing_execution_contract"));
+        assert!(doc.contains("blue_brain_state_facing_context_reference_contract"));
+        assert!(doc.contains("blue_brain_status_health_trust_contract"));
+        assert!(doc.contains("blue_brain_evidence_reference_contract"));
+        assert!(doc.contains("blue_brain_expert_internal_only_non_contract"));
+        assert!(doc.contains("current / partial / stale / caveated / degraded"));
+        assert!(doc.contains("status_evidence_export_surface"));
+        assert!(doc.contains("integration_hook_view"));
+        assert!(doc.contains("no second execution world"));
         assert!(doc.contains("keine zweite Wahrheitsquelle"));
     }
 
