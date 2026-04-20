@@ -1176,4 +1176,26 @@ mod tests {
         assert!(doc.contains("build_backend(kind=stub|candle|worker)"));
         assert!(doc.contains("domains/ai*"));
     }
+
+    #[test]
+    fn serie_p_prompt4_closure_doc_keeps_matrix_rollout_line_and_priority_explicit() {
+        let doc = include_str!("../../../docs/serie_p_readiness_sweep_prompt4_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+
+        assert!(doc.contains("real domain rollout line established"));
+        assert!(doc.contains("rollout-usable with caveats"));
+        assert!(doc.contains("transitional / not yet aligned"));
+        assert!(doc.contains("intentionally deferred"));
+
+        assert!(doc.contains("ops_compute_probe"));
+        assert!(doc.contains("runtime_orchestrator_env_bootstrap"));
+        assert!(doc.contains("replay_diff_backend_recompute"));
+        assert!(doc.contains("bench_compute_subcommand"));
+        assert!(doc.contains("domains_ai_compat_lane"));
+
+        assert!(doc.contains("Priorität: Serie S"));
+        assert!(doc.contains("follow-up integration work"));
+        assert!(doc.contains("not compute-core completion work"));
+    }
 }
