@@ -1,67 +1,55 @@
-# Serie Q: Reviewable Follow-up Option for Broader Adoption v1
+# Serie Q: Readiness Sweep Closure for Broader Adoption Review v1
 
-Status: documentation-only follow-up option after integration stabilization.  
-Boundary: no new rollout wave, no compute-core expansion, no roadmap/governance/meta-planning package.
+Status: closure review after integration stabilization.  
+Boundary: review/prioritization only; no new compute-core work and no new rollout wave.
 
-## 1) Side-by-side baseline (clear separation)
+## 1) Repo-grounded baseline checkpoints
 
-- **Final compute line (already aligned):**
-  `submit -> compute_canonical -> result/fault/status -> execution_snapshot`
-- **First real domain rollout line (established):**
-  `ops_compute_probe` on canonical outward contracts (`submit`, `status_evidence_export_surface`, `integration_hook_view`).
-- **Further prioritized candidates (review-only):**
-  `runtime_orchestrator_env_bootstrap`, `replay_diff_backend_recompute`.
+- **Compute baseline (stable):** `submit -> compute_canonical -> result/fault/status -> execution_snapshot`.
+- **First real rollout baseline (stable):** `ops_compute_probe` on canonical outward contracts (`submit`, `status_evidence_export_surface`, `integration_hook_view`).
+- **Broader surfaces currently visible in-repo:** `runtime_orchestrator_env_bootstrap`, `replay_diff_backend_recompute`, `domains_ai_compat_lane`, `bench_compute_subcommand`.
 
-This is a **reviewable follow-up option**, not an implementation step.
+This Serie-Q step is a hard closure review, not expansion work.
 
-## 2) Narrow follow-up option classes
+## 2) Serie-Q closure matrix (short, technical, repo-based)
 
-Only these classes are used:
-
-1. `already aligned`
-2. `first real rollout established`
-3. `broader adoption review candidate`
-4. `not pursued now`
-
-No additional adoption matrix and no second rollout language.
-
-- Explicitly excluded as rollout authority in this step: `build_backend(kind=stub|candle|worker)` and `domains/ai*` compatibility lanes.
-
-## 3) Minimal review statements for prioritized further candidates
-
-### `runtime_orchestrator_env_bootstrap` (`broader adoption review candidate`)
-- **Why connectable:** load-bearing runtime surface close to the already proven outward line.
-- **Outward-facing contracts that would be sufficient:** canonical `CanonicalComputeEntryPoint::submit` + `status_evidence_export_surface` (+ non-mutating `integration_hook_view` posture).
-- **Why no rollout now:** env/compat intake is still mixed and requires narrowing before any rollout claim; therefore review-only.
-
-### `replay_diff_backend_recompute` (`broader adoption review candidate`)
-- **Why connectable:** shares core semantics/evidence references and is technically less ambiguous after first rollout establishment.
-- **Outward-facing contracts that would be sufficient:** would need primary outward execution + status/evidence service semantics equivalent to canonical outward contracts.
-- **Why no rollout now:** remains replay/comparison-first and lacks outward service-first contract posture; therefore review-only.
-
-## 4) Explicit non-rollout boundaries
-
-- `domains_ai_compat_lane`: `not pursued now` (legacy/compat seam; no canonical outward authority).
-- `bench_compute_subcommand`: `not pursued now` (internal benchmark harness).
-- `ops_compute_probe`: `first real rollout established` baseline only, not a new adoption target.
-
-## 5) Consolidated reviewable map (single truth)
-
-Pinned in code as `CANONICAL_POST_ROLLOUT_ADOPTION_MAP`.
-
-| surface | class | concise boundary statement |
+| surface | closure state | repo-based closure statement |
 |---|---|---|
-| `final_compute_reference_line` | `already aligned` | final technical production line is complete baseline, not expansion scope |
-| `ops_compute_probe` | `first real rollout established` | established first rollout line; keep stable as reference baseline |
-| `runtime_orchestrator_env_bootstrap` | `broader adoption review candidate` | technically connectable if narrowed to canonical outward contracts |
-| `replay_diff_backend_recompute` | `broader adoption review candidate` | technically useful but still replay-first; outward service posture not yet met |
-| `domains_ai_compat_lane` | `not pursued now` | explicit legacy/internal compatibility boundary |
-| `bench_compute_subcommand` | `not pursued now` | internal-only benchmark harness |
+| `runtime_orchestrator_env_bootstrap` | `genuine next adoption candidate` | closest additional surface to canonical outward contract line; still requires narrowing of mixed env/compat intake before any second rollout claim |
+| `replay_diff_backend_recompute` | `plausible but deferred` | technically adjacent and useful for comparison/evidence, but still replay-first and not yet outward service-first |
+| `domains_ai_compat_lane` | `reviewed and not pursued now` | explicit legacy/compat seam; no canonical outward rollout authority |
+| `bench_compute_subcommand` | `not meaningful as compute-backed adoption` | internal benchmark harness; not a domain-facing compute adoption lane |
+| `ops_compute_probe` | `review anchor only (already established)` | first rollout baseline remains reference only; no reopening as new candidate |
+| `final_compute_reference_line` | `review anchor only (already aligned)` | stabilized compute line remains locked baseline, not expansion scope |
 
-## 6) Consistency guardrails (small, explicit)
+## 3) Explicit broader adoption review line after closure
 
-- class coverage check for all four review-option classes,
-- first rollout baseline remains explicit and separate from review candidates,
-- prioritized broader candidates stay review-only,
-- docs/code keep the same canonical outward contract language,
-- **no unplanned rollout** is asserted in this step.
+- **Real next candidate line:** only `runtime_orchestrator_env_bootstrap` is treated as genuine next adoption candidate.
+- **Reviewed, but currently not pursued for rollout:**
+  - `replay_diff_backend_recompute` (plausible but deferred),
+  - `domains_ai_compat_lane` (reviewed and not pursued now),
+  - `bench_compute_subcommand` (not meaningful for compute-backed adoption).
+- **Scope protection:** this is review + prioritization only, not new compute-core completion and not first-rollout rework.
+
+## 4) Next directions after Serie Q (technical leverage only)
+
+1. **Serie S — targeted second domain rollout candidate (prioritized now).**
+2. **Serie R — maintenance-only dormant lane** if no rollout execution is started.
+3. **Serie T — future broader adoption review refresh** only after additional integration signal changes.
+
+**Prioritized next direction: Serie S.**
+
+Why highest leverage now:
+- it converts the single genuine next candidate (`runtime_orchestrator_env_bootstrap`) into a narrow technical validation path,
+- it uses the already stabilized compute line and first rollout contract language without reopening core semantics.
+
+Why others are secondary:
+- Serie R preserves baseline but adds no new adoption evidence,
+- Serie T is only meaningful after new integration deltas; running it now would be speculative.
+
+## 5) Minimal consistency guardrails
+
+- Keep `runtime_orchestrator_env_bootstrap` and `replay_diff_backend_recompute` explicitly separated (`genuine next` vs `deferred`).
+- Keep `ops_compute_probe` and final compute line as anchors only.
+- Keep `domains_ai_compat_lane` and `bench_compute_subcommand` out of rollout-candidate language.
+- Preserve explicit "review/prioritization only" and "no unplanned rollout" boundaries.
