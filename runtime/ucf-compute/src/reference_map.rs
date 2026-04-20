@@ -140,6 +140,27 @@ pub struct PostRolloutAdoptionLane {
     pub caveat: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainIntegrationClass {
+    RealBlueBrainCoreCandidate,
+    BlueBrainAdjacentComputeConsumer,
+    IndirectOrCompatibilityTouchingSurface,
+    InternalOnlyOrNotMeaningfulForBlueBrainIntegration,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainIntegrationLane {
+    pub surface: &'static str,
+    pub class: BlueBrainIntegrationClass,
+    pub repo_surface: &'static str,
+    pub execution_contract_path: &'static str,
+    pub status_diagnostics_contract_path: &'static str,
+    pub evidence_reference_contract_path: &'static str,
+    pub integration_safe_hook_posture: &'static str,
+    pub coupling_posture: &'static str,
+    pub caveat: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -566,6 +587,99 @@ pub const CANONICAL_POST_ROLLOUT_ADOPTION_MAP: [PostRolloutAdoptionLane; 6] = [
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_INTEGRATION_MAP: [BlueBrainIntegrationLane; 6] = [
+    BlueBrainIntegrationLane {
+        surface: "runtime_orchestrator_stateful_loop",
+        class: BlueBrainIntegrationClass::RealBlueBrainCoreCandidate,
+        repo_surface:
+            "runtime/ucf-runtime/src/orchestrator.rs::RuntimeOrchestrator::{try_new_from_env,step_once}",
+        execution_contract_path: "target: CanonicalComputeEntryPoint::submit (today partly build_backend env intake)",
+        status_diagnostics_contract_path:
+            "target: CanonicalComputeEntryPoint::status_evidence_export_surface (status); today mixed compute summary intake",
+        evidence_reference_contract_path:
+            "target: status_evidence_export_surface (evidence refs) + runtime evidence chain linkage",
+        integration_safe_hook_posture:
+            "must remain bounded to integration_hook_view (read_only_integration_safe|caveated_conditional)",
+        coupling_posture:
+            "real stateful orchestration surface with technical compute dependence; currently caveated due to mixed intake path",
+        caveat:
+            "primary Blue-Brain integration candidate only if progressive canonicalization removes residual env/compat intake",
+    },
+    BlueBrainIntegrationLane {
+        surface: "ops_compute_probe",
+        class: BlueBrainIntegrationClass::BlueBrainAdjacentComputeConsumer,
+        repo_surface: "runtime/ucf-ops/src/lib.rs::run_compute_probe",
+        execution_contract_path:
+            "CanonicalComputeEntryPoint::submit(ComputeSubmitRequest{ExecuteInline})",
+        status_diagnostics_contract_path:
+            "CanonicalComputeEntryPoint::status + status_evidence_export_surface (status)",
+        evidence_reference_contract_path:
+            "CanonicalComputeEntryPoint::status_evidence_export_surface (evidence refs)",
+        integration_safe_hook_posture:
+            "reads integration_hook_view classification only; no mutating or expert-only semantics",
+        coupling_posture:
+            "clean outward-facing compute consumer and reference anchor, but not itself a Blue-Brain core loop",
+        caveat:
+            "adjacent integration anchor for contract stability checks; not a stateful Blue-Brain orchestration kernel",
+    },
+    BlueBrainIntegrationLane {
+        surface: "replay_diff_backend_recompute",
+        class: BlueBrainIntegrationClass::IndirectOrCompatibilityTouchingSurface,
+        repo_surface: "runtime/ucf-replay/src/lib.rs::replay_records",
+        execution_contract_path: "build_backend(cfg from replay spec) -> backend.compute(...)",
+        status_diagnostics_contract_path:
+            "replay diff/status heuristics (no canonical outward status contract as primary surface)",
+        evidence_reference_contract_path:
+            "replay-local evidence refs; not canonical outward evidence export as primary consumer contract",
+        integration_safe_hook_posture:
+            "diagnostic observation only; not an integration-safe hook consumer contract",
+        coupling_posture:
+            "indirect comparability/recompute support with legacy/compat characteristics",
+        caveat:
+            "useful as diagnostics adjunct only; should not be promoted to primary Blue-Brain compute integration",
+    },
+    BlueBrainIntegrationLane {
+        surface: "domains_ai_compat_lane",
+        class: BlueBrainIntegrationClass::IndirectOrCompatibilityTouchingSurface,
+        repo_surface: "domains/ai* + domains/ai-backends compatibility crates",
+        execution_contract_path: "legacy host ABI adapters",
+        status_diagnostics_contract_path: "legacy compatibility signals",
+        evidence_reference_contract_path: "compat adapter outputs (non-canonical export semantics)",
+        integration_safe_hook_posture:
+            "outside canonical integration_hook_view semantics and not outward integration-safe authority",
+        coupling_posture:
+            "legacy compatibility seam adjacent to compute but not a canonical Blue-Brain integration lane",
+        caveat:
+            "retain only as compatibility boundary; no Blue-Brain core or rollout authority",
+    },
+    BlueBrainIntegrationLane {
+        surface: "bench_compute_subcommand",
+        class: BlueBrainIntegrationClass::InternalOnlyOrNotMeaningfulForBlueBrainIntegration,
+        repo_surface: "runtime/ucf-bench/src/main.rs::run_compute",
+        execution_contract_path: "build_backend(cfg) -> backend.compute(...) benchmark loop",
+        status_diagnostics_contract_path: "benchmark-only latency/allocation metrics",
+        evidence_reference_contract_path: "none",
+        integration_safe_hook_posture: "internal/dev-test harness only",
+        coupling_posture:
+            "internal benchmark path can touch compute but has no Blue-Brain integration semantics",
+        caveat: "explicitly excluded from Blue-Brain integration scope",
+    },
+    BlueBrainIntegrationLane {
+        surface: "runtime_hooks_and_frame_helpers",
+        class: BlueBrainIntegrationClass::InternalOnlyOrNotMeaningfulForBlueBrainIntegration,
+        repo_surface: "runtime/ucf-runtime/src/hooks.rs + domains/ucf-frames/src/v1/*",
+        execution_contract_path: "none (helper/summary adaptation path)",
+        status_diagnostics_contract_path: "frame/helper reads of compute summary signals",
+        evidence_reference_contract_path: "digest/reference field carrying only",
+        integration_safe_hook_posture:
+            "internal data/helper boundary; integration_hook_view remains canonical outward hook boundary",
+        coupling_posture:
+            "schema/helper proximity to compute signals but no standalone outward compute-consumer contract",
+        caveat:
+            "do not treat helper proximity as Blue-Brain core integration readiness",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -615,6 +729,10 @@ pub fn canonical_first_domain_rollout_completion_map() -> &'static [FirstDomainR
 
 pub fn canonical_post_rollout_adoption_map() -> &'static [PostRolloutAdoptionLane] {
     &CANONICAL_POST_ROLLOUT_ADOPTION_MAP
+}
+
+pub fn canonical_blue_brain_integration_map() -> &'static [BlueBrainIntegrationLane] {
+    &CANONICAL_BLUE_BRAIN_INTEGRATION_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -998,6 +1116,63 @@ mod tests {
         }));
         assert!(doc.contains("low_value_or_legacy_driven_candidate"));
         assert!(doc.contains("not_worth_broader_integration_now"));
+    }
+
+    #[test]
+    fn blue_brain_integration_map_keeps_minimal_classes_and_outward_contract_basis_explicit() {
+        let map = canonical_blue_brain_integration_map();
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainIntegrationClass::RealBlueBrainCoreCandidate
+                && lane.surface == "runtime_orchestrator_stateful_loop"
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainIntegrationClass::BlueBrainAdjacentComputeConsumer
+                && lane.surface == "ops_compute_probe"
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainIntegrationClass::IndirectOrCompatibilityTouchingSurface
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainIntegrationClass::InternalOnlyOrNotMeaningfulForBlueBrainIntegration
+        }));
+        assert!(map.iter().all(|lane| {
+            lane.execution_contract_path
+                .contains("CanonicalComputeEntryPoint::submit")
+                || lane
+                    .status_diagnostics_contract_path
+                    .contains("status_evidence_export_surface")
+                || lane
+                    .integration_safe_hook_posture
+                    .contains("integration_hook_view")
+                || lane.class != BlueBrainIntegrationClass::RealBlueBrainCoreCandidate
+        }));
+    }
+
+    #[test]
+    fn serie_bb1_blue_brain_map_doc_stays_pinned_to_canonical_compute_contracts() {
+        let doc = include_str!("../../../docs/blue_brain_integration_map_serie_bb1_prompt1_v1.md");
+        let line = canonical_final_reference_line();
+
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("compute_execution_contract"));
+        assert!(doc.contains("compute_status_diagnostics_contract"));
+        assert!(doc.contains("compute_evidence_reference_contract"));
+        assert!(doc.contains("integration_hook_view"));
+
+        assert!(doc.contains("real_blue_brain_core_candidate"));
+        assert!(doc.contains("blue_brain_adjacent_compute_consumer"));
+        assert!(doc.contains("indirect_or_compatibility_touching_surface"));
+        assert!(doc.contains("internal_only_or_not_meaningful_for_blue_brain_integration"));
+
+        assert!(doc.contains("runtime_orchestrator_stateful_loop"));
+        assert!(doc.contains("ops_compute_probe"));
+        assert!(doc.contains("replay_diff_backend_recompute"));
+        assert!(doc.contains("domains_ai_compat_lane"));
+        assert!(doc.contains("bench_compute_subcommand"));
+        assert!(doc.contains("runtime_hooks_and_frame_helpers"));
+        assert!(doc.contains("keine zweite Integrationssprache"));
+        assert!(doc.contains("keine zweite Wahrheitsquelle"));
     }
 
     #[test]
