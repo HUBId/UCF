@@ -2,6 +2,8 @@
 
 Status: Konsolidierung der Blue-Brain-facing Vertragslinie auf dem abgeschlossenen Compute-Kern.
 Keine neue Architekturwelt, keine zweite Execution-Sprache, kein Compute-Core-Ausbau.
+Weiterführung: Prompt 3 präzisiert darauf aufbauend die erste kanonische Blue-Brain-to-Compute
+Handoff-Semantik in `docs/blue_brain_compute_handoffs_serie_bb1_prompt3_v1.md`.
 
 Primäre Rückbindung (keine zweite Wahrheitsquelle):
 - `runtime/ucf-compute/src/reference_map.rs`

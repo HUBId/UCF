@@ -179,6 +179,26 @@ pub struct BlueBrainFacingContractLane {
     pub excluded_semantics: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainComputeHandoffClass {
+    InferenceHandoff,
+    StatusDiagnosticsHandoff,
+    EvidenceReferenceHandoff,
+    StateAdjacentReferenceHandoff,
+    ExpertInternalOnlyNonCanonicalHandoff,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainComputeHandoffLane {
+    pub class: BlueBrainComputeHandoffClass,
+    pub lane: &'static str,
+    pub canonical_transition: &'static str,
+    pub outbound_payload_shape: &'static str,
+    pub return_payload_shape: &'static str,
+    pub canonical_references: &'static str,
+    pub non_canonical_boundary: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -751,6 +771,79 @@ pub const CANONICAL_BLUE_BRAIN_FACING_CONTRACT_MAP: [BlueBrainFacingContractLane
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_COMPUTE_HANDOFF_MAP: [BlueBrainComputeHandoffLane; 5] = [
+    BlueBrainComputeHandoffLane {
+        class: BlueBrainComputeHandoffClass::InferenceHandoff,
+        lane: "blue_brain_to_compute_inference_handoff",
+        canonical_transition:
+            "CanonicalComputeEntryPoint::submit(ComputeSubmitRequest{ExecuteInline}) -> compute_canonical -> result/fault/status",
+        outbound_payload_shape:
+            "submit request envelope only (canonical request + mode), no expert/internal operation payload",
+        return_payload_shape:
+            "canonical result/fault/status + execution snapshot semantics on same outward execution line",
+        canonical_references:
+            "request/run identity via ComputeJobHandle + outward status semantics + bounded evidence linkage",
+        non_canonical_boundary:
+            "exclude replay_with_entry/run_operation_with_entry/build_backend from default inference handoff",
+    },
+    BlueBrainComputeHandoffLane {
+        class: BlueBrainComputeHandoffClass::StatusDiagnosticsHandoff,
+        lane: "blue_brain_to_compute_status_diagnostics_handoff",
+        canonical_transition:
+            "CanonicalComputeEntryPoint::status + status_evidence_export_surface(status) -> top-level service/trust/status view",
+        outbound_payload_shape:
+            "status probe request only; no ownership transfer of internal diagnostic graphs",
+        return_payload_shape:
+            "current|partial|stale|caveated|degraded + trust/service state on canonical outward surface",
+        canonical_references:
+            "outward status references + runtime snapshot status semantics aligned to final compute line",
+        non_canonical_boundary:
+            "exclude internal-only diagnostic objects and expert workflow internals from canonical handoff payload",
+    },
+    BlueBrainComputeHandoffLane {
+        class: BlueBrainComputeHandoffClass::EvidenceReferenceHandoff,
+        lane: "blue_brain_to_compute_evidence_reference_handoff",
+        canonical_transition:
+            "CanonicalComputeEntryPoint::status_evidence_export_surface(evidence refs) -> bounded snapshot/evidence/trace/history references",
+        outbound_payload_shape:
+            "reference consumption request only; no raw internal trace object requirement",
+        return_payload_shape:
+            "evidence bundle references + trace/evidence references with partial/caveated posture where applicable",
+        canonical_references:
+            "snapshot/evidence references + trace slice references + history/replay-comparison refs where outward relevant",
+        non_canonical_boundary:
+            "exclude internal diagnostics blobs/audit platform payloads as mandatory Blue-Brain-facing handoff data",
+    },
+    BlueBrainComputeHandoffLane {
+        class: BlueBrainComputeHandoffClass::StateAdjacentReferenceHandoff,
+        lane: "blue_brain_to_compute_state_adjacent_reference_handoff",
+        canonical_transition:
+            "context_digest + runtime_handoff_state_from_evidence/runtime_handoff_state_from_action_code reference mapping",
+        outbound_payload_shape:
+            "context/reference linkage only; no direct runtime scheduler or in-memory orchestration struct leakage",
+        return_payload_shape:
+            "state-adjacent handoff state refs (complete|partial|caveated|blocked) derived from canonical evidence/action semantics",
+        canonical_references:
+            "request context_digest + runtime handoff state references + active production context where load-bearing",
+        non_canonical_boundary:
+            "exclude speculative cognitive-state platform semantics and compute-internal runtime structs",
+    },
+    BlueBrainComputeHandoffLane {
+        class: BlueBrainComputeHandoffClass::ExpertInternalOnlyNonCanonicalHandoff,
+        lane: "blue_brain_non_canonical_expert_internal_handoff",
+        canonical_transition:
+            "replay_with_entry/run_operation_with_entry + build_backend(kind=stub|candle|worker) remain expert/internal lanes",
+        outbound_payload_shape:
+            "expert/internal controls and compat adapters only; not default outward handoff authority",
+        return_payload_shape:
+            "internal diagnostics/operation outcomes can exist, but are never canonical Blue-Brain-facing standard payload",
+        canonical_references:
+            "must down-map to outward canonical status/evidence references before any Blue-Brain-facing use",
+        non_canonical_boundary:
+            "explicit non-canonical boundary: never advertise expert/internal lanes as default Blue-Brain-to-compute handoff",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -808,6 +901,10 @@ pub fn canonical_blue_brain_integration_map() -> &'static [BlueBrainIntegrationL
 
 pub fn canonical_blue_brain_facing_contract_map() -> &'static [BlueBrainFacingContractLane] {
     &CANONICAL_BLUE_BRAIN_FACING_CONTRACT_MAP
+}
+
+pub fn canonical_blue_brain_compute_handoff_map() -> &'static [BlueBrainComputeHandoffLane] {
+    &CANONICAL_BLUE_BRAIN_COMPUTE_HANDOFF_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -1339,6 +1436,81 @@ mod tests {
         assert!(doc.contains("status_evidence_export_surface"));
         assert!(doc.contains("integration_hook_view"));
         assert!(doc.contains("no second execution world"));
+        assert!(doc.contains("keine zweite Wahrheitsquelle"));
+    }
+
+    #[test]
+    fn blue_brain_handoff_map_keeps_minimal_canonical_split_and_non_canonical_boundary_explicit() {
+        let map = canonical_blue_brain_compute_handoff_map();
+        assert_eq!(map.len(), 5);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainComputeHandoffClass::InferenceHandoff));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainComputeHandoffClass::StatusDiagnosticsHandoff));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainComputeHandoffClass::EvidenceReferenceHandoff));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainComputeHandoffClass::StateAdjacentReferenceHandoff));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainComputeHandoffClass::ExpertInternalOnlyNonCanonicalHandoff
+        }));
+    }
+
+    #[test]
+    fn blue_brain_handoff_inference_status_and_evidence_lanes_stay_on_canonical_compute_line() {
+        let map = canonical_blue_brain_compute_handoff_map();
+        let inference = map
+            .iter()
+            .find(|lane| lane.class == BlueBrainComputeHandoffClass::InferenceHandoff)
+            .expect("inference handoff lane");
+        assert!(inference
+            .canonical_transition
+            .contains("CanonicalComputeEntryPoint::submit"));
+        assert!(inference
+            .return_payload_shape
+            .contains("result/fault/status"));
+
+        let status = map
+            .iter()
+            .find(|lane| lane.class == BlueBrainComputeHandoffClass::StatusDiagnosticsHandoff)
+            .expect("status handoff lane");
+        assert!(status
+            .canonical_transition
+            .contains("status_evidence_export_surface(status)"));
+        assert!(status
+            .return_payload_shape
+            .contains("current|partial|stale|caveated|degraded"));
+
+        let evidence = map
+            .iter()
+            .find(|lane| lane.class == BlueBrainComputeHandoffClass::EvidenceReferenceHandoff)
+            .expect("evidence handoff lane");
+        assert!(evidence
+            .canonical_transition
+            .contains("status_evidence_export_surface(evidence refs)"));
+        assert!(evidence.return_payload_shape.contains("partial/caveated"));
+    }
+
+    #[test]
+    fn serie_bb1_prompt3_handoff_doc_stays_pinned_to_canonical_handoff_map() {
+        let doc = include_str!("../../../docs/blue_brain_compute_handoffs_serie_bb1_prompt3_v1.md");
+        let line = canonical_final_reference_line();
+
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("blue_brain_to_compute_inference_handoff"));
+        assert!(doc.contains("blue_brain_to_compute_status_diagnostics_handoff"));
+        assert!(doc.contains("blue_brain_to_compute_evidence_reference_handoff"));
+        assert!(doc.contains("blue_brain_to_compute_state_adjacent_reference_handoff"));
+        assert!(doc.contains("blue_brain_non_canonical_expert_internal_handoff"));
+        assert!(doc.contains("current / partial / stale / caveated / degraded"));
+        assert!(doc.contains("status_evidence_export_surface"));
+        assert!(doc.contains("runtime_handoff_state_from_evidence"));
+        assert!(doc.contains("runtime_handoff_state_from_action_code"));
+        assert!(doc.contains("keine Workflow-Engine"));
         assert!(doc.contains("keine zweite Wahrheitsquelle"));
     }
 

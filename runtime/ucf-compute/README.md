@@ -23,6 +23,12 @@ For the narrow Blue-Brain integration classification (core candidate vs adjacent
 compat/internal surfaces) pinned to the same outward compute contracts, see
 `docs/blue_brain_integration_map_serie_bb1_prompt1_v1.md` and
 `CANONICAL_BLUE_BRAIN_INTEGRATION_MAP` in `src/reference_map.rs`.
+For the Blue-Brain-facing contract split (inference/state/status/evidence + explicit non-contract
+expert lane), see `docs/blue_brain_facing_contracts_serie_bb1_prompt2_v1.md` and
+`CANONICAL_BLUE_BRAIN_FACING_CONTRACT_MAP`.
+For the first canonical Blue-Brain-to-compute handoff map (inference/status/evidence/state-adjacent
+non-canonical boundary), see `docs/blue_brain_compute_handoffs_serie_bb1_prompt3_v1.md` and
+`CANONICAL_BLUE_BRAIN_COMPUTE_HANDOFF_MAP`.
 
 ## Capability model
 
