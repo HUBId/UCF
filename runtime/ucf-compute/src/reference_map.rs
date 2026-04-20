@@ -84,6 +84,25 @@ pub struct DomainFacingComputeConsumerLane {
     pub caveat: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DomainRolloutCandidateClass {
+    RolloutReadyCandidate,
+    RolloutPlausibleWithCaveats,
+    MixedTransitionalCandidate,
+    NotRealRolloutCandidateNow,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DomainRolloutCandidateLane {
+    pub candidate: &'static str,
+    pub rollout_class: DomainRolloutCandidateClass,
+    pub outward_execution_contract: &'static str,
+    pub outward_status_evidence_surface: &'static str,
+    pub integration_safe_hook_posture: &'static str,
+    pub excluded_internal_or_legacy_paths: &'static str,
+    pub caveat: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -357,6 +376,68 @@ pub const CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP: [DomainFacingComputeCons
     },
 ];
 
+pub const CANONICAL_FIRST_DOMAIN_ROLLOUT_CANDIDATE_MAP: [DomainRolloutCandidateLane; 5] = [
+    DomainRolloutCandidateLane {
+        candidate: "ops_compute_probe",
+        rollout_class: DomainRolloutCandidateClass::RolloutReadyCandidate,
+        outward_execution_contract:
+            "CanonicalComputeEntryPoint::submit(ComputeSubmitRequest{ExecuteInline})",
+        outward_status_evidence_surface:
+            "CanonicalComputeEntryPoint::status + status_evidence_export_surface",
+        integration_safe_hook_posture:
+            "integration_hook_view is read_only_integration_safe or caveated_conditional only",
+        excluded_internal_or_legacy_paths:
+            "does not use build_backend(kind=stub|candle|worker) or domains/ai* compat lanes",
+        caveat: "constrained by design: rollout anchor consumes canonical top-level contracts only",
+    },
+    DomainRolloutCandidateLane {
+        candidate: "runtime_orchestrator_env_bootstrap",
+        rollout_class: DomainRolloutCandidateClass::RolloutPlausibleWithCaveats,
+        outward_execution_contract: "mixed intake today: build_backend(cfg from env)",
+        outward_status_evidence_surface:
+            "compute summary + runtime evidence chain, not fully canonical export surface yet",
+        integration_safe_hook_posture:
+            "must stay on integration_hook_view boundary; no expert/internal mutation path rollout",
+        excluded_internal_or_legacy_paths:
+            "compat backend kinds and legacy env path remain explicitly non-rollout authority",
+        caveat:
+            "load-bearing path with narrow residual canonicalization needed before rollout-ready",
+    },
+    DomainRolloutCandidateLane {
+        candidate: "replay_diff_backend_recompute",
+        rollout_class: DomainRolloutCandidateClass::MixedTransitionalCandidate,
+        outward_execution_contract: "build_backend(cfg from replay spec) -> backend.compute(...)",
+        outward_status_evidence_surface:
+            "replay comparison/evidence refs without outward runtime service status contract",
+        integration_safe_hook_posture:
+            "replay diagnostics may observe hooks but are not a rollout-facing hook consumer",
+        excluded_internal_or_legacy_paths:
+            "replay/compat lane is intentionally not an outward service rollout baseline",
+        caveat: "technical comparison lane only; keep boundary explicit and non-rollout",
+    },
+    DomainRolloutCandidateLane {
+        candidate: "bench_compute_subcommand",
+        rollout_class: DomainRolloutCandidateClass::NotRealRolloutCandidateNow,
+        outward_execution_contract: "build_backend(cfg) -> backend.compute(...) loop (benchmark)",
+        outward_status_evidence_surface: "benchmark metrics only",
+        integration_safe_hook_posture: "internal harness; hook posture not rollout-bearing",
+        excluded_internal_or_legacy_paths:
+            "internal/dev-test harness intentionally excluded from outward rollout",
+        caveat: "not a domain-facing rollout candidate",
+    },
+    DomainRolloutCandidateLane {
+        candidate: "domains_ai_compat_lane",
+        rollout_class: DomainRolloutCandidateClass::NotRealRolloutCandidateNow,
+        outward_execution_contract: "legacy host ABI adapters",
+        outward_status_evidence_surface: "legacy compatibility signals only",
+        integration_safe_hook_posture:
+            "compat adapters are outside canonical integration-safe hook rollout boundary",
+        excluded_internal_or_legacy_paths:
+            "domains/ai* compatibility lane remains explicitly legacy/internal-only",
+        caveat: "legacy seam retained but not rollout basis on final compute line",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -393,6 +474,10 @@ pub fn is_outward_facing_compute_integration_boundary(
 pub fn canonical_domain_facing_compute_consumer_map() -> &'static [DomainFacingComputeConsumerLane]
 {
     &CANONICAL_DOMAIN_FACING_COMPUTE_CONSUMER_MAP
+}
+
+pub fn canonical_first_domain_rollout_candidate_map() -> &'static [DomainRolloutCandidateLane] {
+    &CANONICAL_FIRST_DOMAIN_ROLLOUT_CANDIDATE_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -910,5 +995,91 @@ mod tests {
         assert!(doc.contains("Serie Q"));
         assert!(doc.contains("Serie R"));
         assert!(doc.contains("Priorität: Serie P"));
+    }
+
+    #[test]
+    fn first_domain_rollout_candidate_map_keeps_minimal_classification_surface() {
+        let map = canonical_first_domain_rollout_candidate_map();
+        assert!(map.iter().any(|lane| {
+            lane.rollout_class == DomainRolloutCandidateClass::RolloutReadyCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.rollout_class == DomainRolloutCandidateClass::RolloutPlausibleWithCaveats
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.rollout_class == DomainRolloutCandidateClass::MixedTransitionalCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.rollout_class == DomainRolloutCandidateClass::NotRealRolloutCandidateNow
+        }));
+    }
+
+    #[test]
+    fn rollout_ready_candidate_is_pinned_to_canonical_outward_contracts_only() {
+        let ready: Vec<_> = canonical_first_domain_rollout_candidate_map()
+            .iter()
+            .filter(|lane| lane.rollout_class == DomainRolloutCandidateClass::RolloutReadyCandidate)
+            .collect();
+        assert_eq!(ready.len(), 1);
+        let lane = ready[0];
+        assert_eq!(lane.candidate, "ops_compute_probe");
+        assert!(lane
+            .outward_execution_contract
+            .contains("CanonicalComputeEntryPoint::submit"));
+        assert!(lane
+            .outward_status_evidence_surface
+            .contains("status_evidence_export_surface"));
+        assert!(lane
+            .integration_safe_hook_posture
+            .contains("read_only_integration_safe"));
+        assert!(lane
+            .excluded_internal_or_legacy_paths
+            .contains("build_backend"));
+        assert!(lane
+            .excluded_internal_or_legacy_paths
+            .contains("domains/ai*"));
+    }
+
+    #[test]
+    fn mixed_or_internal_candidates_never_appear_as_rollout_ready() {
+        let map = canonical_first_domain_rollout_candidate_map();
+        assert!(map
+            .iter()
+            .filter(|lane| {
+                matches!(
+                    lane.rollout_class,
+                    DomainRolloutCandidateClass::MixedTransitionalCandidate
+                        | DomainRolloutCandidateClass::NotRealRolloutCandidateNow
+                )
+            })
+            .all(|lane| lane.candidate != "ops_compute_probe"));
+        assert!(map.iter().any(|lane| {
+            lane.candidate == "replay_diff_backend_recompute"
+                && lane.rollout_class == DomainRolloutCandidateClass::MixedTransitionalCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.candidate == "domains_ai_compat_lane"
+                && lane.rollout_class == DomainRolloutCandidateClass::NotRealRolloutCandidateNow
+        }));
+    }
+
+    #[test]
+    fn serie_p_first_domain_rollout_doc_stays_pinned_to_canonical_contracts_and_boundaries() {
+        let doc = include_str!("../../../docs/first_domain_rollout_candidate_serie_p_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("rollout-ready candidate"));
+        assert!(doc.contains("rollout-plausible with caveats"));
+        assert!(doc.contains("mixed/transitional candidate"));
+        assert!(doc.contains("not a real rollout candidate now"));
+        assert!(doc.contains("ops_compute_probe"));
+        assert!(doc.contains("runtime_orchestrator_env_bootstrap"));
+        assert!(doc.contains("replay_diff_backend_recompute"));
+        assert!(doc.contains("bench_compute_subcommand"));
+        assert!(doc.contains("domains_ai_compat_lane"));
+        assert!(doc.contains("status_evidence_export_surface"));
+        assert!(doc.contains("integration_hook_view"));
+        assert!(doc.contains("build_backend(kind=stub|candle|worker)"));
+        assert!(doc.contains("no second integration language"));
     }
 }
