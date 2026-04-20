@@ -93,6 +93,25 @@ pub enum DomainRolloutCandidateClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FirstDomainRolloutCompletionStatus {
+    Aligned,
+    AlignedWithCaveats,
+    MixedTransitional,
+    NotYetTrueRolloutCompletion,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FirstDomainRolloutCompletionLane {
+    pub rollout_case: &'static str,
+    pub completion_status: FirstDomainRolloutCompletionStatus,
+    pub execution_contract_check: &'static str,
+    pub outward_status_evidence_check: &'static str,
+    pub integration_safe_hook_check: &'static str,
+    pub hidden_legacy_dependency_check: &'static str,
+    pub caveat: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DomainRolloutCandidateLane {
     pub candidate: &'static str,
     pub rollout_class: DomainRolloutCandidateClass,
@@ -438,6 +457,23 @@ pub const CANONICAL_FIRST_DOMAIN_ROLLOUT_CANDIDATE_MAP: [DomainRolloutCandidateL
     },
 ];
 
+pub const CANONICAL_FIRST_DOMAIN_ROLLOUT_COMPLETION_MAP: [FirstDomainRolloutCompletionLane; 1] = [
+    FirstDomainRolloutCompletionLane {
+        rollout_case: "ops_compute_probe",
+        completion_status: FirstDomainRolloutCompletionStatus::Aligned,
+        execution_contract_check:
+            "uses CanonicalComputeEntryPoint::submit(ComputeSubmitRequest{ExecuteInline}) on submit -> compute_canonical -> result/fault/status -> execution_snapshot",
+        outward_status_evidence_check:
+            "reads CanonicalComputeEntryPoint::status + status_evidence_export_surface and uses canonical_consumer_view() semantics",
+        integration_safe_hook_check:
+            "integration_hook_view remains read_only_integration_safe or caveated_conditional and stays non-mutating",
+        hidden_legacy_dependency_check:
+            "no build_backend(kind=stub|candle|worker) path and no domains/ai* compatibility lane dependency in rollout authority",
+        caveat:
+            "constrained by design: rollout proof consumes outward-facing status/evidence semantics, not expert internals",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -478,6 +514,11 @@ pub fn canonical_domain_facing_compute_consumer_map() -> &'static [DomainFacingC
 
 pub fn canonical_first_domain_rollout_candidate_map() -> &'static [DomainRolloutCandidateLane] {
     &CANONICAL_FIRST_DOMAIN_ROLLOUT_CANDIDATE_MAP
+}
+
+pub fn canonical_first_domain_rollout_completion_map() -> &'static [FirstDomainRolloutCompletionLane]
+{
+    &CANONICAL_FIRST_DOMAIN_ROLLOUT_COMPLETION_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -1081,5 +1122,58 @@ mod tests {
         assert!(doc.contains("integration_hook_view"));
         assert!(doc.contains("build_backend(kind=stub|candle|worker)"));
         assert!(doc.contains("no second integration language"));
+    }
+
+    #[test]
+    fn first_domain_rollout_completion_map_marks_ops_probe_as_aligned() {
+        let map = canonical_first_domain_rollout_completion_map();
+        assert_eq!(map.len(), 1);
+        let lane = map[0];
+        assert_eq!(lane.rollout_case, "ops_compute_probe");
+        assert_eq!(
+            lane.completion_status,
+            FirstDomainRolloutCompletionStatus::Aligned
+        );
+        assert!(lane
+            .execution_contract_check
+            .contains("CanonicalComputeEntryPoint::submit"));
+        assert!(lane
+            .outward_status_evidence_check
+            .contains("status_evidence_export_surface"));
+        assert!(lane
+            .integration_safe_hook_check
+            .contains("read_only_integration_safe"));
+        assert!(lane
+            .hidden_legacy_dependency_check
+            .contains("build_backend(kind=stub|candle|worker)"));
+        assert!(lane.hidden_legacy_dependency_check.contains("domains/ai*"));
+    }
+
+    #[test]
+    fn first_domain_rollout_completion_statuses_are_narrow_and_non_ambiguous() {
+        let all = [
+            FirstDomainRolloutCompletionStatus::Aligned,
+            FirstDomainRolloutCompletionStatus::AlignedWithCaveats,
+            FirstDomainRolloutCompletionStatus::MixedTransitional,
+            FirstDomainRolloutCompletionStatus::NotYetTrueRolloutCompletion,
+        ];
+        assert_eq!(all.len(), 4);
+    }
+
+    #[test]
+    fn serie_p_prompt3_completion_doc_stays_pinned_to_single_rollout_proof_case() {
+        let doc =
+            include_str!("../../../docs/first_domain_rollout_completion_serie_p_prompt3_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("aligned"));
+        assert!(doc.contains("aligned with caveats"));
+        assert!(doc.contains("mixed/transitional"));
+        assert!(doc.contains("not yet true rollout completion"));
+        assert!(doc.contains("ops_compute_probe"));
+        assert!(doc.contains("status_evidence_export_surface"));
+        assert!(doc.contains("integration_hook_view"));
+        assert!(doc.contains("build_backend(kind=stub|candle|worker)"));
+        assert!(doc.contains("domains/ai*"));
     }
 }
