@@ -122,6 +122,24 @@ pub struct DomainRolloutCandidateLane {
     pub caveat: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostRolloutAdoptionClass {
+    GenuineNextAdoptionCandidate,
+    PlausibleAfterFirstRolloutButCaveated,
+    StillIndirectCompatibilityTouching,
+    NotMeaningfulForComputeAdoptionNow,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PostRolloutAdoptionLane {
+    pub surface: &'static str,
+    pub adoption_class: PostRolloutAdoptionClass,
+    pub rollout_anchor_comparison: &'static str,
+    pub outward_contract_fit: &'static str,
+    pub legacy_internal_dependency_posture: &'static str,
+    pub caveat: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -474,6 +492,68 @@ pub const CANONICAL_FIRST_DOMAIN_ROLLOUT_COMPLETION_MAP: [FirstDomainRolloutComp
     },
 ];
 
+pub const CANONICAL_POST_ROLLOUT_ADOPTION_MAP: [PostRolloutAdoptionLane; 5] = [
+    PostRolloutAdoptionLane {
+        surface: "runtime_orchestrator_env_bootstrap",
+        adoption_class: PostRolloutAdoptionClass::GenuineNextAdoptionCandidate,
+        rollout_anchor_comparison:
+            "closest load-bearing consumer to first rollout anchor ops_compute_probe; same outward line is reachable with narrow intake canonicalization",
+        outward_contract_fit:
+            "execution/status-evidence path can be tightened to CanonicalComputeEntryPoint::submit + status_evidence_export_surface without compute-core redesign",
+        legacy_internal_dependency_posture:
+            "current env/compat intake still mixed; must not rely on build_backend(kind=stub|candle|worker) as outward authority",
+        caveat:
+            "adoption is valid only if narrowed to the same outward-facing contract/evidence semantics already proven by first rollout",
+    },
+    PostRolloutAdoptionLane {
+        surface: "replay_diff_backend_recompute",
+        adoption_class: PostRolloutAdoptionClass::PlausibleAfterFirstRolloutButCaveated,
+        rollout_anchor_comparison:
+            "demystified by first rollout as technical comparison support but still not an outward runtime service contract",
+        outward_contract_fit:
+            "shares compute semantics and evidence references but lacks canonical outward status/service interface as primary consumer contract",
+        legacy_internal_dependency_posture:
+            "replay/compat pathway remains intentionally distinct from outward rollout authority",
+        caveat:
+            "keep as constrained follow-up only; do not promote to rollout-equivalent adoption language",
+    },
+    PostRolloutAdoptionLane {
+        surface: "domains_ai_compat_lane",
+        adoption_class: PostRolloutAdoptionClass::StillIndirectCompatibilityTouching,
+        rollout_anchor_comparison:
+            "appears adjacent due to historical coupling, but first rollout proof does not transfer to compat adapters",
+        outward_contract_fit:
+            "legacy host ABI adapters do not provide canonical submit + outward status/evidence semantics",
+        legacy_internal_dependency_posture:
+            "explicit legacy/internal boundary; compatibility seam retained without rollout authority",
+        caveat:
+            "must stay downgraded to avoid accidental legacy-led adoption expansion",
+    },
+    PostRolloutAdoptionLane {
+        surface: "bench_compute_subcommand",
+        adoption_class: PostRolloutAdoptionClass::NotMeaningfulForComputeAdoptionNow,
+        rollout_anchor_comparison:
+            "internal benchmark harness and not a domain-facing continuation of first rollout line",
+        outward_contract_fit:
+            "no outward-facing execution/status/evidence contract responsibilities",
+        legacy_internal_dependency_posture:
+            "internal dev/test path; not a compatibility authority and not a rollout anchor",
+        caveat: "intentionally excluded from post-rollout adoption candidate set",
+    },
+    PostRolloutAdoptionLane {
+        surface: "ops_compute_probe",
+        adoption_class: PostRolloutAdoptionClass::NotMeaningfulForComputeAdoptionNow,
+        rollout_anchor_comparison:
+            "first real rollout anchor already established; serves as baseline reference, not next adoption target",
+        outward_contract_fit:
+            "already on CanonicalComputeEntryPoint::submit + status_evidence_export_surface + integration_safe hooks",
+        legacy_internal_dependency_posture:
+            "no hidden legacy/internal dependency in rollout authority path",
+        caveat:
+            "keep stable as anchor and evaluation baseline; avoid reclassifying as new candidate",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -519,6 +599,10 @@ pub fn canonical_first_domain_rollout_candidate_map() -> &'static [DomainRollout
 pub fn canonical_first_domain_rollout_completion_map() -> &'static [FirstDomainRolloutCompletionLane]
 {
     &CANONICAL_FIRST_DOMAIN_ROLLOUT_COMPLETION_MAP
+}
+
+pub fn canonical_post_rollout_adoption_map() -> &'static [PostRolloutAdoptionLane] {
+    &CANONICAL_POST_ROLLOUT_ADOPTION_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -1197,5 +1281,85 @@ mod tests {
         assert!(doc.contains("Priorität: Serie S"));
         assert!(doc.contains("follow-up integration work"));
         assert!(doc.contains("not compute-core completion work"));
+    }
+
+    #[test]
+    fn post_rollout_adoption_map_keeps_minimal_narrow_classes_explicit() {
+        let map = canonical_post_rollout_adoption_map();
+        assert!(map.iter().any(|lane| {
+            lane.adoption_class == PostRolloutAdoptionClass::GenuineNextAdoptionCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.adoption_class == PostRolloutAdoptionClass::PlausibleAfterFirstRolloutButCaveated
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.adoption_class == PostRolloutAdoptionClass::StillIndirectCompatibilityTouching
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.adoption_class == PostRolloutAdoptionClass::NotMeaningfulForComputeAdoptionNow
+        }));
+    }
+
+    #[test]
+    fn post_rollout_map_keeps_orchestrator_as_only_genuine_next_candidate() {
+        let next: Vec<_> = canonical_post_rollout_adoption_map()
+            .iter()
+            .filter(|lane| {
+                lane.adoption_class == PostRolloutAdoptionClass::GenuineNextAdoptionCandidate
+            })
+            .collect();
+        assert_eq!(next.len(), 1);
+        let lane = next[0];
+        assert_eq!(lane.surface, "runtime_orchestrator_env_bootstrap");
+        assert!(lane
+            .outward_contract_fit
+            .contains("CanonicalComputeEntryPoint::submit"));
+        assert!(lane
+            .outward_contract_fit
+            .contains("status_evidence_export_surface"));
+        assert!(lane
+            .legacy_internal_dependency_posture
+            .contains("build_backend(kind=stub|candle|worker)"));
+    }
+
+    #[test]
+    fn post_rollout_map_downgrades_legacy_or_internal_surfaces_explicitly() {
+        let map = canonical_post_rollout_adoption_map();
+        assert!(map.iter().any(|lane| {
+            lane.surface == "domains_ai_compat_lane"
+                && lane.adoption_class
+                    == PostRolloutAdoptionClass::StillIndirectCompatibilityTouching
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.surface == "bench_compute_subcommand"
+                && lane.adoption_class
+                    == PostRolloutAdoptionClass::NotMeaningfulForComputeAdoptionNow
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.surface == "ops_compute_probe"
+                && lane.adoption_class
+                    == PostRolloutAdoptionClass::NotMeaningfulForComputeAdoptionNow
+        }));
+    }
+
+    #[test]
+    fn serie_q_post_rollout_adoption_doc_stays_pinned_to_single_rollout_anchor_language() {
+        let doc = include_str!("../../../docs/serie_q_post_rollout_adoption_map_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("genuine next adoption candidate"));
+        assert!(doc.contains("plausible after first rollout but caveated"));
+        assert!(doc.contains("still indirect / compatibility-touching"));
+        assert!(doc.contains("not meaningful for compute adoption now"));
+        assert!(doc.contains("ops_compute_probe"));
+        assert!(doc.contains("runtime_orchestrator_env_bootstrap"));
+        assert!(doc.contains("replay_diff_backend_recompute"));
+        assert!(doc.contains("bench_compute_subcommand"));
+        assert!(doc.contains("domains_ai_compat_lane"));
+        assert!(doc.contains("status_evidence_export_surface"));
+        assert!(doc.contains("integration_hook_view"));
+        assert!(doc.contains("build_backend(kind=stub|candle|worker)"));
+        assert!(doc.contains("no second adoption language"));
+        assert!(doc.contains("Keine Wunschliste"));
     }
 }
