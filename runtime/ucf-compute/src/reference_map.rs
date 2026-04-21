@@ -220,6 +220,44 @@ pub struct BlueBrainIntegrationCandidateLane {
     pub caveat: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainRuntimeSurfaceClass {
+    StateBearingSurface,
+    InferenceBearingSurface,
+    StatusHealthTrustFacingSurface,
+    EvidenceReplayFacingSurface,
+    InternalOnlyRuntimeControlSurface,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainRuntimeSurfaceLane {
+    pub class: BlueBrainRuntimeSurfaceClass,
+    pub lane: &'static str,
+    pub canonical_anchor: &'static str,
+    pub runtime_scope: &'static str,
+    pub compute_line_binding: &'static str,
+    pub boundary_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainRuntimePhaseClass {
+    StateContextAvailable,
+    ComputeInvocationRequested,
+    ComputeResultIntegrated,
+    StatusEvidenceObserved,
+    CaveatedOrDegradedOrPartialRuntimeState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainRuntimePhaseLane {
+    pub class: BlueBrainRuntimePhaseClass,
+    pub lane: &'static str,
+    pub phase_transition: &'static str,
+    pub canonical_inputs: &'static str,
+    pub canonical_outputs: &'static str,
+    pub non_goal_boundary: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -940,6 +978,129 @@ pub const CANONICAL_BLUE_BRAIN_INTEGRATION_CANDIDATE_MAP: [BlueBrainIntegrationC
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_RUNTIME_SURFACE_MAP: [BlueBrainRuntimeSurfaceLane; 5] = [
+    BlueBrainRuntimeSurfaceLane {
+        class: BlueBrainRuntimeSurfaceClass::StateBearingSurface,
+        lane: "blue_brain_state_bearing_surface",
+        canonical_anchor:
+            "runtime/ucf-runtime/src/orchestrator.rs::RuntimeOrchestrator::{try_new_from_env,step_once}",
+        runtime_scope:
+            "state/context bearing orchestration around compute request context_digest and handoff state references",
+        compute_line_binding:
+            "context linkage references CanonicalComputeEntryPoint submit/status-evidence semantics but does not redefine compute internals",
+        boundary_guard:
+            "no direct export of runtime scheduler internals or speculative cognitive-state matrix",
+    },
+    BlueBrainRuntimeSurfaceLane {
+        class: BlueBrainRuntimeSurfaceClass::InferenceBearingSurface,
+        lane: "blue_brain_inference_bearing_surface",
+        canonical_anchor:
+            "service_surface::CanonicalComputeEntryPoint::submit(ComputeSubmitRequest{ExecuteInline})",
+        runtime_scope: "compute invocation handoff for Blue-Brain-facing inference-bearing runtime step",
+        compute_line_binding:
+            "submit -> compute_canonical -> result/fault/status on final compute reference line",
+        boundary_guard:
+            "exclude replay_with_entry/run_operation_with_entry/build_backend as default inference runtime surface",
+    },
+    BlueBrainRuntimeSurfaceLane {
+        class: BlueBrainRuntimeSurfaceClass::StatusHealthTrustFacingSurface,
+        lane: "blue_brain_status_health_trust_surface",
+        canonical_anchor:
+            "service_surface::CanonicalComputeEntryPoint::status + status_evidence_export_surface(status)",
+        runtime_scope: "runtime-relevant current/partial/stale/caveated/degraded plus service trust posture",
+        compute_line_binding:
+            "outward status/evidence export surface remains read-only/caveated integration contract",
+        boundary_guard:
+            "exclude internal diagnostic graph ownership and expert control semantics from canonical status surface",
+    },
+    BlueBrainRuntimeSurfaceLane {
+        class: BlueBrainRuntimeSurfaceClass::EvidenceReplayFacingSurface,
+        lane: "blue_brain_evidence_replay_facing_surface",
+        canonical_anchor:
+            "service_surface::CanonicalComputeEntryPoint::status_evidence_export_surface (evidence refs + history/replay refs)",
+        runtime_scope:
+            "evidence/reference uptake for runtime replayability and diagnostics anchoring (sufficient|partial|caveated|insufficient)",
+        compute_line_binding:
+            "bounded evidence references tied to canonical run/action evidence bundle semantics",
+        boundary_guard:
+            "exclude raw internal diagnostics blobs as required Blue-Brain runtime payload",
+    },
+    BlueBrainRuntimeSurfaceLane {
+        class: BlueBrainRuntimeSurfaceClass::InternalOnlyRuntimeControlSurface,
+        lane: "blue_brain_internal_only_runtime_control_surface",
+        canonical_anchor:
+            "service_surface::{replay_with_entry,run_operation_with_entry} + backends::build_backend(kind=stub|candle|worker) + domains/ai*",
+        runtime_scope:
+            "expert/internal diagnostics-control and compatibility paths on shared compute semantics",
+        compute_line_binding:
+            "must down-map to outward status/evidence references before Blue-Brain-facing usage",
+        boundary_guard:
+            "explicitly non-canonical Blue-Brain runtime surface; never default outward authority",
+    },
+];
+
+pub const CANONICAL_BLUE_BRAIN_RUNTIME_PHASE_MAP: [BlueBrainRuntimePhaseLane; 5] = [
+    BlueBrainRuntimePhaseLane {
+        class: BlueBrainRuntimePhaseClass::StateContextAvailable,
+        lane: "blue_brain_phase_state_context_available",
+        phase_transition:
+            "state/context prepared -> request context_digest + handoff state reference becomes available",
+        canonical_inputs:
+            "runtime_orchestrator_stateful_loop state/context and reference-level handoff state",
+        canonical_outputs:
+            "state-adjacent context reference ready for canonical compute invocation",
+        non_goal_boundary:
+            "no compute-internal runtime struct modeling and no speculative cognitive pipeline expansion",
+    },
+    BlueBrainRuntimePhaseLane {
+        class: BlueBrainRuntimePhaseClass::ComputeInvocationRequested,
+        lane: "blue_brain_phase_compute_invocation_requested",
+        phase_transition:
+            "compute invocation requested via CanonicalComputeEntryPoint::submit(ComputeSubmitRequest{ExecuteInline})",
+        canonical_inputs: "state/context reference + canonical submit request envelope",
+        canonical_outputs:
+            "ComputeJobHandle identity plus canonical run request on final compute execution line",
+        non_goal_boundary:
+            "no side-entry replay/runtime-operation lane as default runtime phase",
+    },
+    BlueBrainRuntimePhaseLane {
+        class: BlueBrainRuntimePhaseClass::ComputeResultIntegrated,
+        lane: "blue_brain_phase_compute_result_integrated",
+        phase_transition:
+            "canonical compute result/fault/status integrated back into Blue-Brain runtime state",
+        canonical_inputs:
+            "submit result tuple + status semantics from shared result/fault/status core",
+        canonical_outputs:
+            "runtime-facing result integration with explicit complete|partial|caveated|blocked handoff-state references",
+        non_goal_boundary:
+            "no second compute truth model and no compute-core semantic fork",
+    },
+    BlueBrainRuntimePhaseLane {
+        class: BlueBrainRuntimePhaseClass::StatusEvidenceObserved,
+        lane: "blue_brain_phase_status_evidence_observed",
+        phase_transition:
+            "status/evidence observed via status + status_evidence_export_surface(status/evidence refs)",
+        canonical_inputs:
+            "top-level status/trust signals + evidence bundle references + trace/history refs",
+        canonical_outputs:
+            "runtime-visible status/evidence uptake anchored in outward-facing compute contracts",
+        non_goal_boundary:
+            "no separate monitoring platform or mandatory raw diagnostics payload ingestion",
+    },
+    BlueBrainRuntimePhaseLane {
+        class: BlueBrainRuntimePhaseClass::CaveatedOrDegradedOrPartialRuntimeState,
+        lane: "blue_brain_phase_caveated_degraded_partial_runtime_state",
+        phase_transition:
+            "runtime posture enters caveated/degraded/partial state when outward status/evidence signals are stale or insufficient",
+        canonical_inputs:
+            "current|partial|stale|caveated|degraded status + sufficient|partial|caveated|insufficient evidence posture",
+        canonical_outputs:
+            "explicit runtime caveat/degraded marker without hidden expert/internal escalation",
+        non_goal_boundary:
+            "no implicit high-trust fallback authority through expert/internal runtime control surfaces",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -1006,6 +1167,14 @@ pub fn canonical_blue_brain_compute_handoff_map() -> &'static [BlueBrainComputeH
 pub fn canonical_blue_brain_integration_candidate_map(
 ) -> &'static [BlueBrainIntegrationCandidateLane] {
     &CANONICAL_BLUE_BRAIN_INTEGRATION_CANDIDATE_MAP
+}
+
+pub fn canonical_blue_brain_runtime_surface_map() -> &'static [BlueBrainRuntimeSurfaceLane] {
+    &CANONICAL_BLUE_BRAIN_RUNTIME_SURFACE_MAP
+}
+
+pub fn canonical_blue_brain_runtime_phase_map() -> &'static [BlueBrainRuntimePhaseLane] {
+    &CANONICAL_BLUE_BRAIN_RUNTIME_PHASE_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -1696,6 +1865,117 @@ mod tests {
         assert!(
             doc.contains("kein Rückfall auf compute-interne, legacy- oder helper-dominierte Pfade")
         );
+    }
+
+    #[test]
+    fn blue_brain_runtime_surface_map_keeps_five_minimal_runtime_classes_explicit() {
+        let map = canonical_blue_brain_runtime_surface_map();
+        assert_eq!(map.len(), 5);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainRuntimeSurfaceClass::StateBearingSurface));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainRuntimeSurfaceClass::InferenceBearingSurface));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainRuntimeSurfaceClass::StatusHealthTrustFacingSurface
+        }));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainRuntimeSurfaceClass::EvidenceReplayFacingSurface));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainRuntimeSurfaceClass::InternalOnlyRuntimeControlSurface
+        }));
+    }
+
+    #[test]
+    fn blue_brain_runtime_surface_map_stays_pinned_to_final_compute_line_without_internal_leak() {
+        let map = canonical_blue_brain_runtime_surface_map();
+        let inference_lane = map
+            .iter()
+            .find(|lane| lane.class == BlueBrainRuntimeSurfaceClass::InferenceBearingSurface)
+            .expect("inference-bearing runtime lane");
+        assert!(inference_lane
+            .canonical_anchor
+            .contains("CanonicalComputeEntryPoint::submit"));
+        assert!(inference_lane
+            .compute_line_binding
+            .contains("submit -> compute_canonical -> result/fault/status"));
+
+        let status_lane = map
+            .iter()
+            .find(|lane| lane.class == BlueBrainRuntimeSurfaceClass::StatusHealthTrustFacingSurface)
+            .expect("status runtime lane");
+        assert!(status_lane
+            .canonical_anchor
+            .contains("status_evidence_export_surface(status)"));
+
+        let evidence_lane = map
+            .iter()
+            .find(|lane| lane.class == BlueBrainRuntimeSurfaceClass::EvidenceReplayFacingSurface)
+            .expect("evidence runtime lane");
+        assert!(evidence_lane
+            .runtime_scope
+            .contains("sufficient|partial|caveated|insufficient"));
+
+        let internal_lane = map
+            .iter()
+            .find(|lane| {
+                lane.class == BlueBrainRuntimeSurfaceClass::InternalOnlyRuntimeControlSurface
+            })
+            .expect("internal runtime control lane");
+        assert!(internal_lane
+            .boundary_guard
+            .contains("explicitly non-canonical Blue-Brain runtime surface"));
+    }
+
+    #[test]
+    fn blue_brain_runtime_phase_map_keeps_minimal_runtime_phases_and_caveat_state_explicit() {
+        let phases = canonical_blue_brain_runtime_phase_map();
+        assert_eq!(phases.len(), 5);
+        assert!(phases
+            .iter()
+            .any(|lane| lane.class == BlueBrainRuntimePhaseClass::StateContextAvailable));
+        assert!(phases
+            .iter()
+            .any(|lane| lane.class == BlueBrainRuntimePhaseClass::ComputeInvocationRequested));
+        assert!(phases
+            .iter()
+            .any(|lane| lane.class == BlueBrainRuntimePhaseClass::ComputeResultIntegrated));
+        assert!(phases
+            .iter()
+            .any(|lane| lane.class == BlueBrainRuntimePhaseClass::StatusEvidenceObserved));
+        assert!(phases.iter().any(|lane| {
+            lane.class == BlueBrainRuntimePhaseClass::CaveatedOrDegradedOrPartialRuntimeState
+        }));
+        assert!(phases.iter().any(|lane| {
+            lane.lane == "blue_brain_phase_caveated_degraded_partial_runtime_state"
+                && lane
+                    .canonical_inputs
+                    .contains("current|partial|stale|caveated|degraded")
+        }));
+    }
+
+    #[test]
+    fn serie_bb2_prompt1_runtime_surface_doc_stays_pinned_to_runtime_surface_and_phase_maps() {
+        let doc =
+            include_str!("../../../docs/blue_brain_state_runtime_surface_serie_bb2_prompt1_v1.md");
+        let line = canonical_final_reference_line();
+
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("blue_brain_state_bearing_surface"));
+        assert!(doc.contains("blue_brain_inference_bearing_surface"));
+        assert!(doc.contains("blue_brain_status_health_trust_surface"));
+        assert!(doc.contains("blue_brain_evidence_replay_facing_surface"));
+        assert!(doc.contains("blue_brain_internal_only_runtime_control_surface"));
+        assert!(doc.contains("blue_brain_phase_state_context_available"));
+        assert!(doc.contains("blue_brain_phase_compute_invocation_requested"));
+        assert!(doc.contains("blue_brain_phase_compute_result_integrated"));
+        assert!(doc.contains("blue_brain_phase_status_evidence_observed"));
+        assert!(doc.contains("blue_brain_phase_caveated_degraded_partial_runtime_state"));
+        assert!(doc.contains("keine zweite Compute-Semantik"));
+        assert!(doc.contains("keine Workflow-Engine"));
+        assert!(doc.contains("keine zweite Wahrheitsquelle"));
     }
 
     #[test]

@@ -35,6 +35,11 @@ explicit contract/handoff bindings + legacy exclusions), see
 `CANONICAL_BLUE_BRAIN_INTEGRATION_CANDIDATE_MAP`.
 For the BB1 readiness closure matrix + explicit integration baseline + prioritized next direction, see
 `docs/blue_brain_readiness_sweep_serie_bb1_prompt5_v1.md`.
+For the BB2 Prompt 1 canonical Blue-Brain state/runtime surface + minimal runtime phase map
+over the finalized compute line, see
+`docs/blue_brain_state_runtime_surface_serie_bb2_prompt1_v1.md`,
+`CANONICAL_BLUE_BRAIN_RUNTIME_SURFACE_MAP`, and
+`CANONICAL_BLUE_BRAIN_RUNTIME_PHASE_MAP`.
 
 ## Capability model
 
