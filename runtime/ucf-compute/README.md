@@ -61,6 +61,11 @@ For the BB3 Prompt 1 canonical Blue-Brain context/memory surface map
 vs explicit persisted-memory-null lane + non-canonical internal-only memory-like path), see
 `docs/blue_brain_context_memory_surface_serie_bb3_prompt1_v1.md` and
 `CANONICAL_BLUE_BRAIN_CONTEXT_MEMORY_SURFACE_MAP`.
+For BB3 Prompt 2 context-update + memory-candidate lifecycle semantics
+(structured context update classes, explicit candidate states, and explicit no-persistence boundary),
+see `docs/blue_brain_context_memory_lifecycle_serie_bb3_prompt2_v1.md`,
+`CANONICAL_BLUE_BRAIN_CONTEXT_UPDATE_LIFECYCLE_MAP`, and
+`CANONICAL_BLUE_BRAIN_MEMORY_CANDIDATE_LIFECYCLE_MAP`.
 
 ## Capability model
 
