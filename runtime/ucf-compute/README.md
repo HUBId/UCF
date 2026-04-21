@@ -56,6 +56,11 @@ diagnostic/context feedback + explicit non-canonical boundary), see
 For the BB2 Prompt 5 readiness sweep + explicit runtime baseline closure matrix
 (stable vs caveated vs preparatory vs internal-only vs deferred), see
 `docs/blue_brain_readiness_sweep_serie_bb2_prompt5_v1.md`.
+For the BB3 Prompt 1 canonical Blue-Brain context/memory surface map
+(transient runtime context vs evidence-backed/replay-reference context vs memory-adjacent candidate
+vs explicit persisted-memory-null lane + non-canonical internal-only memory-like path), see
+`docs/blue_brain_context_memory_surface_serie_bb3_prompt1_v1.md` and
+`CANONICAL_BLUE_BRAIN_CONTEXT_MEMORY_SURFACE_MAP`.
 
 ## Capability model
 
