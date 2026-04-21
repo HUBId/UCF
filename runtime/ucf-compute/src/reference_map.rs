@@ -2809,6 +2809,41 @@ mod tests {
     }
 
     #[test]
+    fn serie_bb2_prompt5_readiness_doc_keeps_runtime_baseline_and_compute_maintenance_boundary() {
+        let doc = include_str!("../../../docs/blue_brain_readiness_sweep_serie_bb2_prompt5_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("stable Blue-Brain runtime foundation"));
+        assert!(doc.contains("runtime-usable with caveats"));
+        assert!(doc.contains("preparatory / memory-adjacent only"));
+        assert!(doc.contains("internal-only / non-canonical"));
+        assert!(doc.contains("intentionally deferred"));
+
+        assert!(doc.contains("blue_brain_state_bearing_surface"));
+        assert!(doc.contains("blue_brain_inference_bearing_surface"));
+        assert!(doc.contains("blue_brain_status_health_trust_surface"));
+        assert!(doc.contains("blue_brain_evidence_replay_facing_surface"));
+
+        assert!(doc.contains("blue_brain_transition_context_used_for_compute_trigger"));
+        assert!(doc.contains("blue_brain_transition_compute_trigger_from_context_availability"));
+        assert!(doc.contains("blue_brain_transition_compute_trigger_from_inference_required"));
+        assert!(doc.contains("blue_brain_transition_compute_trigger_suppressed_internal_only_path"));
+
+        assert!(doc.contains("blue_brain_feedback_result_integrated_current_runtime_state"));
+        assert!(doc.contains("blue_brain_feedback_status_trust_current_to_insufficient"));
+        assert!(doc.contains("blue_brain_feedback_evidence_observed_and_attached"));
+        assert!(
+            doc.contains("blue_brain_feedback_context_uptake_transient_memory_adjacent_candidate")
+        );
+        assert!(doc
+            .contains("blue_brain_transition_memory_adjacent_candidate_identified_not_committed"));
+        assert!(doc.contains("kein Memory-Commit"));
+        assert!(doc.contains("maintenance-only Core"));
+        assert!(doc.contains("Priorität 1: Serie BB3"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
     fn serie_o_maintenance_boundary_doc_keeps_minimal_change_classes_explicit() {
         let doc = include_str!("../../../docs/compute_core_maintenance_boundary_serie_o_v1.md");
         let line = canonical_final_reference_line();
