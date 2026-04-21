@@ -473,6 +473,56 @@ pub enum BlueBrainControlAttentionSelectionClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainComputeTriggerArbitrationClass {
+    TriggerCandidate,
+    SelectedTrigger,
+    DeferredTrigger,
+    SuppressedTrigger,
+    BlockedTrigger,
+    InsufficientTriggerBasis,
+    CaveatedTrigger,
+    NonCanonicalInternalOnlyTrigger,
+    InvocationResultFeedback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainComputeTriggerSourceClass {
+    ContextDerived,
+    EvidenceReferenceDerived,
+    RuntimeStateDerived,
+    MemoryCandidateDerived,
+    FeedbackDerived,
+    ManualInternalOnlyNonCanonical,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainSelectionGatedInvocationClass {
+    InvocationRequested,
+    NoInvocationDeferred,
+    NoInvocationBlocked,
+    CaveatedInvocationAllowed,
+    InsufficientBasisRequiresMoreContextOrEvidence,
+    InvocationCompleted,
+    InvocationFailed,
+    InvocationBlockedByComputeContract,
+    InvocationCaveatedOrDegraded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainComputeTriggerArbitrationLane {
+    pub class: BlueBrainComputeTriggerArbitrationClass,
+    pub source: BlueBrainComputeTriggerSourceClass,
+    pub invocation: BlueBrainSelectionGatedInvocationClass,
+    pub basis_quality: BlueBrainSelectionBasisQualityClass,
+    pub lane: &'static str,
+    pub arbitration_semantics: &'static str,
+    pub selection_binding: &'static str,
+    pub outward_compute_contract_binding: &'static str,
+    pub memory_commit_boundary: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainSelectionDispositionClass {
     Selected,
     Deferred,
@@ -2843,6 +2893,267 @@ pub const CANONICAL_BLUE_BRAIN_CONTROL_ATTENTION_SELECTION_MAP:
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_COMPUTE_TRIGGER_ARBITRATION_MAP:
+    [BlueBrainComputeTriggerArbitrationLane; 16] = [
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::TriggerCandidate,
+        source: BlueBrainComputeTriggerSourceClass::ContextDerived,
+        invocation: BlueBrainSelectionGatedInvocationClass::InvocationRequested,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Sufficient,
+        lane: "blue_brain_trigger_candidate_context_derived",
+        arbitration_semantics:
+            "context-derived candidate enters arbitration as explicit trigger candidate instead of implicit auto-invocation",
+        selection_binding:
+            "blue_brain_compute_trigger_selected_from_context + attention/context selection lanes",
+        outward_compute_contract_binding:
+            "selected candidate invokes CanonicalComputeEntryPoint::submit only after selection-gated approval",
+        memory_commit_boundary: "trigger candidate never implies memory commit",
+        canonical_guard:
+            "prevents context updates from being conflated with scheduling/planning/reasoning engines",
+    },
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::TriggerCandidate,
+        source: BlueBrainComputeTriggerSourceClass::EvidenceReferenceDerived,
+        invocation: BlueBrainSelectionGatedInvocationClass::CaveatedInvocationAllowed,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Caveated,
+        lane: "blue_brain_trigger_candidate_evidence_reference_derived_caveated",
+        arbitration_semantics:
+            "evidence/reference-derived candidate stays explicit and may be allowed with caveat posture",
+        selection_binding:
+            "blue_brain_compute_trigger_selected_from_evidence_reference_need + evidence/reference caveated lanes",
+        outward_compute_contract_binding:
+            "if selected, invocation stays on CanonicalComputeEntryPoint::submit with caveat propagation",
+        memory_commit_boundary: "evidence-derived candidate has no persistence side effect",
+        canonical_guard:
+            "caveated evidence can gate invocation but cannot silently upgrade quality or imply policy override",
+    },
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::TriggerCandidate,
+        source: BlueBrainComputeTriggerSourceClass::RuntimeStateDerived,
+        invocation: BlueBrainSelectionGatedInvocationClass::NoInvocationDeferred,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_trigger_candidate_runtime_state_derived_deferred",
+        arbitration_semantics:
+            "runtime-state-derived candidate can be deferred while keeping deferred state explicit",
+        selection_binding:
+            "blue_brain_compute_trigger_deferred + blue_brain_context_deferred_for_later_transition",
+        outward_compute_contract_binding:
+            "deferred candidate does not call CanonicalComputeEntryPoint::submit",
+        memory_commit_boundary: "runtime-state deferral performs no memory commit",
+        canonical_guard:
+            "deferred arbitration state is not hidden no-op and not a scheduler/planner construct",
+    },
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::TriggerCandidate,
+        source: BlueBrainComputeTriggerSourceClass::MemoryCandidateDerived,
+        invocation:
+            BlueBrainSelectionGatedInvocationClass::InsufficientBasisRequiresMoreContextOrEvidence,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Insufficient,
+        lane: "blue_brain_trigger_candidate_memory_candidate_insufficient",
+        arbitration_semantics:
+            "memory-candidate-derived trigger basis can be deemed insufficient and requires stronger context/evidence",
+        selection_binding:
+            "blue_brain_memory_candidate_blocked_weak_reference_context + candidate insufficient lifecycle lanes",
+        outward_compute_contract_binding:
+            "insufficient memory-candidate basis prevents invocation request on outward compute contract",
+        memory_commit_boundary: "no compute and no persistence are implied by insufficient candidate basis",
+        canonical_guard:
+            "memory candidates can inform arbitration but cannot auto-trigger compute or commit memory",
+    },
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::SelectedTrigger,
+        source: BlueBrainComputeTriggerSourceClass::ContextDerived,
+        invocation: BlueBrainSelectionGatedInvocationClass::InvocationRequested,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Sufficient,
+        lane: "blue_brain_trigger_selected_and_invocation_requested",
+        arbitration_semantics:
+            "selected trigger is canonical invocation request state after explicit arbitration",
+        selection_binding:
+            "blue_brain_compute_trigger_selected_from_context + blue_brain_transition_compute_trigger_from_context_availability",
+        outward_compute_contract_binding:
+            "invocation request path is CanonicalComputeEntryPoint::submit",
+        memory_commit_boundary: "selected trigger has no automatic memory persistence semantics",
+        canonical_guard:
+            "keeps trigger prioritization as selection posture, not planning/policy/scheduling machinery",
+    },
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::DeferredTrigger,
+        source: BlueBrainComputeTriggerSourceClass::RuntimeStateDerived,
+        invocation: BlueBrainSelectionGatedInvocationClass::NoInvocationDeferred,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_trigger_deferred_no_invocation",
+        arbitration_semantics:
+            "deferred trigger remains an explicit arbitration state and no invocation occurs",
+        selection_binding:
+            "blue_brain_compute_trigger_deferred + runtime status/evidence update without compute trigger",
+        outward_compute_contract_binding:
+            "deferred trigger keeps outward-facing invocation idle",
+        memory_commit_boundary: "deferred trigger never implies memory persistence",
+        canonical_guard:
+            "deferred state remains semantically separate from blocked, suppressed, and failed invocation",
+    },
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::SuppressedTrigger,
+        source: BlueBrainComputeTriggerSourceClass::ManualInternalOnlyNonCanonical,
+        invocation: BlueBrainSelectionGatedInvocationClass::NoInvocationBlocked,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Insufficient,
+        lane: "blue_brain_trigger_suppressed_internal_or_non_canonical_source",
+        arbitration_semantics:
+            "internal-only/manual trigger path is suppressed from canonical arbitration authority",
+        selection_binding:
+            "blue_brain_transition_compute_trigger_suppressed_internal_only_path + internal/expert-only selection lane",
+        outward_compute_contract_binding:
+            "suppressed trigger cannot reach CanonicalComputeEntryPoint::submit as canonical request",
+        memory_commit_boundary: "suppressed internal trigger has no memory semantics",
+        canonical_guard:
+            "explicitly excludes expert/internal/compat trigger sources from canonical Blue-Brain invocation",
+    },
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::BlockedTrigger,
+        source: BlueBrainComputeTriggerSourceClass::ContextDerived,
+        invocation: BlueBrainSelectionGatedInvocationClass::NoInvocationBlocked,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Stale,
+        lane: "blue_brain_trigger_blocked_stale_or_blocked_basis",
+        arbitration_semantics:
+            "blocked trigger state is explicit when context/reference basis is stale or blocked",
+        selection_binding:
+            "blue_brain_context_blocked_due_to_stale_basis + blue_brain_compute_trigger_blocked_insufficient_selection_basis",
+        outward_compute_contract_binding:
+            "blocked trigger state emits no outward invocation",
+        memory_commit_boundary: "blocked trigger yields no compute and no persistence side effect",
+        canonical_guard:
+            "blocked semantics are explicit and must not be collapsed into deferred or failed execution",
+    },
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::InsufficientTriggerBasis,
+        source: BlueBrainComputeTriggerSourceClass::EvidenceReferenceDerived,
+        invocation:
+            BlueBrainSelectionGatedInvocationClass::InsufficientBasisRequiresMoreContextOrEvidence,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Insufficient,
+        lane: "blue_brain_trigger_insufficient_requires_context_or_evidence",
+        arbitration_semantics:
+            "insufficient trigger basis requires more context/evidence before invocation is eligible",
+        selection_binding:
+            "blue_brain_evidence_reference_insufficient + blue_brain_reference_context_insufficient_basis_explicit",
+        outward_compute_contract_binding:
+            "no invocation request until sufficient basis is available",
+        memory_commit_boundary: "insufficient trigger basis cannot imply memory commit",
+        canonical_guard:
+            "keeps insufficient state visible and prevents heuristic auto-escalation to compute invocation",
+    },
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::CaveatedTrigger,
+        source: BlueBrainComputeTriggerSourceClass::FeedbackDerived,
+        invocation: BlueBrainSelectionGatedInvocationClass::CaveatedInvocationAllowed,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Caveated,
+        lane: "blue_brain_trigger_caveated_but_allowed",
+        arbitration_semantics:
+            "feedback-derived caveated trigger may be allowed while caveat posture stays explicit",
+        selection_binding:
+            "blue_brain_feedback_result_integrated_with_caveat + blue_brain_evidence_reference_caveated",
+        outward_compute_contract_binding:
+            "if invoked, request remains on CanonicalComputeEntryPoint::submit with caveat/degraded visibility",
+        memory_commit_boundary: "caveated invocation result updates runtime context only",
+        canonical_guard:
+            "caveated execution is allowed without introducing secondary compute-result semantics",
+    },
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::NonCanonicalInternalOnlyTrigger,
+        source: BlueBrainComputeTriggerSourceClass::ManualInternalOnlyNonCanonical,
+        invocation: BlueBrainSelectionGatedInvocationClass::NoInvocationBlocked,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Insufficient,
+        lane: "blue_brain_trigger_non_canonical_internal_only",
+        arbitration_semantics:
+            "manual/internal-only trigger source is marked non-canonical for BB4 selection-gated invocation",
+        selection_binding:
+            "run_operation_with_entry/replay_with_entry + build_backend(kind=stub|candle|worker) + domains/ai*",
+        outward_compute_contract_binding:
+            "requires explicit down-mapping before any outward canonical invocation",
+        memory_commit_boundary: "non-canonical trigger source has no commit authority",
+        canonical_guard:
+            "internal/expert/compat paths are excluded as canonical trigger authorities",
+    },
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::InvocationResultFeedback,
+        source: BlueBrainComputeTriggerSourceClass::FeedbackDerived,
+        invocation: BlueBrainSelectionGatedInvocationClass::InvocationCompleted,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Sufficient,
+        lane: "blue_brain_trigger_invocation_completed_runtime_updated",
+        arbitration_semantics:
+            "successful invocation completes and result updates runtime context/evidence surfaces",
+        selection_binding:
+            "blue_brain_transition_compute_result_integrated + blue_brain_feedback_result_integrated_current_runtime_state",
+        outward_compute_contract_binding:
+            "completion result remains canonical output of CanonicalComputeEntryPoint::submit",
+        memory_commit_boundary: "result integration updates runtime context, not memory commit",
+        canonical_guard:
+            "invocation completion feeds runtime/context surfaces without spawning parallel result contracts",
+    },
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::InvocationResultFeedback,
+        source: BlueBrainComputeTriggerSourceClass::FeedbackDerived,
+        invocation: BlueBrainSelectionGatedInvocationClass::InvocationFailed,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Insufficient,
+        lane: "blue_brain_trigger_invocation_failed_runtime_caveated",
+        arbitration_semantics:
+            "failed invocation is explicit and feeds caveated/degraded runtime posture",
+        selection_binding:
+            "blue_brain_feedback_result_rejected_or_blocked + status/trust caveated/degraded transitions",
+        outward_compute_contract_binding:
+            "failure is represented on canonical outward status/fault surfaces",
+        memory_commit_boundary: "failed invocation does not produce memory commit",
+        canonical_guard:
+            "keeps failed invocation distinct from blocked/no-invocation arbitration states",
+    },
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::InvocationResultFeedback,
+        source: BlueBrainComputeTriggerSourceClass::FeedbackDerived,
+        invocation: BlueBrainSelectionGatedInvocationClass::InvocationBlockedByComputeContract,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Insufficient,
+        lane: "blue_brain_trigger_invocation_blocked_by_compute_contract",
+        arbitration_semantics:
+            "compute contract can block invocation even after request, and blocked result remains explicit",
+        selection_binding:
+            "CanonicalComputeEntryPoint::submit blocked posture + blue_brain_feedback_result_rejected_or_blocked",
+        outward_compute_contract_binding:
+            "blocked-by-contract status is surfaced on canonical status/evidence exports",
+        memory_commit_boundary: "blocked invocation has no memory commit side effect",
+        canonical_guard:
+            "prevents blocked contract outcomes from being hidden behind retries or implicit orchestration helpers",
+    },
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::InvocationResultFeedback,
+        source: BlueBrainComputeTriggerSourceClass::FeedbackDerived,
+        invocation: BlueBrainSelectionGatedInvocationClass::InvocationCaveatedOrDegraded,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Caveated,
+        lane: "blue_brain_trigger_invocation_caveated_or_degraded",
+        arbitration_semantics:
+            "caveated/degraded invocation result is explicit and remains within canonical feedback semantics",
+        selection_binding:
+            "blue_brain_feedback_result_integrated_with_caveat + blue_brain_phase_caveated_degraded_partial_runtime_state",
+        outward_compute_contract_binding:
+            "result remains outward-facing canonical status/evidence contract with caveated markers",
+        memory_commit_boundary: "caveated/degraded result updates runtime context only",
+        canonical_guard:
+            "caveated/degraded outcomes do not create alternate compute result schemas or memory commits",
+    },
+    BlueBrainComputeTriggerArbitrationLane {
+        class: BlueBrainComputeTriggerArbitrationClass::TriggerCandidate,
+        source: BlueBrainComputeTriggerSourceClass::MemoryCandidateDerived,
+        invocation: BlueBrainSelectionGatedInvocationClass::NoInvocationDeferred,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_trigger_candidate_memory_candidate_deferred",
+        arbitration_semantics:
+            "memory candidate can be selected as trigger basis and still be deferred without invocation",
+        selection_binding:
+            "blue_brain_memory_candidate_deferred + blue_brain_candidate_persistence_unavailable_or_deferred",
+        outward_compute_contract_binding: "no invocation while candidate trigger basis remains deferred",
+        memory_commit_boundary: "deferred candidate trigger basis implies no commit",
+        canonical_guard:
+            "candidate-derived arbitration state must remain explicit and cannot auto-invoke compute",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -2964,6 +3275,11 @@ pub fn canonical_blue_brain_reference_context_map() -> &'static [BlueBrainRefere
 pub fn canonical_blue_brain_control_attention_selection_map(
 ) -> &'static [BlueBrainControlAttentionSelectionLane] {
     &CANONICAL_BLUE_BRAIN_CONTROL_ATTENTION_SELECTION_MAP
+}
+
+pub fn canonical_blue_brain_compute_trigger_arbitration_map(
+) -> &'static [BlueBrainComputeTriggerArbitrationLane] {
+    &CANONICAL_BLUE_BRAIN_COMPUTE_TRIGGER_ARBITRATION_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -4675,6 +4991,134 @@ mod tests {
         assert!(doc.contains("no internal/expert-only trigger used"));
         assert!(doc.contains("keine Planning- oder Reasoning-Engine"));
         assert!(doc.contains("keine Policy-/Governance-Plattform"));
+    }
+
+    #[test]
+    fn blue_brain_compute_trigger_arbitration_map_keeps_trigger_states_sources_and_invocation_gates_distinct(
+    ) {
+        let map = canonical_blue_brain_compute_trigger_arbitration_map();
+        assert_eq!(map.len(), 16);
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainComputeTriggerArbitrationClass::TriggerCandidate
+                && lane.source == BlueBrainComputeTriggerSourceClass::ContextDerived
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainComputeTriggerArbitrationClass::SelectedTrigger
+                && lane.invocation == BlueBrainSelectionGatedInvocationClass::InvocationRequested
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainComputeTriggerArbitrationClass::DeferredTrigger
+                && lane.invocation == BlueBrainSelectionGatedInvocationClass::NoInvocationDeferred
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainComputeTriggerArbitrationClass::SuppressedTrigger
+                && lane.source == BlueBrainComputeTriggerSourceClass::ManualInternalOnlyNonCanonical
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainComputeTriggerArbitrationClass::BlockedTrigger
+                && lane.invocation == BlueBrainSelectionGatedInvocationClass::NoInvocationBlocked
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainComputeTriggerArbitrationClass::InsufficientTriggerBasis
+                && lane.invocation
+                    == BlueBrainSelectionGatedInvocationClass::InsufficientBasisRequiresMoreContextOrEvidence
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainComputeTriggerArbitrationClass::CaveatedTrigger
+                && lane.invocation
+                    == BlueBrainSelectionGatedInvocationClass::CaveatedInvocationAllowed
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainComputeTriggerArbitrationClass::NonCanonicalInternalOnlyTrigger
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.source == BlueBrainComputeTriggerSourceClass::EvidenceReferenceDerived
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.source == BlueBrainComputeTriggerSourceClass::RuntimeStateDerived
+        }));
+        assert!(map
+            .iter()
+            .any(|lane| lane.source == BlueBrainComputeTriggerSourceClass::MemoryCandidateDerived));
+        assert!(map
+            .iter()
+            .any(|lane| lane.source == BlueBrainComputeTriggerSourceClass::FeedbackDerived));
+    }
+
+    #[test]
+    fn blue_brain_compute_trigger_arbitration_map_binds_invocation_to_outward_contract_and_no_commit_boundary(
+    ) {
+        let map = canonical_blue_brain_compute_trigger_arbitration_map();
+        assert!(map.iter().any(|lane| {
+            lane.invocation == BlueBrainSelectionGatedInvocationClass::InvocationCompleted
+                && lane
+                    .outward_compute_contract_binding
+                    .contains("CanonicalComputeEntryPoint::submit")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.invocation == BlueBrainSelectionGatedInvocationClass::InvocationFailed
+                && lane
+                    .outward_compute_contract_binding
+                    .contains("canonical outward status/fault surfaces")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.invocation
+                == BlueBrainSelectionGatedInvocationClass::InvocationBlockedByComputeContract
+                && lane
+                    .outward_compute_contract_binding
+                    .contains("status/evidence exports")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.invocation == BlueBrainSelectionGatedInvocationClass::NoInvocationDeferred
+                && lane
+                    .outward_compute_contract_binding
+                    .contains("does not call CanonicalComputeEntryPoint::submit")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.invocation
+                == BlueBrainSelectionGatedInvocationClass::InsufficientBasisRequiresMoreContextOrEvidence
+                && lane
+                    .outward_compute_contract_binding
+                    .contains("no invocation request")
+        }));
+        assert!(map.iter().all(|lane| {
+            lane.memory_commit_boundary.contains("no")
+                || lane.memory_commit_boundary.contains("not")
+                || lane.memory_commit_boundary.contains("never")
+                || lane.memory_commit_boundary.contains("runtime context only")
+        }));
+    }
+
+    #[test]
+    fn serie_bb4_prompt2_compute_trigger_arbitration_doc_stays_pinned_to_code_map() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_compute_trigger_arbitration_serie_bb4_prompt2_v1.md"
+        );
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_COMPUTE_TRIGGER_ARBITRATION_MAP"));
+        assert!(doc.contains("trigger candidate"));
+        assert!(doc.contains("selected trigger"));
+        assert!(doc.contains("deferred trigger"));
+        assert!(doc.contains("suppressed trigger"));
+        assert!(doc.contains("blocked trigger"));
+        assert!(doc.contains("insufficient trigger basis"));
+        assert!(doc.contains("caveated trigger"));
+        assert!(doc.contains("non-canonical/internal-only trigger"));
+        assert!(doc.contains("context-derived trigger"));
+        assert!(doc.contains("evidence/reference-derived trigger"));
+        assert!(doc.contains("runtime-state-derived trigger"));
+        assert!(doc.contains("memory-candidate-derived trigger"));
+        assert!(doc.contains("feedback-derived trigger"));
+        assert!(doc.contains("trigger selected and invocation requested"));
+        assert!(doc.contains("trigger deferred and no invocation"));
+        assert!(doc.contains("trigger blocked and no invocation"));
+        assert!(doc.contains("trigger caveated but allowed"));
+        assert!(doc.contains("trigger insufficient and requires more context/evidence"));
+        assert!(doc.contains("invocation completed"));
+        assert!(doc.contains("invocation failed"));
+        assert!(doc.contains("invocation blocked by Compute contract"));
+        assert!(doc.contains("invocation caveated/degraded"));
+        assert!(doc.contains("runtime context but not memory automatically"));
+        assert!(doc.contains("Scheduler-/Planning-/Policy-/Reasoning-Plattform"));
     }
 
     #[test]
