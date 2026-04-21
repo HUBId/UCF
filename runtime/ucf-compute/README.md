@@ -77,6 +77,9 @@ proposal-only attachment lanes), see
 `docs/blue_brain_persistence_boundary_attachment_serie_bb3_prompt4_v1.md`,
 `CANONICAL_BLUE_BRAIN_PERSISTENCE_BOUNDARY_MAP`, and
 `CANONICAL_BLUE_BRAIN_FUTURE_MEMORY_ATTACHMENT_MAP`.
+For BB3 Prompt 5 readiness sweep + hard context/memory baseline closure matrix
+(stable vs caveated vs preparatory vs reference-only vs non-canonical vs deferred), see
+`docs/blue_brain_readiness_sweep_serie_bb3_prompt5_v1.md`.
 
 ## Capability model
 

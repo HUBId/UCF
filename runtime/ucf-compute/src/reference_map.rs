@@ -4145,6 +4145,40 @@ mod tests {
     }
 
     #[test]
+    fn serie_bb3_prompt5_readiness_doc_keeps_context_memory_baseline_and_deferred_persistence_explicit(
+    ) {
+        let doc = include_str!("../../../docs/blue_brain_readiness_sweep_serie_bb3_prompt5_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("stable context/memory foundation"));
+        assert!(doc.contains("usable with caveats"));
+        assert!(doc.contains("future-memory-ready / preparatory only"));
+        assert!(doc.contains("reference-only / not memory"));
+        assert!(doc.contains("non-canonical / internal-only"));
+        assert!(doc.contains("intentionally deferred"));
+
+        assert!(doc.contains("transient_runtime_context"));
+        assert!(doc.contains("evidence_backed_context"));
+        assert!(doc.contains("replay_reference_backed_context"));
+        assert!(doc.contains("memory_adjacent_candidate"));
+        assert!(doc.contains("context update blocked or insufficient"));
+        assert!(doc.contains("candidate accepted for future memory handling"));
+        assert!(doc.contains("persistence unavailable/deferred"));
+        assert!(doc.contains("persistence performed only if real path exists"));
+        assert!(doc.contains("no persistence performed"));
+        assert!(doc.contains("Context Update ≠ Memory Commit"));
+        assert!(doc.contains("Candidate ≠ Persisted Memory"));
+        assert!(
+            doc.contains("History/Snapshot/Replay/Trace/Evidence/Reference ≠ Memory Persistence")
+        );
+        assert!(doc.contains("keine neue Compute-Core-Arbeit"));
+        assert!(doc.contains("finaler Compute-Linie"));
+        assert!(doc.contains("maintenance-only Core"));
+        assert!(doc.contains("Priorität 1: Serie BB5"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
     fn serie_bb3_prompt3_evidence_reference_doc_stays_pinned_to_code_map() {
         let doc = include_str!(
             "../../../docs/blue_brain_evidence_reference_context_serie_bb3_prompt3_v1.md"
