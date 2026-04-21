@@ -299,6 +299,27 @@ pub struct BlueBrainContextMemoryBoundaryLane {
     pub boundary_guard: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainRuntimeFeedbackClass {
+    ComputeResultFeedback,
+    StatusTrustFeedback,
+    EvidenceReferenceFeedback,
+    DiagnosticCaveatFeedback,
+    ContextUptakeFeedback,
+    NonCanonicalInternalExpertFeedback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainRuntimeFeedbackLane {
+    pub class: BlueBrainRuntimeFeedbackClass,
+    pub lane: &'static str,
+    pub canonical_source: &'static str,
+    pub runtime_feedback_semantics: &'static str,
+    pub transition_binding: &'static str,
+    pub memory_boundary: &'static str,
+    pub non_canonical_boundary: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -1416,6 +1437,149 @@ pub const CANONICAL_BLUE_BRAIN_CONTEXT_MEMORY_BOUNDARY_MAP: [BlueBrainContextMem
         },
     ];
 
+pub const CANONICAL_BLUE_BRAIN_RUNTIME_FEEDBACK_MAP: [BlueBrainRuntimeFeedbackLane; 10] = [
+    BlueBrainRuntimeFeedbackLane {
+        class: BlueBrainRuntimeFeedbackClass::ComputeResultFeedback,
+        lane: "blue_brain_feedback_result_integrated_current_runtime_state",
+        canonical_source:
+            "CanonicalComputeEntryPoint::submit -> result/fault/status + blue_brain_transition_compute_result_integrated",
+        runtime_feedback_semantics:
+            "result integrated into current runtime state with explicit reference continuity",
+        transition_binding:
+            "blue_brain_transition_compute_result_integrated",
+        memory_boundary:
+            "no memory persistence implied by result integration",
+        non_canonical_boundary:
+            "no direct adoption of compute-internal execution diagnostics",
+    },
+    BlueBrainRuntimeFeedbackLane {
+        class: BlueBrainRuntimeFeedbackClass::ComputeResultFeedback,
+        lane: "blue_brain_feedback_result_rejected_or_blocked",
+        canonical_source:
+            "submit result/fault/status + blue_brain_transition_compute_trigger_blocked_insufficient_context",
+        runtime_feedback_semantics:
+            "result rejected/blocked due to outward fault semantics; runtime records blocked posture",
+        transition_binding:
+            "blue_brain_transition_compute_trigger_blocked_insufficient_context",
+        memory_boundary:
+            "blocked result posture does not imply context persistence or memory write",
+        non_canonical_boundary:
+            "must not auto-unblock via expert/internal trigger path",
+    },
+    BlueBrainRuntimeFeedbackLane {
+        class: BlueBrainRuntimeFeedbackClass::ComputeResultFeedback,
+        lane: "blue_brain_feedback_result_integrated_with_caveat",
+        canonical_source:
+            "submit result/fault/status + status_evidence_export_surface(status/evidence refs)",
+        runtime_feedback_semantics:
+            "result integrated with caveat when status/evidence remains partial/caveated/insufficient",
+        transition_binding:
+            "blue_brain_transition_status_evidence_update_without_compute_trigger",
+        memory_boundary:
+            "caveated result integration updates runtime posture only; no memory commit",
+        non_canonical_boundary:
+            "no raw diagnostic blob required for caveat visibility",
+    },
+    BlueBrainRuntimeFeedbackLane {
+        class: BlueBrainRuntimeFeedbackClass::StatusTrustFeedback,
+        lane: "blue_brain_feedback_status_trust_current_to_insufficient",
+        canonical_source:
+            "CanonicalComputeEntryPoint::status + status_evidence_export_surface(status)",
+        runtime_feedback_semantics:
+            "runtime consumes outward status/trust signals: current|trusted, partial, stale, caveated, degraded, insufficient/blocked",
+        transition_binding:
+            "blue_brain_phase_caveated_degraded_partial_runtime_state + blue_brain_transition_status_evidence_update_without_compute_trigger",
+        memory_boundary:
+            "status/trust update is runtime state input, not persistence action",
+        non_canonical_boundary:
+            "expert/internal status lanes have no default Blue-Brain authority",
+    },
+    BlueBrainRuntimeFeedbackLane {
+        class: BlueBrainRuntimeFeedbackClass::EvidenceReferenceFeedback,
+        lane: "blue_brain_feedback_evidence_observed_and_attached",
+        canonical_source:
+            "CanonicalComputeEntryPoint::status_evidence_export_surface(evidence refs + replay refs)",
+        runtime_feedback_semantics:
+            "evidence observed and attached to current runtime context as outward references",
+        transition_binding:
+            "blue_brain_transition_evidence_observed_without_memory_commit",
+        memory_boundary:
+            "evidence attachment is reference-grade only; no automatic memory commit",
+        non_canonical_boundary:
+            "no audit/reasoning platform payload required",
+    },
+    BlueBrainRuntimeFeedbackLane {
+        class: BlueBrainRuntimeFeedbackClass::EvidenceReferenceFeedback,
+        lane: "blue_brain_feedback_evidence_caveated_partial_or_insufficient",
+        canonical_source:
+            "status_evidence_export_surface evidence posture + runtime_handoff_state_from_evidence",
+        runtime_feedback_semantics:
+            "runtime marks evidence as caveated/partial and can classify it as insufficient for stronger transition",
+        transition_binding:
+            "blue_brain_transition_status_evidence_update_without_compute_trigger",
+        memory_boundary:
+            "insufficient evidence does not escalate to memory-adjacent commit",
+        non_canonical_boundary:
+            "no internal trace object requirement for canonical evidence feedback",
+    },
+    BlueBrainRuntimeFeedbackLane {
+        class: BlueBrainRuntimeFeedbackClass::DiagnosticCaveatFeedback,
+        lane: "blue_brain_feedback_diagnostic_only_caveat",
+        canonical_source:
+            "status_evidence_export_surface caveat markers on outward diagnostics/status line",
+        runtime_feedback_semantics:
+            "diagnostic-only caveat is visible but non-blocking for current runtime continuity",
+        transition_binding:
+            "blue_brain_transition_status_evidence_update_without_compute_trigger",
+        memory_boundary:
+            "diagnostic caveat does not imply context or memory persistence",
+        non_canonical_boundary:
+            "do not expose compute-internal expert diagnostics as canonical payload",
+    },
+    BlueBrainRuntimeFeedbackLane {
+        class: BlueBrainRuntimeFeedbackClass::DiagnosticCaveatFeedback,
+        lane: "blue_brain_feedback_trigger_blocking_or_context_uptake_caveat",
+        canonical_source:
+            "blocked/insufficient outward status + blue_brain_transition_compute_trigger_blocked_insufficient_context",
+        runtime_feedback_semantics:
+            "runtime-relevant caveat can block trigger or limit context uptake until outward evidence/status improves",
+        transition_binding:
+            "blue_brain_transition_compute_trigger_blocked_insufficient_context + blue_brain_transition_status_evidence_update_without_compute_trigger",
+        memory_boundary:
+            "blocked context uptake remains transient and non-persistent",
+        non_canonical_boundary:
+            "no implicit override by expert/internal hooks",
+    },
+    BlueBrainRuntimeFeedbackLane {
+        class: BlueBrainRuntimeFeedbackClass::ContextUptakeFeedback,
+        lane: "blue_brain_feedback_context_uptake_transient_memory_adjacent_candidate",
+        canonical_source:
+            "blue_brain_transition_compute_result_integrated + blue_brain_transition_memory_adjacent_candidate_identified_not_committed",
+        runtime_feedback_semantics:
+            "separates observed evidence, context uptake, transient runtime context, and memory-adjacent candidate",
+        transition_binding:
+            "blue_brain_transition_compute_result_integrated + blue_brain_transition_memory_adjacent_candidate_identified_not_committed",
+        memory_boundary:
+            "actual memory persistence not implemented in BB2; candidate remains non-committed",
+        non_canonical_boundary:
+            "must not present context uptake as BB3 memory subsystem completion",
+    },
+    BlueBrainRuntimeFeedbackLane {
+        class: BlueBrainRuntimeFeedbackClass::NonCanonicalInternalExpertFeedback,
+        lane: "blue_brain_feedback_non_canonical_internal_expert_only",
+        canonical_source:
+            "service_surface::{run_operation_with_entry,replay_with_entry} + backends::build_backend(kind=stub|candle|worker) + legacy/compat surfaces",
+        runtime_feedback_semantics:
+            "internal/expert diagnostics may exist but are not canonical Blue-Brain runtime feedback",
+        transition_binding:
+            "blue_brain_transition_compute_trigger_suppressed_internal_only_path",
+        memory_boundary:
+            "internal diagnostics are not memory-adjacent authority and not persistence input",
+        non_canonical_boundary:
+            "must be down-mapped to outward status/evidence references before any Blue-Brain-facing usage",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -1499,6 +1663,10 @@ pub fn canonical_blue_brain_transition_trigger_map() -> &'static [BlueBrainTrans
 pub fn canonical_blue_brain_context_memory_boundary_map(
 ) -> &'static [BlueBrainContextMemoryBoundaryLane] {
     &CANONICAL_BLUE_BRAIN_CONTEXT_MEMORY_BOUNDARY_MAP
+}
+
+pub fn canonical_blue_brain_runtime_feedback_map() -> &'static [BlueBrainRuntimeFeedbackLane] {
+    &CANONICAL_BLUE_BRAIN_RUNTIME_FEEDBACK_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -2519,6 +2687,125 @@ mod tests {
             .contains("blue_brain_transition_memory_adjacent_candidate_identified_not_committed"));
         assert!(doc.contains("no memory persistence implied"));
         assert!(doc.contains("keine Memory-Architektur"));
+    }
+
+    #[test]
+    fn blue_brain_runtime_feedback_map_keeps_canonical_feedback_classes_explicit() {
+        let map = canonical_blue_brain_runtime_feedback_map();
+        assert_eq!(map.len(), 10);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainRuntimeFeedbackClass::ComputeResultFeedback));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainRuntimeFeedbackClass::StatusTrustFeedback));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainRuntimeFeedbackClass::EvidenceReferenceFeedback));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainRuntimeFeedbackClass::DiagnosticCaveatFeedback));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainRuntimeFeedbackClass::ContextUptakeFeedback));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainRuntimeFeedbackClass::NonCanonicalInternalExpertFeedback
+        }));
+    }
+
+    #[test]
+    fn blue_brain_runtime_feedback_map_preserves_result_status_evidence_context_boundaries() {
+        let map = canonical_blue_brain_runtime_feedback_map();
+        let result_lane = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_feedback_result_integrated_current_runtime_state")
+            .expect("result integrated lane");
+        assert!(result_lane
+            .runtime_feedback_semantics
+            .contains("result integrated into current runtime state"));
+        assert!(result_lane
+            .memory_boundary
+            .contains("no memory persistence implied"));
+
+        let blocked_result_lane = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_feedback_result_rejected_or_blocked")
+            .expect("blocked result lane");
+        assert!(blocked_result_lane
+            .runtime_feedback_semantics
+            .contains("rejected/blocked"));
+        assert!(blocked_result_lane
+            .transition_binding
+            .contains("compute_trigger_blocked_insufficient_context"));
+
+        let status_lane = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_feedback_status_trust_current_to_insufficient")
+            .expect("status/trust lane");
+        assert!(status_lane
+            .runtime_feedback_semantics
+            .contains("current|trusted, partial, stale, caveated, degraded, insufficient/blocked"));
+
+        let evidence_lane = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_feedback_evidence_observed_and_attached")
+            .expect("evidence observed lane");
+        assert!(evidence_lane
+            .runtime_feedback_semantics
+            .contains("evidence observed and attached"));
+        assert!(evidence_lane
+            .memory_boundary
+            .contains("no automatic memory commit"));
+
+        let context_lane = map
+            .iter()
+            .find(|lane| {
+                lane.lane
+                    == "blue_brain_feedback_context_uptake_transient_memory_adjacent_candidate"
+            })
+            .expect("context uptake lane");
+        assert!(context_lane
+            .runtime_feedback_semantics
+            .contains("transient runtime context"));
+        assert!(context_lane
+            .memory_boundary
+            .contains("actual memory persistence not implemented in BB2"));
+
+        let internal_lane = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_feedback_non_canonical_internal_expert_only")
+            .expect("non-canonical internal lane");
+        assert!(internal_lane
+            .non_canonical_boundary
+            .contains("down-mapped to outward status/evidence references"));
+    }
+
+    #[test]
+    fn serie_bb2_prompt4_runtime_feedback_doc_stays_pinned_to_feedback_map() {
+        let doc = include_str!("../../../docs/blue_brain_runtime_feedback_serie_bb2_prompt4_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_RUNTIME_FEEDBACK_MAP"));
+        assert!(doc.contains("compute_result_feedback"));
+        assert!(doc.contains("status_trust_feedback"));
+        assert!(doc.contains("evidence_reference_feedback"));
+        assert!(doc.contains("diagnostic_caveat_feedback"));
+        assert!(doc.contains("context_uptake_feedback"));
+        assert!(doc.contains("non_canonical_internal_expert_feedback"));
+        assert!(doc.contains("blue_brain_feedback_result_integrated_current_runtime_state"));
+        assert!(doc.contains("blue_brain_feedback_result_rejected_or_blocked"));
+        assert!(doc.contains("blue_brain_feedback_result_integrated_with_caveat"));
+        assert!(doc.contains("blue_brain_feedback_status_trust_current_to_insufficient"));
+        assert!(doc.contains("blue_brain_feedback_evidence_observed_and_attached"));
+        assert!(doc.contains("blue_brain_feedback_evidence_caveated_partial_or_insufficient"));
+        assert!(doc.contains("blue_brain_feedback_diagnostic_only_caveat"));
+        assert!(doc.contains("blue_brain_feedback_trigger_blocking_or_context_uptake_caveat"));
+        assert!(
+            doc.contains("blue_brain_feedback_context_uptake_transient_memory_adjacent_candidate")
+        );
+        assert!(doc.contains("blue_brain_feedback_non_canonical_internal_expert_only"));
+        assert!(doc.contains("keine Reasoning-Engine"));
+        assert!(doc.contains("kein Memory-Commit"));
     }
 
     #[test]

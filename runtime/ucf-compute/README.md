@@ -49,6 +49,10 @@ For the BB2 Prompt 3 context/memory-adjacent boundary split (pure compute consum
 context-bearing vs memory-adjacent vs evidence/reference consumer vs non-canonical context path),
 see `docs/blue_brain_context_memory_boundary_serie_bb2_prompt3_v1.md` and
 `CANONICAL_BLUE_BRAIN_CONTEXT_MEMORY_BOUNDARY_MAP`.
+For the BB2 Prompt 4 runtime diagnostics/evidence feedback reintegration map (result/status/evidence/
+diagnostic/context feedback + explicit non-canonical boundary), see
+`docs/blue_brain_runtime_feedback_serie_bb2_prompt4_v1.md` and
+`CANONICAL_BLUE_BRAIN_RUNTIME_FEEDBACK_MAP`.
 
 ## Capability model
 
