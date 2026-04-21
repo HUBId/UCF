@@ -258,6 +258,25 @@ pub struct BlueBrainRuntimePhaseLane {
     pub non_goal_boundary: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainTransitionTriggerClass {
+    PureStateTransition,
+    ComputeTriggeringTransition,
+    EvidenceStatusUpdateTransition,
+    InternalOnlyOrNonCanonicalTransition,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainTransitionTriggerLane {
+    pub class: BlueBrainTransitionTriggerClass,
+    pub lane: &'static str,
+    pub canonical_transition: &'static str,
+    pub trigger_point: &'static str,
+    pub canonical_contract_binding: &'static str,
+    pub reference_continuity: &'static str,
+    pub non_canonical_boundary: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -1101,6 +1120,106 @@ pub const CANONICAL_BLUE_BRAIN_RUNTIME_PHASE_MAP: [BlueBrainRuntimePhaseLane; 5]
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_TRANSITION_TRIGGER_MAP: [BlueBrainTransitionTriggerLane; 7] = [
+    BlueBrainTransitionTriggerLane {
+        class: BlueBrainTransitionTriggerClass::PureStateTransition,
+        lane: "blue_brain_transition_state_context_refreshed",
+        canonical_transition:
+            "runtime state/context refresh -> context_digest and handoff state references updated",
+        trigger_point: "pure transition only; no compute trigger",
+        canonical_contract_binding:
+            "state-facing reference continuity only; no direct submit call on this transition",
+        reference_continuity:
+            "request/run identity not yet minted; preserve active production context and state references",
+        non_canonical_boundary:
+            "must not escalate through helper/internal lanes to force compute from state refresh alone",
+    },
+    BlueBrainTransitionTriggerLane {
+        class: BlueBrainTransitionTriggerClass::ComputeTriggeringTransition,
+        lane: "blue_brain_transition_compute_trigger_from_context_availability",
+        canonical_transition:
+            "state/context available -> runtime requests compute through canonical submit",
+        trigger_point:
+            "trigger from state/context availability when context_digest + handoff references are present",
+        canonical_contract_binding:
+            "CanonicalComputeEntryPoint::submit(ComputeSubmitRequest{ExecuteInline})",
+        reference_continuity:
+            "carry request/run identity, state handoff references, and active production context into submit",
+        non_canonical_boundary:
+            "no replay_with_entry/run_operation_with_entry/build_backend side-trigger as default path",
+    },
+    BlueBrainTransitionTriggerLane {
+        class: BlueBrainTransitionTriggerClass::ComputeTriggeringTransition,
+        lane: "blue_brain_transition_compute_trigger_from_inference_required",
+        canonical_transition:
+            "runtime enters inference-required transition -> canonical compute invocation is requested",
+        trigger_point:
+            "trigger from inference-required transition only on outward-facing execution contract",
+        canonical_contract_binding:
+            "CanonicalComputeEntryPoint::submit + result/fault/status core semantics",
+        reference_continuity:
+            "propagate request/run identity and prior status/evidence references into canonical run admission",
+        non_canonical_boundary:
+            "no implicit helper object or internal diagnostic graph may satisfy inference trigger requirements",
+    },
+    BlueBrainTransitionTriggerLane {
+        class: BlueBrainTransitionTriggerClass::ComputeTriggeringTransition,
+        lane: "blue_brain_transition_compute_trigger_blocked_insufficient_context",
+        canonical_transition:
+            "inference-required transition with missing context/state -> trigger remains blocked",
+        trigger_point:
+            "trigger blocked due to insufficient context/state; no canonical compute invocation is emitted",
+        canonical_contract_binding:
+            "status + status_evidence_export_surface report blocked/caveated posture without hidden submit",
+        reference_continuity:
+            "preserve request intent reference and insufficiency evidence reference for next eligible transition",
+        non_canonical_boundary:
+            "must not unblock through internal-only expert hook or compatibility adapter",
+    },
+    BlueBrainTransitionTriggerLane {
+        class: BlueBrainTransitionTriggerClass::InternalOnlyOrNonCanonicalTransition,
+        lane: "blue_brain_transition_compute_trigger_suppressed_internal_only_path",
+        canonical_transition:
+            "internal/expert path would satisfy trigger preconditions but remains suppressed for canonical runtime",
+        trigger_point:
+            "trigger suppressed because only internal/expert lane could satisfy missing prerequisites",
+        canonical_contract_binding:
+            "non-canonical lane must down-map to outward status/evidence references before any Blue-Brain-facing use",
+        reference_continuity:
+            "retain state/status/evidence references while canonical trigger stays unresolved",
+        non_canonical_boundary:
+            "explicit non-canonical boundary: no default Blue-Brain trigger authority for expert/internal lanes",
+    },
+    BlueBrainTransitionTriggerLane {
+        class: BlueBrainTransitionTriggerClass::EvidenceStatusUpdateTransition,
+        lane: "blue_brain_transition_compute_result_integrated",
+        canonical_transition:
+            "compute result/fault/status received -> runtime integrates result transition without changing trigger authority",
+        trigger_point:
+            "compute result integrated transition after canonical submit completion",
+        canonical_contract_binding:
+            "submit result/fault/status + status_evidence_export_surface(status/evidence refs)",
+        reference_continuity:
+            "join run identity with outward status references, evidence references, and active production context",
+        non_canonical_boundary:
+            "no internal diagnostics blob adoption as required Blue-Brain payload",
+    },
+    BlueBrainTransitionTriggerLane {
+        class: BlueBrainTransitionTriggerClass::EvidenceStatusUpdateTransition,
+        lane: "blue_brain_transition_status_evidence_update_without_compute_trigger",
+        canonical_transition:
+            "status/evidence update observed (including caveated/degraded/partial) -> runtime state update only",
+        trigger_point:
+            "evidence/status update transition without new compute trigger",
+        canonical_contract_binding:
+            "CanonicalComputeEntryPoint::status + status_evidence_export_surface(status/evidence refs)",
+        reference_continuity:
+            "preserve request/run identity links when available; otherwise keep outward status/evidence references stable",
+        non_canonical_boundary:
+            "must not auto-trigger compute through legacy/compat/internal helper paths on status-only updates",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -1175,6 +1294,10 @@ pub fn canonical_blue_brain_runtime_surface_map() -> &'static [BlueBrainRuntimeS
 
 pub fn canonical_blue_brain_runtime_phase_map() -> &'static [BlueBrainRuntimePhaseLane] {
     &CANONICAL_BLUE_BRAIN_RUNTIME_PHASE_MAP
+}
+
+pub fn canonical_blue_brain_transition_trigger_map() -> &'static [BlueBrainTransitionTriggerLane] {
+    &CANONICAL_BLUE_BRAIN_TRANSITION_TRIGGER_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -1975,6 +2098,97 @@ mod tests {
         assert!(doc.contains("blue_brain_phase_caveated_degraded_partial_runtime_state"));
         assert!(doc.contains("keine zweite Compute-Semantik"));
         assert!(doc.contains("keine Workflow-Engine"));
+        assert!(doc.contains("keine zweite Wahrheitsquelle"));
+    }
+
+    #[test]
+    fn blue_brain_transition_trigger_map_keeps_minimal_transition_classes_explicit() {
+        let map = canonical_blue_brain_transition_trigger_map();
+        assert_eq!(map.len(), 7);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainTransitionTriggerClass::PureStateTransition));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainTransitionTriggerClass::ComputeTriggeringTransition
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainTransitionTriggerClass::EvidenceStatusUpdateTransition
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainTransitionTriggerClass::InternalOnlyOrNonCanonicalTransition
+        }));
+    }
+
+    #[test]
+    fn blue_brain_transition_trigger_points_stay_on_outward_contracts_and_block_internal_defaults()
+    {
+        let map = canonical_blue_brain_transition_trigger_map();
+        let context_trigger = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_transition_compute_trigger_from_context_availability"
+            })
+            .expect("context availability trigger lane");
+        assert!(context_trigger
+            .canonical_contract_binding
+            .contains("CanonicalComputeEntryPoint::submit"));
+
+        let blocked = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_transition_compute_trigger_blocked_insufficient_context"
+            })
+            .expect("blocked trigger lane");
+        assert!(blocked
+            .trigger_point
+            .contains("blocked due to insufficient context/state"));
+        assert!(blocked
+            .canonical_contract_binding
+            .contains("status_evidence_export_surface"));
+
+        let suppressed = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_transition_compute_trigger_suppressed_internal_only_path"
+            })
+            .expect("suppressed trigger lane");
+        assert!(suppressed.trigger_point.contains("trigger suppressed"));
+        assert!(suppressed
+            .non_canonical_boundary
+            .contains("no default Blue-Brain trigger authority"));
+
+        let status_only = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_transition_status_evidence_update_without_compute_trigger"
+            })
+            .expect("status-only transition lane");
+        assert!(status_only
+            .trigger_point
+            .contains("without new compute trigger"));
+        assert!(status_only
+            .canonical_contract_binding
+            .contains("CanonicalComputeEntryPoint::status"));
+    }
+
+    #[test]
+    fn serie_bb2_prompt2_transition_trigger_doc_stays_pinned_to_canonical_map_and_boundaries() {
+        let doc =
+            include_str!("../../../docs/blue_brain_transition_trigger_map_serie_bb2_prompt2_v1.md");
+        let line = canonical_final_reference_line();
+
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("blue_brain_transition_state_context_refreshed"));
+        assert!(doc.contains("blue_brain_transition_compute_trigger_from_context_availability"));
+        assert!(doc.contains("blue_brain_transition_compute_trigger_from_inference_required"));
+        assert!(doc.contains("blue_brain_transition_compute_trigger_blocked_insufficient_context"));
+        assert!(doc.contains("blue_brain_transition_compute_trigger_suppressed_internal_only_path"));
+        assert!(doc.contains("blue_brain_transition_compute_result_integrated"));
+        assert!(
+            doc.contains("blue_brain_transition_status_evidence_update_without_compute_trigger")
+        );
+        assert!(doc.contains("keine Workflow- oder State-Machine-Plattform"));
+        assert!(doc.contains("keine zweite Execution-Sprache"));
         assert!(doc.contains("keine zweite Wahrheitsquelle"));
     }
 

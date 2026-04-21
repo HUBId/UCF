@@ -40,6 +40,11 @@ over the finalized compute line, see
 `docs/blue_brain_state_runtime_surface_serie_bb2_prompt1_v1.md`,
 `CANONICAL_BLUE_BRAIN_RUNTIME_SURFACE_MAP`, and
 `CANONICAL_BLUE_BRAIN_RUNTIME_PHASE_MAP`.
+For the BB2 Prompt 2 canonical Blue-Brain transition/trigger map (pure state transitions,
+compute-triggering transitions, status/evidence update transitions, explicit non-canonical
+trigger suppression), see
+`docs/blue_brain_transition_trigger_map_serie_bb2_prompt2_v1.md` and
+`CANONICAL_BLUE_BRAIN_TRANSITION_TRIGGER_MAP`.
 
 ## Capability model
 
