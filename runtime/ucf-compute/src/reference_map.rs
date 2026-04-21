@@ -1673,6 +1673,32 @@ mod tests {
     }
 
     #[test]
+    fn serie_bb1_prompt5_readiness_doc_keeps_closure_matrix_and_baseline_pinned() {
+        let doc = include_str!("../../../docs/blue_brain_readiness_sweep_serie_bb1_prompt5_v1.md");
+        let line = canonical_final_reference_line();
+
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("stable Blue-Brain integration foundation"));
+        assert!(doc.contains("integration-usable with caveats"));
+        assert!(doc.contains("preparatory / not yet a true integration path"));
+        assert!(doc.contains("intentionally deferred"));
+
+        assert!(doc.contains("runtime_orchestrator_stateful_loop"));
+        assert!(doc.contains("selected_first_real_blue_brain_integration_candidate"));
+
+        assert!(doc.contains("blue_brain_to_compute_inference_handoff"));
+        assert!(doc.contains("blue_brain_to_compute_status_diagnostics_handoff"));
+        assert!(doc.contains("blue_brain_to_compute_evidence_reference_handoff"));
+        assert!(doc.contains("blue_brain_to_compute_state_adjacent_reference_handoff"));
+
+        assert!(doc.contains("Serie BB2"));
+        assert!(doc.contains("Priorität 1: Serie BB2"));
+        assert!(
+            doc.contains("kein Rückfall auf compute-interne, legacy- oder helper-dominierte Pfade")
+        );
+    }
+
+    #[test]
     fn serie_o_maintenance_boundary_doc_keeps_minimal_change_classes_explicit() {
         let doc = include_str!("../../../docs/compute_core_maintenance_boundary_serie_o_v1.md");
         let line = canonical_final_reference_line();

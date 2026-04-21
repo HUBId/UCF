@@ -33,6 +33,8 @@ For the first real Blue-Brain integration candidate consolidation (selected cand
 explicit contract/handoff bindings + legacy exclusions), see
 `docs/blue_brain_integration_candidate_serie_bb1_prompt4_v1.md` and
 `CANONICAL_BLUE_BRAIN_INTEGRATION_CANDIDATE_MAP`.
+For the BB1 readiness closure matrix + explicit integration baseline + prioritized next direction, see
+`docs/blue_brain_readiness_sweep_serie_bb1_prompt5_v1.md`.
 
 ## Capability model
 
