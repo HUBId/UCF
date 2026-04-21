@@ -341,6 +341,51 @@ pub struct BlueBrainContextMemorySurfaceLane {
     pub canonical_guard: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainContextUpdateLifecycleClass {
+    ContextInitialized,
+    UpdatedFromComputeResult,
+    UpdatedFromEvidenceReference,
+    UpdatedFromReplayReference,
+    ContextUnchanged,
+    UpdateBlockedOrInsufficient,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainContextUpdateLifecycleLane {
+    pub class: BlueBrainContextUpdateLifecycleClass,
+    pub lane: &'static str,
+    pub source_surface: &'static str,
+    pub update_semantics: &'static str,
+    pub candidate_effect: &'static str,
+    pub persistence_semantics: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMemoryCandidateLifecycleClass {
+    CandidateProposed,
+    CandidateEvidenceBacked,
+    CandidateContextDerived,
+    CandidateComputeResultDerived,
+    AcceptedForFutureMemoryHandling,
+    CandidateRejected,
+    CandidateStale,
+    CandidateInsufficient,
+    NoPersistencePerformed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainMemoryCandidateLifecycleLane {
+    pub class: BlueBrainMemoryCandidateLifecycleClass,
+    pub lane: &'static str,
+    pub source_surface: &'static str,
+    pub candidate_semantics: &'static str,
+    pub context_mutation_semantics: &'static str,
+    pub persistence_semantics: &'static str,
+    pub canonical_guard: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -1785,6 +1830,220 @@ pub const CANONICAL_BLUE_BRAIN_CONTEXT_MEMORY_SURFACE_MAP: [BlueBrainContextMemo
         },
     ];
 
+pub const CANONICAL_BLUE_BRAIN_CONTEXT_UPDATE_LIFECYCLE_MAP:
+    [BlueBrainContextUpdateLifecycleLane; 9] = [
+    BlueBrainContextUpdateLifecycleLane {
+        class: BlueBrainContextUpdateLifecycleClass::ContextInitialized,
+        lane: "blue_brain_context_initialized_for_runtime_window",
+        source_surface: "runtime_orchestrator_stateful_loop + runtime_handoff_state_from_evidence/action_code",
+        update_semantics: "context initialized for active runtime transition window",
+        candidate_effect: "update only; no candidate proposal implied",
+        persistence_semantics: "initialization is transient runtime state; no persistence performed",
+        canonical_guard: "initial runtime context must stay distinct from memory lifecycle",
+    },
+    BlueBrainContextUpdateLifecycleLane {
+        class: BlueBrainContextUpdateLifecycleClass::UpdatedFromComputeResult,
+        lane: "blue_brain_context_updated_from_compute_result",
+        source_surface:
+            "blue_brain_transition_compute_result_integrated + blue_brain_feedback_result_integrated_current_runtime_state",
+        update_semantics: "context updated from compute result uptake on canonical result/fault/status line",
+        candidate_effect: "result integrated but no candidate required by default",
+        persistence_semantics: "compute-result context uptake is non-memory and non-persistent",
+        canonical_guard: "result integration must not be interpreted as memory commit",
+    },
+    BlueBrainContextUpdateLifecycleLane {
+        class: BlueBrainContextUpdateLifecycleClass::UpdatedFromComputeResult,
+        lane: "blue_brain_context_updated_and_candidate_proposed",
+        source_surface:
+            "blue_brain_transition_compute_result_integrated + blue_brain_transition_memory_adjacent_candidate_identified_not_committed",
+        update_semantics: "context update can be followed by explicit candidate proposal under bounded BB3 semantics",
+        candidate_effect: "update plus candidate proposal (explicit and separate events)",
+        persistence_semantics:
+            "candidate proposal remains non-persistent and does not imply commit",
+        canonical_guard: "context update and candidate lifecycle are linked but not collapsed",
+    },
+    BlueBrainContextUpdateLifecycleLane {
+        class: BlueBrainContextUpdateLifecycleClass::UpdatedFromEvidenceReference,
+        lane: "blue_brain_context_updated_from_evidence_reference",
+        source_surface:
+            "blue_brain_feedback_evidence_observed_and_attached + status_evidence_export_surface",
+        update_semantics: "context updated from outward evidence references with posture retained",
+        candidate_effect: "evidence attachment may support later candidate formation but does not require it",
+        persistence_semantics: "evidence/reference update has no memory write path",
+        canonical_guard: "evidence-backed context update must remain reference-grade",
+    },
+    BlueBrainContextUpdateLifecycleLane {
+        class: BlueBrainContextUpdateLifecycleClass::UpdatedFromReplayReference,
+        lane: "blue_brain_context_updated_from_replay_reference_basis",
+        source_surface: "service_surface::{replay_preflight,replay_with_entry}",
+        update_semantics: "context updated from replay/reference basis when comparability context is available",
+        candidate_effect: "replay/reference context can support candidate basis without automatic proposal",
+        persistence_semantics: "replay/reference update does not persist memory",
+        canonical_guard: "replay context is interpretive support and not a memory store",
+    },
+    BlueBrainContextUpdateLifecycleLane {
+        class: BlueBrainContextUpdateLifecycleClass::ContextUnchanged,
+        lane: "blue_brain_context_unchanged_after_transition_check",
+        source_surface:
+            "blue_brain_transition_context_available + blue_brain_transition_status_evidence_update_without_compute_trigger",
+        update_semantics: "context remains unchanged when transition checks yield no safe mutation",
+        candidate_effect: "no candidate created by unchanged context path",
+        persistence_semantics: "unchanged path performs no persistence",
+        canonical_guard: "no-op/unchanged transition outcomes must stay explicit",
+    },
+    BlueBrainContextUpdateLifecycleLane {
+        class: BlueBrainContextUpdateLifecycleClass::UpdateBlockedOrInsufficient,
+        lane: "blue_brain_context_update_blocked_insufficient_evidence",
+        source_surface:
+            "blue_brain_transition_compute_trigger_blocked_insufficient_context + blue_brain_feedback_evidence_caveated_partial_or_insufficient",
+        update_semantics: "context update blocked or caveated due to insufficient/partial/stale evidence posture",
+        candidate_effect: "blocked update does not silently mint candidate",
+        persistence_semantics: "blocked/insufficient state has no persistence side effect",
+        canonical_guard: "blocked or insufficient context must not be reinterpreted as implicit memory action",
+    },
+    BlueBrainContextUpdateLifecycleLane {
+        class: BlueBrainContextUpdateLifecycleClass::ContextUnchanged,
+        lane: "blue_brain_candidate_rejected_context_preserved",
+        source_surface:
+            "blue_brain_transition_memory_adjacent_candidate_identified_not_committed + status_evidence_export_surface(status)",
+        update_semantics: "candidate may be rejected while existing context is preserved",
+        candidate_effect: "rejected candidate with context preserved and no forced mutation",
+        persistence_semantics: "rejection has no persistence write",
+        canonical_guard: "candidate rejection must not rewrite context history implicitly",
+    },
+    BlueBrainContextUpdateLifecycleLane {
+        class: BlueBrainContextUpdateLifecycleClass::ContextUnchanged,
+        lane: "blue_brain_candidate_only_without_context_mutation",
+        source_surface:
+            "blue_brain_memory_adjacent_candidate_derived_sources_uncommitted + replay/status references",
+        update_semantics: "candidate can be proposed from references without mutating current runtime context",
+        candidate_effect: "candidate without context mutation is explicitly representable",
+        persistence_semantics: "proposal-only path remains uncommitted and non-persistent",
+        canonical_guard: "candidate-only paths cannot imply hidden context writes",
+    },
+];
+
+pub const CANONICAL_BLUE_BRAIN_MEMORY_CANDIDATE_LIFECYCLE_MAP:
+    [BlueBrainMemoryCandidateLifecycleLane; 11] = [
+    BlueBrainMemoryCandidateLifecycleLane {
+        class: BlueBrainMemoryCandidateLifecycleClass::CandidateProposed,
+        lane: "blue_brain_candidate_proposed",
+        source_surface:
+            "blue_brain_transition_memory_adjacent_candidate_identified_not_committed",
+        candidate_semantics: "candidate proposed explicitly for future memory handling",
+        context_mutation_semantics: "proposal may follow update or exist without context mutation",
+        persistence_semantics: "proposal does not perform persistence",
+        canonical_guard: "proposed candidate is not a committed memory object",
+    },
+    BlueBrainMemoryCandidateLifecycleLane {
+        class: BlueBrainMemoryCandidateLifecycleClass::CandidateEvidenceBacked,
+        lane: "blue_brain_candidate_evidence_backed_reference",
+        source_surface:
+            "blue_brain_feedback_evidence_observed_and_attached + status_evidence_export_surface(evidence refs)",
+        candidate_semantics:
+            "candidate backed by evidence reference with explicit reference-grade provenance",
+        context_mutation_semantics: "evidence backing can occur with or without further context change",
+        persistence_semantics: "evidence-backed candidate remains non-persistent",
+        canonical_guard: "evidence support must not be relabeled as persistence",
+    },
+    BlueBrainMemoryCandidateLifecycleLane {
+        class: BlueBrainMemoryCandidateLifecycleClass::CandidateContextDerived,
+        lane: "blue_brain_candidate_context_derived",
+        source_surface:
+            "blue_brain_transient_runtime_context_updated_then_discarded + handoff state",
+        candidate_semantics: "candidate derived from bounded runtime context transitions",
+        context_mutation_semantics: "derived candidate remains separate from any future context mutation",
+        persistence_semantics: "context-derived candidate is not persisted",
+        canonical_guard: "runtime-context derivation does not equal memory commit",
+    },
+    BlueBrainMemoryCandidateLifecycleLane {
+        class: BlueBrainMemoryCandidateLifecycleClass::CandidateComputeResultDerived,
+        lane: "blue_brain_candidate_compute_result_derived_proposed",
+        source_surface:
+            "blue_brain_transition_compute_result_integrated + result/fault/status continuity",
+        candidate_semantics:
+            "result-derived candidate may be proposed only when bounded compute semantics support it",
+        context_mutation_semantics: "compute result may update context without forcing candidate",
+        persistence_semantics: "result-derived candidate is explicitly non-persistent",
+        canonical_guard: "inference/compute result must not auto-persist into memory",
+    },
+    BlueBrainMemoryCandidateLifecycleLane {
+        class: BlueBrainMemoryCandidateLifecycleClass::AcceptedForFutureMemoryHandling,
+        lane: "blue_brain_candidate_accepted_for_future_memory_handling",
+        source_surface:
+            "memory_adjacent_candidate lane + status/evidence/replay references",
+        candidate_semantics:
+            "candidate accepted for future memory handling queueing without current commit",
+        context_mutation_semantics:
+            "acceptance is candidate-state change and does not require additional context mutation",
+        persistence_semantics: "accepted-for-future-handling still performs no persistence",
+        canonical_guard: "accepted state must stay distinct from persisted memory",
+    },
+    BlueBrainMemoryCandidateLifecycleLane {
+        class: BlueBrainMemoryCandidateLifecycleClass::CandidateRejected,
+        lane: "blue_brain_candidate_rejected_due_to_fault_or_caveat",
+        source_surface:
+            "blue_brain_feedback_result_fault_or_caveated + transition/status caveat bindings",
+        candidate_semantics: "result-derived or reference-derived candidate rejected due to fault/caveat",
+        context_mutation_semantics: "context may remain preserved when candidate rejected",
+        persistence_semantics: "rejected candidate never persists",
+        canonical_guard: "rejection outcome must remain explicit and deterministic",
+    },
+    BlueBrainMemoryCandidateLifecycleLane {
+        class: BlueBrainMemoryCandidateLifecycleClass::CandidateStale,
+        lane: "blue_brain_candidate_stale_reference_basis",
+        source_surface:
+            "replay/status references with stale posture (current|partial|stale classes)",
+        candidate_semantics: "candidate marked stale when reference basis ages out",
+        context_mutation_semantics: "stale candidate marking does not require context rewrite",
+        persistence_semantics: "stale marker has no persistence effect",
+        canonical_guard: "stale references must be visible as caveated candidate basis",
+    },
+    BlueBrainMemoryCandidateLifecycleLane {
+        class: BlueBrainMemoryCandidateLifecycleClass::CandidateInsufficient,
+        lane: "blue_brain_candidate_insufficient_reference_basis",
+        source_surface:
+            "blue_brain_feedback_evidence_caveated_partial_or_insufficient + replay partial basis",
+        candidate_semantics: "candidate marked insufficient when evidence/reference basis is weak",
+        context_mutation_semantics: "insufficient candidate can coexist with unchanged context",
+        persistence_semantics: "insufficient state does not persist",
+        canonical_guard: "insufficient candidate must not be promoted implicitly",
+    },
+    BlueBrainMemoryCandidateLifecycleLane {
+        class: BlueBrainMemoryCandidateLifecycleClass::NoPersistencePerformed,
+        lane: "blue_brain_candidate_no_persistence_performed",
+        source_surface:
+            "blue_brain_persisted_memory_none_in_current_baseline + candidate lifecycle lanes",
+        candidate_semantics: "all candidate states end with explicit no-persistence marker in BB3 prompt-2",
+        context_mutation_semantics: "context/candidate outcomes are observable without commit side effects",
+        persistence_semantics: "no persistence performed; actual memory commit intentionally deferred",
+        canonical_guard: "null persisted-memory lane remains authoritative",
+    },
+    BlueBrainMemoryCandidateLifecycleLane {
+        class: BlueBrainMemoryCandidateLifecycleClass::CandidateEvidenceBacked,
+        lane: "blue_brain_candidate_backed_by_replay_reference_context",
+        source_surface:
+            "blue_brain_replay_reference_backed_context + replay_preflight/replay_with_entry",
+        candidate_semantics:
+            "candidate backed by replay/reference context without claiming memory storage",
+        context_mutation_semantics: "replay-backed proposal may be candidate-only",
+        persistence_semantics: "replay-backed candidate is non-persistent",
+        canonical_guard: "replay reference support remains interpretive and bounded",
+    },
+    BlueBrainMemoryCandidateLifecycleLane {
+        class: BlueBrainMemoryCandidateLifecycleClass::CandidateComputeResultDerived,
+        lane: "blue_brain_candidate_compute_result_derived_rejected_or_not_persisted",
+        source_surface:
+            "compute result/fault status + memory_adjacent candidate decision boundary",
+        candidate_semantics:
+            "result-derived candidate can be rejected on fault/caveat or kept as not-persisted proposal",
+        context_mutation_semantics:
+            "result path may update context even when candidate is rejected",
+        persistence_semantics: "result-derived candidate path never auto-commits memory",
+        canonical_guard: "compute-result candidate formation is gated and explicitly non-persistent",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -1877,6 +2136,16 @@ pub fn canonical_blue_brain_runtime_feedback_map() -> &'static [BlueBrainRuntime
 pub fn canonical_blue_brain_context_memory_surface_map(
 ) -> &'static [BlueBrainContextMemorySurfaceLane] {
     &CANONICAL_BLUE_BRAIN_CONTEXT_MEMORY_SURFACE_MAP
+}
+
+pub fn canonical_blue_brain_context_update_lifecycle_map(
+) -> &'static [BlueBrainContextUpdateLifecycleLane] {
+    &CANONICAL_BLUE_BRAIN_CONTEXT_UPDATE_LIFECYCLE_MAP
+}
+
+pub fn canonical_blue_brain_memory_candidate_lifecycle_map(
+) -> &'static [BlueBrainMemoryCandidateLifecycleLane] {
+    &CANONICAL_BLUE_BRAIN_MEMORY_CANDIDATE_LIFECYCLE_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -3007,6 +3276,128 @@ mod tests {
         assert!(doc.contains("insufficient"));
         assert!(doc.contains("compute outputs and evidence feedback"));
         assert!(doc.contains("kein Memory-Engine-Bau"));
+    }
+
+    #[test]
+    fn blue_brain_context_update_lifecycle_map_keeps_states_structurally_distinct() {
+        let map = canonical_blue_brain_context_update_lifecycle_map();
+        assert_eq!(map.len(), 9);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainContextUpdateLifecycleClass::ContextInitialized));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainContextUpdateLifecycleClass::UpdatedFromComputeResult
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainContextUpdateLifecycleClass::UpdatedFromEvidenceReference
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainContextUpdateLifecycleClass::UpdatedFromReplayReference
+        }));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainContextUpdateLifecycleClass::ContextUnchanged));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainContextUpdateLifecycleClass::UpdateBlockedOrInsufficient
+        }));
+
+        let update_only = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_context_updated_from_compute_result")
+            .expect("update-only lane");
+        assert!(update_only
+            .candidate_effect
+            .contains("no candidate required by default"));
+
+        let update_plus_candidate = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_context_updated_and_candidate_proposed")
+            .expect("update-plus-candidate lane");
+        assert!(update_plus_candidate
+            .candidate_effect
+            .contains("update plus candidate proposal"));
+
+        let candidate_only = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_candidate_only_without_context_mutation")
+            .expect("candidate-only lane");
+        assert!(candidate_only
+            .update_semantics
+            .contains("without mutating current runtime context"));
+    }
+
+    #[test]
+    fn blue_brain_memory_candidate_lifecycle_map_keeps_no_persistence_boundary_explicit() {
+        let map = canonical_blue_brain_memory_candidate_lifecycle_map();
+        assert_eq!(map.len(), 11);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainMemoryCandidateLifecycleClass::CandidateProposed));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMemoryCandidateLifecycleClass::CandidateEvidenceBacked
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMemoryCandidateLifecycleClass::CandidateContextDerived
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMemoryCandidateLifecycleClass::CandidateComputeResultDerived
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMemoryCandidateLifecycleClass::AcceptedForFutureMemoryHandling
+        }));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainMemoryCandidateLifecycleClass::CandidateRejected));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainMemoryCandidateLifecycleClass::CandidateStale));
+        assert!(map.iter().any(
+            |lane| lane.class == BlueBrainMemoryCandidateLifecycleClass::CandidateInsufficient
+        ));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMemoryCandidateLifecycleClass::NoPersistencePerformed
+        }));
+
+        let accepted = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_candidate_accepted_for_future_memory_handling")
+            .expect("accepted-for-future lane");
+        assert!(accepted
+            .persistence_semantics
+            .contains("still performs no persistence"));
+
+        let no_persist = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_candidate_no_persistence_performed")
+            .expect("no-persistence lane");
+        assert!(no_persist
+            .persistence_semantics
+            .contains("intentionally deferred"));
+    }
+
+    #[test]
+    fn serie_bb3_prompt2_lifecycle_doc_stays_pinned_to_code_map() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_context_memory_lifecycle_serie_bb3_prompt2_v1.md"
+        );
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_CONTEXT_UPDATE_LIFECYCLE_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_MEMORY_CANDIDATE_LIFECYCLE_MAP"));
+        assert!(doc.contains("context initialized"));
+        assert!(doc.contains("context updated from compute result"));
+        assert!(doc.contains("context updated from evidence/reference"));
+        assert!(doc.contains("context updated from replay/reference basis"));
+        assert!(doc.contains("context unchanged"));
+        assert!(doc.contains("context update blocked or insufficient"));
+        assert!(doc.contains("candidate proposed"));
+        assert!(doc.contains("candidate evidence-backed"));
+        assert!(doc.contains("candidate accepted for future memory handling"));
+        assert!(doc.contains("candidate rejected"));
+        assert!(doc.contains("candidate stale"));
+        assert!(doc.contains("candidate insufficient"));
+        assert!(doc.contains("no persistence performed"));
+        assert!(doc.contains("actual memory commit remains intentionally deferred"));
     }
 
     #[test]
