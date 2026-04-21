@@ -199,6 +199,27 @@ pub struct BlueBrainComputeHandoffLane {
     pub non_canonical_boundary: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainIntegrationCandidateClass {
+    IntegrationReadyCandidate,
+    PlausibleWithCaveats,
+    MixedTransitionalCandidate,
+    NotRealBlueBrainIntegrationCandidateNow,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainIntegrationCandidateLane {
+    pub surface: &'static str,
+    pub class: BlueBrainIntegrationCandidateClass,
+    pub candidate_selection_posture: &'static str,
+    pub inference_contract_binding: &'static str,
+    pub status_handoff_binding: &'static str,
+    pub evidence_handoff_binding: &'static str,
+    pub state_adjacent_binding: &'static str,
+    pub excluded_internal_or_legacy_paths: &'static str,
+    pub caveat: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -844,6 +865,81 @@ pub const CANONICAL_BLUE_BRAIN_COMPUTE_HANDOFF_MAP: [BlueBrainComputeHandoffLane
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_INTEGRATION_CANDIDATE_MAP: [BlueBrainIntegrationCandidateLane; 4] = [
+    BlueBrainIntegrationCandidateLane {
+        surface: "runtime_orchestrator_stateful_loop",
+        class: BlueBrainIntegrationCandidateClass::PlausibleWithCaveats,
+        candidate_selection_posture:
+            "selected_first_real_blue_brain_integration_candidate: closest real stateful Blue-Brain-facing surface on final compute line",
+        inference_contract_binding:
+            "blue_brain_to_compute_inference_handoff -> CanonicalComputeEntryPoint::submit(ComputeSubmitRequest{ExecuteInline})",
+        status_handoff_binding:
+            "blue_brain_to_compute_status_diagnostics_handoff -> status + status_evidence_export_surface(status)",
+        evidence_handoff_binding:
+            "blue_brain_to_compute_evidence_reference_handoff -> status_evidence_export_surface(evidence refs) + runtime evidence chain linkage",
+        state_adjacent_binding:
+            "blue_brain_to_compute_state_adjacent_reference_handoff -> context_digest + runtime_handoff_state_from_evidence/runtime_handoff_state_from_action_code",
+        excluded_internal_or_legacy_paths:
+            "exclude replay_with_entry/run_operation_with_entry/build_backend(kind=stub|candle|worker) + domains/ai* as candidate authority",
+        caveat:
+            "remains caveated until residual mixed env/compat intake in orchestrator setup is fully canonicalized",
+    },
+    BlueBrainIntegrationCandidateLane {
+        surface: "ops_compute_probe",
+        class: BlueBrainIntegrationCandidateClass::IntegrationReadyCandidate,
+        candidate_selection_posture:
+            "integration-ready adjacent anchor for canonical outward contract/handoff checks",
+        inference_contract_binding:
+            "CanonicalComputeEntryPoint::submit(ComputeSubmitRequest{ExecuteInline})",
+        status_handoff_binding:
+            "CanonicalComputeEntryPoint::status + status_evidence_export_surface(status)",
+        evidence_handoff_binding:
+            "CanonicalComputeEntryPoint::status_evidence_export_surface(evidence refs)",
+        state_adjacent_binding:
+            "state-adjacent semantics not load-bearing here; treated as compute context reference passthrough only",
+        excluded_internal_or_legacy_paths:
+            "no expert/internal-only lane or compat adapters in primary outward consumer path",
+        caveat:
+            "not a stateful Blue-Brain orchestration kernel; remains adjacent compute consumer",
+    },
+    BlueBrainIntegrationCandidateLane {
+        surface: "replay_diff_backend_recompute",
+        class: BlueBrainIntegrationCandidateClass::MixedTransitionalCandidate,
+        candidate_selection_posture:
+            "mixed/transitional diagnostics lane; useful comparison support but not canonical Blue-Brain baseline",
+        inference_contract_binding:
+            "indirect backend.compute(...) path; no canonical submit authority as primary lane",
+        status_handoff_binding:
+            "replay diff/status heuristics instead of canonical outward status handoff",
+        evidence_handoff_binding:
+            "replay-local references; not canonical outward evidence export surface as primary contract",
+        state_adjacent_binding:
+            "no canonical state-adjacent handoff contract ownership",
+        excluded_internal_or_legacy_paths:
+            "must not be promoted as first Blue-Brain integration basis",
+        caveat:
+            "acceptable only as diagnostics adjunct under canonical candidate, never as outward baseline",
+    },
+    BlueBrainIntegrationCandidateLane {
+        surface: "domains_ai_compat_lane + bench_compute_subcommand + runtime_hooks_and_frame_helpers",
+        class: BlueBrainIntegrationCandidateClass::NotRealBlueBrainIntegrationCandidateNow,
+        candidate_selection_posture:
+            "explicit exclusion bucket to prevent internal/compat/helper drift into Blue-Brain integration claims",
+        inference_contract_binding:
+            "legacy host ABI adapters/internal benchmark/helper paths; no canonical outward inference authority",
+        status_handoff_binding:
+            "compat/internal diagnostics only",
+        evidence_handoff_binding:
+            "non-canonical or absent outward evidence semantics",
+        state_adjacent_binding:
+            "helper proximity only; no Blue-Brain-facing state-adjacent contract ownership",
+        excluded_internal_or_legacy_paths:
+            "explicitly excluded from first real Blue-Brain integration candidate scope",
+        caveat:
+            "retain only as boundaries; do not market or interpret as integration candidate progress",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -905,6 +1001,11 @@ pub fn canonical_blue_brain_facing_contract_map() -> &'static [BlueBrainFacingCo
 
 pub fn canonical_blue_brain_compute_handoff_map() -> &'static [BlueBrainComputeHandoffLane] {
     &CANONICAL_BLUE_BRAIN_COMPUTE_HANDOFF_MAP
+}
+
+pub fn canonical_blue_brain_integration_candidate_map(
+) -> &'static [BlueBrainIntegrationCandidateLane] {
+    &CANONICAL_BLUE_BRAIN_INTEGRATION_CANDIDATE_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -1511,6 +1612,63 @@ mod tests {
         assert!(doc.contains("runtime_handoff_state_from_evidence"));
         assert!(doc.contains("runtime_handoff_state_from_action_code"));
         assert!(doc.contains("keine Workflow-Engine"));
+        assert!(doc.contains("keine zweite Wahrheitsquelle"));
+    }
+
+    #[test]
+    fn blue_brain_candidate_map_keeps_minimal_candidate_classes_and_selects_one_real_candidate() {
+        let map = canonical_blue_brain_integration_candidate_map();
+        assert_eq!(map.len(), 4);
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainIntegrationCandidateClass::IntegrationReadyCandidate
+                && lane.surface == "ops_compute_probe"
+        }));
+        let selected = map
+            .iter()
+            .find(|lane| lane.surface == "runtime_orchestrator_stateful_loop")
+            .expect("runtime_orchestrator_stateful_loop candidate lane");
+        assert_eq!(
+            selected.class,
+            BlueBrainIntegrationCandidateClass::PlausibleWithCaveats
+        );
+        assert!(selected
+            .candidate_selection_posture
+            .contains("selected_first_real_blue_brain_integration_candidate"));
+        assert!(selected
+            .inference_contract_binding
+            .contains("CanonicalComputeEntryPoint::submit"));
+        assert!(selected
+            .status_handoff_binding
+            .contains("status_evidence_export_surface(status)"));
+        assert!(selected
+            .evidence_handoff_binding
+            .contains("status_evidence_export_surface(evidence refs)"));
+        assert!(selected
+            .state_adjacent_binding
+            .contains("runtime_handoff_state_from_evidence"));
+        assert!(selected
+            .excluded_internal_or_legacy_paths
+            .contains("build_backend(kind=stub|candle|worker)"));
+    }
+
+    #[test]
+    fn serie_bb1_prompt4_candidate_doc_stays_pinned_to_canonical_contracts_and_handoffs() {
+        let doc =
+            include_str!("../../../docs/blue_brain_integration_candidate_serie_bb1_prompt4_v1.md");
+        let line = canonical_final_reference_line();
+
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("integration-ready candidate"));
+        assert!(doc.contains("plausible with caveats"));
+        assert!(doc.contains("mixed/transitional candidate"));
+        assert!(doc.contains("not a real Blue-Brain integration candidate now"));
+        assert!(doc.contains("runtime_orchestrator_stateful_loop"));
+        assert!(doc.contains("selected_first_real_blue_brain_integration_candidate"));
+        assert!(doc.contains("blue_brain_to_compute_inference_handoff"));
+        assert!(doc.contains("blue_brain_to_compute_status_diagnostics_handoff"));
+        assert!(doc.contains("blue_brain_to_compute_evidence_reference_handoff"));
+        assert!(doc.contains("blue_brain_to_compute_state_adjacent_reference_handoff"));
+        assert!(doc.contains("build_backend(kind=stub|candle|worker)"));
         assert!(doc.contains("keine zweite Wahrheitsquelle"));
     }
 
