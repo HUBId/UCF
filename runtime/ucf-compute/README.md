@@ -66,6 +66,11 @@ For BB3 Prompt 2 context-update + memory-candidate lifecycle semantics
 see `docs/blue_brain_context_memory_lifecycle_serie_bb3_prompt2_v1.md`,
 `CANONICAL_BLUE_BRAIN_CONTEXT_UPDATE_LIFECYCLE_MAP`, and
 `CANONICAL_BLUE_BRAIN_MEMORY_CANDIDATE_LIFECYCLE_MAP`.
+For BB3 Prompt 3 evidence-backed and replay/reference context integration
+(explicit evidence/replay/snapshot/trace context classes + reference quality caveats + no-persistence
+boundary for context updates and candidates), see
+`docs/blue_brain_evidence_reference_context_serie_bb3_prompt3_v1.md` and
+`CANONICAL_BLUE_BRAIN_REFERENCE_CONTEXT_MAP`.
 
 ## Capability model
 

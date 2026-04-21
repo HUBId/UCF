@@ -386,6 +386,39 @@ pub struct BlueBrainMemoryCandidateLifecycleLane {
     pub canonical_guard: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainReferenceContextClass {
+    EvidenceBackedContext,
+    ReplayBackedContext,
+    SnapshotReferenceBackedContext,
+    TraceBackedContext,
+    CaveatedReferenceContext,
+    InsufficientReferenceContext,
+    NonCanonicalInternalOnlyReferencePath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainReferenceQualityClass {
+    Sufficient,
+    Partial,
+    Stale,
+    Caveated,
+    Insufficient,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainReferenceContextLane {
+    pub class: BlueBrainReferenceContextClass,
+    pub quality: BlueBrainReferenceQualityClass,
+    pub lane: &'static str,
+    pub source_surface: &'static str,
+    pub runtime_context_semantics: &'static str,
+    pub context_update_semantics: &'static str,
+    pub candidate_semantics: &'static str,
+    pub persistence_boundary: &'static str,
+    pub canonical_guard: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -2044,6 +2077,192 @@ pub const CANONICAL_BLUE_BRAIN_MEMORY_CANDIDATE_LIFECYCLE_MAP:
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_REFERENCE_CONTEXT_MAP: [BlueBrainReferenceContextLane; 12] = [
+    BlueBrainReferenceContextLane {
+        class: BlueBrainReferenceContextClass::EvidenceBackedContext,
+        quality: BlueBrainReferenceQualityClass::Sufficient,
+        lane: "blue_brain_reference_context_evidence_backed_sufficient",
+        source_surface:
+            "CanonicalComputeEntryPoint::status_evidence_export_surface(evidence refs + status posture)",
+        runtime_context_semantics:
+            "runtime context updated with evidence reference when outward evidence basis is sufficient",
+        context_update_semantics:
+            "context updated with evidence reference and evidence-grade provenance remains visible",
+        candidate_semantics:
+            "candidate may be evidence-backed without forcing candidate creation or commit",
+        persistence_boundary: "no persistence implied by evidence-backed context update",
+        canonical_guard:
+            "evidence-backed context is canonical runtime/reference semantics, not memory persistence",
+    },
+    BlueBrainReferenceContextLane {
+        class: BlueBrainReferenceContextClass::EvidenceBackedContext,
+        quality: BlueBrainReferenceQualityClass::Partial,
+        lane: "blue_brain_reference_context_evidence_backed_partial_caveated",
+        source_surface:
+            "status_evidence_export_surface partial posture + blue_brain_feedback_evidence_caveated_partial_or_insufficient",
+        runtime_context_semantics:
+            "context update caveated by partial evidence and runtime caveat posture remains explicit",
+        context_update_semantics:
+            "context update can proceed with caveat marker, without upgrading partial evidence to sufficient",
+        candidate_semantics:
+            "candidate basis may be weak-reference caveated and remains explicitly non-committed",
+        persistence_boundary: "partial evidence never implies persistence or hidden memory write",
+        canonical_guard: "partial evidence cannot be reinterpreted as durable memory authority",
+    },
+    BlueBrainReferenceContextLane {
+        class: BlueBrainReferenceContextClass::EvidenceBackedContext,
+        quality: BlueBrainReferenceQualityClass::Insufficient,
+        lane: "blue_brain_reference_context_evidence_insufficient_blocked_update",
+        source_surface:
+            "blue_brain_transition_compute_trigger_blocked_insufficient_context + status_evidence_export_surface caveat posture",
+        runtime_context_semantics:
+            "evidence observed without context update when reference basis is insufficient",
+        context_update_semantics: "context update blocked due to insufficient evidence",
+        candidate_semantics:
+            "candidate marked insufficient due to missing/weak evidence basis and remains non-persistent",
+        persistence_boundary: "blocked/insufficient evidence path performs no persistence",
+        canonical_guard:
+            "insufficient evidence is explicit runtime posture and not promotable memory signal",
+    },
+    BlueBrainReferenceContextLane {
+        class: BlueBrainReferenceContextClass::ReplayBackedContext,
+        quality: BlueBrainReferenceQualityClass::Sufficient,
+        lane: "blue_brain_reference_context_replay_backed_runtime_restored_or_informed",
+        source_surface: "service_surface::{replay_preflight,replay_with_entry}",
+        runtime_context_semantics:
+            "runtime context restored or informed by replay/reference basis with explicit comparability scope",
+        context_update_semantics:
+            "context updated from replay/reference basis for runtime interpretation only",
+        candidate_semantics:
+            "candidate can be replay/reference-backed while remaining a non-commit proposal",
+        persistence_boundary: "replay/reference used for context only, not memory commit",
+        canonical_guard:
+            "replay-backed context is reference-only semantic support and not a persistence channel",
+    },
+    BlueBrainReferenceContextLane {
+        class: BlueBrainReferenceContextClass::ReplayBackedContext,
+        quality: BlueBrainReferenceQualityClass::Caveated,
+        lane: "blue_brain_reference_context_replay_backed_caveated",
+        source_surface:
+            "ReplayContextConsistencyClass + ReplayRemoteContextReproducibility caveat posture",
+        runtime_context_semantics:
+            "replay/reference context caveated when bridge fidelity or comparability is reduced",
+        context_update_semantics:
+            "context update remains caveated and may fall back to unchanged runtime context",
+        candidate_semantics:
+            "candidate replay/reference backing remains caveated and cannot imply acceptance quality",
+        persistence_boundary: "caveated replay/reference posture keeps no persistence path",
+        canonical_guard: "low-fidelity replay context cannot be promoted to memory state",
+    },
+    BlueBrainReferenceContextLane {
+        class: BlueBrainReferenceContextClass::ReplayBackedContext,
+        quality: BlueBrainReferenceQualityClass::Insufficient,
+        lane: "blue_brain_reference_context_replay_reference_unavailable_or_insufficient",
+        source_surface:
+            "replay_preflight failure classes + replay context bridge insufficiency markers",
+        runtime_context_semantics:
+            "reference basis unavailable or insufficient and runtime context is not restored from replay",
+        context_update_semantics: "context update blocked due to unavailable replay/reference basis",
+        candidate_semantics:
+            "candidate insufficient due to missing replay/reference basis; no commit side effect",
+        persistence_boundary: "unavailable replay/reference basis performs no persistence",
+        canonical_guard:
+            "missing replay/reference basis must stay visible as insufficient reference quality",
+    },
+    BlueBrainReferenceContextLane {
+        class: BlueBrainReferenceContextClass::SnapshotReferenceBackedContext,
+        quality: BlueBrainReferenceQualityClass::Sufficient,
+        lane: "blue_brain_reference_context_snapshot_reference_backed",
+        source_surface:
+            "status_evidence_export_surface(snapshot/history refs) + runtime_handoff_state_from_evidence",
+        runtime_context_semantics:
+            "snapshot/reference-backed context informs runtime posture with outward-facing snapshot refs",
+        context_update_semantics:
+            "context updated from snapshot/reference basis without turning snapshot into memory store",
+        candidate_semantics:
+            "candidate trace/snapshot-backed semantics remain explicit proposal-only states",
+        persistence_boundary: "snapshot/reference context does not perform persistence",
+        canonical_guard:
+            "snapshot references are context evidence, not committed Blue-Brain memory",
+    },
+    BlueBrainReferenceContextLane {
+        class: BlueBrainReferenceContextClass::TraceBackedContext,
+        quality: BlueBrainReferenceQualityClass::Sufficient,
+        lane: "blue_brain_reference_context_trace_backed",
+        source_surface: "status_evidence_export_surface(trace refs) + trace slice exports",
+        runtime_context_semantics:
+            "trace-backed context attaches bounded trace references for runtime interpretation",
+        context_update_semantics:
+            "context can be updated with trace references while keeping trace and memory semantics split",
+        candidate_semantics:
+            "candidate trace/snapshot-backed references remain inspectable and non-persistent",
+        persistence_boundary: "trace reference use performs no memory persistence",
+        canonical_guard:
+            "trace-backed context is evidence/reference semantics and not durable memory",
+    },
+    BlueBrainReferenceContextLane {
+        class: BlueBrainReferenceContextClass::CaveatedReferenceContext,
+        quality: BlueBrainReferenceQualityClass::Stale,
+        lane: "blue_brain_reference_context_stale_or_age_limited",
+        source_surface:
+            "status/replay reference freshness posture (current|partial|stale) + candidate stale class",
+        runtime_context_semantics:
+            "stale reference basis remains visible as caveated runtime context quality",
+        context_update_semantics:
+            "context update caveated by stale reference basis and may be held at unchanged posture",
+        candidate_semantics:
+            "candidate caveated by weak/stale reference and can be marked stale or insufficient",
+        persistence_boundary: "stale/caveated references remain non-persistent",
+        canonical_guard: "stale basis cannot silently pass as sufficient reference quality",
+    },
+    BlueBrainReferenceContextLane {
+        class: BlueBrainReferenceContextClass::CaveatedReferenceContext,
+        quality: BlueBrainReferenceQualityClass::Caveated,
+        lane: "blue_brain_reference_context_caveated_quality_explicit",
+        source_surface:
+            "blue_brain_feedback_evidence_caveated_partial_or_insufficient + diagnostic caveat lanes",
+        runtime_context_semantics:
+            "caveated reference basis is explicitly surfaced in runtime diagnostics and context posture",
+        context_update_semantics:
+            "context updates may proceed with explicit caveat tags and no hidden quality promotion",
+        candidate_semantics:
+            "candidate remains caveated by weak reference quality and no persistence performed",
+        persistence_boundary: "caveat visibility has no persistence side effect",
+        canonical_guard: "caveated reference posture must remain first-class and deterministic",
+    },
+    BlueBrainReferenceContextLane {
+        class: BlueBrainReferenceContextClass::InsufficientReferenceContext,
+        quality: BlueBrainReferenceQualityClass::Insufficient,
+        lane: "blue_brain_reference_context_insufficient_basis_explicit",
+        source_surface:
+            "blocked/insufficient transition + candidate insufficient lifecycle lane",
+        runtime_context_semantics:
+            "insufficient reference basis explicitly blocks reference-backed context mutation",
+        context_update_semantics:
+            "context update blocked due to insufficient reference basis and remains observable",
+        candidate_semantics:
+            "candidate insufficient due to missing/stale reference with no persistence performed",
+        persistence_boundary: "insufficient basis cannot produce automatic memory persistence",
+        canonical_guard: "insufficient status remains explicit across context and candidate semantics",
+    },
+    BlueBrainReferenceContextLane {
+        class: BlueBrainReferenceContextClass::NonCanonicalInternalOnlyReferencePath,
+        quality: BlueBrainReferenceQualityClass::Caveated,
+        lane: "blue_brain_reference_context_non_canonical_internal_only_path",
+        source_surface:
+            "run_operation_with_entry/replay_with_entry + build_backend(kind=stub|candle|worker) + domains/ai*",
+        runtime_context_semantics:
+            "internal/expert-only reference paths are non-canonical for Blue-Brain-facing context authority",
+        context_update_semantics:
+            "internal references require down-mapping to outward status/evidence refs before context update",
+        candidate_semantics:
+            "internal-only reference paths cannot appear as canonical candidate backing sources",
+        persistence_boundary: "non-canonical/internal-only path has no memory persistence authority",
+        canonical_guard:
+            "mark non-canonical/internal-only reference paths explicit and exclude from canonical source set",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -2146,6 +2365,10 @@ pub fn canonical_blue_brain_context_update_lifecycle_map(
 pub fn canonical_blue_brain_memory_candidate_lifecycle_map(
 ) -> &'static [BlueBrainMemoryCandidateLifecycleLane] {
     &CANONICAL_BLUE_BRAIN_MEMORY_CANDIDATE_LIFECYCLE_MAP
+}
+
+pub fn canonical_blue_brain_reference_context_map() -> &'static [BlueBrainReferenceContextLane] {
+    &CANONICAL_BLUE_BRAIN_REFERENCE_CONTEXT_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -3376,6 +3599,89 @@ mod tests {
     }
 
     #[test]
+    fn blue_brain_reference_context_map_keeps_evidence_replay_snapshot_trace_classes_distinct() {
+        let map = canonical_blue_brain_reference_context_map();
+        assert_eq!(map.len(), 12);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainReferenceContextClass::EvidenceBackedContext));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainReferenceContextClass::ReplayBackedContext));
+        assert!(map.iter().any(
+            |lane| lane.class == BlueBrainReferenceContextClass::SnapshotReferenceBackedContext
+        ));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainReferenceContextClass::TraceBackedContext));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainReferenceContextClass::CaveatedReferenceContext));
+        assert!(
+            map.iter()
+                .any(|lane| lane.class
+                    == BlueBrainReferenceContextClass::InsufficientReferenceContext)
+        );
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainReferenceContextClass::NonCanonicalInternalOnlyReferencePath
+        }));
+        assert!(map
+            .iter()
+            .any(|lane| lane.quality == BlueBrainReferenceQualityClass::Sufficient));
+        assert!(map
+            .iter()
+            .any(|lane| lane.quality == BlueBrainReferenceQualityClass::Partial));
+        assert!(map
+            .iter()
+            .any(|lane| lane.quality == BlueBrainReferenceQualityClass::Stale));
+        assert!(map
+            .iter()
+            .any(|lane| lane.quality == BlueBrainReferenceQualityClass::Caveated));
+        assert!(map
+            .iter()
+            .any(|lane| lane.quality == BlueBrainReferenceQualityClass::Insufficient));
+    }
+
+    #[test]
+    fn blue_brain_reference_context_map_preserves_no_persistence_and_non_canonical_boundaries() {
+        let map = canonical_blue_brain_reference_context_map();
+
+        let insufficient = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_reference_context_insufficient_basis_explicit")
+            .expect("insufficient reference lane");
+        assert!(insufficient
+            .context_update_semantics
+            .contains("context update blocked"));
+        assert!(insufficient
+            .candidate_semantics
+            .contains("no persistence performed"));
+
+        let replay = map
+            .iter()
+            .find(|lane| {
+                lane.lane
+                    == "blue_brain_reference_context_replay_backed_runtime_restored_or_informed"
+            })
+            .expect("replay-backed reference lane");
+        assert!(replay
+            .runtime_context_semantics
+            .contains("runtime context restored or informed"));
+        assert!(replay.persistence_boundary.contains("not memory commit"));
+
+        let internal = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_reference_context_non_canonical_internal_only_path"
+            })
+            .expect("non-canonical reference lane");
+        assert!(internal
+            .candidate_semantics
+            .contains("cannot appear as canonical"));
+        assert!(internal.canonical_guard.contains("exclude"));
+    }
+
+    #[test]
     fn serie_bb3_prompt2_lifecycle_doc_stays_pinned_to_code_map() {
         let doc = include_str!(
             "../../../docs/blue_brain_context_memory_lifecycle_serie_bb3_prompt2_v1.md"
@@ -3398,6 +3704,36 @@ mod tests {
         assert!(doc.contains("candidate insufficient"));
         assert!(doc.contains("no persistence performed"));
         assert!(doc.contains("actual memory commit remains intentionally deferred"));
+    }
+
+    #[test]
+    fn serie_bb3_prompt3_evidence_reference_doc_stays_pinned_to_code_map() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_evidence_reference_context_serie_bb3_prompt3_v1.md"
+        );
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_REFERENCE_CONTEXT_MAP"));
+        assert!(doc.contains("evidence-backed context"));
+        assert!(doc.contains("replay-backed context"));
+        assert!(doc.contains("snapshot/reference-backed context"));
+        assert!(doc.contains("trace-backed context"));
+        assert!(doc.contains("caveated reference context"));
+        assert!(doc.contains("insufficient reference context"));
+        assert!(doc.contains("non-canonical/internal-only reference path"));
+        assert!(doc.contains("sufficient reference basis"));
+        assert!(doc.contains("partial reference basis"));
+        assert!(doc.contains("stale reference basis"));
+        assert!(doc.contains("caveated reference basis"));
+        assert!(doc.contains("insufficient reference basis"));
+        assert!(doc.contains("context updated with evidence reference"));
+        assert!(doc.contains("context update blocked due to insufficient evidence"));
+        assert!(doc.contains("evidence observed without context update"));
+        assert!(doc.contains("replay/reference used for context only, not memory commit"));
+        assert!(doc.contains("candidate evidence-backed"));
+        assert!(doc.contains("candidate replay/reference-backed"));
+        assert!(doc.contains("candidate trace/snapshot-backed"));
+        assert!(doc.contains("no persistence performed"));
     }
 
     #[test]
