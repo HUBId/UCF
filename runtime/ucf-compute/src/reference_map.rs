@@ -462,6 +462,49 @@ pub struct BlueBrainReferenceContextLane {
     pub canonical_guard: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainControlAttentionSelectionClass {
+    AttentionTarget,
+    ContextSelection,
+    EvidenceReferenceSelection,
+    MemoryCandidateSelection,
+    ComputeTriggerSelection,
+    NonCanonicalInternalOnlySelectionPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainSelectionDispositionClass {
+    Selected,
+    Deferred,
+    IgnoredOrIrrelevant,
+    Blocked,
+    Insufficient,
+    Caveated,
+    Rejected,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainSelectionBasisQualityClass {
+    Sufficient,
+    Partial,
+    Stale,
+    Caveated,
+    Insufficient,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainControlAttentionSelectionLane {
+    pub class: BlueBrainControlAttentionSelectionClass,
+    pub disposition: BlueBrainSelectionDispositionClass,
+    pub basis_quality: BlueBrainSelectionBasisQualityClass,
+    pub lane: &'static str,
+    pub selection_scope: &'static str,
+    pub source_surface: &'static str,
+    pub compute_trigger_binding: &'static str,
+    pub memory_persistence_semantics: &'static str,
+    pub canonical_guard: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -2530,6 +2573,276 @@ pub const CANONICAL_BLUE_BRAIN_REFERENCE_CONTEXT_MAP: [BlueBrainReferenceContext
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_CONTROL_ATTENTION_SELECTION_MAP:
+    [BlueBrainControlAttentionSelectionLane; 22] = [
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::AttentionTarget,
+        disposition: BlueBrainSelectionDispositionClass::Selected,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Sufficient,
+        lane: "blue_brain_attention_target_current_transition",
+        selection_scope: "attention target for current runtime transition",
+        source_surface:
+            "blue_brain_transition_context_available + blue_brain_phase_state_context_available",
+        compute_trigger_binding: "no compute trigger implied",
+        memory_persistence_semantics: "attention target selection is transient and non-persistent",
+        canonical_guard:
+            "attention targeting is control/selection posture, not policy/reasoning/memory commit",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::ContextSelection,
+        disposition: BlueBrainSelectionDispositionClass::Selected,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Sufficient,
+        lane: "blue_brain_context_selected_for_current_transition",
+        selection_scope: "context selected for current transition",
+        source_surface:
+            "blue_brain_context_initialized_for_runtime_window + blue_brain_transition_context_available",
+        compute_trigger_binding: "transition may proceed without compute trigger",
+        memory_persistence_semantics: "context selection does not imply memory persistence",
+        canonical_guard:
+            "context selection stays runtime-scoped and distinct from memory, policy, and reasoning",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::ContextSelection,
+        disposition: BlueBrainSelectionDispositionClass::Selected,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_context_selected_for_compute_trigger_with_caveat",
+        selection_scope: "context selected for compute trigger with caveat",
+        source_surface:
+            "blue_brain_transition_context_used_for_compute_trigger + blue_brain_feedback_evidence_caveated_partial_or_insufficient",
+        compute_trigger_binding:
+            "compute trigger selected on CanonicalComputeEntryPoint::submit with caveat posture",
+        memory_persistence_semantics: "compute-trigger context selection performs no memory commit",
+        canonical_guard:
+            "caveated context selection remains explicit and cannot be upgraded to reasoning/persistence",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::ContextSelection,
+        disposition: BlueBrainSelectionDispositionClass::Deferred,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_context_deferred_for_later_transition",
+        selection_scope: "context deferred for later transition window",
+        source_surface:
+            "blue_brain_context_unchanged_after_transition_check + status_evidence_export_surface(status)",
+        compute_trigger_binding: "compute trigger deferred",
+        memory_persistence_semantics: "deferred context remains runtime-only and non-persistent",
+        canonical_guard: "defer state is explicit control posture and not hidden no-op",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::ContextSelection,
+        disposition: BlueBrainSelectionDispositionClass::IgnoredOrIrrelevant,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Sufficient,
+        lane: "blue_brain_context_ignored_as_not_relevant_to_transition",
+        selection_scope: "context ignored/irrelevant to active transition",
+        source_surface:
+            "blue_brain_transition_status_evidence_update_without_compute_trigger + runtime context window",
+        compute_trigger_binding: "no compute trigger implied",
+        memory_persistence_semantics: "ignored context has no persistence side effect",
+        canonical_guard: "ignored/irrelevant remains explicit and distinct from blocked/insufficient",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::ContextSelection,
+        disposition: BlueBrainSelectionDispositionClass::Blocked,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Stale,
+        lane: "blue_brain_context_blocked_due_to_stale_basis",
+        selection_scope: "context blocked due to stale reference basis",
+        source_surface:
+            "blue_brain_reference_context_stale_or_age_limited + blue_brain_candidate_stale_reference_basis",
+        compute_trigger_binding: "compute trigger blocked due to stale selection basis",
+        memory_persistence_semantics: "blocked context causes no memory commit",
+        canonical_guard: "stale basis must not be treated as sufficient selection authority",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::ContextSelection,
+        disposition: BlueBrainSelectionDispositionClass::Caveated,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Caveated,
+        lane: "blue_brain_context_selected_with_caveat",
+        selection_scope: "context selected with explicit caveat marker",
+        source_surface:
+            "blue_brain_reference_context_caveated_quality_explicit + blue_brain_phase_caveated_degraded_partial_runtime_state",
+        compute_trigger_binding: "compute trigger may proceed only with caveat posture propagated",
+        memory_persistence_semantics: "caveated context selection remains non-persistent",
+        canonical_guard: "caveated selection cannot imply policy override or reasoning finality",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+        disposition: BlueBrainSelectionDispositionClass::Selected,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Sufficient,
+        lane: "blue_brain_evidence_reference_selected",
+        selection_scope: "evidence/reference selected for runtime context support",
+        source_surface:
+            "blue_brain_reference_context_evidence_backed_sufficient + status_evidence_export_surface(evidence refs)",
+        compute_trigger_binding: "may inform compute trigger selection without forcing trigger",
+        memory_persistence_semantics: "evidence selection has no memory commit implied",
+        canonical_guard: "evidence/reference selection is not an audit or reasoning claim",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+        disposition: BlueBrainSelectionDispositionClass::IgnoredOrIrrelevant,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_evidence_reference_ignored",
+        selection_scope: "evidence/reference ignored due to low relevance",
+        source_surface:
+            "blue_brain_transition_status_evidence_update_without_compute_trigger + status posture",
+        compute_trigger_binding: "no compute trigger implied",
+        memory_persistence_semantics: "ignored evidence has no persistence effect",
+        canonical_guard: "ignored evidence stays explicit and does not mutate candidate state",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+        disposition: BlueBrainSelectionDispositionClass::Deferred,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_evidence_reference_deferred",
+        selection_scope: "evidence/reference deferred pending stronger basis",
+        source_surface:
+            "blue_brain_reference_context_evidence_backed_partial_caveated + replay context bridge",
+        compute_trigger_binding: "compute trigger deferred until basis improves",
+        memory_persistence_semantics: "deferred evidence selection remains non-persistent",
+        canonical_guard: "deferred evidence state must remain separate from blocked/ignored states",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+        disposition: BlueBrainSelectionDispositionClass::Insufficient,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Insufficient,
+        lane: "blue_brain_evidence_reference_insufficient",
+        selection_scope: "evidence/reference insufficient for selection",
+        source_surface:
+            "blue_brain_reference_context_insufficient_basis_explicit + blocked transition lane",
+        compute_trigger_binding: "compute trigger blocked due to insufficient selection basis",
+        memory_persistence_semantics: "insufficient evidence selection performs no memory commit",
+        canonical_guard: "insufficient evidence cannot be promoted to selected by internal heuristics",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+        disposition: BlueBrainSelectionDispositionClass::Caveated,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Caveated,
+        lane: "blue_brain_evidence_reference_caveated",
+        selection_scope: "evidence/reference selected with caveat",
+        source_surface:
+            "blue_brain_reference_context_replay_backed_caveated + diagnostic caveat feedback lanes",
+        compute_trigger_binding: "compute trigger may proceed in caveated mode only",
+        memory_persistence_semantics: "caveated evidence selection has no memory commit implied",
+        canonical_guard: "caveated evidence stays reference-grade and non-audit-authoritative",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::MemoryCandidateSelection,
+        disposition: BlueBrainSelectionDispositionClass::Selected,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Sufficient,
+        lane: "blue_brain_memory_candidate_selected_for_future_handling",
+        selection_scope: "candidate selected for future memory handling",
+        source_surface: "blue_brain_candidate_accepted_for_future_memory_handling",
+        compute_trigger_binding: "no direct compute trigger required",
+        memory_persistence_semantics: "selected candidate remains not persisted in current baseline",
+        canonical_guard: "candidate selection is lifecycle posture and not persistence commit",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::MemoryCandidateSelection,
+        disposition: BlueBrainSelectionDispositionClass::Deferred,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_memory_candidate_deferred",
+        selection_scope: "candidate deferred for later memory handling review",
+        source_surface:
+            "blue_brain_candidate_persistence_unavailable_or_deferred + blue_brain_candidate_proposed",
+        compute_trigger_binding: "compute trigger deferred or unchanged",
+        memory_persistence_semantics: "deferred candidate remains not persisted",
+        canonical_guard: "deferred candidate state must remain explicit and non-committing",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::MemoryCandidateSelection,
+        disposition: BlueBrainSelectionDispositionClass::Rejected,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Caveated,
+        lane: "blue_brain_memory_candidate_rejected",
+        selection_scope: "candidate rejected due to caveat/fault posture",
+        source_surface: "blue_brain_candidate_rejected_due_to_fault_or_caveat",
+        compute_trigger_binding: "no compute trigger implied by rejection",
+        memory_persistence_semantics: "rejected candidate never persists",
+        canonical_guard: "rejected state must stay distinct from ignored/deferred",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::MemoryCandidateSelection,
+        disposition: BlueBrainSelectionDispositionClass::IgnoredOrIrrelevant,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_memory_candidate_ignored",
+        selection_scope: "candidate ignored as not relevant to current memory-adjacent workflow",
+        source_surface:
+            "blue_brain_candidate_only_without_context_mutation + runtime context unchanged lane",
+        compute_trigger_binding: "no compute trigger implied",
+        memory_persistence_semantics: "ignored candidate has no persistence side effect",
+        canonical_guard: "ignored candidate is explicit and not equivalent to rejection",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::MemoryCandidateSelection,
+        disposition: BlueBrainSelectionDispositionClass::Blocked,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Insufficient,
+        lane: "blue_brain_memory_candidate_blocked_weak_reference_context",
+        selection_scope: "candidate blocked due to weak evidence/reference basis",
+        source_surface:
+            "blue_brain_candidate_insufficient_reference_basis + blue_brain_reference_context_insufficient_basis_explicit",
+        compute_trigger_binding: "no compute trigger until basis improves",
+        memory_persistence_semantics: "blocked candidate remains not persisted",
+        canonical_guard: "blocked-by-weak-basis candidate must not be auto-promoted",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::ComputeTriggerSelection,
+        disposition: BlueBrainSelectionDispositionClass::Selected,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Sufficient,
+        lane: "blue_brain_compute_trigger_selected_from_context",
+        selection_scope: "compute trigger selected from context",
+        source_surface: "blue_brain_transition_compute_trigger_from_context_availability",
+        compute_trigger_binding: "CanonicalComputeEntryPoint::submit",
+        memory_persistence_semantics: "compute-trigger selection has no memory commit implied",
+        canonical_guard: "compute trigger selection stays on BB2 canonical handoff semantics",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::ComputeTriggerSelection,
+        disposition: BlueBrainSelectionDispositionClass::Selected,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_compute_trigger_selected_from_evidence_reference_need",
+        selection_scope: "compute trigger selected from evidence/reference need",
+        source_surface: "blue_brain_transition_compute_trigger_from_inference_required",
+        compute_trigger_binding:
+            "CanonicalComputeEntryPoint::submit with evidence/reference caveat posture",
+        memory_persistence_semantics: "evidence-driven trigger selection performs no memory commit",
+        canonical_guard:
+            "evidence/reference need can trigger compute without implying planning engine behavior",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::ComputeTriggerSelection,
+        disposition: BlueBrainSelectionDispositionClass::Blocked,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Insufficient,
+        lane: "blue_brain_compute_trigger_blocked_insufficient_selection_basis",
+        selection_scope: "compute trigger blocked due to insufficient selection basis",
+        source_surface: "blue_brain_transition_compute_trigger_blocked_insufficient_context",
+        compute_trigger_binding: "trigger remains blocked on canonical BB2 boundary",
+        memory_persistence_semantics: "blocked compute trigger has no memory side effect",
+        canonical_guard: "blocked trigger must remain distinct from deferred and ignored",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::ComputeTriggerSelection,
+        disposition: BlueBrainSelectionDispositionClass::Deferred,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Caveated,
+        lane: "blue_brain_compute_trigger_deferred",
+        selection_scope: "compute trigger deferred under caveated/partial basis",
+        source_surface:
+            "blue_brain_transition_status_evidence_update_without_compute_trigger + context deferred lanes",
+        compute_trigger_binding: "trigger deferred while staying on BB2 transition semantics",
+        memory_persistence_semantics: "deferred trigger performs no memory persistence",
+        canonical_guard: "deferred trigger is explicit control state and not hidden failure/no-op",
+    },
+    BlueBrainControlAttentionSelectionLane {
+        class: BlueBrainControlAttentionSelectionClass::NonCanonicalInternalOnlySelectionPath,
+        disposition: BlueBrainSelectionDispositionClass::Blocked,
+        basis_quality: BlueBrainSelectionBasisQualityClass::Insufficient,
+        lane: "blue_brain_compute_trigger_internal_expert_only_non_canonical",
+        selection_scope: "internal/expert-only trigger or selection path",
+        source_surface:
+            "blue_brain_transition_compute_trigger_suppressed_internal_only_path + run_operation_with_entry/replay_with_entry",
+        compute_trigger_binding: "no internal/expert-only trigger used as canonical authority",
+        memory_persistence_semantics: "internal-only path cannot imply memory persistence",
+        canonical_guard:
+            "non-canonical internal selection/control paths are explicitly excluded from BB4 canonical surface",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -2646,6 +2959,11 @@ pub fn canonical_blue_brain_future_memory_attachment_map(
 
 pub fn canonical_blue_brain_reference_context_map() -> &'static [BlueBrainReferenceContextLane] {
     &CANONICAL_BLUE_BRAIN_REFERENCE_CONTEXT_MAP
+}
+
+pub fn canonical_blue_brain_control_attention_selection_map(
+) -> &'static [BlueBrainControlAttentionSelectionLane] {
+    &CANONICAL_BLUE_BRAIN_CONTROL_ATTENTION_SELECTION_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -4206,6 +4524,157 @@ mod tests {
         assert!(doc.contains("candidate replay/reference-backed"));
         assert!(doc.contains("candidate trace/snapshot-backed"));
         assert!(doc.contains("no persistence performed"));
+    }
+
+    #[test]
+    fn blue_brain_control_attention_selection_map_keeps_canonical_classes_and_states_distinct() {
+        let map = canonical_blue_brain_control_attention_selection_map();
+        assert_eq!(map.len(), 22);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainControlAttentionSelectionClass::AttentionTarget));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainControlAttentionSelectionClass::ContextSelection));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainControlAttentionSelectionClass::MemoryCandidateSelection
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainControlAttentionSelectionClass::ComputeTriggerSelection
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainControlAttentionSelectionClass::NonCanonicalInternalOnlySelectionPath
+        }));
+
+        assert!(map
+            .iter()
+            .any(|lane| lane.disposition == BlueBrainSelectionDispositionClass::Selected));
+        assert!(map
+            .iter()
+            .any(|lane| lane.disposition == BlueBrainSelectionDispositionClass::Deferred));
+        assert!(map.iter().any(|lane| {
+            lane.disposition == BlueBrainSelectionDispositionClass::IgnoredOrIrrelevant
+        }));
+        assert!(map
+            .iter()
+            .any(|lane| lane.disposition == BlueBrainSelectionDispositionClass::Blocked));
+        assert!(map
+            .iter()
+            .any(|lane| lane.disposition == BlueBrainSelectionDispositionClass::Insufficient));
+        assert!(map
+            .iter()
+            .any(|lane| lane.disposition == BlueBrainSelectionDispositionClass::Caveated));
+        assert!(map
+            .iter()
+            .any(|lane| lane.disposition == BlueBrainSelectionDispositionClass::Rejected));
+
+        assert!(map
+            .iter()
+            .any(|lane| lane.basis_quality == BlueBrainSelectionBasisQualityClass::Sufficient));
+        assert!(map
+            .iter()
+            .any(|lane| lane.basis_quality == BlueBrainSelectionBasisQualityClass::Partial));
+        assert!(map
+            .iter()
+            .any(|lane| lane.basis_quality == BlueBrainSelectionBasisQualityClass::Stale));
+        assert!(map
+            .iter()
+            .any(|lane| lane.basis_quality == BlueBrainSelectionBasisQualityClass::Caveated));
+        assert!(map
+            .iter()
+            .any(|lane| lane.basis_quality == BlueBrainSelectionBasisQualityClass::Insufficient));
+    }
+
+    #[test]
+    fn blue_brain_control_attention_selection_map_preserves_no_commit_and_canonical_trigger_handoff(
+    ) {
+        let map = canonical_blue_brain_control_attention_selection_map();
+        for lane in map {
+            assert!(
+                lane.memory_persistence_semantics.contains("no")
+                    || lane.memory_persistence_semantics.contains("not")
+                    || lane.memory_persistence_semantics.contains("never")
+                    || lane.memory_persistence_semantics.contains("non-")
+                    || lane.memory_persistence_semantics.contains("cannot")
+                    || lane.memory_persistence_semantics.contains("does not")
+            );
+        }
+
+        let context_trigger = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_compute_trigger_selected_from_context")
+            .expect("context-trigger selection lane");
+        assert_eq!(
+            context_trigger.disposition,
+            BlueBrainSelectionDispositionClass::Selected
+        );
+        assert!(context_trigger
+            .compute_trigger_binding
+            .contains("CanonicalComputeEntryPoint::submit"));
+
+        let evidence_trigger = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_compute_trigger_selected_from_evidence_reference_need"
+            })
+            .expect("evidence-trigger selection lane");
+        assert!(evidence_trigger
+            .compute_trigger_binding
+            .contains("CanonicalComputeEntryPoint::submit"));
+
+        let blocked = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_compute_trigger_blocked_insufficient_selection_basis"
+            })
+            .expect("blocked trigger selection lane");
+        assert_eq!(
+            blocked.disposition,
+            BlueBrainSelectionDispositionClass::Blocked
+        );
+        assert_eq!(
+            blocked.basis_quality,
+            BlueBrainSelectionBasisQualityClass::Insufficient
+        );
+
+        let internal = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_compute_trigger_internal_expert_only_non_canonical"
+            })
+            .expect("internal non-canonical selection lane");
+        assert!(internal
+            .compute_trigger_binding
+            .contains("no internal/expert-only trigger used as canonical authority"));
+        assert!(internal.canonical_guard.contains("excluded"));
+    }
+
+    #[test]
+    fn serie_bb4_prompt1_control_attention_selection_doc_stays_pinned_to_code_map() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_control_attention_selection_surface_serie_bb4_prompt1_v1.md"
+        );
+        let line = canonical_final_reference_line();
+
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_CONTROL_ATTENTION_SELECTION_MAP"));
+        assert!(doc.contains("attention target"));
+        assert!(doc.contains("selected context"));
+        assert!(doc.contains("selected evidence/reference"));
+        assert!(doc.contains("selected memory candidate"));
+        assert!(doc.contains("deferred"));
+        assert!(doc.contains("ignored"));
+        assert!(doc.contains("blocked"));
+        assert!(doc.contains("insufficient selection basis"));
+        assert!(doc.contains("caveated selection"));
+        assert!(doc.contains("no memory commit implied"));
+        assert!(doc.contains("no internal/expert-only trigger used"));
+        assert!(doc.contains("keine Planning- oder Reasoning-Engine"));
+        assert!(doc.contains("keine Policy-/Governance-Plattform"));
     }
 
     #[test]
