@@ -43,6 +43,8 @@ Und für Kandidaten:
 - candidate rejected,
 - candidate stale,
 - candidate insufficient,
+- persistence unavailable/deferred,
+- persistence performed only if real path exists,
 - no persistence performed.
 
 ## 2) Context-Update-Lifecycle (kanonisch)
@@ -71,11 +73,15 @@ Damit bleiben separat unterscheidbar:
 - candidate rejected,
 - candidate stale,
 - candidate insufficient,
+- persistence unavailable/deferred,
+- persistence performed only if real path exists,
 - candidate no persistence performed.
 
 Wichtig:
 - accepted-for-future-handling ist **kein** Memory-Commit.
 - rejected/stale/insufficient bleiben explizite End-/Zwischenzustände ohne Persistenzwirkung.
+- persistence unavailable/deferred bleibt expliziter Marker und verhindert implizite Commit-Annahmen.
+- persistence performed only if real path exists ist als Regel fixiert, ohne in Prompt 2 einen Realpfad zu bauen.
 - compute-result-derived Kandidaten bleiben begrenzt und fault/caveat-sensitiv.
 
 ## 4) Evidence/Replay/Compute-Basis ohne Memory-Verwechslung

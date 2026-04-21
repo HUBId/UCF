@@ -372,6 +372,8 @@ pub enum BlueBrainMemoryCandidateLifecycleClass {
     CandidateRejected,
     CandidateStale,
     CandidateInsufficient,
+    PersistenceUnavailableOrDeferred,
+    PersistencePerformedViaRealPathOnly,
     NoPersistencePerformed,
 }
 
@@ -384,6 +386,47 @@ pub struct BlueBrainMemoryCandidateLifecycleLane {
     pub context_mutation_semantics: &'static str,
     pub persistence_semantics: &'static str,
     pub canonical_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainPersistenceBoundaryClass {
+    TransientRuntimeContext,
+    EvidenceReferenceBackedContext,
+    MemoryAdjacentCandidate,
+    FutureMemoryReadyCandidate,
+    ActualPersistedMemory,
+    HistorySnapshotReferenceButNotMemory,
+    NonCanonicalInternalOnlyPersistenceLikePath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainPersistenceBoundaryLane {
+    pub class: BlueBrainPersistenceBoundaryClass,
+    pub lane: &'static str,
+    pub source_surface: &'static str,
+    pub boundary_semantics: &'static str,
+    pub future_attachment_semantics: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFutureMemoryAttachmentClass {
+    CandidateHandoffProposalOnly,
+    CandidateFutureReadyNoCommit,
+    CandidateRejectedOrInsufficient,
+    PersistenceDeferredOrUnavailable,
+    PersistenceCommitOnlyIfRealPathExists,
+    HistoryReferenceBasisOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainFutureMemoryAttachmentLane {
+    pub class: BlueBrainFutureMemoryAttachmentClass,
+    pub lane: &'static str,
+    pub trigger_or_source: &'static str,
+    pub required_fields: &'static str,
+    pub caveats: &'static str,
+    pub commit_boundary: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1957,7 +2000,7 @@ pub const CANONICAL_BLUE_BRAIN_CONTEXT_UPDATE_LIFECYCLE_MAP:
 ];
 
 pub const CANONICAL_BLUE_BRAIN_MEMORY_CANDIDATE_LIFECYCLE_MAP:
-    [BlueBrainMemoryCandidateLifecycleLane; 11] = [
+    [BlueBrainMemoryCandidateLifecycleLane; 13] = [
     BlueBrainMemoryCandidateLifecycleLane {
         class: BlueBrainMemoryCandidateLifecycleClass::CandidateProposed,
         lane: "blue_brain_candidate_proposed",
@@ -2043,6 +2086,34 @@ pub const CANONICAL_BLUE_BRAIN_MEMORY_CANDIDATE_LIFECYCLE_MAP:
         canonical_guard: "insufficient candidate must not be promoted implicitly",
     },
     BlueBrainMemoryCandidateLifecycleLane {
+        class: BlueBrainMemoryCandidateLifecycleClass::PersistenceUnavailableOrDeferred,
+        lane: "blue_brain_candidate_persistence_unavailable_or_deferred",
+        source_surface:
+            "blue_brain_persisted_memory_none_in_current_baseline + candidate acceptance/rejection lanes",
+        candidate_semantics:
+            "candidate outcome explicitly records persistence unavailable/deferred in current baseline",
+        context_mutation_semantics:
+            "deferred persistence state does not require context mutation and can coexist with update-only flows",
+        persistence_semantics:
+            "persistence unavailable/deferred marker is explicit; no hidden commit path exists",
+        canonical_guard:
+            "deferred marker prevents implicit persistence assumptions for accepted candidates",
+    },
+    BlueBrainMemoryCandidateLifecycleLane {
+        class: BlueBrainMemoryCandidateLifecycleClass::PersistencePerformedViaRealPathOnly,
+        lane: "blue_brain_candidate_persistence_performed_only_if_real_path_exists",
+        source_surface:
+            "future memory subsystem attachment contract (not implemented in current baseline)",
+        candidate_semantics:
+            "candidate may transition to persisted-memory-performed only through a real explicit persistence path",
+        context_mutation_semantics:
+            "context and candidate states stay separately observable even if a future real path is added",
+        persistence_semantics:
+            "current baseline exposes perform-only-if-real-path rule and does not provide such a path",
+        canonical_guard:
+            "forbids auto-persist behavior and blocks synthetic commit claims via history/evidence/replay",
+    },
+    BlueBrainMemoryCandidateLifecycleLane {
         class: BlueBrainMemoryCandidateLifecycleClass::NoPersistencePerformed,
         lane: "blue_brain_candidate_no_persistence_performed",
         source_surface:
@@ -2074,6 +2145,202 @@ pub const CANONICAL_BLUE_BRAIN_MEMORY_CANDIDATE_LIFECYCLE_MAP:
             "result path may update context even when candidate is rejected",
         persistence_semantics: "result-derived candidate path never auto-commits memory",
         canonical_guard: "compute-result candidate formation is gated and explicitly non-persistent",
+    },
+];
+
+pub const CANONICAL_BLUE_BRAIN_PERSISTENCE_BOUNDARY_MAP: [BlueBrainPersistenceBoundaryLane; 9] = [
+    BlueBrainPersistenceBoundaryLane {
+        class: BlueBrainPersistenceBoundaryClass::TransientRuntimeContext,
+        lane: "blue_brain_persistence_boundary_transient_runtime_context",
+        source_surface:
+            "runtime_orchestrator_stateful_loop + runtime_handoff_state_from_evidence/action_code",
+        boundary_semantics:
+            "runtime context is transient, bounded to active execution windows, and discarded without durable memory commit",
+        future_attachment_semantics:
+            "future memory subsystem may inspect candidate handoff fields but cannot treat transient context as persisted memory",
+        canonical_guard:
+            "transient context must not be reclassified as memory persistence or memory record history",
+    },
+    BlueBrainPersistenceBoundaryLane {
+        class: BlueBrainPersistenceBoundaryClass::EvidenceReferenceBackedContext,
+        lane: "blue_brain_persistence_boundary_evidence_reference_context",
+        source_surface:
+            "status_evidence_export_surface + blue_brain_reference_context_* lanes",
+        boundary_semantics:
+            "evidence/reference-backed context is reference-grade support for runtime posture, not persistence",
+        future_attachment_semantics:
+            "attachment requires explicit evidence/reference fields and quality caveats before candidate handoff",
+        canonical_guard:
+            "evidence/replay/snapshot/trace references cannot be promoted to memory commit by observation alone",
+    },
+    BlueBrainPersistenceBoundaryLane {
+        class: BlueBrainPersistenceBoundaryClass::MemoryAdjacentCandidate,
+        lane: "blue_brain_persistence_boundary_memory_adjacent_candidate",
+        source_surface:
+            "blue_brain_transition_memory_adjacent_candidate_identified_not_committed + candidate lifecycle lanes",
+        boundary_semantics:
+            "memory-adjacent candidate is proposal-grade only and remains non-persistent in current baseline",
+        future_attachment_semantics:
+            "future subsystem handoff is allowed as proposal with explicit non-commit boundary",
+        canonical_guard:
+            "candidate identification never performs implicit commit",
+    },
+    BlueBrainPersistenceBoundaryLane {
+        class: BlueBrainPersistenceBoundaryClass::FutureMemoryReadyCandidate,
+        lane: "blue_brain_persistence_boundary_future_memory_ready_candidate",
+        source_surface:
+            "blue_brain_candidate_accepted_for_future_memory_handling + blue_brain_candidate_persistence_unavailable_or_deferred",
+        boundary_semantics:
+            "future-memory-ready candidate remains explicitly non-committed until a real persistence path exists",
+        future_attachment_semantics:
+            "required fields include candidate id, context/evidence/replay references, and caveat posture",
+        canonical_guard:
+            "future-ready acceptance is not a persistence acknowledgment",
+    },
+    BlueBrainPersistenceBoundaryLane {
+        class: BlueBrainPersistenceBoundaryClass::ActualPersistedMemory,
+        lane: "blue_brain_persistence_boundary_actual_persisted_memory_deferred",
+        source_surface: "none for Blue-Brain memory in current repository baseline",
+        boundary_semantics:
+            "actual persisted memory for Blue-Brain context/candidates is intentionally deferred and not implemented",
+        future_attachment_semantics:
+            "future subsystem must introduce explicit persisted-memory contract before any commit state can exist",
+        canonical_guard:
+            "absence of real path is canonical and blocks synthetic persisted-memory claims",
+    },
+    BlueBrainPersistenceBoundaryLane {
+        class: BlueBrainPersistenceBoundaryClass::HistorySnapshotReferenceButNotMemory,
+        lane: "blue_brain_persistence_boundary_history_snapshot_reference_not_memory",
+        source_surface:
+            "service_surface job_history + replay_preflight/replay_with_entry + status evidence refs",
+        boundary_semantics:
+            "history/snapshot/replay/reference persistence remains diagnostic/evidence continuity, not memory persistence",
+        future_attachment_semantics:
+            "these references may support candidate evaluation with caveats but cannot substitute memory storage",
+        canonical_guard:
+            "history or snapshot presence must never be labeled as persisted memory",
+    },
+    BlueBrainPersistenceBoundaryLane {
+        class: BlueBrainPersistenceBoundaryClass::HistorySnapshotReferenceButNotMemory,
+        lane: "blue_brain_persistence_boundary_compute_status_evidence_not_memory",
+        source_surface:
+            "CanonicalComputeEntryPoint::status + status_evidence_export_surface + execution_snapshot",
+        boundary_semantics:
+            "status/evidence/export surfaces can persist operational records while remaining non-memory for BB3 semantics",
+        future_attachment_semantics:
+            "future attachment can read outward references but must keep not-memory caveat",
+        canonical_guard:
+            "compute status/evidence persistence is not a Blue-Brain memory subsystem",
+    },
+    BlueBrainPersistenceBoundaryLane {
+        class: BlueBrainPersistenceBoundaryClass::NonCanonicalInternalOnlyPersistenceLikePath,
+        lane: "blue_brain_persistence_boundary_internal_expert_persistence_like_path",
+        source_surface:
+            "service_surface::{run_operation_with_entry,replay_with_entry} + backends::build_backend(kind=stub|candle|worker)",
+        boundary_semantics:
+            "internal/expert persistence-like diagnostics are non-canonical for Blue-Brain memory boundaries",
+        future_attachment_semantics:
+            "not eligible as direct future memory attachment until remapped through outward canonical references",
+        canonical_guard:
+            "internal-only/expert-only paths are excluded from canonical memory authority",
+    },
+    BlueBrainPersistenceBoundaryLane {
+        class: BlueBrainPersistenceBoundaryClass::NonCanonicalInternalOnlyPersistenceLikePath,
+        lane: "blue_brain_persistence_boundary_noncanonical_domains_ai_paths",
+        source_surface: "domains/ai* compatibility and legacy persistence-adjacent traces",
+        boundary_semantics:
+            "legacy/compat domains can expose persistence-like traces but are not canonical Blue-Brain memory surfaces",
+        future_attachment_semantics:
+            "future subsystem must consume outward-facing evidence/reference contracts instead of direct internal traces",
+        canonical_guard:
+            "prevents compute-core internal hooks from becoming implicit memory connectors",
+    },
+];
+
+pub const CANONICAL_BLUE_BRAIN_FUTURE_MEMORY_ATTACHMENT_MAP:
+    [BlueBrainFutureMemoryAttachmentLane; 7] = [
+    BlueBrainFutureMemoryAttachmentLane {
+        class: BlueBrainFutureMemoryAttachmentClass::CandidateHandoffProposalOnly,
+        lane: "blue_brain_future_memory_attachment_candidate_proposed_only",
+        trigger_or_source:
+            "blue_brain_candidate_proposed + blue_brain_candidate_evidence_backed_reference",
+        required_fields:
+            "candidate_id + candidate digest + context digest + evidence/reference basis + reference quality posture",
+        caveats:
+            "proposal may be partial/stale/caveated and must keep those caveats explicit",
+        commit_boundary:
+            "proposal lane is handoff-only and does not commit memory",
+    },
+    BlueBrainFutureMemoryAttachmentLane {
+        class: BlueBrainFutureMemoryAttachmentClass::CandidateFutureReadyNoCommit,
+        lane: "blue_brain_future_memory_attachment_candidate_future_ready_no_commit",
+        trigger_or_source: "blue_brain_candidate_accepted_for_future_memory_handling",
+        required_fields:
+            "accepted candidate state + explicit future-memory-ready marker + evidence/replay references",
+        caveats:
+            "accepted-for-future state remains non-persistent until explicit memory subsystem exists",
+        commit_boundary:
+            "future-ready handoff cannot commit in current baseline",
+    },
+    BlueBrainFutureMemoryAttachmentLane {
+        class: BlueBrainFutureMemoryAttachmentClass::CandidateRejectedOrInsufficient,
+        lane: "blue_brain_future_memory_attachment_candidate_rejected_or_insufficient",
+        trigger_or_source:
+            "blue_brain_candidate_rejected_due_to_fault_or_caveat + blue_brain_candidate_insufficient_reference_basis + blue_brain_candidate_stale_reference_basis",
+        required_fields:
+            "candidate state + rejection/insufficient/stale reason + supporting reference posture",
+        caveats:
+            "rejected/insufficient/stale states are terminal-or-hold states for current baseline and must stay explicit",
+        commit_boundary:
+            "rejected or insufficient candidates are never committed",
+    },
+    BlueBrainFutureMemoryAttachmentLane {
+        class: BlueBrainFutureMemoryAttachmentClass::PersistenceDeferredOrUnavailable,
+        lane: "blue_brain_future_memory_attachment_persistence_unavailable_deferred",
+        trigger_or_source:
+            "blue_brain_candidate_persistence_unavailable_or_deferred + blue_brain_candidate_no_persistence_performed",
+        required_fields:
+            "candidate state + explicit deferred reason + canonical null persisted-memory lane reference",
+        caveats:
+            "deferred/unavailable must be visible to avoid implicit commit assumptions",
+        commit_boundary:
+            "explicitly no commit while real persistence path is absent",
+    },
+    BlueBrainFutureMemoryAttachmentLane {
+        class: BlueBrainFutureMemoryAttachmentClass::PersistenceCommitOnlyIfRealPathExists,
+        lane: "blue_brain_future_memory_attachment_commit_only_if_real_path_exists",
+        trigger_or_source:
+            "blue_brain_candidate_persistence_performed_only_if_real_path_exists",
+        required_fields:
+            "future real persistence contract id + candidate id + evidence/reference provenance + commit result envelope",
+        caveats:
+            "current baseline has no such real path; rule exists to constrain future implementation",
+        commit_boundary:
+            "commit allowed only when a real explicit persisted-memory contract is implemented",
+    },
+    BlueBrainFutureMemoryAttachmentLane {
+        class: BlueBrainFutureMemoryAttachmentClass::HistoryReferenceBasisOnly,
+        lane: "blue_brain_future_memory_attachment_history_snapshot_reference_basis_only",
+        trigger_or_source:
+            "job_history + replay_preflight/replay_with_entry + status_evidence_export_surface references",
+        required_fields:
+            "history/snapshot/replay identifiers + evidence digest references + caveat markers",
+        caveats:
+            "history/snapshot/evidence/replay remain reference basis only and cannot serve as memory commit proof",
+        commit_boundary:
+            "history/reference basis can support proposal quality only, never direct commit",
+    },
+    BlueBrainFutureMemoryAttachmentLane {
+        class: BlueBrainFutureMemoryAttachmentClass::HistoryReferenceBasisOnly,
+        lane: "blue_brain_future_memory_attachment_internal_paths_not_ready",
+        trigger_or_source:
+            "run_operation_with_entry/replay_with_entry expert lanes + backend worker/internal diagnostics",
+        required_fields:
+            "down-mapped outward status/evidence references if future integration is needed",
+        caveats:
+            "internal/expert-only persistence-like paths are non-canonical and not attachment-ready",
+        commit_boundary:
+            "internal paths cannot be used as commit authority",
     },
 ];
 
@@ -2365,6 +2632,16 @@ pub fn canonical_blue_brain_context_update_lifecycle_map(
 pub fn canonical_blue_brain_memory_candidate_lifecycle_map(
 ) -> &'static [BlueBrainMemoryCandidateLifecycleLane] {
     &CANONICAL_BLUE_BRAIN_MEMORY_CANDIDATE_LIFECYCLE_MAP
+}
+
+pub fn canonical_blue_brain_persistence_boundary_map() -> &'static [BlueBrainPersistenceBoundaryLane]
+{
+    &CANONICAL_BLUE_BRAIN_PERSISTENCE_BOUNDARY_MAP
+}
+
+pub fn canonical_blue_brain_future_memory_attachment_map(
+) -> &'static [BlueBrainFutureMemoryAttachmentLane] {
+    &CANONICAL_BLUE_BRAIN_FUTURE_MEMORY_ATTACHMENT_MAP
 }
 
 pub fn canonical_blue_brain_reference_context_map() -> &'static [BlueBrainReferenceContextLane] {
@@ -3552,7 +3829,7 @@ mod tests {
     #[test]
     fn blue_brain_memory_candidate_lifecycle_map_keeps_no_persistence_boundary_explicit() {
         let map = canonical_blue_brain_memory_candidate_lifecycle_map();
-        assert_eq!(map.len(), 11);
+        assert_eq!(map.len(), 13);
         assert!(map
             .iter()
             .any(|lane| lane.class == BlueBrainMemoryCandidateLifecycleClass::CandidateProposed));
@@ -3578,6 +3855,13 @@ mod tests {
             |lane| lane.class == BlueBrainMemoryCandidateLifecycleClass::CandidateInsufficient
         ));
         assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMemoryCandidateLifecycleClass::PersistenceUnavailableOrDeferred
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainMemoryCandidateLifecycleClass::PersistencePerformedViaRealPathOnly
+        }));
+        assert!(map.iter().any(|lane| {
             lane.class == BlueBrainMemoryCandidateLifecycleClass::NoPersistencePerformed
         }));
 
@@ -3596,6 +3880,132 @@ mod tests {
         assert!(no_persist
             .persistence_semantics
             .contains("intentionally deferred"));
+
+        let unavailable = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_candidate_persistence_unavailable_or_deferred")
+            .expect("persistence unavailable/deferred lane");
+        assert!(unavailable
+            .persistence_semantics
+            .contains("no hidden commit path"));
+
+        let commit_only_if_real = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_candidate_persistence_performed_only_if_real_path_exists"
+            })
+            .expect("commit-only-if-real lane");
+        assert!(commit_only_if_real
+            .persistence_semantics
+            .contains("does not provide such a path"));
+    }
+
+    #[test]
+    fn blue_brain_persistence_boundary_map_keeps_classes_and_compute_core_boundaries_explicit() {
+        let map = canonical_blue_brain_persistence_boundary_map();
+        assert_eq!(map.len(), 9);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainPersistenceBoundaryClass::TransientRuntimeContext));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainPersistenceBoundaryClass::EvidenceReferenceBackedContext
+        }));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainPersistenceBoundaryClass::MemoryAdjacentCandidate));
+        assert!(map.iter().any(
+            |lane| lane.class == BlueBrainPersistenceBoundaryClass::FutureMemoryReadyCandidate
+        ));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainPersistenceBoundaryClass::ActualPersistedMemory));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainPersistenceBoundaryClass::HistorySnapshotReferenceButNotMemory
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainPersistenceBoundaryClass::NonCanonicalInternalOnlyPersistenceLikePath
+        }));
+
+        let actual = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_persistence_boundary_actual_persisted_memory_deferred"
+            })
+            .expect("actual persisted memory deferred lane");
+        assert!(actual.boundary_semantics.contains("intentionally deferred"));
+
+        let history = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_persistence_boundary_history_snapshot_reference_not_memory"
+            })
+            .expect("history/snapshot/reference-not-memory lane");
+        assert!(history
+            .boundary_semantics
+            .contains("not memory persistence"));
+
+        let non_canonical = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_persistence_boundary_internal_expert_persistence_like_path"
+            })
+            .expect("non-canonical internal persistence-like lane");
+        assert!(non_canonical
+            .canonical_guard
+            .contains("excluded from canonical memory authority"));
+    }
+
+    #[test]
+    fn blue_brain_future_memory_attachment_map_preserves_propose_not_commit_semantics() {
+        let map = canonical_blue_brain_future_memory_attachment_map();
+        assert_eq!(map.len(), 7);
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainFutureMemoryAttachmentClass::CandidateHandoffProposalOnly
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainFutureMemoryAttachmentClass::CandidateFutureReadyNoCommit
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainFutureMemoryAttachmentClass::CandidateRejectedOrInsufficient
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainFutureMemoryAttachmentClass::PersistenceDeferredOrUnavailable
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainFutureMemoryAttachmentClass::PersistenceCommitOnlyIfRealPathExists
+        }));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class
+                == BlueBrainFutureMemoryAttachmentClass::HistoryReferenceBasisOnly));
+
+        let proposal = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_future_memory_attachment_candidate_proposed_only")
+            .expect("proposal-only lane");
+        assert!(proposal.commit_boundary.contains("does not commit memory"));
+
+        let deferred = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_future_memory_attachment_persistence_unavailable_deferred"
+            })
+            .expect("deferred/unavailable lane");
+        assert!(deferred
+            .commit_boundary
+            .contains("no commit while real persistence path is absent"));
+
+        let real_only = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_future_memory_attachment_commit_only_if_real_path_exists"
+            })
+            .expect("commit-only-if-real-path lane");
+        assert!(real_only
+            .caveats
+            .contains("current baseline has no such real path"));
     }
 
     #[test]
@@ -3702,8 +4112,36 @@ mod tests {
         assert!(doc.contains("candidate rejected"));
         assert!(doc.contains("candidate stale"));
         assert!(doc.contains("candidate insufficient"));
+        assert!(doc.contains("persistence unavailable/deferred"));
+        assert!(doc.contains("persistence performed only if real path exists"));
         assert!(doc.contains("no persistence performed"));
         assert!(doc.contains("actual memory commit remains intentionally deferred"));
+    }
+
+    #[test]
+    fn serie_bb3_prompt4_persistence_boundary_doc_stays_pinned_to_code_map() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_persistence_boundary_attachment_serie_bb3_prompt4_v1.md"
+        );
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_PERSISTENCE_BOUNDARY_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_FUTURE_MEMORY_ATTACHMENT_MAP"));
+        assert!(doc.contains("transient runtime context"));
+        assert!(doc.contains("evidence/reference-backed context"));
+        assert!(doc.contains("memory-adjacent candidate"));
+        assert!(doc.contains("future-memory-ready candidate"));
+        assert!(doc.contains("actual persisted memory"));
+        assert!(doc.contains("history/snapshot/reference but not memory"));
+        assert!(doc.contains("non-canonical/internal-only persistence-like path"));
+        assert!(doc.contains("candidate proposed"));
+        assert!(doc.contains("candidate future-memory-ready"));
+        assert!(doc.contains("candidate rejected"));
+        assert!(doc.contains("candidate stale/insufficient"));
+        assert!(doc.contains("persistence unavailable/deferred"));
+        assert!(doc.contains("commit only if real explicit path exists"));
+        assert!(doc.contains("BB3 implements no actual Blue-Brain memory persistence"));
+        assert!(doc.contains("Compute-Core bleibt maintenance-only"));
     }
 
     #[test]
