@@ -320,6 +320,27 @@ pub struct BlueBrainRuntimeFeedbackLane {
     pub non_canonical_boundary: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainContextMemorySurfaceClass {
+    TransientRuntimeContext,
+    EvidenceBackedContext,
+    ReplayReferenceBackedContext,
+    MemoryAdjacentCandidate,
+    PersistedMemory,
+    NonCanonicalInternalOnlyMemoryLikePath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainContextMemorySurfaceLane {
+    pub class: BlueBrainContextMemorySurfaceClass,
+    pub lane: &'static str,
+    pub source_surface: &'static str,
+    pub context_shape: &'static str,
+    pub evidence_or_reference_binding: &'static str,
+    pub persistence_binding: &'static str,
+    pub canonical_guard: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -1580,6 +1601,106 @@ pub const CANONICAL_BLUE_BRAIN_RUNTIME_FEEDBACK_MAP: [BlueBrainRuntimeFeedbackLa
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_CONTEXT_MEMORY_SURFACE_MAP: [BlueBrainContextMemorySurfaceLane; 7] =
+    [
+        BlueBrainContextMemorySurfaceLane {
+            class: BlueBrainContextMemorySurfaceClass::TransientRuntimeContext,
+            lane: "blue_brain_transient_runtime_context_handoff_state",
+            source_surface:
+                "runtime_orchestrator_stateful_loop + runtime_handoff_state_from_evidence/action_code",
+            context_shape:
+                "runtime-local context and handoff-state references tied to current execution window",
+            evidence_or_reference_binding:
+                "may consume outward status/evidence references without changing their reference-grade meaning",
+            persistence_binding:
+                "no durable commit; bounded in-process runtime state only",
+            canonical_guard:
+                "transient runtime context must not be relabeled as persisted memory",
+        },
+        BlueBrainContextMemorySurfaceLane {
+            class: BlueBrainContextMemorySurfaceClass::EvidenceBackedContext,
+            lane: "blue_brain_evidence_backed_context_status_export",
+            source_surface:
+                "CanonicalComputeEntryPoint::status_evidence_export_surface + runtime_handoff_state_from_evidence",
+            context_shape:
+                "context posture informed by status/evidence quality (current|partial|stale|caveated|degraded|insufficient)",
+            evidence_or_reference_binding:
+                "bundle/trace/history references remain evidence-grade and are attached as context support",
+            persistence_binding:
+                "evidence-backed context updates runtime posture only; no automatic memory write",
+            canonical_guard:
+                "compute outputs and evidence feedback are not memory commits by default",
+        },
+        BlueBrainContextMemorySurfaceLane {
+            class: BlueBrainContextMemorySurfaceClass::ReplayReferenceBackedContext,
+            lane: "blue_brain_replay_reference_backed_context",
+            source_surface: "service_surface::{replay_preflight,replay_with_entry}",
+            context_shape:
+                "diagnostic/replay comparability context anchored on replay/reference metadata",
+            evidence_or_reference_binding:
+                "replay refs and context-bridge refs are reference inputs for interpretation only",
+            persistence_binding:
+                "no durable memory commit through replay/reference observation path",
+            canonical_guard:
+                "replay/reference context must stay distinct from memory persistence semantics",
+        },
+        BlueBrainContextMemorySurfaceLane {
+            class: BlueBrainContextMemorySurfaceClass::MemoryAdjacentCandidate,
+            lane: "blue_brain_memory_adjacent_candidate_not_committed",
+            source_surface:
+                "blue_brain_transition_memory_adjacent_candidate_identified_not_committed + runtime feedback context uptake",
+            context_shape:
+                "candidate extracted from context/evidence linkage for future memory integration decisions",
+            evidence_or_reference_binding:
+                "candidate derivation is evidence/reference-backed and remains auditable",
+            persistence_binding:
+                "candidate only; explicitly not persisted and not committed in BB2/BB3 prompt-1 surface",
+            canonical_guard:
+                "memory-adjacent candidate must not be exposed as actual memory persistence",
+        },
+        BlueBrainContextMemorySurfaceLane {
+            class: BlueBrainContextMemorySurfaceClass::PersistedMemory,
+            lane: "blue_brain_persisted_memory_none_in_current_baseline",
+            source_surface: "none (no canonical Blue-Brain memory persistence lane in current repo baseline)",
+            context_shape:
+                "persisted-memory contract intentionally absent from canonical Blue-Brain runtime surfaces",
+            evidence_or_reference_binding:
+                "evidence/replay/history references can support future persistence decisions but are not persistence by themselves",
+            persistence_binding:
+                "actual persisted memory lane not implemented",
+            canonical_guard:
+                "explicit null lane prevents accidental reinterpretation of history/evidence as memory store",
+        },
+        BlueBrainContextMemorySurfaceLane {
+            class: BlueBrainContextMemorySurfaceClass::NonCanonicalInternalOnlyMemoryLikePath,
+            lane: "blue_brain_internal_expert_memory_like_path_non_canonical",
+            source_surface:
+                "service_surface::{run_operation_with_entry,replay_with_entry} + backends::build_backend(kind=stub|candle|worker) + domains/ai*",
+            context_shape:
+                "internal/expert diagnostics or compatibility context that can look memory-like but is non-canonical for Blue-Brain",
+            evidence_or_reference_binding:
+                "must be down-mapped to outward status/evidence references before Blue-Brain-facing use",
+            persistence_binding:
+                "not a canonical persistence authority",
+            canonical_guard:
+                "internal/expert/compat paths are excluded from canonical context-memory surface authority",
+        },
+        BlueBrainContextMemorySurfaceLane {
+            class: BlueBrainContextMemorySurfaceClass::TransientRuntimeContext,
+            lane: "blue_brain_compute_result_context_uptake_non_memory",
+            source_surface:
+                "blue_brain_transition_compute_result_integrated + blue_brain_feedback_result_integrated_current_runtime_state",
+            context_shape:
+                "compute-result uptake updates current runtime context for subsequent state transitions",
+            evidence_or_reference_binding:
+                "result/evidence continuity tracked by outward references and transition bindings",
+            persistence_binding:
+                "uptake is transient runtime mutation, not durable memory persistence",
+            canonical_guard:
+                "compute result integration must remain separate from memory persistence claims",
+        },
+    ];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -1667,6 +1788,11 @@ pub fn canonical_blue_brain_context_memory_boundary_map(
 
 pub fn canonical_blue_brain_runtime_feedback_map() -> &'static [BlueBrainRuntimeFeedbackLane] {
     &CANONICAL_BLUE_BRAIN_RUNTIME_FEEDBACK_MAP
+}
+
+pub fn canonical_blue_brain_context_memory_surface_map(
+) -> &'static [BlueBrainContextMemorySurfaceLane] {
+    &CANONICAL_BLUE_BRAIN_CONTEXT_MEMORY_SURFACE_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -2687,6 +2813,85 @@ mod tests {
             .contains("blue_brain_transition_memory_adjacent_candidate_identified_not_committed"));
         assert!(doc.contains("no memory persistence implied"));
         assert!(doc.contains("keine Memory-Architektur"));
+    }
+
+    #[test]
+    fn blue_brain_context_memory_surface_map_keeps_bb3_classes_explicit() {
+        let map = canonical_blue_brain_context_memory_surface_map();
+        assert_eq!(map.len(), 7);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainContextMemorySurfaceClass::TransientRuntimeContext));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainContextMemorySurfaceClass::EvidenceBackedContext));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainContextMemorySurfaceClass::ReplayReferenceBackedContext
+        }));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainContextMemorySurfaceClass::MemoryAdjacentCandidate));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainContextMemorySurfaceClass::PersistedMemory));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainContextMemorySurfaceClass::NonCanonicalInternalOnlyMemoryLikePath
+        }));
+    }
+
+    #[test]
+    fn blue_brain_context_memory_surface_map_keeps_memory_semantics_non_ambiguous() {
+        let map = canonical_blue_brain_context_memory_surface_map();
+        let persisted_lane = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_persisted_memory_none_in_current_baseline")
+            .expect("persisted memory lane");
+        assert!(persisted_lane
+            .persistence_binding
+            .contains("not implemented"));
+        assert!(persisted_lane
+            .canonical_guard
+            .contains("accidental reinterpretation"));
+
+        let evidence_backed = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_evidence_backed_context_status_export")
+            .expect("evidence-backed context lane");
+        assert!(evidence_backed
+            .persistence_binding
+            .contains("no automatic memory write"));
+        assert!(evidence_backed
+            .canonical_guard
+            .contains("not memory commits"));
+
+        let candidate = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_memory_adjacent_candidate_not_committed")
+            .expect("memory-adjacent candidate lane");
+        assert!(candidate
+            .persistence_binding
+            .contains("not persisted and not committed"));
+        assert!(candidate
+            .canonical_guard
+            .contains("actual memory persistence"));
+    }
+
+    #[test]
+    fn serie_bb3_prompt1_context_memory_surface_doc_stays_pinned_to_code_map() {
+        let doc =
+            include_str!("../../../docs/blue_brain_context_memory_surface_serie_bb3_prompt1_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_CONTEXT_MEMORY_SURFACE_MAP"));
+        assert!(doc.contains("transient_runtime_context"));
+        assert!(doc.contains("evidence_backed_context"));
+        assert!(doc.contains("replay_reference_backed_context"));
+        assert!(doc.contains("memory_adjacent_candidate"));
+        assert!(doc.contains("persisted_memory"));
+        assert!(doc.contains("non_canonical_internal_only_memory_like_path"));
+        assert!(doc.contains("blue_brain_persisted_memory_none_in_current_baseline"));
+        assert!(doc.contains("compute outputs and evidence feedback"));
+        assert!(doc.contains("kein Memory-Engine-Bau"));
     }
 
     #[test]
