@@ -71,6 +71,12 @@ For BB3 Prompt 3 evidence-backed and replay/reference context integration
 boundary for context updates and candidates), see
 `docs/blue_brain_evidence_reference_context_serie_bb3_prompt3_v1.md` and
 `CANONICAL_BLUE_BRAIN_REFERENCE_CONTEXT_MAP`.
+For BB3 Prompt 4 persistence boundaries and future memory-subsystem attachment points
+(explicit persistence classes, candidate-to-persistence boundaries, deferred actual memory commit, and
+proposal-only attachment lanes), see
+`docs/blue_brain_persistence_boundary_attachment_serie_bb3_prompt4_v1.md`,
+`CANONICAL_BLUE_BRAIN_PERSISTENCE_BOUNDARY_MAP`, and
+`CANONICAL_BLUE_BRAIN_FUTURE_MEMORY_ATTACHMENT_MAP`.
 
 ## Capability model
 
