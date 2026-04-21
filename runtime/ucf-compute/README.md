@@ -53,6 +53,9 @@ For the BB2 Prompt 4 runtime diagnostics/evidence feedback reintegration map (re
 diagnostic/context feedback + explicit non-canonical boundary), see
 `docs/blue_brain_runtime_feedback_serie_bb2_prompt4_v1.md` and
 `CANONICAL_BLUE_BRAIN_RUNTIME_FEEDBACK_MAP`.
+For the BB2 Prompt 5 readiness sweep + explicit runtime baseline closure matrix
+(stable vs caveated vs preparatory vs internal-only vs deferred), see
+`docs/blue_brain_readiness_sweep_serie_bb2_prompt5_v1.md`.
 
 ## Capability model
 
