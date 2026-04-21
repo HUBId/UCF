@@ -57,6 +57,19 @@ Jede Lane enthält konsistent:
 Dadurch bleibt klar sichtbar, welche Referenzen nur Runtime-Kontext stützen und welche (noch)
 kein Memory-Commit darstellen.
 
+Zusätzlich codiert die Surface jetzt explizite BB3-Lifecycle-Semantik:
+- `blue_brain_transient_runtime_context_available_for_transition`
+- `blue_brain_transient_runtime_context_used_for_compute_trigger`
+- `blue_brain_compute_result_context_uptake_non_memory`
+- `blue_brain_transient_runtime_context_updated_then_discarded`
+
+Damit ist sichtbar:
+- context available for current transition,
+- context used for compute trigger,
+- context updated by result/evidence,
+- context discarded or not persisted,
+- no memory persistence implied.
+
 ## 3) Persisted-Memory-Lane ist explizit als „nicht vorhanden“ codiert
 
 Die Lane `blue_brain_persisted_memory_none_in_current_baseline` ist bewusst eine Null-Lane:
@@ -69,7 +82,15 @@ Die Lane `blue_brain_persisted_memory_none_in_current_baseline` ist bewusst eine
 Kanonische Guardrails der Map:
 - compute-result uptake (`blue_brain_compute_result_context_uptake_non_memory`) bleibt transient,
 - evidence-backed context (`blue_brain_evidence_backed_context_status_export`) bleibt referenzgebunden,
+- evidence observed/attached/caveated
+  (`blue_brain_evidence_backed_context_attached_or_caveated`) bleibt referenzgebunden und kann
+  explizit insufficient sein,
+- replay/reference context kann partial/caveated sein
+  (`blue_brain_replay_reference_backed_context_caveated_or_partial`) ohne Persistenzwirkung,
 - memory-adjacent candidate (`blue_brain_memory_adjacent_candidate_not_committed`) bleibt uncommitted,
+- candidate source semantics über context/result/evidence references
+  (`blue_brain_memory_adjacent_candidate_derived_sources_uncommitted`) bleiben explizit
+  non-committed,
 - internal/expert memory-like paths bleiben non-canonical.
 
 Damit gilt für BB3 Prompt 1 explizit:
@@ -92,6 +113,13 @@ BB3 Prompt 1 liefert eine belastbare Surface-Semantik, auf der später aufgebaut
 - keine automatische Gleichsetzung von Evidence/Compute mit Memory,
 - keine Öffnung des finalisierten Compute-Kerns,
 - klare Startlinie für spätere, explizit spezifizierte Memory-Implementierung.
+
+Rückbindung an BB2-Transitions bleibt explizit:
+- transition uses transient context,
+- transition updates context,
+- transition produces memory-adjacent candidate,
+- transition observes evidence/reference,
+- transition does not imply persistence unless explicitly supported.
 
 Nicht enthalten in diesem Schritt:
 - kein Memory-Engine-Bau,
