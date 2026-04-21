@@ -277,6 +277,28 @@ pub struct BlueBrainTransitionTriggerLane {
     pub non_canonical_boundary: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainContextMemoryBoundaryClass {
+    PureComputeConsumer,
+    ContextBearingSurface,
+    MemoryAdjacentSurface,
+    EvidenceReferenceConsumer,
+    InternalOnlyOrNonCanonicalContextPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainContextMemoryBoundaryLane {
+    pub class: BlueBrainContextMemoryBoundaryClass,
+    pub lane: &'static str,
+    pub surface: &'static str,
+    pub canonical_anchor: &'static str,
+    pub compute_invocation_reference: &'static str,
+    pub context_reference: &'static str,
+    pub evidence_or_replay_reference: &'static str,
+    pub memory_posture: &'static str,
+    pub boundary_guard: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -1120,7 +1142,20 @@ pub const CANONICAL_BLUE_BRAIN_RUNTIME_PHASE_MAP: [BlueBrainRuntimePhaseLane; 5]
     },
 ];
 
-pub const CANONICAL_BLUE_BRAIN_TRANSITION_TRIGGER_MAP: [BlueBrainTransitionTriggerLane; 7] = [
+pub const CANONICAL_BLUE_BRAIN_TRANSITION_TRIGGER_MAP: [BlueBrainTransitionTriggerLane; 11] = [
+    BlueBrainTransitionTriggerLane {
+        class: BlueBrainTransitionTriggerClass::PureStateTransition,
+        lane: "blue_brain_transition_context_available",
+        canonical_transition:
+            "state/context prepared and available -> context reference published without compute invocation",
+        trigger_point: "context available transition only; no compute trigger implied",
+        canonical_contract_binding:
+            "state-facing reference continuity only; submit remains an explicit later transition",
+        reference_continuity:
+            "preserve context digest references, handoff-state references, and active context posture",
+        non_canonical_boundary:
+            "context availability must not be interpreted as persistent memory commit",
+    },
     BlueBrainTransitionTriggerLane {
         class: BlueBrainTransitionTriggerClass::PureStateTransition,
         lane: "blue_brain_transition_state_context_refreshed",
@@ -1133,6 +1168,20 @@ pub const CANONICAL_BLUE_BRAIN_TRANSITION_TRIGGER_MAP: [BlueBrainTransitionTrigg
             "request/run identity not yet minted; preserve active production context and state references",
         non_canonical_boundary:
             "must not escalate through helper/internal lanes to force compute from state refresh alone",
+    },
+    BlueBrainTransitionTriggerLane {
+        class: BlueBrainTransitionTriggerClass::ComputeTriggeringTransition,
+        lane: "blue_brain_transition_context_used_for_compute_trigger",
+        canonical_transition:
+            "available context references are consumed to satisfy canonical compute-trigger preconditions",
+        trigger_point:
+            "context reference is used for trigger qualification; compute trigger remains explicit",
+        canonical_contract_binding:
+            "CanonicalComputeEntryPoint::submit(ComputeSubmitRequest{ExecuteInline})",
+        reference_continuity:
+            "context/state references are carried as trigger inputs, not treated as memory writes",
+        non_canonical_boundary:
+            "no memory persistence implied by context usage during trigger admission",
     },
     BlueBrainTransitionTriggerLane {
         class: BlueBrainTransitionTriggerClass::ComputeTriggeringTransition,
@@ -1206,6 +1255,32 @@ pub const CANONICAL_BLUE_BRAIN_TRANSITION_TRIGGER_MAP: [BlueBrainTransitionTrigg
     },
     BlueBrainTransitionTriggerLane {
         class: BlueBrainTransitionTriggerClass::EvidenceStatusUpdateTransition,
+        lane: "blue_brain_transition_evidence_observed_without_memory_commit",
+        canonical_transition:
+            "evidence bundle or replay basis observed -> evidence/reference uptake only",
+        trigger_point: "evidence observed transition without memory commit",
+        canonical_contract_binding:
+            "CanonicalComputeEntryPoint::status_evidence_export_surface(evidence refs + replay refs)",
+        reference_continuity:
+            "retain evidence/replay references as outward references, not as persisted memory entries",
+        non_canonical_boundary:
+            "evidence/replay observation must not be represented as memory persistence",
+    },
+    BlueBrainTransitionTriggerLane {
+        class: BlueBrainTransitionTriggerClass::EvidenceStatusUpdateTransition,
+        lane: "blue_brain_transition_memory_adjacent_candidate_identified_not_committed",
+        canonical_transition:
+            "memory-adjacent candidate recognized from context/evidence linkage without storage action",
+        trigger_point: "memory-adjacent candidate identification only; no memory commit",
+        canonical_contract_binding:
+            "status + evidence/reference contracts remain authoritative; no memory subsystem contract in this series",
+        reference_continuity:
+            "preserve candidate references for future BB3 work while keeping current runtime deterministic",
+        non_canonical_boundary:
+            "explicitly no long-term memory persistence, vector-db write, or cognitive-state storage claim",
+    },
+    BlueBrainTransitionTriggerLane {
+        class: BlueBrainTransitionTriggerClass::EvidenceStatusUpdateTransition,
         lane: "blue_brain_transition_status_evidence_update_without_compute_trigger",
         canonical_transition:
             "status/evidence update observed (including caveated/degraded/partial) -> runtime state update only",
@@ -1219,6 +1294,127 @@ pub const CANONICAL_BLUE_BRAIN_TRANSITION_TRIGGER_MAP: [BlueBrainTransitionTrigg
             "must not auto-trigger compute through legacy/compat/internal helper paths on status-only updates",
     },
 ];
+
+pub const CANONICAL_BLUE_BRAIN_CONTEXT_MEMORY_BOUNDARY_MAP: [BlueBrainContextMemoryBoundaryLane; 7] =
+    [
+        BlueBrainContextMemoryBoundaryLane {
+            class: BlueBrainContextMemoryBoundaryClass::PureComputeConsumer,
+            lane: "blue_brain_pure_compute_consumer_ops_probe",
+            surface: "ops_compute_probe",
+            canonical_anchor: "runtime/ucf-ops/src/lib.rs::run_compute_probe",
+            compute_invocation_reference:
+                "CanonicalComputeEntryPoint::submit(ComputeSubmitRequest{ExecuteInline})",
+            context_reference: "context digest passthrough only; no runtime-owned context state",
+            evidence_or_replay_reference:
+                "optional status/evidence references consumed for probe diagnostics",
+            memory_posture:
+                "no memory-adjacent semantics; compute invocation and diagnostics only",
+            boundary_guard:
+                "must not be promoted as Blue-Brain context/memory authority",
+        },
+        BlueBrainContextMemoryBoundaryLane {
+            class: BlueBrainContextMemoryBoundaryClass::ContextBearingSurface,
+            lane: "blue_brain_context_bearing_runtime_orchestrator",
+            surface: "runtime_orchestrator_stateful_loop",
+            canonical_anchor:
+                "runtime/ucf-runtime/src/orchestrator.rs::RuntimeOrchestrator::{try_new_from_env,step_once}",
+            compute_invocation_reference:
+                "context-bearing runtime step may invoke CanonicalComputeEntryPoint::submit",
+            context_reference:
+                "state/context references (context_digest + runtime_handoff_state) are runtime-local and bounded",
+            evidence_or_replay_reference:
+                "status/evidence references are consumed via outward export surfaces",
+            memory_posture:
+                "context-bearing only; no persistent memory subsystem contract",
+            boundary_guard:
+                "state/context reference must not be relabeled as memory persistence",
+        },
+        BlueBrainContextMemoryBoundaryLane {
+            class: BlueBrainContextMemoryBoundaryClass::MemoryAdjacentSurface,
+            lane: "blue_brain_memory_adjacent_context_integration_candidate",
+            surface: "runtime_handoff_state_from_evidence + transition trigger map",
+            canonical_anchor:
+                "service_surface::runtime_handoff_state_from_evidence + blue_brain_transition_memory_adjacent_candidate_identified_not_committed",
+            compute_invocation_reference:
+                "compute invocation remains explicit and independent from memory-adjacent candidate detection",
+            context_reference:
+                "context integration keeps current-runtime references only",
+            evidence_or_replay_reference:
+                "uses outward evidence/replay references as candidate basis",
+            memory_posture:
+                "memory-adjacent candidate only; explicitly not committed or persisted",
+            boundary_guard:
+                "prepares BB3 boundary without introducing storage/model-memory architecture",
+        },
+        BlueBrainContextMemoryBoundaryLane {
+            class: BlueBrainContextMemoryBoundaryClass::EvidenceReferenceConsumer,
+            lane: "blue_brain_evidence_reference_consumer_surface",
+            surface: "status_evidence_export_surface evidence/ref uptake",
+            canonical_anchor:
+                "service_surface::CanonicalComputeEntryPoint::status_evidence_export_surface",
+            compute_invocation_reference:
+                "no implicit compute trigger on evidence-only uptake",
+            context_reference:
+                "evidence may update runtime context posture but is not context ownership by itself",
+            evidence_or_replay_reference:
+                "bundle_refs + trace_refs + history/replay references remain reference-grade",
+            memory_posture:
+                "no memory persistence implied by evidence/replay references",
+            boundary_guard:
+                "evidence references are not memory records and not memory commits",
+        },
+        BlueBrainContextMemoryBoundaryLane {
+            class: BlueBrainContextMemoryBoundaryClass::EvidenceReferenceConsumer,
+            lane: "blue_brain_replay_reference_basis_surface",
+            surface: "replay/history reference basis",
+            canonical_anchor:
+                "service_surface::{replay_preflight,replay_with_entry} diagnostics bound to outward references",
+            compute_invocation_reference:
+                "replay/reference basis remains diagnostics context and does not auto-trigger canonical submit",
+            context_reference:
+                "provides replay/reference basis for runtime context comparisons",
+            evidence_or_replay_reference:
+                "replay comparison refs + context bridge refs are consumed as evidence basis",
+            memory_posture:
+                "replay/reference basis is not persistent memory and not a substitute memory store",
+            boundary_guard:
+                "must be down-mapped to outward references before any Blue-Brain-facing use",
+        },
+        BlueBrainContextMemoryBoundaryLane {
+            class: BlueBrainContextMemoryBoundaryClass::InternalOnlyOrNonCanonicalContextPath,
+            lane: "blue_brain_internal_or_expert_only_context_path",
+            surface: "internal/expert runtime control paths",
+            canonical_anchor:
+                "service_surface::{run_operation_with_entry,replay_with_entry} + backends::build_backend(kind=stub|candle|worker) + domains/ai*",
+            compute_invocation_reference:
+                "non-canonical invocation path; not Blue-Brain default compute authority",
+            context_reference:
+                "expert/internal context details are non-canonical for Blue-Brain runtime contracts",
+            evidence_or_replay_reference:
+                "must be remapped to outward status/evidence references before external consumption",
+            memory_posture:
+                "not eligible as memory-adjacent Blue-Brain surface",
+            boundary_guard:
+                "explicit non-canonical boundary for context/memory integration scope",
+        },
+        BlueBrainContextMemoryBoundaryLane {
+            class: BlueBrainContextMemoryBoundaryClass::ContextBearingSurface,
+            lane: "blue_brain_context_uptake_without_memory_commit",
+            surface: "compute result integrated into current runtime context",
+            canonical_anchor:
+                "blue_brain_transition_compute_result_integrated + blue_brain_transition_evidence_observed_without_memory_commit",
+            compute_invocation_reference:
+                "compute result integration consumes prior canonical submit output",
+            context_reference:
+                "updates current context posture and handoff-state references",
+            evidence_or_replay_reference:
+                "captures evidence/reference uptake continuity from outward export surfaces",
+            memory_posture:
+                "explicitly no memory persistence implied during context uptake",
+            boundary_guard:
+                "separates context integration from memory commit semantics",
+        },
+    ];
 
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
@@ -1298,6 +1494,11 @@ pub fn canonical_blue_brain_runtime_phase_map() -> &'static [BlueBrainRuntimePha
 
 pub fn canonical_blue_brain_transition_trigger_map() -> &'static [BlueBrainTransitionTriggerLane] {
     &CANONICAL_BLUE_BRAIN_TRANSITION_TRIGGER_MAP
+}
+
+pub fn canonical_blue_brain_context_memory_boundary_map(
+) -> &'static [BlueBrainContextMemoryBoundaryLane] {
+    &CANONICAL_BLUE_BRAIN_CONTEXT_MEMORY_BOUNDARY_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -2104,7 +2305,7 @@ mod tests {
     #[test]
     fn blue_brain_transition_trigger_map_keeps_minimal_transition_classes_explicit() {
         let map = canonical_blue_brain_transition_trigger_map();
-        assert_eq!(map.len(), 7);
+        assert_eq!(map.len(), 11);
         assert!(map
             .iter()
             .any(|lane| lane.class == BlueBrainTransitionTriggerClass::PureStateTransition));
@@ -2123,6 +2324,28 @@ mod tests {
     fn blue_brain_transition_trigger_points_stay_on_outward_contracts_and_block_internal_defaults()
     {
         let map = canonical_blue_brain_transition_trigger_map();
+        let context_available = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_transition_context_available")
+            .expect("context available transition lane");
+        assert!(context_available
+            .trigger_point
+            .contains("no compute trigger implied"));
+        assert!(context_available
+            .non_canonical_boundary
+            .contains("not be interpreted as persistent memory commit"));
+
+        let context_used_trigger = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_transition_context_used_for_compute_trigger")
+            .expect("context used for compute-trigger lane");
+        assert!(context_used_trigger
+            .canonical_contract_binding
+            .contains("CanonicalComputeEntryPoint::submit"));
+        assert!(context_used_trigger
+            .reference_continuity
+            .contains("not treated as memory writes"));
+
         let context_trigger = map
             .iter()
             .find(|lane| {
@@ -2169,6 +2392,31 @@ mod tests {
         assert!(status_only
             .canonical_contract_binding
             .contains("CanonicalComputeEntryPoint::status"));
+
+        let evidence_no_commit = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_transition_evidence_observed_without_memory_commit"
+            })
+            .expect("evidence observed without memory commit lane");
+        assert!(evidence_no_commit
+            .trigger_point
+            .contains("without memory commit"));
+        assert!(evidence_no_commit
+            .non_canonical_boundary
+            .contains("must not be represented as memory persistence"));
+
+        let memory_adjacent = map
+            .iter()
+            .find(|lane| {
+                lane.lane
+                    == "blue_brain_transition_memory_adjacent_candidate_identified_not_committed"
+            })
+            .expect("memory-adjacent candidate lane");
+        assert!(memory_adjacent.trigger_point.contains("no memory commit"));
+        assert!(memory_adjacent
+            .non_canonical_boundary
+            .contains("no long-term memory persistence"));
     }
 
     #[test]
@@ -2179,17 +2427,98 @@ mod tests {
 
         assert!(doc.contains(line.execution_core));
         assert!(doc.contains("blue_brain_transition_state_context_refreshed"));
+        assert!(doc.contains("blue_brain_transition_context_available"));
+        assert!(doc.contains("blue_brain_transition_context_used_for_compute_trigger"));
         assert!(doc.contains("blue_brain_transition_compute_trigger_from_context_availability"));
         assert!(doc.contains("blue_brain_transition_compute_trigger_from_inference_required"));
         assert!(doc.contains("blue_brain_transition_compute_trigger_blocked_insufficient_context"));
         assert!(doc.contains("blue_brain_transition_compute_trigger_suppressed_internal_only_path"));
         assert!(doc.contains("blue_brain_transition_compute_result_integrated"));
+        assert!(doc.contains("blue_brain_transition_evidence_observed_without_memory_commit"));
+        assert!(doc
+            .contains("blue_brain_transition_memory_adjacent_candidate_identified_not_committed"));
         assert!(
             doc.contains("blue_brain_transition_status_evidence_update_without_compute_trigger")
         );
         assert!(doc.contains("keine Workflow- oder State-Machine-Plattform"));
         assert!(doc.contains("keine zweite Execution-Sprache"));
         assert!(doc.contains("keine zweite Wahrheitsquelle"));
+    }
+
+    #[test]
+    fn blue_brain_context_memory_boundary_map_keeps_compute_context_memory_split_explicit() {
+        let map = canonical_blue_brain_context_memory_boundary_map();
+        assert_eq!(map.len(), 7);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainContextMemoryBoundaryClass::PureComputeConsumer));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainContextMemoryBoundaryClass::ContextBearingSurface));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainContextMemoryBoundaryClass::MemoryAdjacentSurface));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainContextMemoryBoundaryClass::EvidenceReferenceConsumer
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainContextMemoryBoundaryClass::InternalOnlyOrNonCanonicalContextPath
+        }));
+    }
+
+    #[test]
+    fn blue_brain_context_memory_boundary_map_prevents_reference_and_memory_confusion() {
+        let map = canonical_blue_brain_context_memory_boundary_map();
+        let evidence_lane = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_evidence_reference_consumer_surface")
+            .expect("evidence reference consumer lane");
+        assert!(evidence_lane
+            .memory_posture
+            .contains("no memory persistence implied"));
+        assert!(evidence_lane
+            .boundary_guard
+            .contains("not memory records and not memory commits"));
+
+        let replay_lane = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_replay_reference_basis_surface")
+            .expect("replay reference basis lane");
+        assert!(replay_lane.memory_posture.contains("not persistent memory"));
+        assert!(replay_lane
+            .boundary_guard
+            .contains("down-mapped to outward references"));
+
+        let internal_lane = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_internal_or_expert_only_context_path")
+            .expect("internal path lane");
+        assert!(internal_lane
+            .boundary_guard
+            .contains("non-canonical boundary"));
+    }
+
+    #[test]
+    fn serie_bb2_prompt3_context_memory_boundary_doc_stays_pinned_to_code_map() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_context_memory_boundary_serie_bb2_prompt3_v1.md"
+        );
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_CONTEXT_MEMORY_BOUNDARY_MAP"));
+        assert!(doc.contains("pure_compute_consumer"));
+        assert!(doc.contains("context_bearing_blue_brain_surface"));
+        assert!(doc.contains("memory_adjacent_blue_brain_surface"));
+        assert!(doc.contains("evidence_reference_consumer"));
+        assert!(doc.contains("internal_only_or_non_canonical_context_path"));
+        assert!(doc.contains("blue_brain_transition_context_available"));
+        assert!(doc.contains("blue_brain_transition_context_used_for_compute_trigger"));
+        assert!(doc.contains("blue_brain_transition_compute_result_integrated"));
+        assert!(doc.contains("blue_brain_transition_evidence_observed_without_memory_commit"));
+        assert!(doc
+            .contains("blue_brain_transition_memory_adjacent_candidate_identified_not_committed"));
+        assert!(doc.contains("no memory persistence implied"));
+        assert!(doc.contains("keine Memory-Architektur"));
     }
 
     #[test]

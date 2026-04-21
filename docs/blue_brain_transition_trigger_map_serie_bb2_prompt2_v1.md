@@ -28,7 +28,7 @@ Diese BB2-Schärfung bleibt auf derselben outward-facing Compute-Linie. Es gibt 
 
 ## 2) Schmale Transition/Trigger-Map (minimal Klassen)
 
-`CANONICAL_BLUE_BRAIN_TRANSITION_TRIGGER_MAP` führt genau vier Klassen:
+`CANONICAL_BLUE_BRAIN_TRANSITION_TRIGGER_MAP` führt vier Klassen mit elf kanonischen Lanes:
 
 1. `pure_state_transition`
    - Zustand/Context wird fortgeschrieben, **ohne** Compute-Trigger.
@@ -42,12 +42,16 @@ Diese BB2-Schärfung bleibt auf derselben outward-facing Compute-Linie. Es gibt 
 Damit bleiben Zustandsfortschritt und Compute-Trigger semantisch getrennt.
 
 Kanonische lane-IDs (code-pinned):
+- `blue_brain_transition_context_available`
 - `blue_brain_transition_state_context_refreshed`
+- `blue_brain_transition_context_used_for_compute_trigger`
 - `blue_brain_transition_compute_trigger_from_context_availability`
 - `blue_brain_transition_compute_trigger_from_inference_required`
 - `blue_brain_transition_compute_trigger_blocked_insufficient_context`
 - `blue_brain_transition_compute_trigger_suppressed_internal_only_path`
 - `blue_brain_transition_compute_result_integrated`
+- `blue_brain_transition_evidence_observed_without_memory_commit`
+- `blue_brain_transition_memory_adjacent_candidate_identified_not_committed`
 - `blue_brain_transition_status_evidence_update_without_compute_trigger`
 
 ## 3) Kanonische Compute-Trigger-Points
