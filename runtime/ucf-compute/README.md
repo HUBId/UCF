@@ -45,6 +45,10 @@ compute-triggering transitions, status/evidence update transitions, explicit non
 trigger suppression), see
 `docs/blue_brain_transition_trigger_map_serie_bb2_prompt2_v1.md` and
 `CANONICAL_BLUE_BRAIN_TRANSITION_TRIGGER_MAP`.
+For the BB2 Prompt 3 context/memory-adjacent boundary split (pure compute consumer vs
+context-bearing vs memory-adjacent vs evidence/reference consumer vs non-canonical context path),
+see `docs/blue_brain_context_memory_boundary_serie_bb2_prompt3_v1.md` and
+`CANONICAL_BLUE_BRAIN_CONTEXT_MEMORY_BOUNDARY_MAP`.
 
 ## Capability model
 
