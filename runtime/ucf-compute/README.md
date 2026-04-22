@@ -113,6 +113,9 @@ For BB5 Prompt 3 memory-commit diagnostics / rejection / caveat feedback bind-ba
 feedback linkage, and strict non-canonical/internal-only exclusion), see
 `docs/blue_brain_memory_commit_diagnostics_feedback_serie_bb5_prompt3_v1.md` and
 `CANONICAL_BLUE_BRAIN_MEMORY_COMMIT_DIAGNOSTICS_MAP`.
+For BB5 Prompt 4 readiness sweep and final minimal memory-commit closure line
+(matrix + canonical boundary classes + explicit no-auto-commit invariants + prioritized next direction), see
+`docs/blue_brain_readiness_sweep_serie_bb5_prompt4_v1.md`.
 
 ## Capability model
 

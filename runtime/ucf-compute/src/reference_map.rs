@@ -6916,6 +6916,34 @@ mod tests {
     }
 
     #[test]
+    fn serie_bb5_prompt4_readiness_sweep_doc_keeps_minimal_memory_commit_line_explicit() {
+        let doc = include_str!("../../../docs/blue_brain_readiness_sweep_serie_bb5_prompt4_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_MEMORY_COMMIT_BOUNDARY_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_COMMIT_ELIGIBILITY_CONDITIONS_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_FUTURE_MEMORY_HANDOFF_STATE_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_COMMIT_RESULT_SEMANTICS_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_MEMORY_COMMIT_DIAGNOSTICS_MAP"));
+        assert!(doc.contains("stable minimal memory-commit boundary"));
+        assert!(doc.contains("future-memory-ready / preparatory only"));
+        assert!(doc.contains("reference-only / not memory"));
+        assert!(doc.contains("non-canonical / internal-only"));
+        assert!(doc.contains("intentionally deferred"));
+        assert!(doc.contains("commit-eligible"));
+        assert!(doc.contains("future-memory-ready"));
+        assert!(doc.contains("handoff-ready"));
+        assert!(doc.contains("reference recorded only"));
+        assert!(doc.contains("commit unavailable"));
+        assert!(doc
+            .contains("actual memory commit ist im aktuellen Repo weiterhin nicht implementiert"));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
+        assert!(doc.contains("History/Snapshot/Evidence/Replay/Trace"));
+        assert!(doc.contains("Priorität: Serie BB7 zuerst"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
     fn blue_brain_runtime_feedback_map_keeps_canonical_feedback_classes_explicit() {
         let map = canonical_blue_brain_runtime_feedback_map();
         assert_eq!(map.len(), 10);
