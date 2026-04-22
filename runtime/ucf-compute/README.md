@@ -108,6 +108,11 @@ reference/history vs commit separation), see
 `docs/blue_brain_future_memory_handoff_commit_result_serie_bb5_prompt2_v1.md`,
 `CANONICAL_BLUE_BRAIN_FUTURE_MEMORY_HANDOFF_STATE_MAP`, and
 `CANONICAL_BLUE_BRAIN_COMMIT_RESULT_SEMANTICS_MAP`.
+For BB5 Prompt 3 memory-commit diagnostics / rejection / caveat feedback bind-back
+(compact canonical rejection/blocked/unavailable reasons, candidate+selection+runtime
+feedback linkage, and strict non-canonical/internal-only exclusion), see
+`docs/blue_brain_memory_commit_diagnostics_feedback_serie_bb5_prompt3_v1.md` and
+`CANONICAL_BLUE_BRAIN_MEMORY_COMMIT_DIAGNOSTICS_MAP`.
 
 ## Capability model
 
