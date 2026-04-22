@@ -8288,6 +8288,34 @@ mod tests {
     }
 
     #[test]
+    fn serie_bb6_prompt5_readiness_sweep_doc_keeps_final_candidate_closure_line_explicit() {
+        let doc = include_str!("../../../docs/blue_brain_readiness_sweep_serie_bb6_prompt5_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_PLANNING_REASONING_CANDIDATE_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_CANDIDATE_ACTION_BOUNDARY_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_CANDIDATE_TO_PROPOSAL_TRANSITION_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP"));
+        assert!(doc.contains("stable planning/reasoning candidate foundation"));
+        assert!(doc.contains("usable with caveats"));
+        assert!(doc.contains("preparatory only"));
+        assert!(doc.contains("non-canonical / internal-only"));
+        assert!(doc.contains("intentionally deferred"));
+        assert!(doc.contains("Candidate ≠ Plan"));
+        assert!(doc.contains("Candidate ≠ Reasoning Completed"));
+        assert!(doc.contains("Proposal (auch `selected proposal`) ≠ Action Execution"));
+        assert!(doc.contains("Candidate Diagnostics ≠ Explainability-/Reasoning-Plattform"));
+        assert!(doc.contains("Candidate Comparison ≠ Ranking/Selection/Entscheidungszwang"));
+        assert!(doc.contains("automatische Compute Invocation"));
+        assert!(doc.contains("Memory Commit"));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
+        assert!(doc.contains("Priorität: Serie BB7 zuerst"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
     fn serie_bb5_prompt1_memory_commit_boundary_doc_stays_pinned_to_code_maps() {
         let doc =
             include_str!("../../../docs/blue_brain_memory_commit_boundary_serie_bb5_prompt1_v1.md");
