@@ -875,6 +875,33 @@ pub struct BlueBrainNonExecutingActionProposalStateLane {
     pub canonical_guard: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainReasoningCandidateDiagnosticClass {
+    CandidateBasisDiagnostic,
+    SufficientCandidateDiagnostic,
+    PartialCandidateDiagnostic,
+    CaveatedCandidateDiagnostic,
+    StaleCandidateDiagnostic,
+    InsufficientCandidateDiagnostic,
+    DeferredCandidateDiagnostic,
+    RejectedCandidateDiagnostic,
+    ProposalReadyDiagnostic,
+    NonCanonicalInternalOnlyDiagnostic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainReasoningCandidateDiagnosticLane {
+    pub class: BlueBrainReasoningCandidateDiagnosticClass,
+    pub lane: &'static str,
+    pub basis_binding: &'static str,
+    pub insufficiency_or_caveat_reason: &'static str,
+    pub proposal_boundary_binding: &'static str,
+    pub selection_deferral_binding: &'static str,
+    pub memory_boundary_binding: &'static str,
+    pub runtime_context_feedback_binding: &'static str,
+    pub canonical_guard: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -4920,6 +4947,169 @@ pub const CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP:
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP:
+    [BlueBrainReasoningCandidateDiagnosticLane; 10] = [
+    BlueBrainReasoningCandidateDiagnosticLane {
+        class: BlueBrainReasoningCandidateDiagnosticClass::CandidateBasisDiagnostic,
+        lane: "blue_brain_reasoning_candidate_basis_diagnostic",
+        basis_binding:
+            "runtime-derived + context-derived + evidence/reference-derived + selection-derived + memory-candidate-derived + commit-feedback-derived + proposal-derived basis references",
+        insufficiency_or_caveat_reason: "basis observed with compact canonical source references",
+        proposal_boundary_binding: "candidate remains candidate until proposal-ready diagnostic is present",
+        selection_deferral_binding:
+            "selection may observe candidate basis while preserving selected/deferred/rejected distinction",
+        memory_boundary_binding:
+            "basis references include commit feedback and memory-candidate signals without commit authority",
+        runtime_context_feedback_binding:
+            "runtime/context feedback can report candidate basis observed without reasoning-completed claim",
+        canonical_guard:
+            "basis diagnostics are compact source-maps, not free-form explainability or reasoning output",
+    },
+    BlueBrainReasoningCandidateDiagnosticLane {
+        class: BlueBrainReasoningCandidateDiagnosticClass::SufficientCandidateDiagnostic,
+        lane: "blue_brain_reasoning_candidate_sufficient_diagnostic",
+        basis_binding:
+            "blue_brain_context_derived_reasoning_candidate_sufficient + blue_brain_selection_derived_action_candidate_selected_context",
+        insufficiency_or_caveat_reason: "sufficient context/evidence/selection basis for candidate quality",
+        proposal_boundary_binding:
+            "candidate can become proposal-ready but remains non-executing and non-actioned",
+        selection_deferral_binding: "sufficient candidate can be selected without collapsing deferred/rejected states",
+        memory_boundary_binding:
+            "committed-if-present can strengthen basis only if real commit path exists",
+        runtime_context_feedback_binding:
+            "runtime can report sufficient candidate basis without claiming completed reasoning",
+        canonical_guard:
+            "sufficient diagnostics do not imply action executed, memory committed, or policy applied",
+    },
+    BlueBrainReasoningCandidateDiagnosticLane {
+        class: BlueBrainReasoningCandidateDiagnosticClass::PartialCandidateDiagnostic,
+        lane: "blue_brain_reasoning_candidate_partial_diagnostic",
+        basis_binding:
+            "blue_brain_evidence_reference_reasoning_candidate_partial_caveated + blue_brain_feedback_evidence_caveated_partial_or_insufficient",
+        insufficiency_or_caveat_reason:
+            "candidate is partial due to weak or incomplete evidence/reference basis",
+        proposal_boundary_binding:
+            "candidate may yield caveated proposal or stay candidate pending stronger basis",
+        selection_deferral_binding:
+            "partial candidate may be deferred pending stronger evidence/context refresh",
+        memory_boundary_binding:
+            "partial basis has no memory commit authority and remains non-persistent",
+        runtime_context_feedback_binding:
+            "runtime/context diagnostics expose partial basis and unresolved caveat posture",
+        canonical_guard: "partial diagnostics stay bounded; no planning/ranking/policy engine semantics",
+    },
+    BlueBrainReasoningCandidateDiagnosticLane {
+        class: BlueBrainReasoningCandidateDiagnosticClass::CaveatedCandidateDiagnostic,
+        lane: "blue_brain_reasoning_candidate_caveated_diagnostic",
+        basis_binding:
+            "blue_brain_trigger_caveated_candidate_basis + blue_brain_action_proposal_caveated_state",
+        insufficiency_or_caveat_reason:
+            "caveated due to partial evidence, selection/attention caveat, or unavailable memory commit",
+        proposal_boundary_binding: "candidate yields caveated proposal or remains caveated candidate",
+        selection_deferral_binding: "caveated candidate may be deferred and remains explicitly caveated",
+        memory_boundary_binding:
+            "commit unavailable/deferred keeps caveat unresolved and does not permit commit",
+        runtime_context_feedback_binding:
+            "runtime feedback keeps caveats explicit and does not relabel caveated as sufficient",
+        canonical_guard:
+            "caveat diagnostics are canonical candidate quality markers, not audit/explainability output",
+    },
+    BlueBrainReasoningCandidateDiagnosticLane {
+        class: BlueBrainReasoningCandidateDiagnosticClass::StaleCandidateDiagnostic,
+        lane: "blue_brain_reasoning_candidate_stale_diagnostic",
+        basis_binding:
+            "blue_brain_evidence_reference_reasoning_candidate_stale + blue_brain_context_blocked_due_to_stale_basis",
+        insufficiency_or_caveat_reason: "insufficient due to stale reference basis requiring recheck",
+        proposal_boundary_binding: "stale candidate cannot become proposal-ready without basis refresh",
+        selection_deferral_binding: "stale candidate requires recheck and is deferral-gated",
+        memory_boundary_binding: "stale basis cannot imply memory commit or commit-readiness",
+        runtime_context_feedback_binding:
+            "runtime reports stale candidate basis explicitly and keeps it separate from rejected",
+        canonical_guard: "stale state remains non-interchangeable with sufficient/partial/deferred/rejected",
+    },
+    BlueBrainReasoningCandidateDiagnosticLane {
+        class: BlueBrainReasoningCandidateDiagnosticClass::InsufficientCandidateDiagnostic,
+        lane: "blue_brain_reasoning_candidate_insufficient_diagnostic",
+        basis_binding:
+            "blue_brain_evidence_observed_no_reasoning_candidate + blue_brain_action_proposal_insufficient_state",
+        insufficiency_or_caveat_reason:
+            "insufficient due to missing context, weak evidence, or rejected memory-candidate basis",
+        proposal_boundary_binding:
+            "insufficient candidate cannot become selected proposal or proposal-ready",
+        selection_deferral_binding:
+            "insufficient candidate cannot be selected and remains unresolved until basis improves",
+        memory_boundary_binding:
+            "insufficient basis blocks commit progression and keeps no-commit boundary explicit",
+        runtime_context_feedback_binding:
+            "runtime/context diagnostics mark insufficient candidate with no reasoning-completed claim",
+        canonical_guard:
+            "insufficient diagnostic does not auto-trigger compute/proposal/action/memory pathways",
+    },
+    BlueBrainReasoningCandidateDiagnosticLane {
+        class: BlueBrainReasoningCandidateDiagnosticClass::DeferredCandidateDiagnostic,
+        lane: "blue_brain_reasoning_candidate_deferred_diagnostic",
+        basis_binding:
+            "blue_brain_selection_derived_action_candidate_deferred + blue_brain_candidate_deferred_before_proposal",
+        insufficiency_or_caveat_reason:
+            "deferred due to partial/caveated basis or pending context/evidence recheck",
+        proposal_boundary_binding: "candidate deferred before proposal and remains non-executing",
+        selection_deferral_binding: "deferred candidate remains explicit in BB4 deferral lifecycle",
+        memory_boundary_binding: "deferred candidate has no memory commit authority",
+        runtime_context_feedback_binding:
+            "runtime/context sees deferred candidate state with no action execution claim",
+        canonical_guard:
+            "deferred diagnostics remain compact operational state, not reasoning completion narrative",
+    },
+    BlueBrainReasoningCandidateDiagnosticLane {
+        class: BlueBrainReasoningCandidateDiagnosticClass::RejectedCandidateDiagnostic,
+        lane: "blue_brain_reasoning_candidate_rejected_diagnostic",
+        basis_binding:
+            "blue_brain_selection_ignored_or_rejected_no_candidate + blue_brain_candidate_rejected_before_proposal",
+        insufficiency_or_caveat_reason:
+            "rejected due to invalid/blocked candidate basis or rejected memory-candidate feedback",
+        proposal_boundary_binding: "candidate rejected before proposal and excluded from current proposal path",
+        selection_deferral_binding: "rejected candidate is excluded from current selection window",
+        memory_boundary_binding: "rejected memory-candidate feedback weakens or blocks candidate basis",
+        runtime_context_feedback_binding:
+            "runtime/context diagnostics expose rejection without implying fault recovery or action",
+        canonical_guard: "rejected state is explicit and not remapped to deferred/blocked/selected",
+    },
+    BlueBrainReasoningCandidateDiagnosticLane {
+        class: BlueBrainReasoningCandidateDiagnosticClass::ProposalReadyDiagnostic,
+        lane: "blue_brain_reasoning_candidate_proposal_ready_diagnostic",
+        basis_binding:
+            "blue_brain_candidate_yields_non_executing_action_proposal + blue_brain_action_proposal_created",
+        insufficiency_or_caveat_reason:
+            "candidate is proposal-ready only after sufficient bounded basis and explicit transition",
+        proposal_boundary_binding: "proposal-ready means non-executing proposal-ready, not executed action",
+        selection_deferral_binding:
+            "proposal-ready can be selected/deferred/rejected in proposal lifecycle without auto-execution",
+        memory_boundary_binding: "proposal-ready does not commit memory and does not imply commit-eligible",
+        runtime_context_feedback_binding:
+            "runtime/context can observe proposal-ready candidate while no memory commit occurs",
+        canonical_guard:
+            "proposal-ready is distinct from action-executed, memory-committed, and reasoning-completed",
+    },
+    BlueBrainReasoningCandidateDiagnosticLane {
+        class: BlueBrainReasoningCandidateDiagnosticClass::NonCanonicalInternalOnlyDiagnostic,
+        lane: "blue_brain_reasoning_candidate_non_canonical_internal_only_diagnostic",
+        basis_binding:
+            "blue_brain_non_canonical_internal_planning_like_path + blue_brain_non_canonical_internal_action_like_path",
+        insufficiency_or_caveat_reason:
+            "blocked due to non-canonical/internal dependency unless explicitly down-mapped",
+        proposal_boundary_binding:
+            "internal/expert-only diagnostics cannot act as canonical proposal-ready authority",
+        selection_deferral_binding:
+            "internal-only diagnostics are excluded from canonical BB4 selection/deferral authority",
+        memory_boundary_binding:
+            "internal-only diagnostics cannot claim memory commit path, eligibility, or commit result",
+        runtime_context_feedback_binding:
+            "runtime/context marks diagnostics as canonical=false and keeps them segregated",
+        canonical_guard:
+            "compute-internal, expert-only, legacy, and unstable dev/test hooks are non-canonical for BB6 diagnostics",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -4946,6 +5136,11 @@ pub fn canonical_blue_brain_candidate_to_proposal_transition_map(
 pub fn canonical_blue_brain_non_executing_action_proposal_state_map(
 ) -> &'static [BlueBrainNonExecutingActionProposalStateLane] {
     &CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP
+}
+
+pub fn canonical_blue_brain_reasoning_candidate_diagnostics_map(
+) -> &'static [BlueBrainReasoningCandidateDiagnosticLane] {
+    &CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP
 }
 
 pub fn canonical_final_reference_line() -> CanonicalFinalReferenceLine {
@@ -7575,6 +7770,131 @@ mod tests {
         assert!(doc.contains("no automatic compute invocation"));
         assert!(doc.contains("no automatic memory commit"));
         assert!(doc.contains("no automatic tool execution"));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
+    fn blue_brain_reasoning_candidate_diagnostics_map_keeps_required_classes_distinct() {
+        let map = canonical_blue_brain_reasoning_candidate_diagnostics_map();
+        assert_eq!(map.len(), 10);
+        assert!(map.iter().any(|lane| lane.class
+            == BlueBrainReasoningCandidateDiagnosticClass::CandidateBasisDiagnostic));
+        assert!(map.iter().any(|lane| lane.class
+            == BlueBrainReasoningCandidateDiagnosticClass::SufficientCandidateDiagnostic));
+        assert!(map.iter().any(|lane| lane.class
+            == BlueBrainReasoningCandidateDiagnosticClass::PartialCandidateDiagnostic));
+        assert!(map.iter().any(|lane| lane.class
+            == BlueBrainReasoningCandidateDiagnosticClass::CaveatedCandidateDiagnostic));
+        assert!(map.iter().any(|lane| lane.class
+            == BlueBrainReasoningCandidateDiagnosticClass::StaleCandidateDiagnostic));
+        assert!(map.iter().any(|lane| lane.class
+            == BlueBrainReasoningCandidateDiagnosticClass::InsufficientCandidateDiagnostic));
+        assert!(map.iter().any(|lane| lane.class
+            == BlueBrainReasoningCandidateDiagnosticClass::DeferredCandidateDiagnostic));
+        assert!(map.iter().any(|lane| lane.class
+            == BlueBrainReasoningCandidateDiagnosticClass::RejectedCandidateDiagnostic));
+        assert!(map.iter().any(|lane| lane.class
+            == BlueBrainReasoningCandidateDiagnosticClass::ProposalReadyDiagnostic));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainReasoningCandidateDiagnosticClass::NonCanonicalInternalOnlyDiagnostic
+        }));
+    }
+
+    #[test]
+    fn blue_brain_reasoning_candidate_diagnostics_map_preserves_non_execution_non_commit_and_non_reasoning_completion_boundaries(
+    ) {
+        let map = canonical_blue_brain_reasoning_candidate_diagnostics_map();
+        assert!(map.iter().all(|lane| !lane
+            .runtime_context_feedback_binding
+            .contains("reasoning completed")));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainReasoningCandidateDiagnosticClass::ProposalReadyDiagnostic
+                && lane
+                    .proposal_boundary_binding
+                    .contains("not executed action")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainReasoningCandidateDiagnosticClass::InsufficientCandidateDiagnostic
+                && lane
+                    .insufficiency_or_caveat_reason
+                    .contains("missing context")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainReasoningCandidateDiagnosticClass::StaleCandidateDiagnostic
+                && lane
+                    .insufficiency_or_caveat_reason
+                    .contains("stale reference basis")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainReasoningCandidateDiagnosticClass::CaveatedCandidateDiagnostic
+                && lane
+                    .insufficiency_or_caveat_reason
+                    .contains("selection/attention caveat")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainReasoningCandidateDiagnosticClass::NonCanonicalInternalOnlyDiagnostic
+                && lane
+                    .insufficiency_or_caveat_reason
+                    .contains("non-canonical/internal dependency")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainReasoningCandidateDiagnosticClass::InsufficientCandidateDiagnostic
+                && lane
+                    .memory_boundary_binding
+                    .contains("blocks commit progression")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainReasoningCandidateDiagnosticClass::ProposalReadyDiagnostic
+                && lane
+                    .memory_boundary_binding
+                    .contains("does not commit memory")
+        }));
+    }
+
+    #[test]
+    fn serie_bb6_prompt3_reasoning_candidate_diagnostics_doc_stays_pinned_to_code_map() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_reasoning_candidate_diagnostics_feedback_serie_bb6_prompt3_v1.md"
+        );
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP"));
+        assert!(doc.contains("candidate-basis diagnostic"));
+        assert!(doc.contains("sufficient candidate diagnostic"));
+        assert!(doc.contains("partial candidate diagnostic"));
+        assert!(doc.contains("caveated candidate diagnostic"));
+        assert!(doc.contains("stale candidate diagnostic"));
+        assert!(doc.contains("insufficient candidate diagnostic"));
+        assert!(doc.contains("deferred candidate diagnostic"));
+        assert!(doc.contains("rejected candidate diagnostic"));
+        assert!(doc.contains("proposal-ready diagnostic"));
+        assert!(doc.contains("non-canonical/internal-only diagnostic"));
+        assert!(doc.contains("runtime-derived"));
+        assert!(doc.contains("context-derived"));
+        assert!(doc.contains("evidence/reference-derived"));
+        assert!(doc.contains("selection-derived"));
+        assert!(doc.contains("memory-candidate-derived"));
+        assert!(doc.contains("commit-feedback-derived"));
+        assert!(doc.contains("proposal-derived"));
+        assert!(doc.contains("missing context"));
+        assert!(doc.contains("weak or missing evidence"));
+        assert!(doc.contains("stale reference basis"));
+        assert!(doc.contains("partial evidence"));
+        assert!(doc.contains("selection/attention caveat"));
+        assert!(doc.contains("unavailable memory commit"));
+        assert!(doc.contains("candidate remains candidate"));
+        assert!(doc.contains("candidate becomes proposal-ready"));
+        assert!(doc.contains("candidate yields caveated proposal"));
+        assert!(doc.contains("candidate deferred before proposal"));
+        assert!(doc.contains("candidate rejected before proposal"));
+        assert!(doc.contains("no action execution implied"));
+        assert!(doc.contains("no memory commit implied"));
+        assert!(doc.contains("no reasoning completed claim"));
+        assert!(doc.contains("keine Explainability-, Audit- oder Policy-Plattform"));
         assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
         assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
     }
