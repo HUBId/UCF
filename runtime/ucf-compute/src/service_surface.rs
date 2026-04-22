@@ -415,6 +415,53 @@ pub struct ComputeEvidenceExportSurface {
 pub struct ComputeStatusEvidenceExportSurface {
     pub status: ComputeStatusExportSurface,
     pub evidence: ComputeEvidenceExportSurface,
+    pub control_attention_diagnostics: Vec<RuntimeControlAttentionDiagnostic>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeControlAttentionEntity {
+    Context,
+    EvidenceReference,
+    Trigger,
+    MemoryCandidate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeControlAttentionOutcome {
+    Selected,
+    Deferred,
+    Ignored,
+    Rejected,
+    Blocked,
+    Insufficient,
+    Caveated,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeControlAttentionReason {
+    SelectedSufficientContext,
+    SelectedPrimaryEvidenceReference,
+    DeferredPartialEvidence,
+    DeferredPendingContextUpdate,
+    BlockedStaleOrInsufficientBasis,
+    IgnoredNotRelevantToCurrentTransition,
+    RejectedFaultOrCaveat,
+    CaveatedInvocationOrResult,
+    InsufficientSelectionBasis,
+    NonCanonicalInternalOnlyDetail,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeControlAttentionDiagnostic {
+    pub entity: RuntimeControlAttentionEntity,
+    pub item: String,
+    pub outcome: RuntimeControlAttentionOutcome,
+    pub reason: RuntimeControlAttentionReason,
+    pub runtime_selection_gated: bool,
+    pub memory_persistence_implied: bool,
+    pub affects_next_trigger_eligibility: bool,
+    pub canonical: bool,
+    pub non_canonical_detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -629,7 +676,161 @@ impl RuntimeOpsSnapshot {
         ComputeStatusEvidenceExportSurface {
             status: self.status_export_surface(),
             evidence: self.evidence_export_surface(),
+            control_attention_diagnostics: self.control_attention_diagnostics(),
         }
+    }
+
+    pub fn control_attention_diagnostics(&self) -> Vec<RuntimeControlAttentionDiagnostic> {
+        let mut diagnostics = Vec::new();
+        let status = self.status_export_surface();
+        let evidence = self.evidence_export_surface();
+
+        let (context_outcome, context_reason, affects_trigger) = match status.snapshot_consistency {
+            CanonicalSnapshotConsistency::Current => (
+                RuntimeControlAttentionOutcome::Selected,
+                RuntimeControlAttentionReason::SelectedSufficientContext,
+                false,
+            ),
+            CanonicalSnapshotConsistency::Partial => (
+                RuntimeControlAttentionOutcome::Deferred,
+                RuntimeControlAttentionReason::DeferredPendingContextUpdate,
+                true,
+            ),
+            CanonicalSnapshotConsistency::Stale | CanonicalSnapshotConsistency::DriftAffected => (
+                RuntimeControlAttentionOutcome::Blocked,
+                RuntimeControlAttentionReason::BlockedStaleOrInsufficientBasis,
+                true,
+            ),
+            CanonicalSnapshotConsistency::Unavailable => (
+                RuntimeControlAttentionOutcome::Insufficient,
+                RuntimeControlAttentionReason::InsufficientSelectionBasis,
+                true,
+            ),
+        };
+        diagnostics.push(RuntimeControlAttentionDiagnostic {
+            entity: RuntimeControlAttentionEntity::Context,
+            item: "runtime_context_for_transition".to_string(),
+            outcome: context_outcome,
+            reason: context_reason,
+            runtime_selection_gated: true,
+            memory_persistence_implied: false,
+            affects_next_trigger_eligibility: affects_trigger,
+            canonical: true,
+            non_canonical_detail: None,
+        });
+
+        for bundle in &evidence.bundle_refs {
+            let (outcome, reason, affects_trigger) = match bundle.status {
+                CanonicalEvidenceStatus::Sufficient => (
+                    RuntimeControlAttentionOutcome::Selected,
+                    RuntimeControlAttentionReason::SelectedPrimaryEvidenceReference,
+                    false,
+                ),
+                CanonicalEvidenceStatus::Partial => (
+                    RuntimeControlAttentionOutcome::Deferred,
+                    RuntimeControlAttentionReason::DeferredPartialEvidence,
+                    true,
+                ),
+                CanonicalEvidenceStatus::Caveated => (
+                    RuntimeControlAttentionOutcome::Caveated,
+                    RuntimeControlAttentionReason::CaveatedInvocationOrResult,
+                    true,
+                ),
+                CanonicalEvidenceStatus::Insufficient => (
+                    RuntimeControlAttentionOutcome::Insufficient,
+                    RuntimeControlAttentionReason::InsufficientSelectionBasis,
+                    true,
+                ),
+            };
+            diagnostics.push(RuntimeControlAttentionDiagnostic {
+                entity: RuntimeControlAttentionEntity::EvidenceReference,
+                item: bundle.bundle_id.clone(),
+                outcome,
+                reason,
+                runtime_selection_gated: true,
+                memory_persistence_implied: false,
+                affects_next_trigger_eligibility: affects_trigger,
+                canonical: true,
+                non_canonical_detail: None,
+            });
+        }
+
+        if status.degraded_or_unavailable {
+            diagnostics.push(RuntimeControlAttentionDiagnostic {
+                entity: RuntimeControlAttentionEntity::Trigger,
+                item: "compute_trigger".to_string(),
+                outcome: RuntimeControlAttentionOutcome::Blocked,
+                reason: RuntimeControlAttentionReason::BlockedStaleOrInsufficientBasis,
+                runtime_selection_gated: true,
+                memory_persistence_implied: false,
+                affects_next_trigger_eligibility: true,
+                canonical: true,
+                non_canonical_detail: None,
+            });
+        } else if status.constrained_or_caveated {
+            diagnostics.push(RuntimeControlAttentionDiagnostic {
+                entity: RuntimeControlAttentionEntity::Trigger,
+                item: "compute_trigger".to_string(),
+                outcome: RuntimeControlAttentionOutcome::Caveated,
+                reason: RuntimeControlAttentionReason::CaveatedInvocationOrResult,
+                runtime_selection_gated: true,
+                memory_persistence_implied: false,
+                affects_next_trigger_eligibility: true,
+                canonical: true,
+                non_canonical_detail: None,
+            });
+        } else {
+            diagnostics.push(RuntimeControlAttentionDiagnostic {
+                entity: RuntimeControlAttentionEntity::Trigger,
+                item: "compute_trigger".to_string(),
+                outcome: RuntimeControlAttentionOutcome::Selected,
+                reason: RuntimeControlAttentionReason::SelectedSufficientContext,
+                runtime_selection_gated: true,
+                memory_persistence_implied: false,
+                affects_next_trigger_eligibility: false,
+                canonical: true,
+                non_canonical_detail: None,
+            });
+        }
+
+        diagnostics.push(RuntimeControlAttentionDiagnostic {
+            entity: RuntimeControlAttentionEntity::MemoryCandidate,
+            item: "memory_candidate_future_handling".to_string(),
+            outcome: RuntimeControlAttentionOutcome::Deferred,
+            reason: RuntimeControlAttentionReason::DeferredPendingContextUpdate,
+            runtime_selection_gated: true,
+            memory_persistence_implied: false,
+            affects_next_trigger_eligibility: false,
+            canonical: true,
+            non_canonical_detail: None,
+        });
+        diagnostics.push(RuntimeControlAttentionDiagnostic {
+            entity: RuntimeControlAttentionEntity::MemoryCandidate,
+            item: "memory_candidate_not_persisted".to_string(),
+            outcome: RuntimeControlAttentionOutcome::Ignored,
+            reason: RuntimeControlAttentionReason::IgnoredNotRelevantToCurrentTransition,
+            runtime_selection_gated: true,
+            memory_persistence_implied: false,
+            affects_next_trigger_eligibility: false,
+            canonical: true,
+            non_canonical_detail: None,
+        });
+        diagnostics.push(RuntimeControlAttentionDiagnostic {
+            entity: RuntimeControlAttentionEntity::Trigger,
+            item: "internal_expert_only_trigger_path".to_string(),
+            outcome: RuntimeControlAttentionOutcome::Rejected,
+            reason: RuntimeControlAttentionReason::NonCanonicalInternalOnlyDetail,
+            runtime_selection_gated: true,
+            memory_persistence_implied: false,
+            affects_next_trigger_eligibility: false,
+            canonical: false,
+            non_canonical_detail: Some(
+                "internal/expert-only trigger source excluded from canonical BB4 diagnostics"
+                    .to_string(),
+            ),
+        });
+
+        diagnostics
     }
 
     pub fn integration_signals(&self) -> ComputeIntegrationSignals {
@@ -6793,7 +6994,8 @@ mod tests {
         ReplayContextConsistencyClass, ReplayContextTransition, ReplayDeterminismClass,
         ReplayExecutionMode, ReplayFailureCode, ReplayMismatchClass, ReplayPreflightIssueCode,
         ReplayRegressionReasonCode, ReplayRegressionSignal, ReplayRemoteContextReproducibility,
-        ReplayabilityClass, RolloutReplayComparability, RuntimeOperation, RuntimeOperationClass,
+        ReplayabilityClass, RolloutReplayComparability, RuntimeControlAttentionOutcome,
+        RuntimeControlAttentionReason, RuntimeOperation, RuntimeOperationClass,
         RuntimeOperationCode, RuntimeOperationSnapshotEffect, RuntimeOpsState, RuntimeRecoveryFlow,
         RuntimeRecoveryResultState, RuntimeRecoveryTrustState, RuntimeSignalState,
         RuntimeStaleDriftView, RuntimeWarmupState, ServiceHardeningActionPosture,
@@ -9161,6 +9363,55 @@ mod tests {
                     signal.operation,
                     RuntimeOperation::InternalClearReplayRegression
                 )));
+    }
+
+    #[test]
+    fn control_attention_diagnostics_cover_outcomes_and_mark_non_canonical_details() {
+        let entry = service();
+        let snapshot = entry.operations_snapshot();
+        let diagnostics = snapshot.control_attention_diagnostics();
+        let supported = [
+            RuntimeControlAttentionOutcome::Selected,
+            RuntimeControlAttentionOutcome::Deferred,
+            RuntimeControlAttentionOutcome::Ignored,
+            RuntimeControlAttentionOutcome::Rejected,
+            RuntimeControlAttentionOutcome::Blocked,
+            RuntimeControlAttentionOutcome::Insufficient,
+            RuntimeControlAttentionOutcome::Caveated,
+        ];
+        assert_eq!(supported.len(), 7);
+        assert!(diagnostics
+            .iter()
+            .any(|item| item.outcome == RuntimeControlAttentionOutcome::Selected));
+        assert!(diagnostics
+            .iter()
+            .any(|item| item.outcome == RuntimeControlAttentionOutcome::Deferred));
+        assert!(diagnostics
+            .iter()
+            .any(|item| item.outcome == RuntimeControlAttentionOutcome::Ignored));
+        assert!(diagnostics
+            .iter()
+            .any(|item| item.outcome == RuntimeControlAttentionOutcome::Rejected));
+        assert!(diagnostics
+            .iter()
+            .all(|item| !item.memory_persistence_implied));
+        assert!(diagnostics.iter().any(|item| !item.canonical
+            && item.reason == RuntimeControlAttentionReason::NonCanonicalInternalOnlyDetail));
+    }
+
+    #[test]
+    fn status_evidence_export_surface_includes_control_attention_diagnostics() {
+        let entry = service();
+        let export = entry.status_evidence_export_surface();
+        assert!(!export.control_attention_diagnostics.is_empty());
+        assert!(export
+            .control_attention_diagnostics
+            .iter()
+            .any(|item| item.runtime_selection_gated));
+        assert!(export
+            .control_attention_diagnostics
+            .iter()
+            .any(|item| item.affects_next_trigger_eligibility));
     }
 
     #[test]
