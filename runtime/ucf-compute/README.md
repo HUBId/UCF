@@ -134,6 +134,9 @@ For BB6 Prompt 4 planning/reasoning candidate comparison semantics
 and strict non-ranking/non-decision/non-execution boundaries), see
 `docs/blue_brain_planning_reasoning_candidate_comparison_serie_bb6_prompt4_v1.md` and
 `CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP`.
+For BB6 Prompt 5 readiness sweep and final planning/reasoning-candidate closure line
+(matrix + canonical candidate/proposal/diagnostics/comparison states + strict non-execution/non-compute-invocation/non-commit boundaries + prioritized next direction), see
+`docs/blue_brain_readiness_sweep_serie_bb6_prompt5_v1.md`.
 
 ## Capability model
 
