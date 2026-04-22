@@ -121,6 +121,19 @@ For BB6 Prompt 1 planning/reasoning candidate surface
 strict separation from decision/policy/action execution/memory commit), see
 `docs/blue_brain_planning_reasoning_candidate_surface_serie_bb6_prompt1_v1.md` and
 `CANONICAL_BLUE_BRAIN_PLANNING_REASONING_CANDIDATE_MAP`.
+For BB6 Prompt 2 candidate-to-action boundary and non-executing proposals, see
+`docs/blue_brain_candidate_action_boundary_serie_bb6_prompt2_v1.md`,
+`CANONICAL_BLUE_BRAIN_CANDIDATE_ACTION_BOUNDARY_MAP`,
+`CANONICAL_BLUE_BRAIN_CANDIDATE_TO_PROPOSAL_TRANSITION_MAP`, and
+`CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP`.
+For BB6 Prompt 3 reasoning-candidate diagnostics / insufficiency / caveat feedback, see
+`docs/blue_brain_reasoning_candidate_diagnostics_feedback_serie_bb6_prompt3_v1.md` and
+`CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP`.
+For BB6 Prompt 4 planning/reasoning candidate comparison semantics
+(meaningful/caveated/inconclusive/not-meaningful/blocked classes, explicit basis binding,
+and strict non-ranking/non-decision/non-execution boundaries), see
+`docs/blue_brain_planning_reasoning_candidate_comparison_serie_bb6_prompt4_v1.md` and
+`CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP`.
 
 ## Capability model
 
