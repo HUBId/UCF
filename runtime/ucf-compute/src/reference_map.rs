@@ -476,6 +476,50 @@ pub struct BlueBrainFutureMemoryAttachmentLane {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFutureMemoryHandoffStateClass {
+    HandoffReady,
+    HandoffDeferred,
+    HandoffBlocked,
+    HandoffRejected,
+    HandoffCaveated,
+    HandoffUnavailable,
+    HandoffInternalOnlyNonCanonical,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainFutureMemoryHandoffStateLane {
+    pub class: BlueBrainFutureMemoryHandoffStateClass,
+    pub lane: &'static str,
+    pub trigger_or_source: &'static str,
+    pub handoff_fields: &'static str,
+    pub state_semantics: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCommitResultClass {
+    CommitUnavailable,
+    CommitDeferred,
+    CommitCommitted,
+    CommitCommittedWithCaveats,
+    CommitRejected,
+    CommitBlocked,
+    CommitFailed,
+    CommitNoOp,
+    CommitReferenceRecordedOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCommitResultLane {
+    pub class: BlueBrainCommitResultClass,
+    pub lane: &'static str,
+    pub trigger_or_source: &'static str,
+    pub result_semantics: &'static str,
+    pub runtime_diagnostics_binding: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainReferenceContextClass {
     EvidenceBackedContext,
     ReplayBackedContext,
@@ -2737,6 +2781,205 @@ pub const CANONICAL_BLUE_BRAIN_FUTURE_MEMORY_ATTACHMENT_MAP:
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_FUTURE_MEMORY_HANDOFF_STATE_MAP:
+    [BlueBrainFutureMemoryHandoffStateLane; 7] = [
+    BlueBrainFutureMemoryHandoffStateLane {
+        class: BlueBrainFutureMemoryHandoffStateClass::HandoffReady,
+        lane: "blue_brain_future_memory_handoff_ready",
+        trigger_or_source:
+            "commit-eligible candidate + future-memory-ready marker + canonical evidence/reference basis",
+        handoff_fields:
+            "candidate identity + origin (context/evidence/replay/reference/compute-result/selection) + evidence/reference basis + selection status + caveats + freshness/staleness + commit-eligibility state",
+        state_semantics:
+            "handoff payload is ready for future subsystem intake and remains explicitly non-commit in current baseline",
+        canonical_guard:
+            "handoff-ready must never be labeled as committed memory by default",
+    },
+    BlueBrainFutureMemoryHandoffStateLane {
+        class: BlueBrainFutureMemoryHandoffStateClass::HandoffDeferred,
+        lane: "blue_brain_future_memory_handoff_deferred",
+        trigger_or_source:
+            "candidate deferred or persistence deferred while awaiting refreshed context/evidence",
+        handoff_fields:
+            "candidate identity + deferred reason + evidence/reference quality posture + selection/attention status + freshness",
+        state_semantics:
+            "handoff is postponed with explicit deferred posture; no commit progression is implied",
+        canonical_guard:
+            "deferred handoff must remain distinct from rejected/blocked/unavailable classes",
+    },
+    BlueBrainFutureMemoryHandoffStateLane {
+        class: BlueBrainFutureMemoryHandoffStateClass::HandoffBlocked,
+        lane: "blue_brain_future_memory_handoff_blocked",
+        trigger_or_source:
+            "blocking caveat/fault active or stale context gate prevents handoff advancement",
+        handoff_fields:
+            "candidate identity + blocking caveat + stale/insufficient markers + evidence/reference provenance",
+        state_semantics:
+            "handoff is blocked pending caveat clearance or refreshed basis and does not commit",
+        canonical_guard:
+            "blocked handoff cannot be promoted through history/snapshot/replay side records",
+    },
+    BlueBrainFutureMemoryHandoffStateLane {
+        class: BlueBrainFutureMemoryHandoffStateClass::HandoffRejected,
+        lane: "blue_brain_future_memory_handoff_rejected",
+        trigger_or_source:
+            "candidate rejected due to incompatibility/fault/caveat under canonical selection semantics",
+        handoff_fields:
+            "candidate identity + rejection reason + supporting evidence/reference posture + selection disposition",
+        state_semantics:
+            "handoff is rejected for current candidate instance and cannot transition to commit result",
+        canonical_guard:
+            "rejected handoff remains terminal-or-hold and non-commit",
+    },
+    BlueBrainFutureMemoryHandoffStateLane {
+        class: BlueBrainFutureMemoryHandoffStateClass::HandoffCaveated,
+        lane: "blue_brain_future_memory_handoff_caveated",
+        trigger_or_source:
+            "partial/caveated reference basis with explicit non-blocking caveats preserved",
+        handoff_fields:
+            "candidate identity + caveat set + partial reference/evidence basis + selection/attention caveats + freshness posture",
+        state_semantics:
+            "handoff is allowed with caveats and caveats must be preserved through diagnostics/result envelopes",
+        canonical_guard:
+            "caveated handoff does not imply clean commit eligibility or committed memory",
+    },
+    BlueBrainFutureMemoryHandoffStateLane {
+        class: BlueBrainFutureMemoryHandoffStateClass::HandoffUnavailable,
+        lane: "blue_brain_future_memory_handoff_unavailable",
+        trigger_or_source:
+            "no canonical future-memory intake path or required canonical handoff fields unavailable",
+        handoff_fields:
+            "candidate identity when available + unavailable reason + missing field markers + canonical null-path indicator",
+        state_semantics:
+            "handoff cannot be performed and candidate remains no-commit/future-memory-ready-or-deferred",
+        canonical_guard:
+            "unavailable handoff must stay explicit and cannot be inferred from stored references",
+    },
+    BlueBrainFutureMemoryHandoffStateLane {
+        class: BlueBrainFutureMemoryHandoffStateClass::HandoffInternalOnlyNonCanonical,
+        lane: "blue_brain_future_memory_handoff_internal_only_non_canonical",
+        trigger_or_source:
+            "run_operation_with_entry/replay_with_entry/internal hooks or legacy compat persistence-like paths",
+        handoff_fields:
+            "non-canonical source markers + required remap targets toward outward candidate/evidence/selection references",
+        state_semantics:
+            "internal-only path is marked non-canonical and excluded from BB5 future-memory handoff authority",
+        canonical_guard:
+            "internal/expert-only handoff path cannot serve as canonical handoff or commit authority",
+    },
+];
+
+pub const CANONICAL_BLUE_BRAIN_COMMIT_RESULT_SEMANTICS_MAP: [BlueBrainCommitResultLane; 9] = [
+    BlueBrainCommitResultLane {
+        class: BlueBrainCommitResultClass::CommitUnavailable,
+        lane: "blue_brain_commit_result_unavailable",
+        trigger_or_source:
+            "commit-eligible/future-memory-ready candidate where no real persisted-memory path exists",
+        result_semantics:
+            "commit unavailable is canonical baseline result and must preserve no persisted memory state",
+        runtime_diagnostics_binding:
+            "runtime diagnostics expose commit_unavailable with candidate id, evidence basis, and caveats",
+        canonical_guard:
+            "commit unavailable must stay separate from deferred and from reference/history recording",
+    },
+    BlueBrainCommitResultLane {
+        class: BlueBrainCommitResultClass::CommitDeferred,
+        lane: "blue_brain_commit_result_deferred",
+        trigger_or_source:
+            "candidate remains future-memory-ready/deferred pending future subsystem or refreshed eligibility gates",
+        result_semantics:
+            "commit deferred records postponed commit progression while preserving no-commit boundary",
+        runtime_diagnostics_binding:
+            "runtime diagnostics expose commit_deferred with explicit defer reason and selection/evidence posture",
+        canonical_guard:
+            "deferred is not a success and not equivalent to blocked/rejected",
+    },
+    BlueBrainCommitResultLane {
+        class: BlueBrainCommitResultClass::CommitCommitted,
+        lane: "blue_brain_commit_result_committed_only_if_real_path",
+        trigger_or_source:
+            "explicit canonical persisted-memory path commits candidate payload with required provenance",
+        result_semantics:
+            "committed result is valid only when a real repository persistence contract path exists and executes",
+        runtime_diagnostics_binding:
+            "runtime diagnostics expose committed result with persistence contract id and commit receipt reference",
+        canonical_guard:
+            "current baseline has no such path; this class is reserved and must not be synthesized",
+    },
+    BlueBrainCommitResultLane {
+        class: BlueBrainCommitResultClass::CommitCommittedWithCaveats,
+        lane: "blue_brain_commit_result_committed_with_caveats_only_if_real_path",
+        trigger_or_source:
+            "explicit canonical persisted-memory path commits while preserving non-blocking caveats",
+        result_semantics:
+            "committed-with-caveats is allowed only via real path and must preserve caveat envelope",
+        runtime_diagnostics_binding:
+            "runtime diagnostics expose committed_with_caveats and retain full caveat/evidence summary",
+        canonical_guard:
+            "cannot appear unless committed class is reachable through real persistence contract",
+    },
+    BlueBrainCommitResultLane {
+        class: BlueBrainCommitResultClass::CommitRejected,
+        lane: "blue_brain_commit_result_rejected",
+        trigger_or_source:
+            "candidate rejected by eligibility/selection/caveat gates before any commit attempt",
+        result_semantics:
+            "commit rejected indicates explicit refusal and no persisted-memory mutation",
+        runtime_diagnostics_binding:
+            "runtime diagnostics expose commit_rejected with rejection reason and supporting references",
+        canonical_guard:
+            "rejected commit result must remain distinct from blocked, failed, and unavailable",
+    },
+    BlueBrainCommitResultLane {
+        class: BlueBrainCommitResultClass::CommitBlocked,
+        lane: "blue_brain_commit_result_blocked",
+        trigger_or_source:
+            "blocking caveat/staleness/internal-dependency guard prevents commit progression",
+        result_semantics:
+            "commit blocked indicates gate denial without persistence side effects",
+        runtime_diagnostics_binding:
+            "runtime diagnostics expose commit_blocked with blocking gate and caveat/freshness markers",
+        canonical_guard:
+            "blocked cannot be auto-converted to deferred or committed by retries/history traces",
+    },
+    BlueBrainCommitResultLane {
+        class: BlueBrainCommitResultClass::CommitFailed,
+        lane: "blue_brain_commit_result_failed_only_if_real_path_attempted",
+        trigger_or_source:
+            "real commit path attempt fails after commit was attempted through canonical contract",
+        result_semantics:
+            "commit failed applies only to actual attempted persistence operations",
+        runtime_diagnostics_binding:
+            "runtime diagnostics expose commit_failed with failure code and attempt reference",
+        canonical_guard:
+            "without a real commit attempt, failed result must not be emitted",
+    },
+    BlueBrainCommitResultLane {
+        class: BlueBrainCommitResultClass::CommitNoOp,
+        lane: "blue_brain_commit_result_no_op",
+        trigger_or_source:
+            "commit request resolves to no-op under canonical idempotency or already-materialized semantics",
+        result_semantics:
+            "commit no-op records deterministic no-change outcome and is not equivalent to commit success",
+        runtime_diagnostics_binding:
+            "runtime diagnostics expose commit_no_op with idempotency reason and candidate reference",
+        canonical_guard:
+            "no-op cannot masquerade as committed result",
+    },
+    BlueBrainCommitResultLane {
+        class: BlueBrainCommitResultClass::CommitReferenceRecordedOnly,
+        lane: "blue_brain_commit_result_reference_recorded_only",
+        trigger_or_source:
+            "history/snapshot/evidence/replay entry recorded without any memory commit path",
+        result_semantics:
+            "reference recorded/evidence observed/handoff prepared remain non-commit outcomes",
+        runtime_diagnostics_binding:
+            "runtime diagnostics expose reference_recorded_only alongside commit_unavailable or deferred",
+        canonical_guard:
+            "history/snapshot/evidence/replay persistence must not be classified as memory commit result",
+    },
+];
+
 pub const CANONICAL_BLUE_BRAIN_REFERENCE_CONTEXT_MAP: [BlueBrainReferenceContextLane; 12] = [
     BlueBrainReferenceContextLane {
         class: BlueBrainReferenceContextClass::EvidenceBackedContext,
@@ -3942,6 +4185,15 @@ pub fn canonical_blue_brain_persistence_boundary_map() -> &'static [BlueBrainPer
 pub fn canonical_blue_brain_future_memory_attachment_map(
 ) -> &'static [BlueBrainFutureMemoryAttachmentLane] {
     &CANONICAL_BLUE_BRAIN_FUTURE_MEMORY_ATTACHMENT_MAP
+}
+
+pub fn canonical_blue_brain_future_memory_handoff_state_map(
+) -> &'static [BlueBrainFutureMemoryHandoffStateLane] {
+    &CANONICAL_BLUE_BRAIN_FUTURE_MEMORY_HANDOFF_STATE_MAP
+}
+
+pub fn canonical_blue_brain_commit_result_semantics_map() -> &'static [BlueBrainCommitResultLane] {
+    &CANONICAL_BLUE_BRAIN_COMMIT_RESULT_SEMANTICS_MAP
 }
 
 pub fn canonical_blue_brain_reference_context_map() -> &'static [BlueBrainReferenceContextLane] {
@@ -6204,6 +6456,120 @@ mod tests {
         assert!(doc.contains("Snapshot ≠ Memory"));
         assert!(doc.contains("Evidence ≠ Memory"));
         assert!(doc.contains("Replay/Trace ≠ Memory"));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
+        assert!(doc.contains("keine Memory-Engine"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
+    fn blue_brain_future_memory_handoff_state_and_commit_result_maps_keep_classes_distinct() {
+        let handoff_map = canonical_blue_brain_future_memory_handoff_state_map();
+        assert_eq!(handoff_map.len(), 7);
+        assert!(handoff_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureMemoryHandoffStateClass::HandoffReady));
+        assert!(handoff_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureMemoryHandoffStateClass::HandoffDeferred));
+        assert!(handoff_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureMemoryHandoffStateClass::HandoffBlocked));
+        assert!(handoff_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureMemoryHandoffStateClass::HandoffRejected));
+        assert!(handoff_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureMemoryHandoffStateClass::HandoffCaveated));
+        assert!(handoff_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureMemoryHandoffStateClass::HandoffUnavailable));
+        assert!(handoff_map.iter().any(|lane| {
+            lane.class == BlueBrainFutureMemoryHandoffStateClass::HandoffInternalOnlyNonCanonical
+        }));
+        assert!(handoff_map
+            .iter()
+            .find(|lane| lane.class == BlueBrainFutureMemoryHandoffStateClass::HandoffReady)
+            .expect("handoff ready lane")
+            .state_semantics
+            .contains("non-commit"));
+        assert!(handoff_map
+            .iter()
+            .find(|lane| lane.class == BlueBrainFutureMemoryHandoffStateClass::HandoffUnavailable)
+            .expect("handoff unavailable lane")
+            .state_semantics
+            .contains("cannot be performed"));
+
+        let commit_map = canonical_blue_brain_commit_result_semantics_map();
+        assert_eq!(commit_map.len(), 9);
+        assert!(commit_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCommitResultClass::CommitUnavailable));
+        assert!(commit_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCommitResultClass::CommitDeferred));
+        assert!(commit_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCommitResultClass::CommitCommitted));
+        assert!(commit_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCommitResultClass::CommitCommittedWithCaveats));
+        assert!(commit_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCommitResultClass::CommitRejected));
+        assert!(commit_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCommitResultClass::CommitBlocked));
+        assert!(commit_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCommitResultClass::CommitFailed));
+        assert!(commit_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCommitResultClass::CommitNoOp));
+        assert!(commit_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCommitResultClass::CommitReferenceRecordedOnly));
+        assert!(commit_map
+            .iter()
+            .find(|lane| lane.class == BlueBrainCommitResultClass::CommitUnavailable)
+            .expect("commit unavailable lane")
+            .result_semantics
+            .contains("canonical baseline result"));
+        assert!(commit_map
+            .iter()
+            .find(|lane| lane.class == BlueBrainCommitResultClass::CommitReferenceRecordedOnly)
+            .expect("reference only lane")
+            .canonical_guard
+            .contains("must not be classified as memory commit result"));
+    }
+
+    #[test]
+    fn serie_bb5_prompt2_future_memory_handoff_and_commit_result_doc_stays_pinned_to_code_maps() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_future_memory_handoff_commit_result_serie_bb5_prompt2_v1.md"
+        );
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_FUTURE_MEMORY_HANDOFF_STATE_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_COMMIT_RESULT_SEMANTICS_MAP"));
+        assert!(doc.contains("handoff ready"));
+        assert!(doc.contains("handoff deferred"));
+        assert!(doc.contains("handoff blocked"));
+        assert!(doc.contains("handoff rejected"));
+        assert!(doc.contains("handoff caveated"));
+        assert!(doc.contains("handoff unavailable"));
+        assert!(doc.contains("handoff internal-only/non-canonical"));
+        assert!(doc.contains("commit unavailable"));
+        assert!(doc.contains("commit deferred"));
+        assert!(doc.contains("committed"));
+        assert!(doc.contains("committed with caveats"));
+        assert!(doc.contains("commit rejected"));
+        assert!(doc.contains("commit blocked"));
+        assert!(doc.contains("commit failed"));
+        assert!(doc.contains("commit no-op"));
+        assert!(doc.contains("reference recorded only"));
+        assert!(doc.contains("no actual memory commit is implemented in the current baseline"));
+        assert!(doc.contains("handoff-ready is not a memory commit"));
+        assert!(doc.contains("History/Snapshot/Evidence/Replay are reference-only"));
         assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
         assert!(doc.contains("keine Memory-Engine"));
         assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
