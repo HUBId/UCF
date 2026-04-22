@@ -96,6 +96,12 @@ For BB4 Prompt 4 control/attention diagnostics bind-back to runtime status/evide
 `CANONICAL_BLUE_BRAIN_SELECTION_DIAGNOSTICS_MAP`.
 For BB4 Prompt 5 readiness sweep and final control/attention baseline closure matrix, see
 `docs/blue_brain_readiness_sweep_serie_bb4_prompt5_v1.md`.
+For BB5 Prompt 1 minimal memory commit boundary and commit-eligibility semantics
+(candidate-class split, eligibility conditions, reference-only/not-memory guard, and
+actual-commit-only-if-real-path rule), see
+`docs/blue_brain_memory_commit_boundary_serie_bb5_prompt1_v1.md`,
+`CANONICAL_BLUE_BRAIN_MEMORY_COMMIT_BOUNDARY_MAP`, and
+`CANONICAL_BLUE_BRAIN_COMMIT_ELIGIBILITY_CONDITIONS_MAP`.
 
 ## Capability model
 

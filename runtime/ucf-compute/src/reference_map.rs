@@ -389,6 +389,52 @@ pub struct BlueBrainMemoryCandidateLifecycleLane {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMemoryCommitBoundaryClass {
+    NotMemoryCandidate,
+    MemoryCandidateProposed,
+    MemoryCandidateDeferred,
+    MemoryCandidateRejected,
+    MemoryCandidateStale,
+    MemoryCandidateInsufficient,
+    CommitEligibleCandidate,
+    FutureMemoryReadyCandidate,
+    CommittedMemoryIfRealPath,
+    ReferenceOnlyNotMemory,
+    NonCanonicalInternalOnlyPersistencePath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainMemoryCommitBoundaryLane {
+    pub class: BlueBrainMemoryCommitBoundaryClass,
+    pub lane: &'static str,
+    pub source_binding: &'static str,
+    pub eligibility_semantics: &'static str,
+    pub persistence_path_semantics: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCommitEligibilityConditionClass {
+    EvidenceReferenceBasis,
+    SelectionAttentionGate,
+    ContextFreshnessGate,
+    BlockingCaveatGate,
+    CanonicalDependencyGate,
+    PersistencePathGate,
+    FutureMemoryReadyHandoffGate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCommitEligibilityConditionLane {
+    pub class: BlueBrainCommitEligibilityConditionClass,
+    pub lane: &'static str,
+    pub requirement: &'static str,
+    pub when_satisfied: &'static str,
+    pub when_not_satisfied: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainPersistenceBoundaryClass {
     TransientRuntimeContext,
     EvidenceReferenceBackedContext,
@@ -2319,6 +2365,182 @@ pub const CANONICAL_BLUE_BRAIN_MEMORY_CANDIDATE_LIFECYCLE_MAP:
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_MEMORY_COMMIT_BOUNDARY_MAP: [BlueBrainMemoryCommitBoundaryLane;
+    11] = [
+    BlueBrainMemoryCommitBoundaryLane {
+        class: BlueBrainMemoryCommitBoundaryClass::NotMemoryCandidate,
+        lane: "blue_brain_memory_commit_boundary_not_a_memory_candidate",
+        source_binding:
+            "selection ignored/irrelevant + non-memory runtime transitions + non-memory references",
+        eligibility_semantics: "item is not a memory candidate and cannot become commit-eligible",
+        persistence_path_semantics: "no memory persistence semantics apply",
+        canonical_guard: "not-a-candidate must remain distinct from candidate lifecycle states",
+    },
+    BlueBrainMemoryCommitBoundaryLane {
+        class: BlueBrainMemoryCommitBoundaryClass::MemoryCandidateProposed,
+        lane: "blue_brain_memory_commit_boundary_candidate_proposed",
+        source_binding:
+            "blue_brain_candidate_proposed + candidate context/evidence/replay references",
+        eligibility_semantics:
+            "proposal state only; commit-eligibility requires additional selection/evidence/context checks",
+        persistence_path_semantics: "proposal does not commit and does not imply persistence path",
+        canonical_guard: "proposal state must not be relabeled as commit-ready automatically",
+    },
+    BlueBrainMemoryCommitBoundaryLane {
+        class: BlueBrainMemoryCommitBoundaryClass::MemoryCandidateDeferred,
+        lane: "blue_brain_memory_commit_boundary_candidate_deferred",
+        source_binding:
+            "candidate deferred + deferred pending stronger evidence/context update",
+        eligibility_semantics:
+            "deferred candidate is explicitly not commit-eligible until rechecked and selected",
+        persistence_path_semantics: "deferred path remains non-commit and non-persistent",
+        canonical_guard: "deferred must stay distinct from rejected and commit-eligible states",
+    },
+    BlueBrainMemoryCommitBoundaryLane {
+        class: BlueBrainMemoryCommitBoundaryClass::MemoryCandidateRejected,
+        lane: "blue_brain_memory_commit_boundary_candidate_rejected",
+        source_binding:
+            "candidate rejected due to fault/caveat or incompatible runtime outcome",
+        eligibility_semantics: "rejected candidate is not commit-eligible",
+        persistence_path_semantics: "rejected candidate never commits",
+        canonical_guard: "rejected outcome is terminal for current candidate instance",
+    },
+    BlueBrainMemoryCommitBoundaryLane {
+        class: BlueBrainMemoryCommitBoundaryClass::MemoryCandidateStale,
+        lane: "blue_brain_memory_commit_boundary_candidate_stale",
+        source_binding: "stale reference quality posture + candidate stale class",
+        eligibility_semantics: "stale candidate is commit-blocked until refreshed context/reference basis exists",
+        persistence_path_semantics: "stale state has no commit authority",
+        canonical_guard: "stale evidence/reference basis must stay explicit and non-promotable",
+    },
+    BlueBrainMemoryCommitBoundaryLane {
+        class: BlueBrainMemoryCommitBoundaryClass::MemoryCandidateInsufficient,
+        lane: "blue_brain_memory_commit_boundary_candidate_insufficient",
+        source_binding: "insufficient evidence/reference posture + insufficient candidate class",
+        eligibility_semantics: "insufficient candidate is not commit-eligible",
+        persistence_path_semantics: "insufficient state performs no persistence",
+        canonical_guard: "insufficient quality cannot be escalated to eligible without new basis",
+    },
+    BlueBrainMemoryCommitBoundaryLane {
+        class: BlueBrainMemoryCommitBoundaryClass::CommitEligibleCandidate,
+        lane: "blue_brain_memory_commit_boundary_candidate_commit_eligible",
+        source_binding:
+            "candidate selected/accepted + sufficient evidence/reference + non-stale context + no blocking caveat",
+        eligibility_semantics:
+            "candidate is commit-eligible only when canonical minimal conditions are met",
+        persistence_path_semantics:
+            "eligible state may hand off to future-memory-ready and may commit only if real path exists",
+        canonical_guard: "commit-eligible is a boundary class, not a guaranteed commit result",
+    },
+    BlueBrainMemoryCommitBoundaryLane {
+        class: BlueBrainMemoryCommitBoundaryClass::FutureMemoryReadyCandidate,
+        lane: "blue_brain_memory_commit_boundary_candidate_future_memory_ready",
+        source_binding:
+            "accepted candidate + explicit persistence unavailable/deferred marker + handoff envelope",
+        eligibility_semantics:
+            "future-memory-ready candidate preserves commit eligibility posture without asserting actual commit",
+        persistence_path_semantics:
+            "handoff-only in current baseline because no real persisted-memory path is implemented",
+        canonical_guard: "future-ready must remain non-commit until explicit real path exists",
+    },
+    BlueBrainMemoryCommitBoundaryLane {
+        class: BlueBrainMemoryCommitBoundaryClass::CommittedMemoryIfRealPath,
+        lane: "blue_brain_memory_commit_boundary_committed_memory_only_if_real_path_exists",
+        source_binding:
+            "future memory subsystem contract id + commit result envelope (not implemented in current baseline)",
+        eligibility_semantics:
+            "commit result class is reachable only through explicit real persistence contract",
+        persistence_path_semantics:
+            "current repository baseline has no canonical Blue-Brain actual memory commit path",
+        canonical_guard:
+            "history/snapshot/evidence/replay/internal hooks cannot synthesize committed-memory claims",
+    },
+    BlueBrainMemoryCommitBoundaryLane {
+        class: BlueBrainMemoryCommitBoundaryClass::ReferenceOnlyNotMemory,
+        lane: "blue_brain_memory_commit_boundary_reference_only_not_memory",
+        source_binding:
+            "job history + snapshot + evidence refs + replay/trace references + status export",
+        eligibility_semantics:
+            "reference-only continuity may support candidate evaluation but is not itself a memory candidate",
+        persistence_path_semantics: "reference continuity is not memory persistence",
+        canonical_guard: "history/snapshot/evidence/replay/trace must stay not-memory by default",
+    },
+    BlueBrainMemoryCommitBoundaryLane {
+        class: BlueBrainMemoryCommitBoundaryClass::NonCanonicalInternalOnlyPersistencePath,
+        lane: "blue_brain_memory_commit_boundary_non_canonical_internal_persistence_path",
+        source_binding:
+            "run_operation_with_entry/replay_with_entry expert lanes + legacy/compat/internal diagnostics",
+        eligibility_semantics:
+            "internal/expert-only paths are excluded from canonical commit-eligibility decisions",
+        persistence_path_semantics:
+            "non-canonical paths cannot act as commit authority or canonical persistence path",
+        canonical_guard: "must remap to outward candidate/evidence/selection references before any future use",
+    },
+];
+
+pub const CANONICAL_BLUE_BRAIN_COMMIT_ELIGIBILITY_CONDITIONS_MAP:
+    [BlueBrainCommitEligibilityConditionLane; 7] = [
+    BlueBrainCommitEligibilityConditionLane {
+        class: BlueBrainCommitEligibilityConditionClass::EvidenceReferenceBasis,
+        lane: "blue_brain_commit_eligibility_condition_evidence_reference_quality",
+        requirement: "sufficient evidence/reference basis required; partial/caveated allowed only as caveated eligibility",
+        when_satisfied: "candidate can advance toward commit-eligible evaluation",
+        when_not_satisfied: "candidate remains insufficient, stale, or deferred and not commit-eligible",
+        canonical_guard: "reference-only basis must preserve explicit quality posture and caveats",
+    },
+    BlueBrainCommitEligibilityConditionLane {
+        class: BlueBrainCommitEligibilityConditionClass::SelectionAttentionGate,
+        lane: "blue_brain_commit_eligibility_condition_selection_attention_gate",
+        requirement: "candidate must be selected or explicitly accepted; deferred/ignored/rejected are ineligible",
+        when_satisfied: "selected candidate can become commit-eligible if other gates pass",
+        when_not_satisfied: "candidate remains deferred/rejected/not-memory and cannot be commit-eligible",
+        canonical_guard: "selection/attention informs eligibility but is not a planning or policy engine",
+    },
+    BlueBrainCommitEligibilityConditionLane {
+        class: BlueBrainCommitEligibilityConditionClass::ContextFreshnessGate,
+        lane: "blue_brain_commit_eligibility_condition_non_stale_context",
+        requirement: "candidate context basis must be non-stale and non-expired",
+        when_satisfied: "context gate permits commit-eligibility progression",
+        when_not_satisfied: "stale context blocks commit-eligibility until refresh/recheck",
+        canonical_guard: "stale context cannot be bypassed through history or replay traces",
+    },
+    BlueBrainCommitEligibilityConditionLane {
+        class: BlueBrainCommitEligibilityConditionClass::BlockingCaveatGate,
+        lane: "blue_brain_commit_eligibility_condition_no_blocking_caveat",
+        requirement: "no blocking caveat/fault posture may be active on candidate basis",
+        when_satisfied: "candidate remains eligible candidate or future-memory-ready",
+        when_not_satisfied: "candidate is blocked or rejected and cannot commit",
+        canonical_guard: "caveated partial basis must remain explicit and cannot silently upgrade to committed",
+    },
+    BlueBrainCommitEligibilityConditionLane {
+        class: BlueBrainCommitEligibilityConditionClass::CanonicalDependencyGate,
+        lane: "blue_brain_commit_eligibility_condition_no_internal_only_dependency",
+        requirement: "eligibility must not depend on internal/expert-only/compat persistence-like hooks",
+        when_satisfied: "candidate stays on canonical outward references",
+        when_not_satisfied: "path is classified non-canonical and commit-ineligible",
+        canonical_guard: "compute-core internal details are excluded from canonical memory authority",
+    },
+    BlueBrainCommitEligibilityConditionLane {
+        class: BlueBrainCommitEligibilityConditionClass::PersistencePathGate,
+        lane: "blue_brain_commit_eligibility_condition_explicit_persistence_path_or_none",
+        requirement:
+            "actual commit requires an explicit real persisted-memory path implemented in repository",
+        when_satisfied: "commit may occur only through that explicit canonical path",
+        when_not_satisfied: "no actual commit occurs and candidate remains future-memory-ready/deferred",
+        canonical_guard: "absence of real path is authoritative and blocks synthetic commit claims",
+    },
+    BlueBrainCommitEligibilityConditionLane {
+        class: BlueBrainCommitEligibilityConditionClass::FutureMemoryReadyHandoffGate,
+        lane: "blue_brain_commit_eligibility_condition_future_memory_handoff",
+        requirement:
+            "if no real persistence path exists, preserve candidate in explicit future-memory-ready handoff envelope",
+        when_satisfied: "handoff remains explicit with candidate/evidence/reference/caveat bindings",
+        when_not_satisfied:
+            "candidate must remain proposal/deferred/rejected/insufficient and not claim commit progression",
+        canonical_guard: "future-memory-ready is a no-commit handoff class in current baseline",
+    },
+];
+
 pub const CANONICAL_BLUE_BRAIN_PERSISTENCE_BOUNDARY_MAP: [BlueBrainPersistenceBoundaryLane; 9] = [
     BlueBrainPersistenceBoundaryLane {
         class: BlueBrainPersistenceBoundaryClass::TransientRuntimeContext,
@@ -3702,6 +3924,16 @@ pub fn canonical_blue_brain_memory_candidate_lifecycle_map(
     &CANONICAL_BLUE_BRAIN_MEMORY_CANDIDATE_LIFECYCLE_MAP
 }
 
+pub fn canonical_blue_brain_memory_commit_boundary_map(
+) -> &'static [BlueBrainMemoryCommitBoundaryLane] {
+    &CANONICAL_BLUE_BRAIN_MEMORY_COMMIT_BOUNDARY_MAP
+}
+
+pub fn canonical_blue_brain_commit_eligibility_conditions_map(
+) -> &'static [BlueBrainCommitEligibilityConditionLane] {
+    &CANONICAL_BLUE_BRAIN_COMMIT_ELIGIBILITY_CONDITIONS_MAP
+}
+
 pub fn canonical_blue_brain_persistence_boundary_map() -> &'static [BlueBrainPersistenceBoundaryLane]
 {
     &CANONICAL_BLUE_BRAIN_PERSISTENCE_BOUNDARY_MAP
@@ -4989,6 +5221,133 @@ mod tests {
     }
 
     #[test]
+    fn blue_brain_memory_commit_boundary_map_distinguishes_candidate_and_not_memory_states() {
+        let map = canonical_blue_brain_memory_commit_boundary_map();
+        assert_eq!(map.len(), 11);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainMemoryCommitBoundaryClass::NotMemoryCandidate));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainMemoryCommitBoundaryClass::MemoryCandidateProposed));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainMemoryCommitBoundaryClass::MemoryCandidateDeferred));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainMemoryCommitBoundaryClass::MemoryCandidateRejected));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainMemoryCommitBoundaryClass::MemoryCandidateStale));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class
+                == BlueBrainMemoryCommitBoundaryClass::MemoryCandidateInsufficient));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainMemoryCommitBoundaryClass::CommitEligibleCandidate));
+        assert!(map.iter().any(
+            |lane| lane.class == BlueBrainMemoryCommitBoundaryClass::FutureMemoryReadyCandidate
+        ));
+        assert!(map.iter().any(
+            |lane| lane.class == BlueBrainMemoryCommitBoundaryClass::CommittedMemoryIfRealPath
+        ));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainMemoryCommitBoundaryClass::ReferenceOnlyNotMemory));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainMemoryCommitBoundaryClass::NonCanonicalInternalOnlyPersistencePath
+        }));
+
+        let deferred = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_memory_commit_boundary_candidate_deferred")
+            .expect("deferred candidate lane");
+        assert!(deferred
+            .eligibility_semantics
+            .contains("not commit-eligible"));
+
+        let reference_only = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_memory_commit_boundary_reference_only_not_memory")
+            .expect("reference-only lane");
+        assert!(reference_only
+            .persistence_path_semantics
+            .contains("not memory persistence"));
+
+        let committed_if_real = map
+            .iter()
+            .find(|lane| {
+                lane.lane
+                    == "blue_brain_memory_commit_boundary_committed_memory_only_if_real_path_exists"
+            })
+            .expect("committed if real lane");
+        assert!(committed_if_real
+            .persistence_path_semantics
+            .contains("has no canonical Blue-Brain actual memory commit path"));
+    }
+
+    #[test]
+    fn blue_brain_commit_eligibility_conditions_map_blocks_ineligible_candidates_and_internal_paths(
+    ) {
+        let map = canonical_blue_brain_commit_eligibility_conditions_map();
+        assert_eq!(map.len(), 7);
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainCommitEligibilityConditionClass::EvidenceReferenceBasis
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainCommitEligibilityConditionClass::SelectionAttentionGate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainCommitEligibilityConditionClass::ContextFreshnessGate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainCommitEligibilityConditionClass::BlockingCaveatGate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainCommitEligibilityConditionClass::CanonicalDependencyGate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainCommitEligibilityConditionClass::PersistencePathGate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainCommitEligibilityConditionClass::FutureMemoryReadyHandoffGate
+        }));
+
+        let selection_gate = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_commit_eligibility_condition_selection_attention_gate"
+            })
+            .expect("selection gate lane");
+        assert!(selection_gate
+            .when_not_satisfied
+            .contains("deferred/rejected/not-memory"));
+
+        let persistence_gate = map
+            .iter()
+            .find(|lane| {
+                lane.lane
+                    == "blue_brain_commit_eligibility_condition_explicit_persistence_path_or_none"
+            })
+            .expect("persistence path gate");
+        assert!(persistence_gate
+            .when_not_satisfied
+            .contains("no actual commit occurs"));
+
+        let canonical_gate = map
+            .iter()
+            .find(|lane| {
+                lane.lane == "blue_brain_commit_eligibility_condition_no_internal_only_dependency"
+            })
+            .expect("canonical dependency gate");
+        assert!(canonical_gate
+            .when_not_satisfied
+            .contains("non-canonical and commit-ineligible"));
+    }
+
+    #[test]
     fn blue_brain_persistence_boundary_map_keeps_classes_and_compute_core_boundaries_explicit() {
         let map = canonical_blue_brain_persistence_boundary_map();
         assert_eq!(map.len(), 9);
@@ -5811,6 +6170,42 @@ mod tests {
         assert!(doc.contains("Candidate Selection impliziert **keinen** Memory Commit"));
         assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
         assert!(doc.contains("Priorität: Serie BB5 zuerst"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
+    fn serie_bb5_prompt1_memory_commit_boundary_doc_stays_pinned_to_code_maps() {
+        let doc =
+            include_str!("../../../docs/blue_brain_memory_commit_boundary_serie_bb5_prompt1_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_MEMORY_COMMIT_BOUNDARY_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_COMMIT_ELIGIBILITY_CONDITIONS_MAP"));
+        assert!(doc.contains("not a memory candidate"));
+        assert!(doc.contains("memory candidate proposed"));
+        assert!(doc.contains("memory candidate deferred"));
+        assert!(doc.contains("memory candidate rejected"));
+        assert!(doc.contains("memory candidate stale"));
+        assert!(doc.contains("memory candidate insufficient"));
+        assert!(doc.contains("commit-eligible candidate"));
+        assert!(doc.contains("future-memory-ready candidate"));
+        assert!(doc.contains("committed memory (only if real path exists)"));
+        assert!(doc.contains("reference-only / not memory"));
+        assert!(doc.contains("non-canonical/internal-only persistence path"));
+        assert!(doc.contains("sufficient evidence/reference basis"));
+        assert!(doc.contains("selected or accepted candidate status"));
+        assert!(doc.contains("non-stale context basis"));
+        assert!(doc.contains("no blocking caveat"));
+        assert!(doc.contains("no internal/expert-only dependency"));
+        assert!(doc.contains("explicit persistence path exists"));
+        assert!(doc.contains("future-memory-ready handoff"));
+        assert!(doc.contains("no actual memory commit is implemented"));
+        assert!(doc.contains("History ≠ Memory"));
+        assert!(doc.contains("Snapshot ≠ Memory"));
+        assert!(doc.contains("Evidence ≠ Memory"));
+        assert!(doc.contains("Replay/Trace ≠ Memory"));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
+        assert!(doc.contains("keine Memory-Engine"));
         assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
     }
 
