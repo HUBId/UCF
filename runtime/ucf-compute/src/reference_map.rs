@@ -7849,7 +7849,9 @@ mod tests {
         }));
         assert!(map.iter().any(|lane| {
             lane.class == BlueBrainReasoningCandidateDiagnosticClass::ProposalReadyDiagnostic
-                && lane.memory_boundary_binding.contains("does not commit memory")
+                && lane
+                    .memory_boundary_binding
+                    .contains("does not commit memory")
         }));
     }
 
