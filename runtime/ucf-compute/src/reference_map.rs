@@ -609,6 +609,30 @@ pub struct BlueBrainCandidateDeferralLifecycleLane {
     pub canonical_guard: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainSelectionDiagnosticClass {
+    SelectedItemDiagnostic,
+    DeferredItemDiagnostic,
+    IgnoredItemDiagnostic,
+    RejectedItemDiagnostic,
+    BlockedSelectionDiagnostic,
+    InsufficientSelectionDiagnostic,
+    CaveatedSelectionDiagnostic,
+    NonCanonicalInternalOnlyDiagnosticDetail,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainSelectionDiagnosticLane {
+    pub class: BlueBrainSelectionDiagnosticClass,
+    pub lane: &'static str,
+    pub entity_scope: &'static str,
+    pub outcome_binding: &'static str,
+    pub compact_reason: &'static str,
+    pub runtime_diagnostics_binding: &'static str,
+    pub state_surface_binding: &'static str,
+    pub canonical_guard: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -3465,12 +3489,121 @@ pub const CANONICAL_BLUE_BRAIN_CANDIDATE_DEFERRAL_LIFECYCLE_MAP:
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_SELECTION_DIAGNOSTICS_MAP: [BlueBrainSelectionDiagnosticLane; 8] = [
+    BlueBrainSelectionDiagnosticLane {
+        class: BlueBrainSelectionDiagnosticClass::SelectedItemDiagnostic,
+        lane: "blue_brain_selection_diagnostic_selected",
+        entity_scope: "context/evidence/trigger/candidate selected outcomes",
+        outcome_binding:
+            "selected due to sufficient context or selected due to primary evidence/reference",
+        compact_reason: "selected_sufficient_context_or_primary_evidence",
+        runtime_diagnostics_binding:
+            "ComputeStatusEvidenceExportSurface::control_attention_diagnostics",
+        state_surface_binding:
+            "RuntimeOpsSnapshot selection-gated transition view + status_evidence_export_surface",
+        canonical_guard:
+            "selected diagnostics stay compact and avoid planning/reasoning/explainability claims",
+    },
+    BlueBrainSelectionDiagnosticLane {
+        class: BlueBrainSelectionDiagnosticClass::DeferredItemDiagnostic,
+        lane: "blue_brain_selection_diagnostic_deferred",
+        entity_scope: "context/evidence/trigger/candidate deferred outcomes",
+        outcome_binding:
+            "deferred due to partial evidence or deferred pending context update",
+        compact_reason: "deferred_partial_basis_or_pending_context_update",
+        runtime_diagnostics_binding:
+            "ComputeStatusEvidenceExportSurface::control_attention_diagnostics",
+        state_surface_binding:
+            "RuntimeOpsSnapshot transition remains selection-gated with no invocation/commit",
+        canonical_guard:
+            "deferred remains explicit and non-persistent; not a hidden scheduler/planner lane",
+    },
+    BlueBrainSelectionDiagnosticLane {
+        class: BlueBrainSelectionDiagnosticClass::IgnoredItemDiagnostic,
+        lane: "blue_brain_selection_diagnostic_ignored",
+        entity_scope: "context/candidate outcomes ignored for current transition",
+        outcome_binding: "ignored because not relevant to current transition",
+        compact_reason: "ignored_not_relevant_to_current_transition",
+        runtime_diagnostics_binding:
+            "ComputeStatusEvidenceExportSurface::control_attention_diagnostics",
+        state_surface_binding: "status/runtime context unchanged with explicit ignored marker",
+        canonical_guard: "ignored remains distinct from rejected/deferred/blocked/insufficient",
+    },
+    BlueBrainSelectionDiagnosticLane {
+        class: BlueBrainSelectionDiagnosticClass::RejectedItemDiagnostic,
+        lane: "blue_brain_selection_diagnostic_rejected",
+        entity_scope: "candidate/trigger paths rejected due to fault or caveat posture",
+        outcome_binding: "rejected due to fault/caveat",
+        compact_reason: "rejected_fault_or_caveat",
+        runtime_diagnostics_binding:
+            "ComputeStatusEvidenceExportSurface::control_attention_diagnostics",
+        state_surface_binding:
+            "RuntimeOpsSnapshot state remains explicit without memory persistence implication",
+        canonical_guard: "rejected never implies compute invocation success or memory commit",
+    },
+    BlueBrainSelectionDiagnosticLane {
+        class: BlueBrainSelectionDiagnosticClass::BlockedSelectionDiagnostic,
+        lane: "blue_brain_selection_diagnostic_blocked",
+        entity_scope: "context/evidence/trigger/candidate blocked outcomes",
+        outcome_binding: "blocked due to stale/insufficient basis",
+        compact_reason: "blocked_stale_or_insufficient_basis",
+        runtime_diagnostics_binding:
+            "ComputeStatusEvidenceExportSurface::control_attention_diagnostics",
+        state_surface_binding:
+            "selection caveat/blocked posture affects next trigger eligibility",
+        canonical_guard: "blocked remains separate from failed/no-op/deferred",
+    },
+    BlueBrainSelectionDiagnosticLane {
+        class: BlueBrainSelectionDiagnosticClass::InsufficientSelectionDiagnostic,
+        lane: "blue_brain_selection_diagnostic_insufficient",
+        entity_scope: "context/evidence/trigger/candidate insufficient outcomes",
+        outcome_binding: "insufficient selection basis requires stronger context/evidence",
+        compact_reason: "insufficient_requires_stronger_basis",
+        runtime_diagnostics_binding:
+            "ComputeStatusEvidenceExportSurface::control_attention_diagnostics",
+        state_surface_binding:
+            "runtime diagnostics observed but no memory persistence or auto-invocation implied",
+        canonical_guard: "insufficient cannot be auto-promoted by internal heuristics",
+    },
+    BlueBrainSelectionDiagnosticLane {
+        class: BlueBrainSelectionDiagnosticClass::CaveatedSelectionDiagnostic,
+        lane: "blue_brain_selection_diagnostic_caveated",
+        entity_scope: "selected/deferred trigger and evidence outcomes with caveats",
+        outcome_binding: "caveated invocation allowed or caveated/degraded result observed",
+        compact_reason: "caveated_invocation_or_result",
+        runtime_diagnostics_binding:
+            "ComputeStatusEvidenceExportSurface::control_attention_diagnostics",
+        state_surface_binding:
+            "selection caveat propagated to runtime state and next trigger eligibility",
+        canonical_guard:
+            "caveated diagnostics stay technical and compact; not policy/audit/reasoning claims",
+    },
+    BlueBrainSelectionDiagnosticLane {
+        class: BlueBrainSelectionDiagnosticClass::NonCanonicalInternalOnlyDiagnosticDetail,
+        lane: "blue_brain_selection_diagnostic_non_canonical_internal_only_detail",
+        entity_scope: "internal/expert/legacy trigger-selection details",
+        outcome_binding: "non-canonical detail marked and excluded from authority",
+        compact_reason: "internal_only_non_canonical_detail",
+        runtime_diagnostics_binding:
+            "ComputeStatusEvidenceExportSurface::control_attention_diagnostics (canonical=false)",
+        state_surface_binding:
+            "RuntimeOpsSnapshot keeps non-canonical detail segregated from canonical authority",
+        canonical_guard:
+            "internal/expert-only details cannot appear as canonical BB4 control/attention diagnostics",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
 
 pub fn canonical_production_reference_lane() -> ComputeReferenceLane {
     CANONICAL_COMPUTE_REFERENCE_MAP[0]
+}
+
+pub fn canonical_blue_brain_selection_diagnostics_map(
+) -> &'static [BlueBrainSelectionDiagnosticLane] {
+    &CANONICAL_BLUE_BRAIN_SELECTION_DIAGNOSTICS_MAP
 }
 
 pub fn canonical_final_reference_line() -> CanonicalFinalReferenceLine {
@@ -5597,6 +5730,66 @@ mod tests {
         assert!(doc.contains("not rejected"));
         assert!(doc.contains("keine numerische Ranking- oder Scoring-Engine"));
         assert!(doc.contains("keine Memory-Consolidation- oder Commit-Engine"));
+    }
+
+    #[test]
+    fn blue_brain_selection_diagnostics_map_keeps_canonical_outcomes_reasons_and_non_canonical_boundary_explicit(
+    ) {
+        let map = canonical_blue_brain_selection_diagnostics_map();
+        assert_eq!(map.len(), 8);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainSelectionDiagnosticClass::SelectedItemDiagnostic));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainSelectionDiagnosticClass::DeferredItemDiagnostic));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainSelectionDiagnosticClass::IgnoredItemDiagnostic));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainSelectionDiagnosticClass::RejectedItemDiagnostic));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainSelectionDiagnosticClass::BlockedSelectionDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainSelectionDiagnosticClass::InsufficientSelectionDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainSelectionDiagnosticClass::CaveatedSelectionDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainSelectionDiagnosticClass::NonCanonicalInternalOnlyDiagnosticDetail
+        }));
+        assert!(map
+            .iter()
+            .all(|lane| lane.runtime_diagnostics_binding.contains("diagnostics")));
+    }
+
+    #[test]
+    fn serie_bb4_prompt4_control_attention_diagnostics_doc_stays_pinned_to_code_map() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_control_attention_diagnostics_serie_bb4_prompt4_v1.md"
+        );
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_SELECTION_DIAGNOSTICS_MAP"));
+        assert!(doc.contains("selected item diagnostic"));
+        assert!(doc.contains("deferred item diagnostic"));
+        assert!(doc.contains("ignored item diagnostic"));
+        assert!(doc.contains("rejected item diagnostic"));
+        assert!(doc.contains("blocked selection diagnostic"));
+        assert!(doc.contains("insufficient selection diagnostic"));
+        assert!(doc.contains("caveated selection diagnostic"));
+        assert!(doc.contains("non-canonical/internal-only diagnostic detail"));
+        assert!(doc.contains("selected due to sufficient context"));
+        assert!(doc.contains("selected due to primary evidence/reference"));
+        assert!(doc.contains("deferred due to partial evidence"));
+        assert!(doc.contains("blocked due to stale/insufficient basis"));
+        assert!(doc.contains("ignored because not relevant to current transition"));
+        assert!(doc.contains("rejected due to fault/caveat"));
+        assert!(doc.contains("selection-gated transition"));
+        assert!(doc.contains("no memory persistence implied"));
+        assert!(doc.contains("keine Explainability-, Planning-, Policy- oder Audit-Plattform"));
     }
 
     #[test]
