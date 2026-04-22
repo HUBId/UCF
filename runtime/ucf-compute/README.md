@@ -102,6 +102,12 @@ actual-commit-only-if-real-path rule), see
 `docs/blue_brain_memory_commit_boundary_serie_bb5_prompt1_v1.md`,
 `CANONICAL_BLUE_BRAIN_MEMORY_COMMIT_BOUNDARY_MAP`, and
 `CANONICAL_BLUE_BRAIN_COMMIT_ELIGIBILITY_CONDITIONS_MAP`.
+For BB5 Prompt 2 future-memory handoff interface and commit-result semantics
+(handoff state split, commit-result split, runtime diagnostics bind-back, and strict
+reference/history vs commit separation), see
+`docs/blue_brain_future_memory_handoff_commit_result_serie_bb5_prompt2_v1.md`,
+`CANONICAL_BLUE_BRAIN_FUTURE_MEMORY_HANDOFF_STATE_MAP`, and
+`CANONICAL_BLUE_BRAIN_COMMIT_RESULT_SEMANTICS_MAP`.
 
 ## Capability model
 
