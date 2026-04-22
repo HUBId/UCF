@@ -749,6 +749,44 @@ pub struct BlueBrainSelectionDiagnosticLane {
     pub canonical_guard: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainPlanningReasoningCandidateClass {
+    RuntimeDerivedPlanningCandidate,
+    ContextDerivedReasoningCandidate,
+    EvidenceReferenceDerivedReasoningCandidate,
+    SelectionDerivedActionCandidate,
+    MemoryCandidateDerivedReasoningCandidate,
+    CommitFeedbackDerivedCandidate,
+    InsufficientCandidateBasis,
+    NonCanonicalInternalOnlyPlanningLikePath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainPlanningReasoningCandidateBasisState {
+    BasisAvailable,
+    BasisPartialOrCaveated,
+    BasisStale,
+    BasisInsufficient,
+    CandidateDeferred,
+    CandidateProposedUnresolved,
+    EvidenceObservedNoCandidate,
+    CandidateBlocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainPlanningReasoningCandidateLane {
+    pub class: BlueBrainPlanningReasoningCandidateClass,
+    pub basis_state: BlueBrainPlanningReasoningCandidateBasisState,
+    pub lane: &'static str,
+    pub source_binding: &'static str,
+    pub candidate_semantics: &'static str,
+    pub quality_or_caveat: &'static str,
+    pub resolution_boundary: &'static str,
+    pub no_execution_implication: &'static str,
+    pub memory_commit_boundary: &'static str,
+    pub canonical_guard: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -4239,6 +4277,211 @@ pub const CANONICAL_BLUE_BRAIN_SELECTION_DIAGNOSTICS_MAP: [BlueBrainSelectionDia
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_PLANNING_REASONING_CANDIDATE_MAP:
+    [BlueBrainPlanningReasoningCandidateLane; 15] = [
+    BlueBrainPlanningReasoningCandidateLane {
+        class: BlueBrainPlanningReasoningCandidateClass::RuntimeDerivedPlanningCandidate,
+        basis_state: BlueBrainPlanningReasoningCandidateBasisState::BasisAvailable,
+        lane: "blue_brain_runtime_derived_planning_candidate_available",
+        source_binding:
+            "CANONICAL_BLUE_BRAIN_RUNTIME_SURFACE_MAP + CANONICAL_BLUE_BRAIN_TRANSITION_TRIGGER_MAP",
+        candidate_semantics: "runtime state and trigger posture suggest a planning-near candidate basis",
+        quality_or_caveat: "runtime-derived basis is sufficient for candidate framing only",
+        resolution_boundary: "candidate basis available but no planner decision is resolved",
+        no_execution_implication: "no plan selected and no action executed",
+        memory_commit_boundary: "runtime-derived candidate does not imply memory commit",
+        canonical_guard:
+            "runtime/trigger semantics inform candidate basis without introducing a planning engine",
+    },
+    BlueBrainPlanningReasoningCandidateLane {
+        class: BlueBrainPlanningReasoningCandidateClass::RuntimeDerivedPlanningCandidate,
+        basis_state: BlueBrainPlanningReasoningCandidateBasisState::CandidateBlocked,
+        lane: "blue_brain_trigger_suggested_candidate_blocked_basis",
+        source_binding:
+            "blue_brain_trigger_insufficient_requires_context_or_evidence + blue_brain_trigger_blocked_stale_or_blocked_basis",
+        candidate_semantics: "trigger suggests action candidate but blocked/stale basis keeps it unresolved",
+        quality_or_caveat: "blocked trigger yields blocked candidate basis",
+        resolution_boundary: "candidate remains unresolved and blocked pending stronger canonical basis",
+        no_execution_implication: "no planner decision implied and no invocation executed",
+        memory_commit_boundary: "blocked trigger candidate has no persistence side effect",
+        canonical_guard: "blocked trigger basis is explicit and cannot auto-promote to execution",
+    },
+    BlueBrainPlanningReasoningCandidateLane {
+        class: BlueBrainPlanningReasoningCandidateClass::RuntimeDerivedPlanningCandidate,
+        basis_state: BlueBrainPlanningReasoningCandidateBasisState::BasisPartialOrCaveated,
+        lane: "blue_brain_trigger_caveated_candidate_basis",
+        source_binding:
+            "blue_brain_trigger_caveated_but_allowed + blue_brain_feedback_result_integrated_with_caveat",
+        candidate_semantics:
+            "trigger/evidence caveat posture can produce a caveated planning-near candidate basis",
+        quality_or_caveat: "candidate basis is caveated and partial",
+        resolution_boundary: "caveated candidate proposed but not resolved",
+        no_execution_implication: "no action execution implied by caveated candidate availability",
+        memory_commit_boundary: "caveated trigger candidate does not imply commit",
+        canonical_guard:
+            "caveated trigger lane stays selection/arbitration semantics and not planner authority",
+    },
+    BlueBrainPlanningReasoningCandidateLane {
+        class: BlueBrainPlanningReasoningCandidateClass::ContextDerivedReasoningCandidate,
+        basis_state: BlueBrainPlanningReasoningCandidateBasisState::BasisAvailable,
+        lane: "blue_brain_context_derived_reasoning_candidate_sufficient",
+        source_binding:
+            "CANONICAL_BLUE_BRAIN_CONTEXT_MEMORY_SURFACE_MAP + CANONICAL_BLUE_BRAIN_CONTEXT_UPDATE_LIFECYCLE_MAP",
+        candidate_semantics: "context-derived signal provides sufficient reasoning-candidate basis",
+        quality_or_caveat: "sufficient context basis",
+        resolution_boundary: "reasoning candidate proposed but not resolved",
+        no_execution_implication: "candidate basis does not imply policy application or action execution",
+        memory_commit_boundary: "context-derived candidate remains transient and non-committing",
+        canonical_guard: "context basis is canonical candidate input and not a reasoning engine output",
+    },
+    BlueBrainPlanningReasoningCandidateLane {
+        class: BlueBrainPlanningReasoningCandidateClass::EvidenceReferenceDerivedReasoningCandidate,
+        basis_state: BlueBrainPlanningReasoningCandidateBasisState::BasisPartialOrCaveated,
+        lane: "blue_brain_evidence_reference_reasoning_candidate_partial_caveated",
+        source_binding:
+            "CANONICAL_BLUE_BRAIN_REFERENCE_CONTEXT_MAP + CANONICAL_BLUE_BRAIN_CONTEXT_EVIDENCE_PRIORITY_MAP",
+        candidate_semantics: "evidence/reference signal supports reasoning candidate with caveats",
+        quality_or_caveat: "partial or caveated evidence/reference basis",
+        resolution_boundary: "candidate remains unresolved until stronger evidence arrives",
+        no_execution_implication: "no reasoning completion and no action execution implied",
+        memory_commit_boundary: "evidence/reference basis has no direct commit authority",
+        canonical_guard: "evidence/reference basis remains reference-grade and not audit/reasoning authority",
+    },
+    BlueBrainPlanningReasoningCandidateLane {
+        class: BlueBrainPlanningReasoningCandidateClass::EvidenceReferenceDerivedReasoningCandidate,
+        basis_state: BlueBrainPlanningReasoningCandidateBasisState::BasisStale,
+        lane: "blue_brain_evidence_reference_reasoning_candidate_stale",
+        source_binding:
+            "blue_brain_context_blocked_due_to_stale_basis + blue_brain_reference_context_insufficient_basis_explicit",
+        candidate_semantics: "stale evidence/reference basis is surfaced as stale reasoning candidate basis",
+        quality_or_caveat: "stale basis requires recheck and cannot be silently upgraded",
+        resolution_boundary: "candidate is stale and unresolved",
+        no_execution_implication: "stale basis does not imply decision completion",
+        memory_commit_boundary: "stale reasoning basis cannot imply memory persistence",
+        canonical_guard: "stale basis must stay explicit and distinct from sufficient candidate basis",
+    },
+    BlueBrainPlanningReasoningCandidateLane {
+        class: BlueBrainPlanningReasoningCandidateClass::SelectionDerivedActionCandidate,
+        basis_state: BlueBrainPlanningReasoningCandidateBasisState::BasisAvailable,
+        lane: "blue_brain_selection_derived_action_candidate_selected_context",
+        source_binding:
+            "CANONICAL_BLUE_BRAIN_CONTROL_ATTENTION_SELECTION_MAP + CANONICAL_BLUE_BRAIN_COMPUTE_TRIGGER_ARBITRATION_MAP",
+        candidate_semantics: "selected context/trigger produces selection-derived action candidate basis",
+        quality_or_caveat: "selected context yields candidate basis",
+        resolution_boundary: "selection-derived candidate remains a basis state, not execution result",
+        no_execution_implication: "selected candidate does not auto-execute action",
+        memory_commit_boundary: "selection-derived action candidate has no memory commit semantics",
+        canonical_guard: "selection is filtering/prioritization posture and not a planning/policy engine",
+    },
+    BlueBrainPlanningReasoningCandidateLane {
+        class: BlueBrainPlanningReasoningCandidateClass::SelectionDerivedActionCandidate,
+        basis_state: BlueBrainPlanningReasoningCandidateBasisState::CandidateDeferred,
+        lane: "blue_brain_selection_derived_action_candidate_deferred",
+        source_binding:
+            "blue_brain_compute_trigger_deferred + blue_brain_candidate_deferred_pending_context_update",
+        candidate_semantics: "deferred selection leaves candidate unresolved",
+        quality_or_caveat: "candidate deferred pending stronger basis",
+        resolution_boundary: "deferred candidate remains unresolved and recheck-gated",
+        no_execution_implication: "deferred candidate implies no action execution",
+        memory_commit_boundary: "deferred selection has no persistence side effect",
+        canonical_guard: "deferred state remains explicit and separate from ignored/rejected",
+    },
+    BlueBrainPlanningReasoningCandidateLane {
+        class: BlueBrainPlanningReasoningCandidateClass::SelectionDerivedActionCandidate,
+        basis_state: BlueBrainPlanningReasoningCandidateBasisState::BasisInsufficient,
+        lane: "blue_brain_selection_ignored_or_rejected_no_candidate",
+        source_binding: "blue_brain_context_ignored_priority_lane + blue_brain_memory_candidate_rejected",
+        candidate_semantics: "ignored or rejected selection item does not produce actionable candidate",
+        quality_or_caveat: "ignored/rejected item is insufficient for candidate continuation",
+        resolution_boundary: "no candidate resolved from ignored/rejected item",
+        no_execution_implication: "no action execution implied",
+        memory_commit_boundary: "rejected/ignored selection item has no commit authority",
+        canonical_guard: "ignored and rejected states remain explicit non-candidate outcomes",
+    },
+    BlueBrainPlanningReasoningCandidateLane {
+        class: BlueBrainPlanningReasoningCandidateClass::MemoryCandidateDerivedReasoningCandidate,
+        basis_state: BlueBrainPlanningReasoningCandidateBasisState::CandidateProposedUnresolved,
+        lane: "blue_brain_future_memory_ready_reasoning_candidate",
+        source_binding:
+            "CANONICAL_BLUE_BRAIN_MEMORY_CANDIDATE_LIFECYCLE_MAP + CANONICAL_BLUE_BRAIN_FUTURE_MEMORY_HANDOFF_STATE_MAP",
+        candidate_semantics: "future-memory-ready candidate may support later reasoning work",
+        quality_or_caveat: "candidate is preparatory and unresolved",
+        resolution_boundary: "future-memory-ready is candidate basis only, not reasoning completion",
+        no_execution_implication: "no plan/action execution implied",
+        memory_commit_boundary: "future-memory-ready remains not committed unless real commit path exists",
+        canonical_guard: "memory-candidate semantics remain separated from commit and reasoning engines",
+    },
+    BlueBrainPlanningReasoningCandidateLane {
+        class: BlueBrainPlanningReasoningCandidateClass::MemoryCandidateDerivedReasoningCandidate,
+        basis_state: BlueBrainPlanningReasoningCandidateBasisState::BasisInsufficient,
+        lane: "blue_brain_memory_candidate_rejected_weakens_reasoning_basis",
+        source_binding:
+            "blue_brain_candidate_rejected_due_to_fault_or_caveat + blue_brain_memory_candidate_rejected",
+        candidate_semantics: "rejected memory candidate weakens reasoning candidate basis",
+        quality_or_caveat: "rejected candidate indicates insufficient/caveated basis",
+        resolution_boundary: "reasoning candidate remains unresolved and degraded",
+        no_execution_implication: "no action or policy execution implied",
+        memory_commit_boundary: "rejected candidate cannot produce memory commit",
+        canonical_guard: "rejected memory-candidate path cannot be promoted to canonical reasoning basis",
+    },
+    BlueBrainPlanningReasoningCandidateLane {
+        class: BlueBrainPlanningReasoningCandidateClass::CommitFeedbackDerivedCandidate,
+        basis_state: BlueBrainPlanningReasoningCandidateBasisState::BasisPartialOrCaveated,
+        lane: "blue_brain_commit_feedback_candidate_unavailable_limits_basis",
+        source_binding:
+            "CANONICAL_BLUE_BRAIN_COMMIT_RESULT_SEMANTICS_MAP + CANONICAL_BLUE_BRAIN_MEMORY_COMMIT_DIAGNOSTICS_MAP",
+        candidate_semantics: "commit unavailable/deferred feedback limits reasoning candidate basis",
+        quality_or_caveat: "commit feedback signals partial or unavailable basis",
+        resolution_boundary: "candidate basis remains caveated until real commit path exists",
+        no_execution_implication: "commit-feedback candidate does not imply decision completion",
+        memory_commit_boundary: "commit unavailable/deferred remains non-commit baseline",
+        canonical_guard: "commit diagnostics inform candidate quality without creating a commit engine",
+    },
+    BlueBrainPlanningReasoningCandidateLane {
+        class: BlueBrainPlanningReasoningCandidateClass::CommitFeedbackDerivedCandidate,
+        basis_state: BlueBrainPlanningReasoningCandidateBasisState::BasisAvailable,
+        lane: "blue_brain_committed_if_present_strengthens_basis_conditionally",
+        source_binding:
+            "blue_brain_commit_result_committed_if_present + blue_brain_committed_if_present_diagnostic",
+        candidate_semantics:
+            "committed-if-present can strengthen candidate basis only where real commit path exists",
+        quality_or_caveat: "conditionally stronger basis",
+        resolution_boundary: "candidate basis strengthened conditionally but still not reasoning completion",
+        no_execution_implication: "no policy/action execution implied",
+        memory_commit_boundary: "strengthening applies only if concrete commit path is real and canonical",
+        canonical_guard:
+            "committed-if-present is bounded diagnostic semantics and not a blanket commit guarantee",
+    },
+    BlueBrainPlanningReasoningCandidateLane {
+        class: BlueBrainPlanningReasoningCandidateClass::InsufficientCandidateBasis,
+        basis_state: BlueBrainPlanningReasoningCandidateBasisState::EvidenceObservedNoCandidate,
+        lane: "blue_brain_evidence_observed_no_reasoning_candidate",
+        source_binding:
+            "blue_brain_feedback_evidence_observed_and_attached + blue_brain_evidence_reference_ignored",
+        candidate_semantics: "evidence may be observed while no reasoning candidate is produced",
+        quality_or_caveat: "observed evidence is not itself sufficient candidate basis",
+        resolution_boundary: "no reasoning candidate proposed",
+        no_execution_implication: "no reasoning/action/policy execution implied",
+        memory_commit_boundary: "observed evidence remains non-commit reference",
+        canonical_guard: "evidence observation is explicit and must not be conflated with reasoning outcome",
+    },
+    BlueBrainPlanningReasoningCandidateLane {
+        class: BlueBrainPlanningReasoningCandidateClass::NonCanonicalInternalOnlyPlanningLikePath,
+        basis_state: BlueBrainPlanningReasoningCandidateBasisState::BasisInsufficient,
+        lane: "blue_brain_non_canonical_internal_planning_like_path",
+        source_binding:
+            "run_operation_with_entry/replay_with_entry/build_backend(kind=stub|candle|worker)/domains/ai*",
+        candidate_semantics:
+            "internal/expert/compat planning-like path remains non-canonical unless down-mapped",
+        quality_or_caveat: "non-canonical internal-only basis",
+        resolution_boundary: "path is excluded from canonical planning/reasoning candidate authority",
+        no_execution_implication: "internal-only planning-like signal does not imply canonical action execution",
+        memory_commit_boundary: "non-canonical internal-only path has no commit authority",
+        canonical_guard:
+            "compute-internal details and legacy hooks are excluded from canonical BB6 candidate basis",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -4404,6 +4647,11 @@ pub fn canonical_blue_brain_candidate_deferral_lifecycle_map(
 pub fn canonical_blue_brain_compute_trigger_arbitration_map(
 ) -> &'static [BlueBrainComputeTriggerArbitrationLane] {
     &CANONICAL_BLUE_BRAIN_COMPUTE_TRIGGER_ARBITRATION_MAP
+}
+
+pub fn canonical_blue_brain_planning_reasoning_candidate_map(
+) -> &'static [BlueBrainPlanningReasoningCandidateLane] {
+    &CANONICAL_BLUE_BRAIN_PLANNING_REASONING_CANDIDATE_MAP
 }
 
 pub fn canonical_drift_prevention_check_map() -> &'static [DriftPreventionCheckLane] {
@@ -6608,6 +6856,115 @@ mod tests {
         assert!(doc.contains("Candidate Selection impliziert **keinen** Memory Commit"));
         assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
         assert!(doc.contains("Priorität: Serie BB5 zuerst"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
+    fn blue_brain_planning_reasoning_candidate_map_keeps_bb6_classes_and_basis_states_distinct() {
+        let map = canonical_blue_brain_planning_reasoning_candidate_map();
+        assert_eq!(map.len(), 15);
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainPlanningReasoningCandidateClass::RuntimeDerivedPlanningCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainPlanningReasoningCandidateClass::ContextDerivedReasoningCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainPlanningReasoningCandidateClass::EvidenceReferenceDerivedReasoningCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainPlanningReasoningCandidateClass::SelectionDerivedActionCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainPlanningReasoningCandidateClass::MemoryCandidateDerivedReasoningCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainPlanningReasoningCandidateClass::CommitFeedbackDerivedCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainPlanningReasoningCandidateClass::InsufficientCandidateBasis
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainPlanningReasoningCandidateClass::NonCanonicalInternalOnlyPlanningLikePath
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.basis_state == BlueBrainPlanningReasoningCandidateBasisState::BasisAvailable
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.basis_state
+                == BlueBrainPlanningReasoningCandidateBasisState::BasisPartialOrCaveated
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.basis_state == BlueBrainPlanningReasoningCandidateBasisState::BasisStale
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.basis_state == BlueBrainPlanningReasoningCandidateBasisState::BasisInsufficient
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.basis_state == BlueBrainPlanningReasoningCandidateBasisState::CandidateDeferred
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.basis_state
+                == BlueBrainPlanningReasoningCandidateBasisState::CandidateProposedUnresolved
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.basis_state
+                == BlueBrainPlanningReasoningCandidateBasisState::EvidenceObservedNoCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.basis_state == BlueBrainPlanningReasoningCandidateBasisState::CandidateBlocked
+        }));
+    }
+
+    #[test]
+    fn blue_brain_planning_reasoning_candidate_map_makes_no_automatic_execution_or_commit_claims() {
+        let map = canonical_blue_brain_planning_reasoning_candidate_map();
+        assert!(map
+            .iter()
+            .all(|lane| lane.no_execution_implication.contains("no")));
+        assert!(map
+            .iter()
+            .all(|lane| lane.memory_commit_boundary.contains("no")));
+        assert!(map.iter().any(|lane| {
+            lane.lane == "blue_brain_committed_if_present_strengthens_basis_conditionally"
+                && lane.memory_commit_boundary.contains("only if")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.lane == "blue_brain_non_canonical_internal_planning_like_path"
+                && lane.resolution_boundary.contains("excluded from canonical")
+        }));
+    }
+
+    #[test]
+    fn serie_bb6_prompt1_planning_reasoning_candidate_doc_stays_pinned_to_code_map() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_planning_reasoning_candidate_surface_serie_bb6_prompt1_v1.md"
+        );
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_PLANNING_REASONING_CANDIDATE_MAP"));
+        assert!(doc.contains("runtime-derived planning candidate"));
+        assert!(doc.contains("context-derived reasoning candidate"));
+        assert!(doc.contains("evidence/reference-derived reasoning candidate"));
+        assert!(doc.contains("selection-derived action candidate"));
+        assert!(doc.contains("memory-candidate-derived reasoning candidate"));
+        assert!(doc.contains("commit-feedback-derived candidate"));
+        assert!(doc.contains("insufficient candidate basis"));
+        assert!(doc.contains("non-canonical/internal-only planning-like path"));
+        assert!(doc.contains("candidate basis available"));
+        assert!(doc.contains("partial/caveated"));
+        assert!(doc.contains("stale"));
+        assert!(doc.contains("insufficient"));
+        assert!(doc.contains("deferred"));
+        assert!(doc.contains("no action execution implied"));
+        assert!(doc.contains("no memory commit implied"));
+        assert!(doc.contains("keine Planning-Engine"));
+        assert!(doc.contains("keine Reasoning-Engine"));
+        assert!(doc.contains("keine Policy-/RL-/Agentenplattform"));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
         assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
     }
 
