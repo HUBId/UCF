@@ -520,6 +520,32 @@ pub struct BlueBrainCommitResultLane {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMemoryCommitDiagnosticClass {
+    HandoffDiagnostic,
+    CommitEligibilityDiagnostic,
+    CommitRejectedDiagnostic,
+    CommitBlockedDiagnostic,
+    CommitDeferredDiagnostic,
+    CommitCaveatedDiagnostic,
+    CommitUnavailableDiagnostic,
+    CommittedIfPresentDiagnostic,
+    NoPersistenceDiagnostic,
+    NonCanonicalInternalOnlyDiagnostic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainMemoryCommitDiagnosticLane {
+    pub class: BlueBrainMemoryCommitDiagnosticClass,
+    pub lane: &'static str,
+    pub compact_reason: &'static str,
+    pub handoff_or_commit_binding: &'static str,
+    pub candidate_lifecycle_binding: &'static str,
+    pub selection_deferral_binding: &'static str,
+    pub runtime_context_binding: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainReferenceContextClass {
     EvidenceBackedContext,
     ReplayBackedContext,
@@ -2980,6 +3006,161 @@ pub const CANONICAL_BLUE_BRAIN_COMMIT_RESULT_SEMANTICS_MAP: [BlueBrainCommitResu
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_MEMORY_COMMIT_DIAGNOSTICS_MAP:
+    [BlueBrainMemoryCommitDiagnosticLane; 10] = [
+    BlueBrainMemoryCommitDiagnosticLane {
+        class: BlueBrainMemoryCommitDiagnosticClass::HandoffDiagnostic,
+        lane: "blue_brain_memory_commit_diagnostic_handoff",
+        compact_reason: "handoff_prepared_with_candidate_and_reference_basis",
+        handoff_or_commit_binding:
+            "blue_brain_future_memory_handoff_ready|deferred|blocked|rejected|caveated|unavailable",
+        candidate_lifecycle_binding:
+            "blue_brain_candidate_proposed + blue_brain_candidate_accepted_for_future_memory_handling",
+        selection_deferral_binding:
+            "blue_brain_selection_diagnostic_selected|deferred|blocked + candidate_deferral_lifecycle",
+        runtime_context_binding:
+            "ComputeStatusEvidenceExportSurface::control_attention_diagnostics + context updated but not persisted",
+        canonical_guard:
+            "handoff diagnostics are candidate/runtime signals and not memory commit proof",
+    },
+    BlueBrainMemoryCommitDiagnosticLane {
+        class: BlueBrainMemoryCommitDiagnosticClass::CommitEligibilityDiagnostic,
+        lane: "blue_brain_memory_commit_diagnostic_commit_eligibility",
+        compact_reason: "commit_eligible_with_sufficient_basis_and_non_stale_context",
+        handoff_or_commit_binding:
+            "blue_brain_memory_commit_boundary_candidate_commit_eligible + blue_brain_future_memory_handoff_ready",
+        candidate_lifecycle_binding:
+            "candidate remains future-memory-ready until explicit commit result exists",
+        selection_deferral_binding:
+            "selected candidate may become commit-eligible; insufficient candidate cannot become trigger/commit basis",
+        runtime_context_binding:
+            "runtime diagnostics show evidence attached but not committed",
+        canonical_guard:
+            "eligibility is a gate result and must not be interpreted as committed memory",
+    },
+    BlueBrainMemoryCommitDiagnosticLane {
+        class: BlueBrainMemoryCommitDiagnosticClass::CommitRejectedDiagnostic,
+        lane: "blue_brain_memory_commit_diagnostic_commit_rejected",
+        compact_reason: "rejected_due_to_weak_or_insufficient_evidence_or_candidate_state",
+        handoff_or_commit_binding:
+            "blue_brain_future_memory_handoff_rejected + blue_brain_commit_result_rejected",
+        candidate_lifecycle_binding:
+            "candidate rejected after handoff and removed from active candidate set for current instance",
+        selection_deferral_binding:
+            "rejected candidate removed from future consideration unless a new candidate instance forms",
+        runtime_context_binding:
+            "runtime/context diagnostics expose rejection reason with no persistence performed",
+        canonical_guard:
+            "rejection reasons stay compact and canonical; no speculative reasoning prose",
+    },
+    BlueBrainMemoryCommitDiagnosticLane {
+        class: BlueBrainMemoryCommitDiagnosticClass::CommitBlockedDiagnostic,
+        lane: "blue_brain_memory_commit_diagnostic_commit_blocked",
+        compact_reason:
+            "blocked_due_to_stale_context_or_missing_persistence_path_or_internal_only_dependency",
+        handoff_or_commit_binding:
+            "blue_brain_future_memory_handoff_blocked + blue_brain_commit_result_blocked",
+        candidate_lifecycle_binding:
+            "candidate blocked from commit and remains non-persistent until blocking gate is cleared",
+        selection_deferral_binding:
+            "blocked candidate remains blocked/deferred and cannot trigger commit progression",
+        runtime_context_binding:
+            "runtime diagnostics expose blocked gate while context/evidence remain reference-only",
+        canonical_guard:
+            "blocked diagnostics must stay separate from rejected/deferred/unavailable",
+    },
+    BlueBrainMemoryCommitDiagnosticLane {
+        class: BlueBrainMemoryCommitDiagnosticClass::CommitDeferredDiagnostic,
+        lane: "blue_brain_memory_commit_diagnostic_commit_deferred",
+        compact_reason: "candidate_deferred_after_handoff_pending_refresh_or_future_path",
+        handoff_or_commit_binding:
+            "blue_brain_future_memory_handoff_deferred + blue_brain_commit_result_deferred",
+        candidate_lifecycle_binding:
+            "candidate deferred after handoff and remains future-memory-ready",
+        selection_deferral_binding:
+            "deferred candidate remains deferred and recheckable under BB4 deferral semantics",
+        runtime_context_binding:
+            "runtime/context updated but not persisted and commit remains postponed",
+        canonical_guard:
+            "deferred is not equivalent to unavailable, blocked, or committed",
+    },
+    BlueBrainMemoryCommitDiagnosticLane {
+        class: BlueBrainMemoryCommitDiagnosticClass::CommitCaveatedDiagnostic,
+        lane: "blue_brain_memory_commit_diagnostic_commit_caveated",
+        compact_reason: "caveated_due_to_partial_reference_basis",
+        handoff_or_commit_binding:
+            "blue_brain_future_memory_handoff_caveated + commit_result_committed_with_caveats_only_if_real_path",
+        candidate_lifecycle_binding:
+            "candidate remains caveated and recheckable without forced rejection",
+        selection_deferral_binding:
+            "caveated candidate remains recheckable and does not become clean trigger/commit basis",
+        runtime_context_binding:
+            "runtime diagnostics preserve caveat envelope and evidence quality posture",
+        canonical_guard:
+            "caveated diagnostics carry bounded caveats and are not an explainability platform",
+    },
+    BlueBrainMemoryCommitDiagnosticLane {
+        class: BlueBrainMemoryCommitDiagnosticClass::CommitUnavailableDiagnostic,
+        lane: "blue_brain_memory_commit_diagnostic_commit_unavailable",
+        compact_reason: "unavailable_no_actual_memory_subsystem_exists_in_current_baseline",
+        handoff_or_commit_binding:
+            "blue_brain_future_memory_handoff_unavailable + blue_brain_commit_result_unavailable",
+        candidate_lifecycle_binding:
+            "candidate committed only if real path exists; otherwise no persistence performed",
+        selection_deferral_binding:
+            "selected candidate can still report commit unavailable while staying non-persistent",
+        runtime_context_binding:
+            "memory handoff prepared but memory commit unavailable",
+        canonical_guard:
+            "unavailable commit remains explicit baseline outcome and cannot be synthesized from history/snapshot",
+    },
+    BlueBrainMemoryCommitDiagnosticLane {
+        class: BlueBrainMemoryCommitDiagnosticClass::CommittedIfPresentDiagnostic,
+        lane: "blue_brain_memory_commit_diagnostic_committed_if_present",
+        compact_reason: "committed_only_if_real_persistence_path_is_present",
+        handoff_or_commit_binding:
+            "blue_brain_memory_commit_boundary_committed_memory_only_if_real_path_exists + blue_brain_commit_result_committed_only_if_real_path",
+        candidate_lifecycle_binding:
+            "candidate may enter persisted class only through real explicit persistence contract",
+        selection_deferral_binding:
+            "selection cannot manufacture committed state without actual persistence execution",
+        runtime_context_binding:
+            "runtime diagnostics may report committed-if-present only with commit receipt reference",
+        canonical_guard:
+            "committed-if-present is reserved and absent in current baseline without real path",
+    },
+    BlueBrainMemoryCommitDiagnosticLane {
+        class: BlueBrainMemoryCommitDiagnosticClass::NoPersistenceDiagnostic,
+        lane: "blue_brain_memory_commit_diagnostic_no_persistence",
+        compact_reason: "no_persistence_performed_context_updated_or_evidence_attached_only",
+        handoff_or_commit_binding:
+            "blue_brain_candidate_no_persistence_performed + blue_brain_commit_result_reference_recorded_only",
+        candidate_lifecycle_binding:
+            "candidate lifecycle and context changes stay visible while persistence remains none",
+        selection_deferral_binding:
+            "selection/deferral outcomes do not imply persistence side effects",
+        runtime_context_binding:
+            "context updated but not persisted; evidence attached but not committed",
+        canonical_guard:
+            "history/snapshot/evidence/replay/trace references are not memory commit outcomes",
+    },
+    BlueBrainMemoryCommitDiagnosticLane {
+        class: BlueBrainMemoryCommitDiagnosticClass::NonCanonicalInternalOnlyDiagnostic,
+        lane: "blue_brain_memory_commit_diagnostic_non_canonical_internal_only",
+        compact_reason: "internal_only_non_canonical_commit_like_signal",
+        handoff_or_commit_binding:
+            "blue_brain_future_memory_handoff_internal_only_non_canonical + expert/internal hooks",
+        candidate_lifecycle_binding:
+            "internal diagnostics are excluded from canonical candidate lifecycle authority",
+        selection_deferral_binding:
+            "internal/expert-only diagnostics must not appear as canonical selection/deferral facts",
+        runtime_context_binding:
+            "runtime may surface marker with canonical=false only",
+        canonical_guard:
+            "non-canonical diagnostics are excluded unless down-mapped to outward candidate/evidence/selection/runtime references",
+    },
+];
+
 pub const CANONICAL_BLUE_BRAIN_REFERENCE_CONTEXT_MAP: [BlueBrainReferenceContextLane; 12] = [
     BlueBrainReferenceContextLane {
         class: BlueBrainReferenceContextClass::EvidenceBackedContext,
@@ -4194,6 +4375,11 @@ pub fn canonical_blue_brain_future_memory_handoff_state_map(
 
 pub fn canonical_blue_brain_commit_result_semantics_map() -> &'static [BlueBrainCommitResultLane] {
     &CANONICAL_BLUE_BRAIN_COMMIT_RESULT_SEMANTICS_MAP
+}
+
+pub fn canonical_blue_brain_memory_commit_diagnostics_map(
+) -> &'static [BlueBrainMemoryCommitDiagnosticLane] {
+    &CANONICAL_BLUE_BRAIN_MEMORY_COMMIT_DIAGNOSTICS_MAP
 }
 
 pub fn canonical_blue_brain_reference_context_map() -> &'static [BlueBrainReferenceContextLane] {
@@ -6572,6 +6758,160 @@ mod tests {
         assert!(doc.contains("History/Snapshot/Evidence/Replay are reference-only"));
         assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
         assert!(doc.contains("keine Memory-Engine"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
+    fn blue_brain_memory_commit_diagnostics_map_keeps_required_classes_and_canonical_reasons() {
+        let map = canonical_blue_brain_memory_commit_diagnostics_map();
+        assert_eq!(map.len(), 10);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainMemoryCommitDiagnosticClass::HandoffDiagnostic));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMemoryCommitDiagnosticClass::CommitEligibilityDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMemoryCommitDiagnosticClass::CommitRejectedDiagnostic
+        }));
+        assert!(map.iter().any(
+            |lane| lane.class == BlueBrainMemoryCommitDiagnosticClass::CommitBlockedDiagnostic
+        ));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMemoryCommitDiagnosticClass::CommitDeferredDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMemoryCommitDiagnosticClass::CommitCaveatedDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMemoryCommitDiagnosticClass::CommitUnavailableDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMemoryCommitDiagnosticClass::CommittedIfPresentDiagnostic
+        }));
+        assert!(map.iter().any(
+            |lane| lane.class == BlueBrainMemoryCommitDiagnosticClass::NoPersistenceDiagnostic
+        ));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMemoryCommitDiagnosticClass::NonCanonicalInternalOnlyDiagnostic
+        }));
+
+        let rejected = map
+            .iter()
+            .find(|lane| {
+                lane.class == BlueBrainMemoryCommitDiagnosticClass::CommitRejectedDiagnostic
+            })
+            .expect("rejected diagnostic lane");
+        assert!(rejected
+            .compact_reason
+            .contains("weak_or_insufficient_evidence_or_candidate_state"));
+
+        let blocked = map
+            .iter()
+            .find(|lane| {
+                lane.class == BlueBrainMemoryCommitDiagnosticClass::CommitBlockedDiagnostic
+            })
+            .expect("blocked diagnostic lane");
+        assert!(blocked
+            .compact_reason
+            .contains("stale_context_or_missing_persistence_path_or_internal_only_dependency"));
+
+        let unavailable = map
+            .iter()
+            .find(|lane| {
+                lane.class == BlueBrainMemoryCommitDiagnosticClass::CommitUnavailableDiagnostic
+            })
+            .expect("unavailable diagnostic lane");
+        assert!(unavailable
+            .compact_reason
+            .contains("no_actual_memory_subsystem_exists"));
+
+        let caveated = map
+            .iter()
+            .find(|lane| {
+                lane.class == BlueBrainMemoryCommitDiagnosticClass::CommitCaveatedDiagnostic
+            })
+            .expect("caveated diagnostic lane");
+        assert!(caveated.compact_reason.contains("partial_reference_basis"));
+    }
+
+    #[test]
+    fn blue_brain_memory_commit_diagnostics_bind_back_to_candidate_selection_runtime_and_boundaries(
+    ) {
+        let map = canonical_blue_brain_memory_commit_diagnostics_map();
+        let handoff = map
+            .iter()
+            .find(|lane| lane.class == BlueBrainMemoryCommitDiagnosticClass::HandoffDiagnostic)
+            .expect("handoff lane");
+        assert!(handoff
+            .candidate_lifecycle_binding
+            .contains("accepted_for_future_memory_handling"));
+        assert!(handoff
+            .selection_deferral_binding
+            .contains("selection_diagnostic"));
+        assert!(handoff
+            .runtime_context_binding
+            .contains("context updated but not persisted"));
+
+        let no_persistence = map
+            .iter()
+            .find(|lane| {
+                lane.class == BlueBrainMemoryCommitDiagnosticClass::NoPersistenceDiagnostic
+            })
+            .expect("no persistence lane");
+        assert!(no_persistence
+            .runtime_context_binding
+            .contains("evidence attached but not committed"));
+        assert!(no_persistence
+            .canonical_guard
+            .contains("history/snapshot/evidence/replay/trace references are not memory commit"));
+
+        let internal = map
+            .iter()
+            .find(|lane| {
+                lane.class
+                    == BlueBrainMemoryCommitDiagnosticClass::NonCanonicalInternalOnlyDiagnostic
+            })
+            .expect("internal-only lane");
+        assert!(internal.runtime_context_binding.contains("canonical=false"));
+        assert!(internal
+            .canonical_guard
+            .contains("excluded unless down-mapped"));
+    }
+
+    #[test]
+    fn serie_bb5_prompt3_memory_commit_diagnostics_doc_stays_pinned_to_code_maps() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_memory_commit_diagnostics_feedback_serie_bb5_prompt3_v1.md"
+        );
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_MEMORY_COMMIT_DIAGNOSTICS_MAP"));
+        assert!(doc.contains("handoff diagnostic"));
+        assert!(doc.contains("commit eligibility diagnostic"));
+        assert!(doc.contains("commit rejected diagnostic"));
+        assert!(doc.contains("commit blocked diagnostic"));
+        assert!(doc.contains("commit deferred diagnostic"));
+        assert!(doc.contains("commit caveated diagnostic"));
+        assert!(doc.contains("commit unavailable diagnostic"));
+        assert!(doc.contains("committed-if-present diagnostic"));
+        assert!(doc.contains("no-persistence diagnostic"));
+        assert!(doc.contains("non-canonical/internal-only diagnostic"));
+        assert!(doc.contains("weak or insufficient evidence"));
+        assert!(doc.contains("candidate state"));
+        assert!(doc.contains("stale context"));
+        assert!(doc.contains("missing persistence path"));
+        assert!(doc.contains("internal-only dependency"));
+        assert!(doc.contains("no actual memory subsystem exists"));
+        assert!(doc.contains("partial reference basis"));
+        assert!(doc.contains("context updated but not persisted"));
+        assert!(doc.contains("evidence attached but not committed"));
+        assert!(doc.contains("History ≠ Memory Commit"));
+        assert!(doc.contains("Snapshot ≠ Memory Commit"));
+        assert!(doc.contains("Evidence Reference ≠ Memory Commit"));
+        assert!(doc.contains("Replay/Trace Reference ≠ Memory Commit"));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
+        assert!(doc.contains("keine Monitoring- oder Explainability-Plattform"));
         assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
     }
 
