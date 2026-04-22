@@ -5793,6 +5793,28 @@ mod tests {
     }
 
     #[test]
+    fn serie_bb4_prompt5_readiness_sweep_doc_stays_pinned_to_bb4_maps_and_boundaries() {
+        let doc = include_str!("../../../docs/blue_brain_readiness_sweep_serie_bb4_prompt5_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_CONTROL_ATTENTION_SELECTION_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_COMPUTE_TRIGGER_ARBITRATION_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_CONTEXT_EVIDENCE_PRIORITY_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_CANDIDATE_DEFERRAL_LIFECYCLE_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_SELECTION_DIAGNOSTICS_MAP"));
+        assert!(doc.contains("stable control/attention foundation"));
+        assert!(doc.contains("usable with caveats"));
+        assert!(doc.contains("preparatory only"));
+        assert!(doc.contains("non-canonical / internal-only"));
+        assert!(doc.contains("intentionally deferred"));
+        assert!(doc.contains("Selection ist **keine** Planning Engine"));
+        assert!(doc.contains("Candidate Selection impliziert **keinen** Memory Commit"));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
+        assert!(doc.contains("Priorität: Serie BB5 zuerst"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
     fn blue_brain_runtime_feedback_map_keeps_canonical_feedback_classes_explicit() {
         let map = canonical_blue_brain_runtime_feedback_map();
         assert_eq!(map.len(), 10);
