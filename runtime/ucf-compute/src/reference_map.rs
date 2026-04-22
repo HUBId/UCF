@@ -555,6 +555,60 @@ pub struct BlueBrainControlAttentionSelectionLane {
     pub canonical_guard: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainContextEvidencePriorityClass {
+    PrimaryContext,
+    SupportingContext,
+    DeferredContext,
+    IgnoredContext,
+    StaleContext,
+    InsufficientContext,
+    PrimaryEvidenceReference,
+    SupportingEvidenceReference,
+    CaveatedEvidenceReference,
+    NonCanonicalInternalOnlyPriorityPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainContextEvidencePriorityLane {
+    pub class: BlueBrainContextEvidencePriorityClass,
+    pub quality: BlueBrainSelectionBasisQualityClass,
+    pub lane: &'static str,
+    pub priority_semantics: &'static str,
+    pub source_binding: &'static str,
+    pub trigger_arbitration_binding: &'static str,
+    pub candidate_binding: &'static str,
+    pub deferral_or_caveat_reason: &'static str,
+    pub recheck_condition: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCandidateDeferralLifecycleClass {
+    CandidateSelected,
+    CandidateDeferred,
+    CandidateDeferredPendingStrongerEvidence,
+    CandidateDeferredPendingContextUpdate,
+    CandidateRejected,
+    CandidateStale,
+    CandidateInsufficient,
+    CandidateNotPersisted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCandidateDeferralLifecycleLane {
+    pub class: BlueBrainCandidateDeferralLifecycleClass,
+    pub quality: BlueBrainSelectionBasisQualityClass,
+    pub lane: &'static str,
+    pub lifecycle_semantics: &'static str,
+    pub source_binding: &'static str,
+    pub deferral_reason: &'static str,
+    pub recheck_condition: &'static str,
+    pub trigger_binding: &'static str,
+    pub memory_commit_boundary: &'static str,
+    pub canonical_guard: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -3154,6 +3208,263 @@ pub const CANONICAL_BLUE_BRAIN_COMPUTE_TRIGGER_ARBITRATION_MAP:
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_CONTEXT_EVIDENCE_PRIORITY_MAP:
+    [BlueBrainContextEvidencePriorityLane; 10] = [
+    BlueBrainContextEvidencePriorityLane {
+        class: BlueBrainContextEvidencePriorityClass::PrimaryContext,
+        quality: BlueBrainSelectionBasisQualityClass::Sufficient,
+        lane: "blue_brain_priority_primary_context_for_trigger",
+        priority_semantics: "primary context selected as canonical trigger basis",
+        source_binding:
+            "blue_brain_context_selected_for_current_transition + blue_brain_compute_trigger_selected_from_context",
+        trigger_arbitration_binding:
+            "primary context can emit selected trigger on CanonicalComputeEntryPoint::submit",
+        candidate_binding: "candidate selection may consume primary context without commit",
+        deferral_or_caveat_reason: "none; sufficient context basis",
+        recheck_condition: "not required while context remains current and sufficient",
+        canonical_guard:
+            "primary context priority is class-based and deterministic, not a numeric ranking engine",
+    },
+    BlueBrainContextEvidencePriorityLane {
+        class: BlueBrainContextEvidencePriorityClass::SupportingContext,
+        quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_priority_supporting_context_caveated",
+        priority_semantics: "supporting context is usable with explicit caveat posture",
+        source_binding:
+            "blue_brain_context_selected_for_compute_trigger_with_caveat + blue_brain_context_selected_with_caveat",
+        trigger_arbitration_binding: "supporting context may allow caveated trigger",
+        candidate_binding: "candidate may be proposed with caveated supporting context",
+        deferral_or_caveat_reason: "partial context quality requires caveat visibility",
+        recheck_condition:
+            "recheck when stronger evidence/context update improves from partial to sufficient",
+        canonical_guard:
+            "supporting class cannot silently upgrade to primary or hide caveats",
+    },
+    BlueBrainContextEvidencePriorityLane {
+        class: BlueBrainContextEvidencePriorityClass::DeferredContext,
+        quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_priority_deferred_context_pending_update",
+        priority_semantics:
+            "context is deferred: not selected now, still potentially relevant later",
+        source_binding:
+            "blue_brain_context_deferred_for_later_transition + blue_brain_compute_trigger_deferred",
+        trigger_arbitration_binding: "deferred context emits no trigger invocation yet",
+        candidate_binding: "deferred candidate/context remains non-persisted and reviewable",
+        deferral_or_caveat_reason:
+            "basis currently partial/caveated and not strong enough for selected trigger",
+        recheck_condition:
+            "recheck on context update or stronger evidence/reference basis becoming available",
+        canonical_guard:
+            "deferred context is not rejected, not ignored, and not a hidden scheduler lane",
+    },
+    BlueBrainContextEvidencePriorityLane {
+        class: BlueBrainContextEvidencePriorityClass::IgnoredContext,
+        quality: BlueBrainSelectionBasisQualityClass::Sufficient,
+        lane: "blue_brain_priority_ignored_context_not_relevant",
+        priority_semantics: "context explicitly ignored for current transition scope",
+        source_binding: "blue_brain_context_ignored_as_not_relevant_to_transition",
+        trigger_arbitration_binding: "ignored context produces no trigger candidate",
+        candidate_binding: "ignored context does not mutate candidate acceptance/rejection",
+        deferral_or_caveat_reason: "not relevant to active transition scope",
+        recheck_condition: "recheck only when transition scope changes",
+        canonical_guard:
+            "ignored context remains semantically separate from deferred, stale, and rejected",
+    },
+    BlueBrainContextEvidencePriorityLane {
+        class: BlueBrainContextEvidencePriorityClass::StaleContext,
+        quality: BlueBrainSelectionBasisQualityClass::Stale,
+        lane: "blue_brain_priority_stale_context_blocked",
+        priority_semantics: "stale context stays visible and blocked from trigger selection",
+        source_binding: "blue_brain_context_blocked_due_to_stale_basis",
+        trigger_arbitration_binding: "stale context blocks trigger selection",
+        candidate_binding: "candidates on stale basis may be marked stale",
+        deferral_or_caveat_reason: "reference freshness is stale/aged",
+        recheck_condition: "recheck when freshness returns to current/partial and is reviewable",
+        canonical_guard: "stale state cannot be collapsed into deferred or insufficient",
+    },
+    BlueBrainContextEvidencePriorityLane {
+        class: BlueBrainContextEvidencePriorityClass::InsufficientContext,
+        quality: BlueBrainSelectionBasisQualityClass::Insufficient,
+        lane: "blue_brain_priority_insufficient_context_blocks_trigger",
+        priority_semantics: "insufficient context explicitly blocks trigger eligibility",
+        source_binding:
+            "blue_brain_context_update_blocked_insufficient_evidence + blue_brain_evidence_reference_insufficient",
+        trigger_arbitration_binding:
+            "insufficient basis requires more context/evidence and blocks invocation",
+        candidate_binding: "candidate can be marked insufficient with no commit",
+        deferral_or_caveat_reason: "insufficient context/evidence basis",
+        recheck_condition: "recheck only when sufficient basis is observed",
+        canonical_guard:
+            "insufficient posture remains explicit and cannot auto-escalate by internal heuristics",
+    },
+    BlueBrainContextEvidencePriorityLane {
+        class: BlueBrainContextEvidencePriorityClass::PrimaryEvidenceReference,
+        quality: BlueBrainSelectionBasisQualityClass::Sufficient,
+        lane: "blue_brain_priority_primary_evidence_reference",
+        priority_semantics: "primary evidence/reference selected as high-confidence basis",
+        source_binding:
+            "blue_brain_evidence_reference_selected + blue_brain_reference_context_evidence_backed_sufficient",
+        trigger_arbitration_binding: "primary evidence can support selected trigger candidate",
+        candidate_binding: "candidate may be evidence-backed with sufficient quality",
+        deferral_or_caveat_reason: "none; sufficient evidence quality",
+        recheck_condition: "recheck on evidence freshness or caveat transitions",
+        canonical_guard:
+            "evidence priority remains reference-grade and not a planning/reasoning authority",
+    },
+    BlueBrainContextEvidencePriorityLane {
+        class: BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+        quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_priority_supporting_evidence_reference",
+        priority_semantics: "supporting evidence/reference informs but does not dominate selection",
+        source_binding:
+            "blue_brain_evidence_reference_deferred + blue_brain_reference_context_evidence_backed_partial_caveated",
+        trigger_arbitration_binding: "supporting evidence tends to deferred trigger posture",
+        candidate_binding: "candidate deferral can be justified by supporting-only evidence",
+        deferral_or_caveat_reason: "partial evidence quality pending stronger basis",
+        recheck_condition: "recheck when additional evidence improves quality",
+        canonical_guard:
+            "supporting evidence is distinct from primary and from insufficient evidence",
+    },
+    BlueBrainContextEvidencePriorityLane {
+        class: BlueBrainContextEvidencePriorityClass::CaveatedEvidenceReference,
+        quality: BlueBrainSelectionBasisQualityClass::Caveated,
+        lane: "blue_brain_priority_caveated_evidence_reference",
+        priority_semantics: "caveated evidence remains selectable only with caveat propagation",
+        source_binding: "blue_brain_evidence_reference_caveated",
+        trigger_arbitration_binding: "caveated evidence permits caveated trigger only",
+        candidate_binding: "candidate remains caveated and non-commit",
+        deferral_or_caveat_reason: "quality caveat must remain explicit",
+        recheck_condition: "recheck after caveat resolution or stronger corroboration",
+        canonical_guard:
+            "caveated evidence cannot be represented as fully sufficient or ignored silently",
+    },
+    BlueBrainContextEvidencePriorityLane {
+        class: BlueBrainContextEvidencePriorityClass::NonCanonicalInternalOnlyPriorityPath,
+        quality: BlueBrainSelectionBasisQualityClass::Insufficient,
+        lane: "blue_brain_priority_non_canonical_internal_only_path",
+        priority_semantics:
+            "internal/expert-only priority hints are non-canonical for BB4 authority",
+        source_binding:
+            "blue_brain_compute_trigger_internal_expert_only_non_canonical + run_operation_with_entry/replay_with_entry",
+        trigger_arbitration_binding:
+            "non-canonical path cannot directly trigger CanonicalComputeEntryPoint::submit",
+        candidate_binding: "internal-only path cannot mark canonical candidate priority",
+        deferral_or_caveat_reason: "requires down-mapping to canonical outward references",
+        recheck_condition: "recheck only after canonical down-mapping is provided",
+        canonical_guard:
+            "prevents internal/legacy/compat paths from appearing as canonical priority authority",
+    },
+];
+
+pub const CANONICAL_BLUE_BRAIN_CANDIDATE_DEFERRAL_LIFECYCLE_MAP:
+    [BlueBrainCandidateDeferralLifecycleLane; 8] = [
+    BlueBrainCandidateDeferralLifecycleLane {
+        class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+        quality: BlueBrainSelectionBasisQualityClass::Sufficient,
+        lane: "blue_brain_candidate_deferral_lifecycle_selected",
+        lifecycle_semantics: "candidate selected for future handling and remains non-persisted",
+        source_binding: "blue_brain_memory_candidate_selected_for_future_handling",
+        deferral_reason: "none; selected as strongest available candidate basis",
+        recheck_condition: "recheck as normal lifecycle review when new context/evidence arrives",
+        trigger_binding: "candidate can inform trigger arbitration but does not auto-trigger compute",
+        memory_commit_boundary: "selected candidate remains not persisted and no auto-commit exists",
+        canonical_guard: "candidate selected state is lifecycle-only and not a memory commit",
+    },
+    BlueBrainCandidateDeferralLifecycleLane {
+        class: BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred,
+        quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_candidate_deferral_lifecycle_deferred",
+        lifecycle_semantics:
+            "candidate deferred means currently not selected but still potentially relevant",
+        source_binding: "blue_brain_memory_candidate_deferred",
+        deferral_reason: "candidate deferred due to partial/caveated basis",
+        recheck_condition: "recheck when stronger evidence or context update is available",
+        trigger_binding: "deferred candidate does not trigger compute",
+        memory_commit_boundary: "deferred candidate is not persisted and not rejected",
+        canonical_guard:
+            "deferred is distinct from rejected/ignored/stale/insufficient and remains explicit",
+    },
+    BlueBrainCandidateDeferralLifecycleLane {
+        class: BlueBrainCandidateDeferralLifecycleClass::CandidateDeferredPendingStrongerEvidence,
+        quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_candidate_deferral_pending_stronger_evidence",
+        lifecycle_semantics:
+            "candidate deferred pending stronger evidence/reference basis",
+        source_binding:
+            "blue_brain_candidate_evidence_backed_reference + blue_brain_evidence_reference_deferred",
+        deferral_reason: "evidence quality partial/caveated and not yet sufficient",
+        recheck_condition: "recheck when evidence quality reaches sufficient",
+        trigger_binding: "no compute trigger until stronger evidence is observed",
+        memory_commit_boundary: "pending-evidence deferral performs no memory commit",
+        canonical_guard:
+            "deferral pending stronger evidence is not a ranking score or planning output",
+    },
+    BlueBrainCandidateDeferralLifecycleLane {
+        class: BlueBrainCandidateDeferralLifecycleClass::CandidateDeferredPendingContextUpdate,
+        quality: BlueBrainSelectionBasisQualityClass::Partial,
+        lane: "blue_brain_candidate_deferral_pending_context_update",
+        lifecycle_semantics: "candidate deferred pending context refresh/transition update",
+        source_binding:
+            "blue_brain_context_deferred_for_later_transition + blue_brain_candidate_only_without_context_mutation",
+        deferral_reason: "context transition window is not ready for selection",
+        recheck_condition: "recheck when runtime context update completes",
+        trigger_binding: "deferred pending context update keeps trigger in no-invocation posture",
+        memory_commit_boundary: "no memory commit while pending context update",
+        canonical_guard:
+            "pending-context deferral is explicit lifecycle state, not hidden workflow scheduling",
+    },
+    BlueBrainCandidateDeferralLifecycleLane {
+        class: BlueBrainCandidateDeferralLifecycleClass::CandidateRejected,
+        quality: BlueBrainSelectionBasisQualityClass::Caveated,
+        lane: "blue_brain_candidate_deferral_lifecycle_rejected",
+        lifecycle_semantics: "candidate rejected due to fault/caveat posture",
+        source_binding: "blue_brain_memory_candidate_rejected",
+        deferral_reason: "rejected due to fault/caveat and removed from active candidate set",
+        recheck_condition: "no recheck unless new candidate instance is formed",
+        trigger_binding: "rejected candidate does not trigger compute",
+        memory_commit_boundary: "rejected candidate is never persisted",
+        canonical_guard: "rejected remains distinct from deferred and ignored",
+    },
+    BlueBrainCandidateDeferralLifecycleLane {
+        class: BlueBrainCandidateDeferralLifecycleClass::CandidateStale,
+        quality: BlueBrainSelectionBasisQualityClass::Stale,
+        lane: "blue_brain_candidate_deferral_lifecycle_stale",
+        lifecycle_semantics: "candidate stale due to aged reference basis",
+        source_binding: "blue_brain_candidate_stale_reference_basis",
+        deferral_reason: "reference freshness stale",
+        recheck_condition: "recheck when refreshed reference basis exists",
+        trigger_binding: "stale candidate cannot trigger compute",
+        memory_commit_boundary: "stale candidate remains non-persistent",
+        canonical_guard: "stale remains separate from insufficient and deferred",
+    },
+    BlueBrainCandidateDeferralLifecycleLane {
+        class: BlueBrainCandidateDeferralLifecycleClass::CandidateInsufficient,
+        quality: BlueBrainSelectionBasisQualityClass::Insufficient,
+        lane: "blue_brain_candidate_deferral_lifecycle_insufficient",
+        lifecycle_semantics: "candidate insufficient due to weak or missing basis",
+        source_binding: "blue_brain_candidate_insufficient_reference_basis",
+        deferral_reason: "insufficient context/evidence basis",
+        recheck_condition: "recheck only on sufficient basis availability",
+        trigger_binding: "insufficient candidate blocks trigger invocation",
+        memory_commit_boundary: "insufficient candidate is not persisted",
+        canonical_guard: "insufficient remains explicit and not merged with rejection",
+    },
+    BlueBrainCandidateDeferralLifecycleLane {
+        class: BlueBrainCandidateDeferralLifecycleClass::CandidateNotPersisted,
+        quality: BlueBrainSelectionBasisQualityClass::Insufficient,
+        lane: "blue_brain_candidate_deferral_lifecycle_not_persisted",
+        lifecycle_semantics:
+            "all candidate outcomes explicitly carry not-persisted boundary in current baseline",
+        source_binding:
+            "blue_brain_candidate_persistence_unavailable_or_deferred + blue_brain_candidate_no_persistence_performed",
+        deferral_reason: "actual memory persistence path intentionally absent/deferred",
+        recheck_condition: "recheck only if future explicit persistence contract is added",
+        trigger_binding: "not-persisted marker does not trigger compute",
+        memory_commit_boundary: "no memory commit in current baseline",
+        canonical_guard: "candidate deferral lifecycle is not a memory commit or consolidation engine",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -3275,6 +3586,16 @@ pub fn canonical_blue_brain_reference_context_map() -> &'static [BlueBrainRefere
 pub fn canonical_blue_brain_control_attention_selection_map(
 ) -> &'static [BlueBrainControlAttentionSelectionLane] {
     &CANONICAL_BLUE_BRAIN_CONTROL_ATTENTION_SELECTION_MAP
+}
+
+pub fn canonical_blue_brain_context_evidence_priority_map(
+) -> &'static [BlueBrainContextEvidencePriorityLane] {
+    &CANONICAL_BLUE_BRAIN_CONTEXT_EVIDENCE_PRIORITY_MAP
+}
+
+pub fn canonical_blue_brain_candidate_deferral_lifecycle_map(
+) -> &'static [BlueBrainCandidateDeferralLifecycleLane] {
+    &CANONICAL_BLUE_BRAIN_CANDIDATE_DEFERRAL_LIFECYCLE_MAP
 }
 
 pub fn canonical_blue_brain_compute_trigger_arbitration_map(
@@ -5119,6 +5440,163 @@ mod tests {
         assert!(doc.contains("invocation caveated/degraded"));
         assert!(doc.contains("runtime context but not memory automatically"));
         assert!(doc.contains("Scheduler-/Planning-/Policy-/Reasoning-Plattform"));
+    }
+
+    #[test]
+    fn blue_brain_context_evidence_priority_map_keeps_primary_supporting_deferred_and_quality_classes_distinct(
+    ) {
+        let map = canonical_blue_brain_context_evidence_priority_map();
+        assert_eq!(map.len(), 10);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainContextEvidencePriorityClass::PrimaryContext));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainContextEvidencePriorityClass::SupportingContext));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainContextEvidencePriorityClass::DeferredContext));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainContextEvidencePriorityClass::IgnoredContext));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainContextEvidencePriorityClass::StaleContext));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainContextEvidencePriorityClass::InsufficientContext));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainContextEvidencePriorityClass::PrimaryEvidenceReference
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainContextEvidencePriorityClass::CaveatedEvidenceReference
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainContextEvidencePriorityClass::NonCanonicalInternalOnlyPriorityPath
+        }));
+
+        let deferred = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_priority_deferred_context_pending_update")
+            .expect("deferred context priority lane");
+        assert!(deferred
+            .trigger_arbitration_binding
+            .contains("no trigger invocation yet"));
+        assert!(deferred
+            .deferral_or_caveat_reason
+            .contains("partial/caveated"));
+        assert!(deferred
+            .recheck_condition
+            .contains("context update or stronger evidence"));
+        assert!(deferred
+            .canonical_guard
+            .contains("not rejected, not ignored"));
+
+        let insufficient = map
+            .iter()
+            .find(|lane| lane.lane == "blue_brain_priority_insufficient_context_blocks_trigger")
+            .expect("insufficient context priority lane");
+        assert!(insufficient
+            .trigger_arbitration_binding
+            .contains("blocks invocation"));
+    }
+
+    #[test]
+    fn blue_brain_candidate_deferral_lifecycle_map_distinguishes_deferred_rejected_stale_insufficient_and_not_persisted(
+    ) {
+        let map = canonical_blue_brain_candidate_deferral_lifecycle_map();
+        assert_eq!(map.len(), 8);
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCandidateDeferralLifecycleClass::CandidateSelected));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainCandidateDeferralLifecycleClass::CandidateDeferredPendingStrongerEvidence
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainCandidateDeferralLifecycleClass::CandidateDeferredPendingContextUpdate
+        }));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCandidateDeferralLifecycleClass::CandidateRejected));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCandidateDeferralLifecycleClass::CandidateStale));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainCandidateDeferralLifecycleClass::CandidateInsufficient
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainCandidateDeferralLifecycleClass::CandidateNotPersisted
+        }));
+
+        let deferred = map
+            .iter()
+            .find(|lane| lane.class == BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred)
+            .expect("candidate deferred lane");
+        assert!(deferred
+            .trigger_binding
+            .contains("does not trigger compute"));
+        assert!(deferred
+            .memory_commit_boundary
+            .contains("not persisted and not rejected"));
+        assert!(deferred
+            .canonical_guard
+            .contains("distinct from rejected/ignored/stale/insufficient"));
+
+        let pending_evidence = map
+            .iter()
+            .find(|lane| {
+                lane.class
+                    == BlueBrainCandidateDeferralLifecycleClass::CandidateDeferredPendingStrongerEvidence
+            })
+            .expect("pending stronger evidence lane");
+        assert!(pending_evidence
+            .recheck_condition
+            .contains("quality reaches sufficient"));
+
+        let not_persisted = map
+            .iter()
+            .find(|lane| {
+                lane.class == BlueBrainCandidateDeferralLifecycleClass::CandidateNotPersisted
+            })
+            .expect("not persisted lane");
+        assert!(not_persisted
+            .memory_commit_boundary
+            .contains("no memory commit"));
+    }
+
+    #[test]
+    fn serie_bb4_prompt3_priority_deferral_doc_stays_pinned_to_code_maps() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_priority_deferral_semantics_serie_bb4_prompt3_v1.md"
+        );
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_CONTEXT_EVIDENCE_PRIORITY_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_CANDIDATE_DEFERRAL_LIFECYCLE_MAP"));
+        assert!(doc.contains("primary context"));
+        assert!(doc.contains("supporting context"));
+        assert!(doc.contains("deferred context"));
+        assert!(doc.contains("ignored context"));
+        assert!(doc.contains("stale context"));
+        assert!(doc.contains("insufficient context"));
+        assert!(doc.contains("primary evidence/reference"));
+        assert!(doc.contains("supporting evidence/reference"));
+        assert!(doc.contains("caveated evidence/reference"));
+        assert!(doc.contains("non-canonical/internal-only priority path"));
+        assert!(doc.contains("candidate deferred pending stronger evidence"));
+        assert!(doc.contains("candidate deferred pending context update"));
+        assert!(doc.contains("deferred candidate does not trigger compute"));
+        assert!(doc.contains("no memory commit"));
+        assert!(doc.contains("not rejected"));
+        assert!(doc.contains("keine numerische Ranking- oder Scoring-Engine"));
+        assert!(doc.contains("keine Memory-Consolidation- oder Commit-Engine"));
     }
 
     #[test]
