@@ -116,6 +116,11 @@ feedback linkage, and strict non-canonical/internal-only exclusion), see
 For BB5 Prompt 4 readiness sweep and final minimal memory-commit closure line
 (matrix + canonical boundary classes + explicit no-auto-commit invariants + prioritized next direction), see
 `docs/blue_brain_readiness_sweep_serie_bb5_prompt4_v1.md`.
+For BB6 Prompt 1 planning/reasoning candidate surface
+(runtime/context/evidence/selection/memory/commit-feedback candidate basis classes + quality/caveat states +
+strict separation from decision/policy/action execution/memory commit), see
+`docs/blue_brain_planning_reasoning_candidate_surface_serie_bb6_prompt1_v1.md` and
+`CANONICAL_BLUE_BRAIN_PLANNING_REASONING_CANDIDATE_MAP`.
 
 ## Capability model
 
