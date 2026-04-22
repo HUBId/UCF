@@ -80,6 +80,22 @@ proposal-only attachment lanes), see
 For BB3 Prompt 5 readiness sweep + hard context/memory baseline closure matrix
 (stable vs caveated vs preparatory vs reference-only vs non-canonical vs deferred), see
 `docs/blue_brain_readiness_sweep_serie_bb3_prompt5_v1.md`.
+For BB4 Prompt 1 canonical control/attention/selection surface over runtime/context/evidence/
+candidate boundaries, see
+`docs/blue_brain_control_attention_selection_surface_serie_bb4_prompt1_v1.md` and
+`CANONICAL_BLUE_BRAIN_CONTROL_ATTENTION_SELECTION_MAP`.
+For BB4 Prompt 2 compute-trigger arbitration and selection-gated invocation, see
+`docs/blue_brain_compute_trigger_arbitration_serie_bb4_prompt2_v1.md` and
+`CANONICAL_BLUE_BRAIN_COMPUTE_TRIGGER_ARBITRATION_MAP`.
+For BB4 Prompt 3 context/evidence priority classes and candidate-deferral lifecycle semantics, see
+`docs/blue_brain_priority_deferral_semantics_serie_bb4_prompt3_v1.md`,
+`CANONICAL_BLUE_BRAIN_CONTEXT_EVIDENCE_PRIORITY_MAP`, and
+`CANONICAL_BLUE_BRAIN_CANDIDATE_DEFERRAL_LIFECYCLE_MAP`.
+For BB4 Prompt 4 control/attention diagnostics bind-back to runtime status/evidence exports, see
+`docs/blue_brain_control_attention_diagnostics_serie_bb4_prompt4_v1.md` and
+`CANONICAL_BLUE_BRAIN_SELECTION_DIAGNOSTICS_MAP`.
+For BB4 Prompt 5 readiness sweep and final control/attention baseline closure matrix, see
+`docs/blue_brain_readiness_sweep_serie_bb4_prompt5_v1.md`.
 
 ## Capability model
 
