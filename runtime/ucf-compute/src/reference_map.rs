@@ -787,6 +787,94 @@ pub struct BlueBrainPlanningReasoningCandidateLane {
     pub canonical_guard: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCandidateActionBoundaryClass {
+    PlanningReasoningCandidate,
+    ActionProposalNonExecuting,
+    SelectedProposal,
+    DeferredProposal,
+    RejectedProposal,
+    BlockedProposal,
+    CaveatedProposal,
+    InsufficientProposalBasis,
+    ExecutedActionCanonicalIfPresent,
+    NonCanonicalInternalOnlyActionLikePath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCandidateActionBoundaryExecutionState {
+    NoExecutionPerformed,
+    SelectedForPossibleFutureAction,
+    FutureActionReadyTriggerCandidateOnly,
+    ExecutedViaCanonicalComputePathOnlyIfExplicitlyInvoked,
+    NonCanonicalInternalOnlyNoAuthority,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCandidateActionBoundaryLane {
+    pub class: BlueBrainCandidateActionBoundaryClass,
+    pub execution_state: BlueBrainCandidateActionBoundaryExecutionState,
+    pub lane: &'static str,
+    pub candidate_or_proposal_semantics: &'static str,
+    pub basis_binding: &'static str,
+    pub context_evidence_selection_binding: &'static str,
+    pub trigger_origin_binding: &'static str,
+    pub memory_commit_feedback_binding: &'static str,
+    pub caveat_binding: &'static str,
+    pub compute_invocation_boundary: &'static str,
+    pub memory_commit_boundary: &'static str,
+    pub tool_execution_boundary: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCandidateToProposalTransitionClass {
+    CandidateRemainsCandidate,
+    CandidateYieldsActionProposal,
+    CandidateInsufficientForProposal,
+    CandidateYieldsCaveatedProposal,
+    CandidateRejectedBeforeProposal,
+    CandidateDeferredBeforeProposal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCandidateToProposalTransitionLane {
+    pub class: BlueBrainCandidateToProposalTransitionClass,
+    pub lane: &'static str,
+    pub source_candidate_binding: &'static str,
+    pub transition_semantics: &'static str,
+    pub proposal_outcome: &'static str,
+    pub execution_boundary: &'static str,
+    pub compute_boundary: &'static str,
+    pub memory_commit_boundary: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainNonExecutingActionProposalStateClass {
+    ProposalCreated,
+    ProposalSelectedForPossibleFutureAction,
+    ProposalDeferred,
+    ProposalRejected,
+    ProposalBlocked,
+    ProposalCaveated,
+    ProposalInsufficientBasis,
+    NoExecutionPerformed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainNonExecutingActionProposalStateLane {
+    pub class: BlueBrainNonExecutingActionProposalStateClass,
+    pub lane: &'static str,
+    pub proposal_state_semantics: &'static str,
+    pub proposal_basis_binding: &'static str,
+    pub execution_boundary: &'static str,
+    pub compute_trigger_boundary: &'static str,
+    pub memory_commit_boundary: &'static str,
+    pub tool_execution_boundary: &'static str,
+    pub canonical_guard: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -4482,6 +4570,356 @@ pub const CANONICAL_BLUE_BRAIN_PLANNING_REASONING_CANDIDATE_MAP:
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_CANDIDATE_ACTION_BOUNDARY_MAP:
+    [BlueBrainCandidateActionBoundaryLane; 10] = [
+    BlueBrainCandidateActionBoundaryLane {
+        class: BlueBrainCandidateActionBoundaryClass::PlanningReasoningCandidate,
+        execution_state: BlueBrainCandidateActionBoundaryExecutionState::NoExecutionPerformed,
+        lane: "blue_brain_planning_reasoning_candidate_boundary",
+        candidate_or_proposal_semantics:
+            "planning/reasoning candidate is basis-only and not an action proposal by default",
+        basis_binding: "CANONICAL_BLUE_BRAIN_PLANNING_REASONING_CANDIDATE_MAP",
+        context_evidence_selection_binding:
+            "CANONICAL_BLUE_BRAIN_CONTEXT_EVIDENCE_PRIORITY_MAP + CANONICAL_BLUE_BRAIN_CONTROL_ATTENTION_SELECTION_MAP",
+        trigger_origin_binding: "CANONICAL_BLUE_BRAIN_COMPUTE_TRIGGER_ARBITRATION_MAP",
+        memory_commit_feedback_binding:
+            "CANONICAL_BLUE_BRAIN_COMMIT_RESULT_SEMANTICS_MAP + CANONICAL_BLUE_BRAIN_MEMORY_COMMIT_DIAGNOSTICS_MAP",
+        caveat_binding: "candidate basis may be partial/caveated/stale/insufficient/deferred/blocked",
+        compute_invocation_boundary: "candidate does not invoke CanonicalComputeEntryPoint::submit",
+        memory_commit_boundary: "candidate does not imply memory commit",
+        tool_execution_boundary: "candidate does not imply tool execution",
+        canonical_guard:
+            "candidate semantics stay separate from proposal/decision/execution semantics",
+    },
+    BlueBrainCandidateActionBoundaryLane {
+        class: BlueBrainCandidateActionBoundaryClass::ActionProposalNonExecuting,
+        execution_state: BlueBrainCandidateActionBoundaryExecutionState::NoExecutionPerformed,
+        lane: "blue_brain_action_proposal_non_executing_created",
+        candidate_or_proposal_semantics:
+            "action proposal is a non-executing option derived from qualified candidate basis",
+        basis_binding: "CANONICAL_BLUE_BRAIN_CANDIDATE_TO_PROPOSAL_TRANSITION_MAP",
+        context_evidence_selection_binding:
+            "proposal carries context/evidence/selection references as explicit basis",
+        trigger_origin_binding: "proposal stores trigger/candidate origin reference",
+        memory_commit_feedback_binding:
+            "proposal may include memory-candidate/commit-feedback basis without persistence authority",
+        caveat_binding: "proposal caveats remain explicit and unresolved until future action path",
+        compute_invocation_boundary: "proposal creation performs no compute invocation",
+        memory_commit_boundary: "proposal creation performs no memory commit",
+        tool_execution_boundary: "proposal creation performs no tool execution",
+        canonical_guard: "proposal is non-executing by contract",
+    },
+    BlueBrainCandidateActionBoundaryLane {
+        class: BlueBrainCandidateActionBoundaryClass::SelectedProposal,
+        execution_state: BlueBrainCandidateActionBoundaryExecutionState::SelectedForPossibleFutureAction,
+        lane: "blue_brain_action_proposal_selected_future_action_ready_only",
+        candidate_or_proposal_semantics:
+            "selected proposal is selected for possible future action and remains non-executing",
+        basis_binding: "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP",
+        context_evidence_selection_binding: "selection references remain attached to proposal basis",
+        trigger_origin_binding: "selected proposal may become future trigger-candidate only",
+        memory_commit_feedback_binding: "commit feedback may adjust confidence, not execution",
+        caveat_binding: "selected proposal can remain caveated or conditional",
+        compute_invocation_boundary: "selection does not auto-invoke compute",
+        memory_commit_boundary: "selection does not auto-commit memory",
+        tool_execution_boundary: "selection does not auto-execute tools",
+        canonical_guard: "selected proposal != executed action",
+    },
+    BlueBrainCandidateActionBoundaryLane {
+        class: BlueBrainCandidateActionBoundaryClass::DeferredProposal,
+        execution_state:
+            BlueBrainCandidateActionBoundaryExecutionState::FutureActionReadyTriggerCandidateOnly,
+        lane: "blue_brain_action_proposal_deferred",
+        candidate_or_proposal_semantics:
+            "deferred proposal remains pending stronger context/evidence or trigger posture",
+        basis_binding: "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP",
+        context_evidence_selection_binding: "deferred proposal keeps prior basis references explicit",
+        trigger_origin_binding: "deferred proposal may re-enter as trigger-candidate later",
+        memory_commit_feedback_binding: "defer state has no persistence authority",
+        caveat_binding: "defer reasons/caveats remain attached",
+        compute_invocation_boundary: "defer performs no compute invocation",
+        memory_commit_boundary: "defer performs no memory commit",
+        tool_execution_boundary: "defer performs no tool execution",
+        canonical_guard: "deferred proposal stays unresolved and non-executing",
+    },
+    BlueBrainCandidateActionBoundaryLane {
+        class: BlueBrainCandidateActionBoundaryClass::RejectedProposal,
+        execution_state: BlueBrainCandidateActionBoundaryExecutionState::NoExecutionPerformed,
+        lane: "blue_brain_action_proposal_rejected",
+        candidate_or_proposal_semantics:
+            "rejected proposal is explicitly closed and not promoted to action execution",
+        basis_binding: "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP",
+        context_evidence_selection_binding: "rejection references failed basis/caveat reasons",
+        trigger_origin_binding: "rejected trigger/candidate origin remains diagnostic-only",
+        memory_commit_feedback_binding: "rejection provides no commit authority",
+        caveat_binding: "rejection rationale remains explicit for diagnostics",
+        compute_invocation_boundary: "rejection performs no compute invocation",
+        memory_commit_boundary: "rejection performs no memory commit",
+        tool_execution_boundary: "rejection performs no tool execution",
+        canonical_guard: "rejected proposal cannot be treated as selected/executed",
+    },
+    BlueBrainCandidateActionBoundaryLane {
+        class: BlueBrainCandidateActionBoundaryClass::BlockedProposal,
+        execution_state: BlueBrainCandidateActionBoundaryExecutionState::NoExecutionPerformed,
+        lane: "blue_brain_action_proposal_blocked",
+        candidate_or_proposal_semantics:
+            "blocked proposal remains blocked on stale/insufficient basis",
+        basis_binding: "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP",
+        context_evidence_selection_binding: "blocked state references stale/insufficient basis explicitly",
+        trigger_origin_binding: "blocked trigger source is retained as diagnostic context",
+        memory_commit_feedback_binding: "blocked proposal has no commit authority",
+        caveat_binding: "blocked basis caveat remains explicit",
+        compute_invocation_boundary: "blocked proposal cannot invoke compute",
+        memory_commit_boundary: "blocked proposal cannot commit memory",
+        tool_execution_boundary: "blocked proposal cannot execute tools",
+        canonical_guard: "blocked remains distinct from deferred/rejected",
+    },
+    BlueBrainCandidateActionBoundaryLane {
+        class: BlueBrainCandidateActionBoundaryClass::CaveatedProposal,
+        execution_state: BlueBrainCandidateActionBoundaryExecutionState::NoExecutionPerformed,
+        lane: "blue_brain_action_proposal_caveated",
+        candidate_or_proposal_semantics:
+            "caveated proposal remains available with explicit caveats and no execution side effects",
+        basis_binding: "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP",
+        context_evidence_selection_binding: "partial/caveated context-evidence basis is preserved",
+        trigger_origin_binding: "caveated trigger origin is carried forward explicitly",
+        memory_commit_feedback_binding: "caveated commit-feedback basis remains non-committing",
+        caveat_binding: "proposal caveat is canonical state, not implicit rejection",
+        compute_invocation_boundary: "caveated proposal performs no compute invocation",
+        memory_commit_boundary: "caveated proposal performs no memory commit",
+        tool_execution_boundary: "caveated proposal performs no tool execution",
+        canonical_guard: "caveat semantics are explicit and cannot be silently dropped",
+    },
+    BlueBrainCandidateActionBoundaryLane {
+        class: BlueBrainCandidateActionBoundaryClass::InsufficientProposalBasis,
+        execution_state: BlueBrainCandidateActionBoundaryExecutionState::NoExecutionPerformed,
+        lane: "blue_brain_action_proposal_insufficient_basis",
+        candidate_or_proposal_semantics:
+            "insufficient proposal basis blocks proposal promotion and execution",
+        basis_binding: "CANONICAL_BLUE_BRAIN_CANDIDATE_TO_PROPOSAL_TRANSITION_MAP",
+        context_evidence_selection_binding:
+            "insufficient context/evidence/selection basis remains explicit and unresolved",
+        trigger_origin_binding: "insufficient trigger/candidate origin stays diagnostic",
+        memory_commit_feedback_binding: "insufficient basis has no persistence authority",
+        caveat_binding: "insufficient basis may carry caveats requiring re-check",
+        compute_invocation_boundary: "insufficient basis cannot invoke compute",
+        memory_commit_boundary: "insufficient basis cannot commit memory",
+        tool_execution_boundary: "insufficient basis cannot execute tools",
+        canonical_guard: "insufficient basis must remain visible and non-promoted",
+    },
+    BlueBrainCandidateActionBoundaryLane {
+        class: BlueBrainCandidateActionBoundaryClass::ExecutedActionCanonicalIfPresent,
+        execution_state:
+            BlueBrainCandidateActionBoundaryExecutionState::ExecutedViaCanonicalComputePathOnlyIfExplicitlyInvoked,
+        lane: "blue_brain_executed_action_only_via_explicit_canonical_path",
+        candidate_or_proposal_semantics:
+            "executed action exists only where explicit canonical invocation path is taken",
+        basis_binding:
+            "service_surface::CanonicalComputeEntryPoint::{submit,status,drain_scheduler}",
+        context_evidence_selection_binding:
+            "execution result/status/evidence remains separate from proposal-state semantics",
+        trigger_origin_binding: "explicit invocation decision is required before execution",
+        memory_commit_feedback_binding:
+            "execution output/evidence is not a memory commit by default",
+        caveat_binding: "caveated runtime result does not redefine proposal boundary",
+        compute_invocation_boundary:
+            "execution requires explicit call on canonical compute execution contract",
+        memory_commit_boundary: "executed action does not auto-commit memory",
+        tool_execution_boundary:
+            "tool execution remains separately gated and not implied by proposal presence",
+        canonical_guard: "proposal state never implies executed action",
+    },
+    BlueBrainCandidateActionBoundaryLane {
+        class: BlueBrainCandidateActionBoundaryClass::NonCanonicalInternalOnlyActionLikePath,
+        execution_state:
+            BlueBrainCandidateActionBoundaryExecutionState::NonCanonicalInternalOnlyNoAuthority,
+        lane: "blue_brain_non_canonical_internal_action_like_path",
+        candidate_or_proposal_semantics:
+            "internal/expert/compat action-like path is non-canonical for BB6 proposal authority",
+        basis_binding:
+            "run_operation_with_entry/replay_with_entry/build_backend(kind=stub|candle|worker)/domains/ai*",
+        context_evidence_selection_binding:
+            "non-canonical path must down-map to canonical context/evidence/selection references",
+        trigger_origin_binding: "internal-only trigger source has no canonical outward authority",
+        memory_commit_feedback_binding: "internal-only path has no memory commit authority",
+        caveat_binding: "non-canonical marker is mandatory and load-bearing",
+        compute_invocation_boundary:
+            "internal-only path cannot be treated as canonical proposal-to-execution bridge",
+        memory_commit_boundary: "internal-only path cannot promote proposal to commit",
+        tool_execution_boundary: "internal-only helper path cannot imply tool execution authority",
+        canonical_guard:
+            "non-canonical action-like paths are excluded from BB6 canonical candidate/proposal boundary",
+    },
+];
+
+pub const CANONICAL_BLUE_BRAIN_CANDIDATE_TO_PROPOSAL_TRANSITION_MAP:
+    [BlueBrainCandidateToProposalTransitionLane; 6] = [
+    BlueBrainCandidateToProposalTransitionLane {
+        class: BlueBrainCandidateToProposalTransitionClass::CandidateRemainsCandidate,
+        lane: "blue_brain_candidate_remains_candidate",
+        source_candidate_binding: "CANONICAL_BLUE_BRAIN_PLANNING_REASONING_CANDIDATE_MAP",
+        transition_semantics:
+            "candidate remains candidate when basis is exploratory/deferred and not proposal-ready",
+        proposal_outcome: "no proposal created",
+        execution_boundary: "candidate remains non-executing",
+        compute_boundary: "candidate remains non-invoking",
+        memory_commit_boundary: "candidate remains non-committing",
+        canonical_guard: "not every candidate yields a proposal",
+    },
+    BlueBrainCandidateToProposalTransitionLane {
+        class: BlueBrainCandidateToProposalTransitionClass::CandidateYieldsActionProposal,
+        lane: "blue_brain_candidate_yields_non_executing_action_proposal",
+        source_candidate_binding:
+            "runtime/context/evidence/selection basis with explicit trigger origin and caveat posture",
+        transition_semantics: "qualified candidate yields action proposal as non-executing option",
+        proposal_outcome: "proposal created",
+        execution_boundary: "proposal creation does not execute action",
+        compute_boundary: "proposal creation does not invoke compute",
+        memory_commit_boundary: "proposal creation does not commit memory",
+        canonical_guard: "proposal remains basis-bound and non-executing",
+    },
+    BlueBrainCandidateToProposalTransitionLane {
+        class: BlueBrainCandidateToProposalTransitionClass::CandidateInsufficientForProposal,
+        lane: "blue_brain_candidate_insufficient_for_proposal",
+        source_candidate_binding: "insufficient/stale/blocked candidate basis",
+        transition_semantics:
+            "candidate basis is insufficient and cannot be promoted into action proposal",
+        proposal_outcome: "proposal insufficient basis",
+        execution_boundary: "insufficient candidate cannot execute action",
+        compute_boundary: "insufficient candidate cannot invoke compute",
+        memory_commit_boundary: "insufficient candidate cannot commit memory",
+        canonical_guard: "insufficient stays explicit and non-promoted",
+    },
+    BlueBrainCandidateToProposalTransitionLane {
+        class: BlueBrainCandidateToProposalTransitionClass::CandidateYieldsCaveatedProposal,
+        lane: "blue_brain_candidate_yields_caveated_proposal",
+        source_candidate_binding: "partial/caveated candidate basis",
+        transition_semantics: "candidate yields caveated proposal with unresolved caveat posture",
+        proposal_outcome: "proposal caveated",
+        execution_boundary: "caveated proposal does not execute action",
+        compute_boundary: "caveated proposal does not invoke compute",
+        memory_commit_boundary: "caveated proposal does not commit memory",
+        canonical_guard: "caveat remains explicit and load-bearing",
+    },
+    BlueBrainCandidateToProposalTransitionLane {
+        class: BlueBrainCandidateToProposalTransitionClass::CandidateRejectedBeforeProposal,
+        lane: "blue_brain_candidate_rejected_before_proposal",
+        source_candidate_binding: "rejected candidate basis from selection/memory-candidate boundary",
+        transition_semantics:
+            "candidate is rejected prior to proposal creation and remains diagnostics-only",
+        proposal_outcome: "proposal rejected",
+        execution_boundary: "rejected candidate does not execute action",
+        compute_boundary: "rejected candidate does not invoke compute",
+        memory_commit_boundary: "rejected candidate does not commit memory",
+        canonical_guard: "rejected-before-proposal is distinct from deferred/blocked",
+    },
+    BlueBrainCandidateToProposalTransitionLane {
+        class: BlueBrainCandidateToProposalTransitionClass::CandidateDeferredBeforeProposal,
+        lane: "blue_brain_candidate_deferred_before_proposal",
+        source_candidate_binding: "deferred candidate basis pending context/evidence refresh",
+        transition_semantics: "candidate is deferred prior to proposal creation",
+        proposal_outcome: "proposal deferred",
+        execution_boundary: "deferred candidate does not execute action",
+        compute_boundary: "deferred candidate does not invoke compute",
+        memory_commit_boundary: "deferred candidate does not commit memory",
+        canonical_guard: "deferred-before-proposal remains explicit unresolved state",
+    },
+];
+
+pub const CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP:
+    [BlueBrainNonExecutingActionProposalStateLane; 8] = [
+    BlueBrainNonExecutingActionProposalStateLane {
+        class: BlueBrainNonExecutingActionProposalStateClass::ProposalCreated,
+        lane: "blue_brain_action_proposal_created",
+        proposal_state_semantics: "proposal created from qualified candidate basis",
+        proposal_basis_binding:
+            "context basis + evidence/reference basis + selection state + trigger origin + caveats",
+        execution_boundary: "proposal created: no execution performed",
+        compute_trigger_boundary: "proposal created: no compute trigger performed",
+        memory_commit_boundary: "proposal created: no memory commit performed",
+        tool_execution_boundary: "proposal created: no tool execution performed",
+        canonical_guard: "proposal creation is non-executing by default",
+    },
+    BlueBrainNonExecutingActionProposalStateLane {
+        class: BlueBrainNonExecutingActionProposalStateClass::ProposalSelectedForPossibleFutureAction,
+        lane: "blue_brain_action_proposal_selected",
+        proposal_state_semantics: "proposal selected for possible future action",
+        proposal_basis_binding: "selection outcome with preserved basis and caveats",
+        execution_boundary: "proposal selected: no execution performed",
+        compute_trigger_boundary: "proposal selected: no compute trigger performed",
+        memory_commit_boundary: "proposal selected: no memory commit performed",
+        tool_execution_boundary: "proposal selected: no tool execution performed",
+        canonical_guard: "selected proposal is not executed action",
+    },
+    BlueBrainNonExecutingActionProposalStateLane {
+        class: BlueBrainNonExecutingActionProposalStateClass::ProposalDeferred,
+        lane: "blue_brain_action_proposal_deferred_state",
+        proposal_state_semantics: "proposal deferred pending stronger basis",
+        proposal_basis_binding: "defer reason ties to context/evidence/selection gap",
+        execution_boundary: "proposal deferred: no execution performed",
+        compute_trigger_boundary: "proposal deferred: no compute trigger performed",
+        memory_commit_boundary: "proposal deferred: no memory commit performed",
+        tool_execution_boundary: "proposal deferred: no tool execution performed",
+        canonical_guard: "deferred remains separate from rejected/blocked",
+    },
+    BlueBrainNonExecutingActionProposalStateLane {
+        class: BlueBrainNonExecutingActionProposalStateClass::ProposalRejected,
+        lane: "blue_brain_action_proposal_rejected_state",
+        proposal_state_semantics: "proposal rejected with explicit reason",
+        proposal_basis_binding: "rejection references insufficient/invalid basis",
+        execution_boundary: "proposal rejected: no execution performed",
+        compute_trigger_boundary: "proposal rejected: no compute trigger performed",
+        memory_commit_boundary: "proposal rejected: no memory commit performed",
+        tool_execution_boundary: "proposal rejected: no tool execution performed",
+        canonical_guard: "rejected proposal is terminal for current basis window",
+    },
+    BlueBrainNonExecutingActionProposalStateLane {
+        class: BlueBrainNonExecutingActionProposalStateClass::ProposalBlocked,
+        lane: "blue_brain_action_proposal_blocked_state",
+        proposal_state_semantics: "proposal blocked due to stale/blocked basis",
+        proposal_basis_binding: "blocked basis markers from trigger/context/evidence lanes",
+        execution_boundary: "proposal blocked: no execution performed",
+        compute_trigger_boundary: "proposal blocked: no compute trigger performed",
+        memory_commit_boundary: "proposal blocked: no memory commit performed",
+        tool_execution_boundary: "proposal blocked: no tool execution performed",
+        canonical_guard: "blocked is explicit and non-interchangeable with deferred",
+    },
+    BlueBrainNonExecutingActionProposalStateLane {
+        class: BlueBrainNonExecutingActionProposalStateClass::ProposalCaveated,
+        lane: "blue_brain_action_proposal_caveated_state",
+        proposal_state_semantics: "proposal caveated with partial/uncertain basis",
+        proposal_basis_binding: "caveated context/evidence/selection basis with explicit caveat",
+        execution_boundary: "proposal caveated: no execution performed",
+        compute_trigger_boundary: "proposal caveated: no compute trigger performed",
+        memory_commit_boundary: "proposal caveated: no memory commit performed",
+        tool_execution_boundary: "proposal caveated: no tool execution performed",
+        canonical_guard: "caveat state must be preserved in proposal lifecycle",
+    },
+    BlueBrainNonExecutingActionProposalStateLane {
+        class: BlueBrainNonExecutingActionProposalStateClass::ProposalInsufficientBasis,
+        lane: "blue_brain_action_proposal_insufficient_state",
+        proposal_state_semantics: "proposal basis insufficient for progression",
+        proposal_basis_binding: "insufficient candidate/context/evidence basis markers",
+        execution_boundary: "proposal insufficient: no execution performed",
+        compute_trigger_boundary: "proposal insufficient: no compute trigger performed",
+        memory_commit_boundary: "proposal insufficient: no memory commit performed",
+        tool_execution_boundary: "proposal insufficient: no tool execution performed",
+        canonical_guard: "insufficient state blocks proposal promotion",
+    },
+    BlueBrainNonExecutingActionProposalStateLane {
+        class: BlueBrainNonExecutingActionProposalStateClass::NoExecutionPerformed,
+        lane: "blue_brain_action_proposal_no_execution_performed",
+        proposal_state_semantics:
+            "proposal lifecycle state confirms no execution/compute/tool/memory side effect occurred",
+        proposal_basis_binding: "all proposal states keep non-executing boundary explicit",
+        execution_boundary: "no execution performed",
+        compute_trigger_boundary: "no compute trigger performed",
+        memory_commit_boundary: "no memory commit performed",
+        tool_execution_boundary: "no tool execution performed",
+        canonical_guard: "BB6 proposal surface is non-executing by definition",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -4493,6 +4931,21 @@ pub fn canonical_production_reference_lane() -> ComputeReferenceLane {
 pub fn canonical_blue_brain_selection_diagnostics_map(
 ) -> &'static [BlueBrainSelectionDiagnosticLane] {
     &CANONICAL_BLUE_BRAIN_SELECTION_DIAGNOSTICS_MAP
+}
+
+pub fn canonical_blue_brain_candidate_action_boundary_map(
+) -> &'static [BlueBrainCandidateActionBoundaryLane] {
+    &CANONICAL_BLUE_BRAIN_CANDIDATE_ACTION_BOUNDARY_MAP
+}
+
+pub fn canonical_blue_brain_candidate_to_proposal_transition_map(
+) -> &'static [BlueBrainCandidateToProposalTransitionLane] {
+    &CANONICAL_BLUE_BRAIN_CANDIDATE_TO_PROPOSAL_TRANSITION_MAP
+}
+
+pub fn canonical_blue_brain_non_executing_action_proposal_state_map(
+) -> &'static [BlueBrainNonExecutingActionProposalStateLane] {
+    &CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP
 }
 
 pub fn canonical_final_reference_line() -> CanonicalFinalReferenceLine {
@@ -6964,6 +7417,164 @@ mod tests {
         assert!(doc.contains("keine Planning-Engine"));
         assert!(doc.contains("keine Reasoning-Engine"));
         assert!(doc.contains("keine Policy-/RL-/Agentenplattform"));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
+    fn blue_brain_candidate_action_boundary_map_keeps_candidate_proposal_and_execution_classes_distinct(
+    ) {
+        let map = canonical_blue_brain_candidate_action_boundary_map();
+        assert_eq!(map.len(), 10);
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainCandidateActionBoundaryClass::PlanningReasoningCandidate
+        }));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class
+                == BlueBrainCandidateActionBoundaryClass::ActionProposalNonExecuting));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCandidateActionBoundaryClass::SelectedProposal));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCandidateActionBoundaryClass::DeferredProposal));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCandidateActionBoundaryClass::RejectedProposal));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCandidateActionBoundaryClass::BlockedProposal));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainCandidateActionBoundaryClass::CaveatedProposal));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainCandidateActionBoundaryClass::InsufficientProposalBasis
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainCandidateActionBoundaryClass::ExecutedActionCanonicalIfPresent
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainCandidateActionBoundaryClass::NonCanonicalInternalOnlyActionLikePath
+        }));
+    }
+
+    #[test]
+    fn blue_brain_non_executing_action_proposal_maps_block_auto_execution_compute_tool_and_commit()
+    {
+        let boundary_map = canonical_blue_brain_candidate_action_boundary_map();
+        let proposal_states = canonical_blue_brain_non_executing_action_proposal_state_map();
+        assert!(proposal_states
+            .iter()
+            .all(|lane| lane.execution_boundary.contains("no")));
+        assert!(proposal_states
+            .iter()
+            .all(|lane| lane.compute_trigger_boundary.contains("no")));
+        assert!(proposal_states
+            .iter()
+            .all(|lane| lane.memory_commit_boundary.contains("no")));
+        assert!(proposal_states
+            .iter()
+            .all(|lane| lane.tool_execution_boundary.contains("no")));
+        assert!(boundary_map.iter().any(|lane| {
+            lane.class == BlueBrainCandidateActionBoundaryClass::ExecutedActionCanonicalIfPresent
+                && lane
+                    .compute_invocation_boundary
+                    .contains("requires explicit call")
+        }));
+    }
+
+    #[test]
+    fn blue_brain_candidate_to_proposal_transition_map_keeps_non_auto_promotion_rules_explicit() {
+        let transitions = canonical_blue_brain_candidate_to_proposal_transition_map();
+        assert_eq!(transitions.len(), 6);
+        assert!(transitions.iter().any(|lane| {
+            lane.class == BlueBrainCandidateToProposalTransitionClass::CandidateRemainsCandidate
+                && lane.proposal_outcome == "no proposal created"
+        }));
+        assert!(transitions.iter().any(|lane| {
+            lane.class == BlueBrainCandidateToProposalTransitionClass::CandidateYieldsActionProposal
+                && lane.proposal_outcome == "proposal created"
+        }));
+        assert!(transitions.iter().any(|lane| {
+            lane.class
+                == BlueBrainCandidateToProposalTransitionClass::CandidateInsufficientForProposal
+                && lane.proposal_outcome.contains("insufficient")
+        }));
+        assert!(transitions.iter().any(|lane| {
+            lane.class
+                == BlueBrainCandidateToProposalTransitionClass::CandidateYieldsCaveatedProposal
+                && lane.proposal_outcome.contains("caveated")
+        }));
+        assert!(transitions.iter().any(|lane| {
+            lane.class
+                == BlueBrainCandidateToProposalTransitionClass::CandidateRejectedBeforeProposal
+                && lane.proposal_outcome.contains("rejected")
+        }));
+        assert!(transitions.iter().any(|lane| {
+            lane.class
+                == BlueBrainCandidateToProposalTransitionClass::CandidateDeferredBeforeProposal
+                && lane.proposal_outcome.contains("deferred")
+        }));
+        assert!(transitions.iter().all(|lane| {
+            lane.execution_boundary.contains("no")
+                || lane.execution_boundary.contains("not")
+                || lane.execution_boundary.contains("cannot")
+                || lane.execution_boundary.contains("non-")
+        }));
+        assert!(transitions.iter().all(|lane| {
+            lane.compute_boundary.contains("no")
+                || lane.compute_boundary.contains("not")
+                || lane.compute_boundary.contains("cannot")
+                || lane.compute_boundary.contains("non-")
+        }));
+        assert!(transitions.iter().all(|lane| {
+            lane.memory_commit_boundary.contains("no")
+                || lane.memory_commit_boundary.contains("not")
+                || lane.memory_commit_boundary.contains("cannot")
+                || lane.memory_commit_boundary.contains("non-")
+        }));
+    }
+
+    #[test]
+    fn serie_bb6_prompt2_candidate_action_boundary_doc_stays_pinned_to_code_maps() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_candidate_action_boundary_serie_bb6_prompt2_v1.md"
+        );
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_CANDIDATE_ACTION_BOUNDARY_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_CANDIDATE_TO_PROPOSAL_TRANSITION_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP"));
+        assert!(doc.contains("planning/reasoning candidate"));
+        assert!(doc.contains("action proposal (non-executing)"));
+        assert!(doc.contains("selected proposal"));
+        assert!(doc.contains("deferred proposal"));
+        assert!(doc.contains("rejected proposal"));
+        assert!(doc.contains("blocked proposal"));
+        assert!(doc.contains("caveated proposal"));
+        assert!(doc.contains("insufficient proposal basis"));
+        assert!(doc.contains("executed action (canonical path only if explicit invocation exists)"));
+        assert!(doc.contains("non-canonical/internal-only action-like path"));
+        assert!(doc.contains("proposal created"));
+        assert!(doc.contains("proposal selected for possible future action"));
+        assert!(doc.contains("proposal deferred"));
+        assert!(doc.contains("proposal rejected"));
+        assert!(doc.contains("proposal blocked"));
+        assert!(doc.contains("proposal caveated"));
+        assert!(doc.contains("proposal insufficient basis"));
+        assert!(doc.contains("no execution performed"));
+        assert!(doc.contains("candidate remains candidate"));
+        assert!(doc.contains("candidate yields proposal"));
+        assert!(doc.contains("candidate insufficient for proposal"));
+        assert!(doc.contains("candidate yields caveated proposal"));
+        assert!(doc.contains("candidate rejected before proposal"));
+        assert!(doc.contains("candidate deferred before proposal"));
+        assert!(doc.contains("no automatic action execution"));
+        assert!(doc.contains("no automatic compute invocation"));
+        assert!(doc.contains("no automatic memory commit"));
+        assert!(doc.contains("no automatic tool execution"));
         assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
         assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
     }
