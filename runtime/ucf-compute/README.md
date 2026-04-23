@@ -171,6 +171,11 @@ For BB8 Prompt 4 minimal persisted-memory maintenance/invalidation/caveat-refres
 For BB8 Prompt 5 readiness sweep and final minimal persisted-memory closure line
 (matrix + canonical store/record/commit/retrieval/diagnostics/maintenance states + strict boundaries to history/snapshot/evidence/replay and ranking/vector/consolidation/reasoning/action claims + prioritized next direction), see
 `docs/blue_brain_readiness_sweep_serie_bb8_prompt5_v1.md`.
+For BB9 Prompt 1 minimal action execution eligibility boundary and safety precheck semantics
+(canonical future-action-ready vs execution-eligible split, safety precheck states, eligibility conditions, memory/context/evidence/selection/diagnostics bind-back, strict non-execution/non-tool/non-compute/non-commit boundaries), see
+`docs/blue_brain_action_execution_eligibility_boundary_serie_bb9_prompt1_v1.md`,
+`CANONICAL_BLUE_BRAIN_ACTION_EXECUTION_ELIGIBILITY_MAP`, and
+`CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP`.
 
 ## Capability model
 

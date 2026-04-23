@@ -1043,6 +1043,58 @@ pub struct BlueBrainActionResultPlaceholderLane {
     pub canonical_guard: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainSafetyPrecheckClass {
+    Passed,
+    Failed,
+    Blocked,
+    Caveated,
+    Insufficient,
+    Unavailable,
+    NotApplicable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainSafetyPrecheckLane {
+    pub class: BlueBrainSafetyPrecheckClass,
+    pub lane: &'static str,
+    pub precheck_semantics: &'static str,
+    pub basis_binding: &'static str,
+    pub eligibility_effect: &'static str,
+    pub execution_boundary: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainActionExecutionEligibilityClass {
+    FutureActionReadyHandoff,
+    ExecutionEligibleHandoff,
+    ExecutionIneligibleHandoff,
+    ExecutionBlockedHandoff,
+    ExecutionCaveatedHandoff,
+    ExecutionInsufficientBasis,
+    SafetyPrecheckPassed,
+    SafetyPrecheckFailed,
+    SafetyPrecheckBlocked,
+    SafetyPrecheckUnavailable,
+    ExecutedActionCanonicalIfPresent,
+    NonCanonicalInternalOnlyExecutionPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainActionExecutionEligibilityLane {
+    pub class: BlueBrainActionExecutionEligibilityClass,
+    pub lane: &'static str,
+    pub eligibility_semantics: &'static str,
+    pub handoff_binding: &'static str,
+    pub context_evidence_basis: &'static str,
+    pub selection_candidate_basis: &'static str,
+    pub memory_basis: &'static str,
+    pub safety_precheck_binding: &'static str,
+    pub execution_boundary: &'static str,
+    pub canonical_guard: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -6322,6 +6374,309 @@ pub const CANONICAL_BLUE_BRAIN_ACTION_RESULT_PLACEHOLDER_MAP:
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP: [BlueBrainSafetyPrecheckLane; 7] = [
+    BlueBrainSafetyPrecheckLane {
+        class: BlueBrainSafetyPrecheckClass::Passed,
+        lane: "blue_brain_safety_precheck_passed",
+        precheck_semantics: "precheck passed on canonical safety basis and remains non-executing",
+        basis_binding:
+            "references canonical context/evidence/selection/proposal/memory diagnostics without policy-governance expansion",
+        eligibility_effect:
+            "permits execution-eligible classification when all other eligibility conditions remain satisfied",
+        execution_boundary:
+            "precheck passed is not execution, not tool invocation, not compute invocation, and not memory commit",
+        canonical_guard:
+            "precheck is bounded safety semantics only; no governance policy verdict and no planner output",
+    },
+    BlueBrainSafetyPrecheckLane {
+        class: BlueBrainSafetyPrecheckClass::Failed,
+        lane: "blue_brain_safety_precheck_failed",
+        precheck_semantics:
+            "precheck failed due to canonical safety blocker and prevents eligibility promotion",
+        basis_binding:
+            "failed state references explicit canonical blocker diagnostics and not internal-only hooks",
+        eligibility_effect: "forces execution-ineligible or execution-blocked classification",
+        execution_boundary:
+            "precheck failed emits diagnostics only and performs no action/tool/compute/memory side effects",
+        canonical_guard: "failed precheck cannot be downplayed as caveated or advisory-only noise",
+    },
+    BlueBrainSafetyPrecheckLane {
+        class: BlueBrainSafetyPrecheckClass::Blocked,
+        lane: "blue_brain_safety_precheck_blocked",
+        precheck_semantics:
+            "precheck blocked because required canonical safety/context/evidence basis is blocked",
+        basis_binding:
+            "blocked state binds to missing or blocked canonical references and down-mapped non-canonical dependencies",
+        eligibility_effect: "forces execution-blocked classification until basis repair",
+        execution_boundary:
+            "precheck blocked remains diagnostic and non-executing with no tool/compute/commit activity",
+        canonical_guard:
+            "blocked precheck is distinct from failed/insufficient/unavailable and must stay explicit",
+    },
+    BlueBrainSafetyPrecheckLane {
+        class: BlueBrainSafetyPrecheckClass::Caveated,
+        lane: "blue_brain_safety_precheck_caveated",
+        precheck_semantics:
+            "precheck caveated when safety basis is usable but bounded caveats remain explicit",
+        basis_binding:
+            "caveat references canonical memory, comparison, context, and evidence caveat diagnostics",
+        eligibility_effect:
+            "allows execution-caveated classification only when caveated-allowed conditions are explicit",
+        execution_boundary:
+            "precheck caveated never implies executed action and cannot invoke tools/compute/commit",
+        canonical_guard:
+            "caveated precheck is bounded and canonical, not free-form policy/governance prose",
+    },
+    BlueBrainSafetyPrecheckLane {
+        class: BlueBrainSafetyPrecheckClass::Insufficient,
+        lane: "blue_brain_safety_precheck_insufficient",
+        precheck_semantics:
+            "precheck insufficient because required canonical safety basis is below minimum threshold",
+        basis_binding:
+            "insufficient binds to canonical missing/weak context-evidence-selection-memory diagnostics",
+        eligibility_effect: "forces execution-insufficient-basis classification",
+        execution_boundary:
+            "insufficient precheck is strictly non-executing and emits diagnostics only",
+        canonical_guard:
+            "insufficient precheck cannot be auto-promoted through internal/expert-only dependencies",
+    },
+    BlueBrainSafetyPrecheckLane {
+        class: BlueBrainSafetyPrecheckClass::Unavailable,
+        lane: "blue_brain_safety_precheck_unavailable",
+        precheck_semantics:
+            "precheck unavailable when canonical precheck surface is absent in current boundary window",
+        basis_binding:
+            "unavailable reason references endpoint or dependency unavailability with canonical basis retention",
+        eligibility_effect: "prevents execution-eligible and yields execution-ineligible or blocked posture",
+        execution_boundary:
+            "unavailable precheck does not fallback to implicit execution path, tool call, compute call, or memory commit",
+        canonical_guard:
+            "unavailable is explicit and distinct from failed/blocked/insufficient to avoid semantic collapse",
+    },
+    BlueBrainSafetyPrecheckLane {
+        class: BlueBrainSafetyPrecheckClass::NotApplicable,
+        lane: "blue_brain_safety_precheck_not_applicable",
+        precheck_semantics:
+            "precheck not applicable for strictly diagnostic-only and non-handoff paths",
+        basis_binding:
+            "N/A state is valid only when no execution-eligibility transition is requested",
+        eligibility_effect:
+            "keeps handoff diagnostic-only or future-action-ready without execution-eligible promotion",
+        execution_boundary:
+            "not-applicable precheck has no execution implication and no action/tool/compute/commit side effects",
+        canonical_guard:
+            "not-applicable cannot be used to bypass required precheck for execution eligibility",
+    },
+];
+
+pub const CANONICAL_BLUE_BRAIN_ACTION_EXECUTION_ELIGIBILITY_MAP:
+    [BlueBrainActionExecutionEligibilityLane; 12] = [
+    BlueBrainActionExecutionEligibilityLane {
+        class: BlueBrainActionExecutionEligibilityClass::FutureActionReadyHandoff,
+        lane: "blue_brain_execution_eligibility_future_action_ready_only",
+        eligibility_semantics:
+            "future-action-ready handoff is preparatory and not yet execution-eligible without safety precheck",
+        handoff_binding:
+            "CANONICAL_BLUE_BRAIN_FUTURE_ACTION_HANDOFF_MAP::FutureActionReady|FuturePlanReady",
+        context_evidence_basis:
+            "context/evidence basis can be sufficient or caveated while still remaining future-ready only",
+        selection_candidate_basis:
+            "selected or accepted proposal basis is required for future-ready handoff identity",
+        memory_basis:
+            "memory basis attached as current/stale/caveated/invalidated/missing diagnostics and not auto-committed",
+        safety_precheck_binding:
+            "CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP::NotApplicable|Unavailable before eligibility promotion",
+        execution_boundary:
+            "future-action-ready only: no execution, no tool invocation, no compute invocation, no memory commit",
+        canonical_guard:
+            "future-action-ready must stay distinct from execution-eligible and executed action states",
+    },
+    BlueBrainActionExecutionEligibilityLane {
+        class: BlueBrainActionExecutionEligibilityClass::ExecutionEligibleHandoff,
+        lane: "blue_brain_execution_eligibility_execution_eligible",
+        eligibility_semantics:
+            "handoff is execution-eligible when basis conditions and safety precheck passed/caveated-allowed are explicit",
+        handoff_binding: "requires canonical future-action-ready handoff identity",
+        context_evidence_basis:
+            "requires sufficient or caveated-allowed context and evidence/reference basis",
+        selection_candidate_basis:
+            "requires selected or accepted proposal state with no blocking candidate/proposal diagnostics",
+        memory_basis:
+            "requires current memory basis or caveated-acceptable memory status; invalidated memory blocks eligibility",
+        safety_precheck_binding:
+            "CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP::Passed|Caveated",
+        execution_boundary:
+            "execution-eligible classification is non-executing: no tool/action/compute invocation and no memory commit",
+        canonical_guard:
+            "eligibility is a boundary status only and does not authorize autonomous execution loops",
+    },
+    BlueBrainActionExecutionEligibilityLane {
+        class: BlueBrainActionExecutionEligibilityClass::ExecutionIneligibleHandoff,
+        lane: "blue_brain_execution_eligibility_ineligible",
+        eligibility_semantics: "handoff remains execution-ineligible when eligibility conditions are not met",
+        handoff_binding:
+            "future-action-ready or diagnostic-only handoff can remain ineligible without execution claims",
+        context_evidence_basis:
+            "missing or non-caveated-allowed context/evidence basis keeps ineligible posture",
+        selection_candidate_basis:
+            "unselected, rejected, or non-canonical proposal basis prevents eligibility",
+        memory_basis: "missing memory basis can keep eligibility insufficient/ineligible",
+        safety_precheck_binding:
+            "precheck failed/unavailable/not-applicable for requested execution path keeps ineligible state",
+        execution_boundary:
+            "ineligible handoff never triggers action/tool/compute execution or memory commit",
+        canonical_guard:
+            "execution-ineligible is explicit and must not be collapsed into executed-action placeholders",
+    },
+    BlueBrainActionExecutionEligibilityLane {
+        class: BlueBrainActionExecutionEligibilityClass::ExecutionBlockedHandoff,
+        lane: "blue_brain_execution_eligibility_blocked",
+        eligibility_semantics:
+            "handoff execution blocked by canonical blocker in context/evidence/selection/memory/safety basis",
+        handoff_binding: "blocked state retains canonical handoff identity and blocker reason",
+        context_evidence_basis: "blocked context or evidence reference basis halts eligibility progression",
+        selection_candidate_basis:
+            "selection blocked or active deferral with blocker semantics blocks eligibility",
+        memory_basis: "invalidated memory basis blocks eligibility until repaired",
+        safety_precheck_binding: "CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP::Blocked|Failed",
+        execution_boundary:
+            "blocked eligibility remains diagnostic-only with no action/tool/compute/commit side effects",
+        canonical_guard:
+            "blocked execution eligibility is distinct from failed execution result and policy governance outputs",
+    },
+    BlueBrainActionExecutionEligibilityLane {
+        class: BlueBrainActionExecutionEligibilityClass::ExecutionCaveatedHandoff,
+        lane: "blue_brain_execution_eligibility_caveated",
+        eligibility_semantics:
+            "handoff can be execution-caveated when basis is usable with bounded caveats",
+        handoff_binding:
+            "future-action-ready handoff carries explicit caveat vector and provenance references",
+        context_evidence_basis: "context/evidence caveats are explicit and bounded for eligibility use",
+        selection_candidate_basis:
+            "proposal may be selected/accepted with caveated diagnostics and no blocking state",
+        memory_basis: "stale or caveated memory can yield caveated eligibility if explicitly accepted",
+        safety_precheck_binding: "CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP::Caveated",
+        execution_boundary:
+            "execution-caveated remains non-executing and cannot auto-invoke tools/compute/commit",
+        canonical_guard:
+            "caveated eligibility is not equivalent to precheck failed/blocked or executed action",
+    },
+    BlueBrainActionExecutionEligibilityLane {
+        class: BlueBrainActionExecutionEligibilityClass::ExecutionInsufficientBasis,
+        lane: "blue_brain_execution_eligibility_insufficient_basis",
+        eligibility_semantics:
+            "handoff basis is insufficient for execution eligibility due to missing required canonical inputs",
+        handoff_binding:
+            "diagnostic-only, deferred, or future-ready handoff can remain insufficient without blocker semantics",
+        context_evidence_basis:
+            "insufficient context/evidence/reference basis keeps eligibility below minimum threshold",
+        selection_candidate_basis:
+            "candidate comparison inconclusive or proposal insufficient keeps insufficient state explicit",
+        memory_basis:
+            "missing or stale-not-allowed memory basis contributes to insufficient classification",
+        safety_precheck_binding: "CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP::Insufficient",
+        execution_boundary:
+            "insufficient eligibility performs no execution, tool call, compute call, or memory commit",
+        canonical_guard:
+            "insufficient is distinct from blocked/failed/unavailable and not a hidden policy decision",
+    },
+    BlueBrainActionExecutionEligibilityLane {
+        class: BlueBrainActionExecutionEligibilityClass::SafetyPrecheckPassed,
+        lane: "blue_brain_execution_eligibility_precheck_passed_binding",
+        eligibility_semantics: "eligibility map tracks explicit safety-precheck passed binding",
+        handoff_binding: "binds to canonical future-action-ready handoff identity",
+        context_evidence_basis: "precheck passed requires canonical safety basis references",
+        selection_candidate_basis: "selection/proposal basis remains required independent of precheck",
+        memory_basis: "memory basis must still satisfy current or caveated-acceptable requirement",
+        safety_precheck_binding: "CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP::Passed",
+        execution_boundary:
+            "precheck passed binding alone does not execute action, tool, compute, or memory commit",
+        canonical_guard:
+            "precheck passed is necessary but not sufficient without full eligibility condition set",
+    },
+    BlueBrainActionExecutionEligibilityLane {
+        class: BlueBrainActionExecutionEligibilityClass::SafetyPrecheckFailed,
+        lane: "blue_brain_execution_eligibility_precheck_failed_binding",
+        eligibility_semantics: "eligibility map tracks explicit safety-precheck failed binding",
+        handoff_binding: "failed binding references same handoff identity for traceability",
+        context_evidence_basis: "failed precheck is kept separate from context/evidence sufficiency diagnostics",
+        selection_candidate_basis:
+            "selection/proposal acceptance cannot override failed safety precheck",
+        memory_basis: "memory basis cannot override failed safety precheck",
+        safety_precheck_binding: "CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP::Failed",
+        execution_boundary:
+            "precheck failed binding is non-executing and no fallback action/tool/compute/commit occurs",
+        canonical_guard: "precheck failed remains canonical blocker for execution eligibility promotion",
+    },
+    BlueBrainActionExecutionEligibilityLane {
+        class: BlueBrainActionExecutionEligibilityClass::SafetyPrecheckBlocked,
+        lane: "blue_brain_execution_eligibility_precheck_blocked_binding",
+        eligibility_semantics: "eligibility map tracks explicit safety-precheck blocked binding",
+        handoff_binding: "blocked precheck preserves handoff and blocker reason traceability",
+        context_evidence_basis: "blocked precheck can derive from blocked context/evidence prerequisites",
+        selection_candidate_basis:
+            "selection/proposal state cannot bypass blocked precheck requirements",
+        memory_basis: "invalidated or unavailable memory basis can contribute to blocked precheck",
+        safety_precheck_binding: "CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP::Blocked",
+        execution_boundary:
+            "blocked precheck binding remains non-executing and cannot invoke tools/compute/commit",
+        canonical_guard:
+            "blocked precheck binding remains separate from failed/unavailable classifications",
+    },
+    BlueBrainActionExecutionEligibilityLane {
+        class: BlueBrainActionExecutionEligibilityClass::SafetyPrecheckUnavailable,
+        lane: "blue_brain_execution_eligibility_precheck_unavailable_binding",
+        eligibility_semantics: "eligibility map tracks explicit safety-precheck unavailable binding",
+        handoff_binding: "unavailable precheck still references canonical handoff identity",
+        context_evidence_basis:
+            "context/evidence may be sufficient but unavailable precheck still blocks eligibility promotion",
+        selection_candidate_basis:
+            "selected proposal state does not auto-upgrade unavailable precheck to passed",
+        memory_basis: "memory readiness does not substitute for unavailable precheck endpoint",
+        safety_precheck_binding: "CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP::Unavailable",
+        execution_boundary:
+            "precheck unavailable binding is non-executing and retains no tool/action/compute/commit side effects",
+        canonical_guard: "unavailable precheck is explicit boundary state and not implicit failure",
+    },
+    BlueBrainActionExecutionEligibilityLane {
+        class: BlueBrainActionExecutionEligibilityClass::ExecutedActionCanonicalIfPresent,
+        lane: "blue_brain_execution_eligibility_executed_action_only_if_real_path_exists",
+        eligibility_semantics:
+            "executed action classification is valid only if a separate real execution path exists",
+        handoff_binding:
+            "executed action, if present, must remain downstream of canonical eligibility and safety precheck surfaces",
+        context_evidence_basis: "execution result references are external and not implied by eligibility map",
+        selection_candidate_basis: "proposal readiness and selection do not themselves constitute execution",
+        memory_basis: "eligibility classification does not auto-write memory commit after execution",
+        safety_precheck_binding:
+            "precheck lineage can be referenced for provenance without conflating eligibility with execution result",
+        execution_boundary:
+            "BB9 map defines eligibility/precheck boundary only and does not introduce execution engine behavior",
+        canonical_guard:
+            "if no real execution path exists, this class remains documentary only and never emitted as canonical runtime outcome",
+    },
+    BlueBrainActionExecutionEligibilityLane {
+        class: BlueBrainActionExecutionEligibilityClass::NonCanonicalInternalOnlyExecutionPath,
+        lane: "blue_brain_execution_eligibility_non_canonical_internal_only",
+        eligibility_semantics:
+            "internal/expert/legacy execution-like path is non-canonical for BB9 eligibility authority",
+        handoff_binding:
+            "internal hooks without canonical future-handoff binding cannot author canonical eligibility claims",
+        context_evidence_basis:
+            "compute-internal details or free-form prose are non-canonical unless down-mapped",
+        selection_candidate_basis:
+            "internal-only proposal/selection helpers are excluded from canonical eligibility authority",
+        memory_basis:
+            "legacy or unstable test/dev memory helpers are non-canonical unless mapped to BB8 canonical records",
+        safety_precheck_binding:
+            "internal-only safety checks are non-canonical unless mapped to CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP",
+        execution_boundary:
+            "non-canonical path has no canonical execution/tool/compute/memory authority and must be marked canonical=false",
+        canonical_guard:
+            "compute-internal details, expert hooks, legacy compat objects, unstable test/dev surfaces are excluded",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -6378,6 +6733,15 @@ pub fn canonical_blue_brain_future_action_handoff_map(
 pub fn canonical_blue_brain_action_result_placeholder_map(
 ) -> &'static [BlueBrainActionResultPlaceholderLane] {
     &CANONICAL_BLUE_BRAIN_ACTION_RESULT_PLACEHOLDER_MAP
+}
+
+pub fn canonical_blue_brain_safety_precheck_map() -> &'static [BlueBrainSafetyPrecheckLane] {
+    &CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP
+}
+
+pub fn canonical_blue_brain_action_execution_eligibility_map(
+) -> &'static [BlueBrainActionExecutionEligibilityLane] {
+    &CANONICAL_BLUE_BRAIN_ACTION_EXECUTION_ELIGIBILITY_MAP
 }
 
 pub fn canonical_final_reference_line() -> CanonicalFinalReferenceLine {
@@ -9684,6 +10048,172 @@ mod tests {
         assert!(doc.contains("Reasoning Engine"));
         assert!(doc.contains("Serie BB8"));
         assert!(doc.contains("Priorität: Serie BB8 zuerst"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
+    fn blue_brain_bb9_safety_precheck_and_execution_eligibility_maps_keep_classes_distinct() {
+        let precheck_map = canonical_blue_brain_safety_precheck_map();
+        assert_eq!(precheck_map.len(), 7);
+        assert!(precheck_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainSafetyPrecheckClass::Passed));
+        assert!(precheck_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainSafetyPrecheckClass::Failed));
+        assert!(precheck_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainSafetyPrecheckClass::Blocked));
+        assert!(precheck_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainSafetyPrecheckClass::Caveated));
+        assert!(precheck_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainSafetyPrecheckClass::Insufficient));
+        assert!(precheck_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainSafetyPrecheckClass::Unavailable));
+        assert!(precheck_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainSafetyPrecheckClass::NotApplicable));
+        assert!(precheck_map
+            .iter()
+            .all(|lane| lane.execution_boundary.contains("not")
+                || lane.execution_boundary.contains("no")));
+
+        let eligibility_map = canonical_blue_brain_action_execution_eligibility_map();
+        assert_eq!(eligibility_map.len(), 12);
+        assert!(eligibility_map.iter().any(|lane| {
+            lane.class == BlueBrainActionExecutionEligibilityClass::FutureActionReadyHandoff
+        }));
+        assert!(eligibility_map.iter().any(|lane| {
+            lane.class == BlueBrainActionExecutionEligibilityClass::ExecutionEligibleHandoff
+        }));
+        assert!(eligibility_map.iter().any(|lane| {
+            lane.class == BlueBrainActionExecutionEligibilityClass::ExecutionIneligibleHandoff
+        }));
+        assert!(eligibility_map.iter().any(|lane| {
+            lane.class == BlueBrainActionExecutionEligibilityClass::ExecutionBlockedHandoff
+        }));
+        assert!(eligibility_map.iter().any(|lane| {
+            lane.class == BlueBrainActionExecutionEligibilityClass::ExecutionCaveatedHandoff
+        }));
+        assert!(eligibility_map.iter().any(|lane| {
+            lane.class == BlueBrainActionExecutionEligibilityClass::ExecutionInsufficientBasis
+        }));
+        assert!(eligibility_map.iter().any(|lane| {
+            lane.class == BlueBrainActionExecutionEligibilityClass::SafetyPrecheckPassed
+        }));
+        assert!(eligibility_map.iter().any(|lane| {
+            lane.class == BlueBrainActionExecutionEligibilityClass::SafetyPrecheckFailed
+        }));
+        assert!(eligibility_map.iter().any(|lane| {
+            lane.class == BlueBrainActionExecutionEligibilityClass::SafetyPrecheckBlocked
+        }));
+        assert!(eligibility_map.iter().any(|lane| {
+            lane.class == BlueBrainActionExecutionEligibilityClass::SafetyPrecheckUnavailable
+        }));
+        assert!(eligibility_map.iter().any(|lane| {
+            lane.class == BlueBrainActionExecutionEligibilityClass::ExecutedActionCanonicalIfPresent
+        }));
+        assert!(eligibility_map.iter().any(|lane| {
+            lane.class
+                == BlueBrainActionExecutionEligibilityClass::NonCanonicalInternalOnlyExecutionPath
+        }));
+        assert!(eligibility_map
+            .iter()
+            .all(|lane| lane.execution_boundary.contains("no")
+                || lane.execution_boundary.contains("not")
+                || lane.execution_boundary.contains("non-executing")
+                || lane.execution_boundary.contains("never")));
+        assert!(eligibility_map.iter().any(|lane| {
+            lane.class == BlueBrainActionExecutionEligibilityClass::ExecutionEligibleHandoff
+                && lane.execution_boundary.contains("non-executing")
+        }));
+    }
+
+    #[test]
+    fn blue_brain_bb9_execution_eligibility_conditions_bind_to_memory_precheck_and_diagnostics() {
+        let eligibility_map = canonical_blue_brain_action_execution_eligibility_map();
+        let eligible = eligibility_map
+            .iter()
+            .find(|lane| {
+                lane.class == BlueBrainActionExecutionEligibilityClass::ExecutionEligibleHandoff
+            })
+            .expect("eligible lane must exist");
+        assert!(eligible
+            .context_evidence_basis
+            .contains("sufficient or caveated-allowed context"));
+        assert!(eligible
+            .selection_candidate_basis
+            .contains("no blocking candidate/proposal diagnostics"));
+        assert!(eligible
+            .memory_basis
+            .contains("invalidated memory blocks eligibility"));
+        assert!(eligible.safety_precheck_binding.contains("Passed|Caveated"));
+        assert!(eligible
+            .execution_boundary
+            .contains("no tool/action/compute invocation"));
+        assert!(eligible.execution_boundary.contains("no memory commit"));
+
+        let future_only = eligibility_map
+            .iter()
+            .find(|lane| {
+                lane.class == BlueBrainActionExecutionEligibilityClass::FutureActionReadyHandoff
+            })
+            .expect("future-ready-only lane must exist");
+        assert!(future_only
+            .eligibility_semantics
+            .contains("not yet execution-eligible"));
+
+        let blocked = eligibility_map
+            .iter()
+            .find(|lane| {
+                lane.class == BlueBrainActionExecutionEligibilityClass::ExecutionBlockedHandoff
+            })
+            .expect("blocked lane must exist");
+        assert!(blocked
+            .selection_candidate_basis
+            .contains("selection blocked or active deferral"));
+        assert!(blocked
+            .memory_basis
+            .contains("invalidated memory basis blocks eligibility"));
+    }
+
+    #[test]
+    fn serie_bb9_prompt1_action_execution_boundary_doc_stays_pinned_to_code_maps() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_action_execution_eligibility_boundary_serie_bb9_prompt1_v1.md"
+        );
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_ACTION_EXECUTION_ELIGIBILITY_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP"));
+        assert!(doc.contains("future-action-ready handoff"));
+        assert!(doc.contains("execution-eligible handoff"));
+        assert!(doc.contains("execution-ineligible handoff"));
+        assert!(doc.contains("execution-blocked handoff"));
+        assert!(doc.contains("execution-caveated handoff"));
+        assert!(doc.contains("execution-insufficient basis"));
+        assert!(doc.contains("safety-precheck-passed"));
+        assert!(doc.contains("safety-precheck-failed"));
+        assert!(doc.contains("safety-precheck-blocked"));
+        assert!(doc.contains("safety-precheck-unavailable"));
+        assert!(doc.contains("precheck passed"));
+        assert!(doc.contains("precheck failed"));
+        assert!(doc.contains("precheck blocked"));
+        assert!(doc.contains("precheck caveated"));
+        assert!(doc.contains("precheck insufficient"));
+        assert!(doc.contains("precheck unavailable"));
+        assert!(doc.contains("precheck not applicable"));
+        assert!(doc.contains("future-action-ready but not execution-eligible"));
+        assert!(doc.contains("future-action-ready becomes execution-eligible after precheck"));
+        assert!(doc.contains("execution-eligible != executed action"));
+        assert!(doc.contains("keine Tool-Execution-Engine"));
+        assert!(doc.contains("keine automatische Action Execution"));
+        assert!(doc.contains("keine automatische Compute Invocation"));
+        assert!(doc.contains("keine automatische Memory Persistence"));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
         assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
     }
 
