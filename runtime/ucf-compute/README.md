@@ -168,6 +168,9 @@ For BB8 Prompt 4 minimal persisted-memory maintenance/invalidation/caveat-refres
 `BlueBrainMemoryMaintenanceStatus`,
 `BlueBrainMemoryMaintenanceResultState`, and
 `BlueBrainMemoryCaveatRefreshState`.
+For BB8 Prompt 5 readiness sweep and final minimal persisted-memory closure line
+(matrix + canonical store/record/commit/retrieval/diagnostics/maintenance states + strict boundaries to history/snapshot/evidence/replay and ranking/vector/consolidation/reasoning/action claims + prioritized next direction), see
+`docs/blue_brain_readiness_sweep_serie_bb8_prompt5_v1.md`.
 
 ## Capability model
 
