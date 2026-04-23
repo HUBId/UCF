@@ -8656,7 +8656,7 @@ mod tests {
         assert!(doc.contains("candidate deferred pending stronger evidence"));
         assert!(doc.contains("candidate deferred pending context update"));
         assert!(doc.contains("deferred candidate does not trigger compute"));
-        assert!(doc.contains("Memory Commit"));
+        assert!(doc.contains("no memory commit"));
         assert!(doc.contains("not rejected"));
         assert!(doc.contains("keine numerische Ranking- oder Scoring-Engine"));
         assert!(doc.contains("keine Memory-Consolidation- oder Commit-Engine"));
@@ -9442,8 +9442,8 @@ mod tests {
         assert!(doc.contains("no action execution"));
         assert!(doc.contains("no plan generation"));
         assert!(doc.contains("no tool invocation"));
-        assert!(doc.contains("Compute Invocation"));
-        assert!(doc.contains("Memory Commit"));
+        assert!(doc.contains("no compute invocation"));
+        assert!(doc.contains("no memory commit"));
         assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
         assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
     }
@@ -9541,8 +9541,8 @@ mod tests {
         assert!(doc.contains("planner denied"));
         assert!(doc.contains("no action execution"));
         assert!(doc.contains("no tool invocation"));
-        assert!(doc.contains("Compute Invocation"));
-        assert!(doc.contains("Memory Commit"));
+        assert!(doc.contains("no compute invocation"));
+        assert!(doc.contains("no memory commit"));
         assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
     }
 
