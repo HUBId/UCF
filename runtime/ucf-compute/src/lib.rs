@@ -98,11 +98,14 @@ pub use backends::{
 };
 pub use blue_brain_memory::{
     BlueBrainMemoryCandidate, BlueBrainMemoryCandidateClass, BlueBrainMemoryCommitReport,
-    BlueBrainMemoryCommitResultState, BlueBrainMemoryFreshness, BlueBrainMemoryOrigin,
-    BlueBrainMemoryReadRequest, BlueBrainMemoryReadResult, BlueBrainMemoryReferenceLocator,
-    BlueBrainMemoryReferenceMetadata, BlueBrainMemoryReferenceRecord,
-    BlueBrainMemoryRetrievalState, BlueBrainMemorySelectionDisposition, BlueBrainMemoryStore,
-    BlueBrainMemoryStoreError, PersistedBlueBrainMemoryRecord,
+    BlueBrainMemoryCommitResultState, BlueBrainMemoryContextFeedbackClass,
+    BlueBrainMemoryDiagnosticClass, BlueBrainMemoryDiagnosticLane, BlueBrainMemoryFeedbackBackbind,
+    BlueBrainMemoryFreshness, BlueBrainMemoryOrigin, BlueBrainMemoryReadRequest,
+    BlueBrainMemoryReadResult, BlueBrainMemoryReferenceLocator, BlueBrainMemoryReferenceMetadata,
+    BlueBrainMemoryReferenceRecord, BlueBrainMemoryRetrievalState,
+    BlueBrainMemoryRuntimeFeedbackClass, BlueBrainMemorySelectionCandidateProposalFeedbackClass,
+    BlueBrainMemorySelectionDisposition, BlueBrainMemoryStore, BlueBrainMemoryStoreError,
+    PersistedBlueBrainMemoryRecord, CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP,
 };
 pub use compute_service::{
     CapacityPressure, CapacityQueueDisposition, ComputeJob, CoordinationFreshness,

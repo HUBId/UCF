@@ -151,6 +151,17 @@ For BB7 Prompt 3 future action subsystem handoff and action-result placeholder s
 For BB7 Prompt 4 readiness sweep and final minimal planning/action closure line
 (matrix + canonical readiness/handoff/placeholder states + strict non-execution/non-tool-invocation/non-compute-invocation/non-commit boundaries + prioritized next direction), see
 `docs/blue_brain_readiness_sweep_serie_bb7_prompt4_v1.md`.
+For BB8 Prompt 1 minimal persisted memory store for commit-eligible candidates, see
+`docs/blue_brain_minimal_persisted_memory_store_serie_bb8_prompt1_v1.md` and
+`runtime/ucf-compute/src/blue_brain_memory.rs`.
+For BB8 Prompt 2 minimal memory retrieval/reference surface (ID/source-candidate lookup, no ranking/vector search), see
+`docs/blue_brain_minimal_memory_retrieval_reference_surface_serie_bb8_prompt2_v1.md` and
+`BlueBrainMemoryStore::read_reference`.
+For BB8 Prompt 3 memory commit/retrieval diagnostics and runtime feedback bind-back, see
+`docs/blue_brain_memory_diagnostics_runtime_feedback_serie_bb8_prompt3_v1.md`,
+`CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP`,
+`BlueBrainMemoryCommitReport::feedback_backbind`, and
+`BlueBrainMemoryReadResult::feedback_backbind`.
 
 ## Capability model
 
