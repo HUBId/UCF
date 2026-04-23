@@ -97,15 +97,19 @@ pub use backends::{
     CANONICAL_ONBOARDING_BACKEND, CANONICAL_ONBOARDING_PACK,
 };
 pub use blue_brain_memory::{
-    BlueBrainMemoryCandidate, BlueBrainMemoryCandidateClass, BlueBrainMemoryCommitReport,
-    BlueBrainMemoryCommitResultState, BlueBrainMemoryContextFeedbackClass,
-    BlueBrainMemoryDiagnosticClass, BlueBrainMemoryDiagnosticLane, BlueBrainMemoryFeedbackBackbind,
-    BlueBrainMemoryFreshness, BlueBrainMemoryOrigin, BlueBrainMemoryReadRequest,
-    BlueBrainMemoryReadResult, BlueBrainMemoryReferenceLocator, BlueBrainMemoryReferenceMetadata,
-    BlueBrainMemoryReferenceRecord, BlueBrainMemoryRetrievalState,
-    BlueBrainMemoryRuntimeFeedbackClass, BlueBrainMemorySelectionCandidateProposalFeedbackClass,
-    BlueBrainMemorySelectionDisposition, BlueBrainMemoryStore, BlueBrainMemoryStoreError,
-    PersistedBlueBrainMemoryRecord, CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP,
+    BlueBrainMemoryCandidate, BlueBrainMemoryCandidateClass, BlueBrainMemoryCaveatRefreshState,
+    BlueBrainMemoryCommitReport, BlueBrainMemoryCommitResultState,
+    BlueBrainMemoryContextFeedbackClass, BlueBrainMemoryDiagnosticClass,
+    BlueBrainMemoryDiagnosticLane, BlueBrainMemoryFeedbackBackbind, BlueBrainMemoryFreshness,
+    BlueBrainMemoryMaintenanceAction, BlueBrainMemoryMaintenanceLocator,
+    BlueBrainMemoryMaintenanceReport, BlueBrainMemoryMaintenanceRequest,
+    BlueBrainMemoryMaintenanceResultState, BlueBrainMemoryMaintenanceStatus, BlueBrainMemoryOrigin,
+    BlueBrainMemoryReadRequest, BlueBrainMemoryReadResult, BlueBrainMemoryReferenceLocator,
+    BlueBrainMemoryReferenceMetadata, BlueBrainMemoryReferenceRecord,
+    BlueBrainMemoryRetrievalState, BlueBrainMemoryRuntimeFeedbackClass,
+    BlueBrainMemorySelectionCandidateProposalFeedbackClass, BlueBrainMemorySelectionDisposition,
+    BlueBrainMemoryStore, BlueBrainMemoryStoreError, PersistedBlueBrainMemoryRecord,
+    CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP,
 };
 pub use compute_service::{
     CapacityPressure, CapacityQueueDisposition, ComputeJob, CoordinationFreshness,

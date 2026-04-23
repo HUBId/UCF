@@ -162,6 +162,12 @@ For BB8 Prompt 3 memory commit/retrieval diagnostics and runtime feedback bind-b
 `CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP`,
 `BlueBrainMemoryCommitReport::feedback_backbind`, and
 `BlueBrainMemoryReadResult::feedback_backbind`.
+For BB8 Prompt 4 minimal persisted-memory maintenance/invalidation/caveat-refresh semantics, see
+`docs/blue_brain_persisted_memory_maintenance_invalidation_caveat_refresh_serie_bb8_prompt4_v1.md`,
+`BlueBrainMemoryStore::apply_maintenance`,
+`BlueBrainMemoryMaintenanceStatus`,
+`BlueBrainMemoryMaintenanceResultState`, and
+`BlueBrainMemoryCaveatRefreshState`.
 
 ## Capability model
 
