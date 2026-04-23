@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-const BLUE_BRAIN_MEMORY_SCHEMA_VERSION: u16 = 1;
+const BLUE_BRAIN_MEMORY_SCHEMA_VERSION: u16 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -58,9 +58,47 @@ pub enum BlueBrainMemoryRetrievalState {
     RetrievedReferenceOnly,
     RetrievedWithCaveat,
     RetrievedStale,
+    RetrievedInvalidated,
     Missing,
     Blocked,
     Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BlueBrainMemoryMaintenanceStatus {
+    #[default]
+    Current,
+    Stale,
+    Caveated,
+    CaveatRefreshed,
+    Invalidated,
+    MaintenanceBlocked,
+    RefreshUnavailable,
+    NonCanonicalInternalOnlyPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BlueBrainMemoryCaveatRefreshState {
+    #[default]
+    Preserved,
+    RefreshedFromReferenceOrEvidence,
+    Strengthened,
+    Weakened,
+    RefreshUnavailable,
+    RefreshBlocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BlueBrainMemoryMaintenanceResultState {
+    Applied,
+    NoOp,
+    Blocked,
+    Failed,
+    Unavailable,
+    Caveated,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -78,6 +116,11 @@ pub enum BlueBrainMemoryDiagnosticClass {
     MissingMemoryDiagnostic,
     StaleMemoryDiagnostic,
     CaveatedMemoryDiagnostic,
+    CaveatRefreshedMemoryDiagnostic,
+    InvalidatedMemoryDiagnostic,
+    MaintenanceBlockedMemoryDiagnostic,
+    RefreshUnavailableMemoryDiagnostic,
+    MaintenanceDiagnostic,
     UnavailableMemoryDiagnostic,
     NonCanonicalInternalOnlyMemoryDiagnostic,
 }
@@ -89,7 +132,7 @@ pub struct BlueBrainMemoryDiagnosticLane {
     pub canonical_guard: &'static str,
 }
 
-pub const CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP: [BlueBrainMemoryDiagnosticLane; 14] = [
+pub const CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP: [BlueBrainMemoryDiagnosticLane; 19] = [
     BlueBrainMemoryDiagnosticLane {
         diagnostic_class: BlueBrainMemoryDiagnosticClass::CommitDiagnostic,
         lane: "blue_brain_memory_commit_diagnostic",
@@ -152,6 +195,31 @@ pub const CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP: [BlueBrainMemoryDiagnosti
         diagnostic_class: BlueBrainMemoryDiagnosticClass::CaveatedMemoryDiagnostic,
         lane: "blue_brain_memory_caveated_diagnostic",
         canonical_guard: "caveated diagnostics represent caveated commit/retrieval posture",
+    },
+    BlueBrainMemoryDiagnosticLane {
+        diagnostic_class: BlueBrainMemoryDiagnosticClass::CaveatRefreshedMemoryDiagnostic,
+        lane: "blue_brain_memory_caveat_refreshed_diagnostic",
+        canonical_guard: "caveat-refreshed diagnostics preserve refreshed caveat basis without auto-validation",
+    },
+    BlueBrainMemoryDiagnosticLane {
+        diagnostic_class: BlueBrainMemoryDiagnosticClass::InvalidatedMemoryDiagnostic,
+        lane: "blue_brain_memory_invalidated_diagnostic",
+        canonical_guard: "invalidated diagnostics prevent treating memory as strong candidate/proposal basis",
+    },
+    BlueBrainMemoryDiagnosticLane {
+        diagnostic_class: BlueBrainMemoryDiagnosticClass::MaintenanceBlockedMemoryDiagnostic,
+        lane: "blue_brain_memory_maintenance_blocked_diagnostic",
+        canonical_guard: "maintenance-blocked diagnostics preserve blocked maintenance guardrails",
+    },
+    BlueBrainMemoryDiagnosticLane {
+        diagnostic_class: BlueBrainMemoryDiagnosticClass::RefreshUnavailableMemoryDiagnostic,
+        lane: "blue_brain_memory_refresh_unavailable_diagnostic",
+        canonical_guard: "refresh-unavailable diagnostics keep caveat refresh unavailable explicit",
+    },
+    BlueBrainMemoryDiagnosticLane {
+        diagnostic_class: BlueBrainMemoryDiagnosticClass::MaintenanceDiagnostic,
+        lane: "blue_brain_memory_maintenance_diagnostic",
+        canonical_guard: "maintenance diagnostics represent canonical maintenance/invalidation/caveat refresh operations",
     },
     BlueBrainMemoryDiagnosticLane {
         diagnostic_class: BlueBrainMemoryDiagnosticClass::UnavailableMemoryDiagnostic,
@@ -261,6 +329,14 @@ pub struct PersistedBlueBrainMemoryRecord {
     pub selection_basis_refs: Vec<String>,
     pub freshness: BlueBrainMemoryFreshness,
     pub caveats: Vec<String>,
+    #[serde(default)]
+    pub maintenance_status: BlueBrainMemoryMaintenanceStatus,
+    #[serde(default)]
+    pub caveat_refresh_state: BlueBrainMemoryCaveatRefreshState,
+    #[serde(default)]
+    pub maintenance_note: Option<String>,
+    #[serde(default)]
+    pub maintenance_updated_at_unix_ms: Option<u64>,
     pub committed_at_unix_ms: u64,
     pub commit_result_state: BlueBrainMemoryCommitResultState,
 }
@@ -294,7 +370,59 @@ pub struct BlueBrainMemoryReferenceRecord {
     pub selection_basis_refs: Vec<String>,
     pub freshness: BlueBrainMemoryFreshness,
     pub caveats: Vec<String>,
+    pub maintenance_status: BlueBrainMemoryMaintenanceStatus,
+    pub caveat_refresh_state: BlueBrainMemoryCaveatRefreshState,
+    pub maintenance_note: Option<String>,
+    pub maintenance_updated_at_unix_ms: Option<u64>,
     pub metadata: BlueBrainMemoryReferenceMetadata,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMemoryMaintenanceLocator<'a> {
+    MemoryRecordId(&'a str),
+    SourceCandidateId(&'a str),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BlueBrainMemoryMaintenanceAction {
+    MarkCurrent,
+    MarkStale,
+    Invalidate {
+        reason: String,
+    },
+    MarkMaintenanceBlocked {
+        reason: String,
+    },
+    MarkRefreshUnavailable {
+        reason: String,
+    },
+    RefreshCaveats {
+        caveats: Vec<String>,
+        refresh_state: BlueBrainMemoryCaveatRefreshState,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlueBrainMemoryMaintenanceRequest<'a> {
+    pub locator: BlueBrainMemoryMaintenanceLocator<'a>,
+    pub action: BlueBrainMemoryMaintenanceAction,
+    pub canonical_maintenance_path_available: bool,
+    pub allow_internal_only_locator: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlueBrainMemoryMaintenanceReport {
+    pub result_state: BlueBrainMemoryMaintenanceResultState,
+    pub memory_record_id: Option<String>,
+    pub maintenance_status: Option<BlueBrainMemoryMaintenanceStatus>,
+    pub caveat_refresh_state: Option<BlueBrainMemoryCaveatRefreshState>,
+    pub diagnostic_class: BlueBrainMemoryDiagnosticClass,
+    pub diagnostic: String,
+    pub caveats: Vec<String>,
+    pub automatic_compute_triggered: bool,
+    pub automatic_action_or_planning_triggered: bool,
+    pub automatic_memory_commit_triggered: bool,
+    pub feedback_backbind: BlueBrainMemoryFeedbackBackbind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -523,10 +651,30 @@ impl BlueBrainMemoryStore {
             };
         };
 
-        let retrieval_state = if record.freshness == BlueBrainMemoryFreshness::Stale {
+        let retrieval_state = if matches!(
+            record.maintenance_status,
+            BlueBrainMemoryMaintenanceStatus::Invalidated
+        ) {
+            BlueBrainMemoryRetrievalState::RetrievedInvalidated
+        } else if record.freshness == BlueBrainMemoryFreshness::Stale
+            || matches!(
+                record.maintenance_status,
+                BlueBrainMemoryMaintenanceStatus::Stale
+            )
+        {
             BlueBrainMemoryRetrievalState::RetrievedStale
+        } else if matches!(
+            record.maintenance_status,
+            BlueBrainMemoryMaintenanceStatus::MaintenanceBlocked
+                | BlueBrainMemoryMaintenanceStatus::NonCanonicalInternalOnlyPath
+        ) {
+            BlueBrainMemoryRetrievalState::Blocked
         } else if !record.caveats.is_empty()
             || record.freshness != BlueBrainMemoryFreshness::Current
+            || !matches!(
+                record.maintenance_status,
+                BlueBrainMemoryMaintenanceStatus::Current
+            )
         {
             BlueBrainMemoryRetrievalState::RetrievedWithCaveat
         } else {
@@ -535,29 +683,62 @@ impl BlueBrainMemoryStore {
 
         let context_caveated =
             retrieval_state == BlueBrainMemoryRetrievalState::RetrievedWithCaveat;
-        let context_stale = retrieval_state == BlueBrainMemoryRetrievalState::RetrievedStale;
+        let context_stale = matches!(
+            retrieval_state,
+            BlueBrainMemoryRetrievalState::RetrievedStale
+                | BlueBrainMemoryRetrievalState::RetrievedInvalidated
+                | BlueBrainMemoryRetrievalState::Blocked
+        );
         let context_insufficient = record.selection_basis_refs.is_empty();
         let diagnostic_class = match retrieval_state {
             BlueBrainMemoryRetrievalState::RetrievedReferenceOnly => {
                 BlueBrainMemoryDiagnosticClass::RetrievedDiagnostic
             }
             BlueBrainMemoryRetrievalState::RetrievedWithCaveat => {
-                BlueBrainMemoryDiagnosticClass::CaveatedMemoryDiagnostic
+                if matches!(
+                    record.maintenance_status,
+                    BlueBrainMemoryMaintenanceStatus::CaveatRefreshed
+                ) {
+                    BlueBrainMemoryDiagnosticClass::CaveatRefreshedMemoryDiagnostic
+                } else if matches!(
+                    record.maintenance_status,
+                    BlueBrainMemoryMaintenanceStatus::RefreshUnavailable
+                ) {
+                    BlueBrainMemoryDiagnosticClass::RefreshUnavailableMemoryDiagnostic
+                } else {
+                    BlueBrainMemoryDiagnosticClass::CaveatedMemoryDiagnostic
+                }
             }
             BlueBrainMemoryRetrievalState::RetrievedStale => {
                 BlueBrainMemoryDiagnosticClass::StaleMemoryDiagnostic
+            }
+            BlueBrainMemoryRetrievalState::RetrievedInvalidated => {
+                BlueBrainMemoryDiagnosticClass::InvalidatedMemoryDiagnostic
             }
             BlueBrainMemoryRetrievalState::Missing => {
                 BlueBrainMemoryDiagnosticClass::MissingMemoryDiagnostic
             }
             BlueBrainMemoryRetrievalState::Blocked => {
-                BlueBrainMemoryDiagnosticClass::BlockedCommitDiagnostic
+                if matches!(
+                    record.maintenance_status,
+                    BlueBrainMemoryMaintenanceStatus::NonCanonicalInternalOnlyPath
+                ) {
+                    BlueBrainMemoryDiagnosticClass::NonCanonicalInternalOnlyMemoryDiagnostic
+                } else {
+                    BlueBrainMemoryDiagnosticClass::MaintenanceBlockedMemoryDiagnostic
+                }
             }
             BlueBrainMemoryRetrievalState::Unavailable => {
                 BlueBrainMemoryDiagnosticClass::UnavailableMemoryDiagnostic
             }
         };
-        let selection_disposition = if context_stale {
+        let selection_disposition = if matches!(
+            retrieval_state,
+            BlueBrainMemoryRetrievalState::RetrievedInvalidated
+                | BlueBrainMemoryRetrievalState::Blocked
+        ) {
+            BlueBrainMemorySelectionDisposition::Insufficient
+        } else if context_stale {
             BlueBrainMemorySelectionDisposition::Deferred
         } else if context_insufficient {
             BlueBrainMemorySelectionDisposition::Insufficient
@@ -579,6 +760,10 @@ impl BlueBrainMemoryStore {
                 selection_basis_refs: record.selection_basis_refs.clone(),
                 freshness: record.freshness,
                 caveats: record.caveats.clone(),
+                maintenance_status: record.maintenance_status,
+                caveat_refresh_state: record.caveat_refresh_state,
+                maintenance_note: record.maintenance_note.clone(),
+                maintenance_updated_at_unix_ms: record.maintenance_updated_at_unix_ms,
                 metadata: BlueBrainMemoryReferenceMetadata {
                     schema_version: record.schema_version,
                     committed_at_unix_ms: record.committed_at_unix_ms,
@@ -794,6 +979,16 @@ impl BlueBrainMemoryStore {
             selection_basis_refs: candidate.selection_basis_refs,
             freshness: candidate.freshness,
             caveats: caveats.clone(),
+            maintenance_status: if stale_context {
+                BlueBrainMemoryMaintenanceStatus::Stale
+            } else if !caveats.is_empty() {
+                BlueBrainMemoryMaintenanceStatus::Caveated
+            } else {
+                BlueBrainMemoryMaintenanceStatus::Current
+            },
+            caveat_refresh_state: BlueBrainMemoryCaveatRefreshState::Preserved,
+            maintenance_note: None,
+            maintenance_updated_at_unix_ms: None,
             committed_at_unix_ms,
             commit_result_state: result_state,
         };
@@ -821,6 +1016,234 @@ impl BlueBrainMemoryStore {
                     BlueBrainMemoryCommitResultState::Failed,
                     false,
                     !caveats.is_empty(),
+                ),
+            },
+        }
+    }
+
+    pub fn apply_maintenance(
+        &mut self,
+        request: BlueBrainMemoryMaintenanceRequest<'_>,
+        maintenance_updated_at_unix_ms: u64,
+    ) -> BlueBrainMemoryMaintenanceReport {
+        if !request.canonical_maintenance_path_available {
+            return BlueBrainMemoryMaintenanceReport {
+                result_state: BlueBrainMemoryMaintenanceResultState::Unavailable,
+                memory_record_id: None,
+                maintenance_status: None,
+                caveat_refresh_state: None,
+                diagnostic_class: BlueBrainMemoryDiagnosticClass::UnavailableMemoryDiagnostic,
+                diagnostic: "canonical memory maintenance path unavailable".to_string(),
+                caveats: Vec::new(),
+                automatic_compute_triggered: false,
+                automatic_action_or_planning_triggered: false,
+                automatic_memory_commit_triggered: false,
+                feedback_backbind: maintenance_feedback(
+                    BlueBrainMemoryMaintenanceResultState::Unavailable,
+                    false,
+                    false,
+                ),
+            };
+        }
+
+        let locator = match request.locator {
+            BlueBrainMemoryMaintenanceLocator::MemoryRecordId(id) => id,
+            BlueBrainMemoryMaintenanceLocator::SourceCandidateId(id) => id,
+        };
+        if !request.allow_internal_only_locator && locator.starts_with("internal:") {
+            return BlueBrainMemoryMaintenanceReport {
+                result_state: BlueBrainMemoryMaintenanceResultState::Blocked,
+                memory_record_id: None,
+                maintenance_status: Some(
+                    BlueBrainMemoryMaintenanceStatus::NonCanonicalInternalOnlyPath,
+                ),
+                caveat_refresh_state: None,
+                diagnostic_class:
+                    BlueBrainMemoryDiagnosticClass::NonCanonicalInternalOnlyMemoryDiagnostic,
+                diagnostic: "maintenance blocked for internal/non-canonical locator".to_string(),
+                caveats: Vec::new(),
+                automatic_compute_triggered: false,
+                automatic_action_or_planning_triggered: false,
+                automatic_memory_commit_triggered: false,
+                feedback_backbind: maintenance_feedback(
+                    BlueBrainMemoryMaintenanceResultState::Blocked,
+                    false,
+                    false,
+                ),
+            };
+        }
+
+        let record_id = match request.locator {
+            BlueBrainMemoryMaintenanceLocator::MemoryRecordId(memory_record_id) => {
+                memory_record_id.to_string()
+            }
+            BlueBrainMemoryMaintenanceLocator::SourceCandidateId(candidate_id) => {
+                match self.candidate_index.get(candidate_id) {
+                    Some(memory_record_id) => memory_record_id.clone(),
+                    None => {
+                        return BlueBrainMemoryMaintenanceReport {
+                            result_state: BlueBrainMemoryMaintenanceResultState::NoOp,
+                            memory_record_id: None,
+                            maintenance_status: None,
+                            caveat_refresh_state: None,
+                            diagnostic_class: BlueBrainMemoryDiagnosticClass::MissingMemoryDiagnostic,
+                            diagnostic:
+                                "maintenance no-op: no persisted memory record for requested locator"
+                                    .to_string(),
+                            caveats: Vec::new(),
+                            automatic_compute_triggered: false,
+                            automatic_action_or_planning_triggered: false,
+                            automatic_memory_commit_triggered: false,
+                            feedback_backbind: maintenance_feedback(
+                                BlueBrainMemoryMaintenanceResultState::NoOp,
+                                false,
+                                false,
+                            ),
+                        };
+                    }
+                }
+            }
+        };
+
+        let Some(existing) = self.records.get(&record_id).cloned() else {
+            return BlueBrainMemoryMaintenanceReport {
+                result_state: BlueBrainMemoryMaintenanceResultState::NoOp,
+                memory_record_id: None,
+                maintenance_status: None,
+                caveat_refresh_state: None,
+                diagnostic_class: BlueBrainMemoryDiagnosticClass::MissingMemoryDiagnostic,
+                diagnostic: "maintenance no-op: no persisted memory record for requested locator"
+                    .to_string(),
+                caveats: Vec::new(),
+                automatic_compute_triggered: false,
+                automatic_action_or_planning_triggered: false,
+                automatic_memory_commit_triggered: false,
+                feedback_backbind: maintenance_feedback(
+                    BlueBrainMemoryMaintenanceResultState::NoOp,
+                    false,
+                    false,
+                ),
+            };
+        };
+
+        let mut next = existing.clone();
+        next.maintenance_updated_at_unix_ms = Some(maintenance_updated_at_unix_ms);
+        let (result_state, diagnostic_class, diagnostic, caveated_result) = match request.action {
+            BlueBrainMemoryMaintenanceAction::MarkCurrent => {
+                if next.maintenance_status == BlueBrainMemoryMaintenanceStatus::Current {
+                    (
+                        BlueBrainMemoryMaintenanceResultState::NoOp,
+                        BlueBrainMemoryDiagnosticClass::MaintenanceDiagnostic,
+                        "maintenance no-op: record already current".to_string(),
+                        false,
+                    )
+                } else {
+                    next.maintenance_status = BlueBrainMemoryMaintenanceStatus::Current;
+                    (
+                        BlueBrainMemoryMaintenanceResultState::Applied,
+                        BlueBrainMemoryDiagnosticClass::MaintenanceDiagnostic,
+                        "maintenance applied: record marked current".to_string(),
+                        false,
+                    )
+                }
+            }
+            BlueBrainMemoryMaintenanceAction::MarkStale => {
+                next.maintenance_status = BlueBrainMemoryMaintenanceStatus::Stale;
+                (
+                    BlueBrainMemoryMaintenanceResultState::Applied,
+                    BlueBrainMemoryDiagnosticClass::StaleMemoryDiagnostic,
+                    "maintenance applied: record marked stale".to_string(),
+                    true,
+                )
+            }
+            BlueBrainMemoryMaintenanceAction::Invalidate { reason } => {
+                next.maintenance_status = BlueBrainMemoryMaintenanceStatus::Invalidated;
+                next.maintenance_note = Some(reason);
+                (
+                    BlueBrainMemoryMaintenanceResultState::Applied,
+                    BlueBrainMemoryDiagnosticClass::InvalidatedMemoryDiagnostic,
+                    "maintenance applied: record invalidated".to_string(),
+                    true,
+                )
+            }
+            BlueBrainMemoryMaintenanceAction::MarkMaintenanceBlocked { reason } => {
+                next.maintenance_status = BlueBrainMemoryMaintenanceStatus::MaintenanceBlocked;
+                next.maintenance_note = Some(reason);
+                (
+                    BlueBrainMemoryMaintenanceResultState::Blocked,
+                    BlueBrainMemoryDiagnosticClass::MaintenanceBlockedMemoryDiagnostic,
+                    "maintenance blocked: maintenance path blocked for record".to_string(),
+                    true,
+                )
+            }
+            BlueBrainMemoryMaintenanceAction::MarkRefreshUnavailable { reason } => {
+                next.maintenance_status = BlueBrainMemoryMaintenanceStatus::RefreshUnavailable;
+                next.caveat_refresh_state = BlueBrainMemoryCaveatRefreshState::RefreshUnavailable;
+                next.maintenance_note = Some(reason);
+                (
+                    BlueBrainMemoryMaintenanceResultState::Unavailable,
+                    BlueBrainMemoryDiagnosticClass::RefreshUnavailableMemoryDiagnostic,
+                    "maintenance unavailable: caveat refresh unavailable".to_string(),
+                    true,
+                )
+            }
+            BlueBrainMemoryMaintenanceAction::RefreshCaveats {
+                mut caveats,
+                refresh_state,
+            } => {
+                caveats.sort_unstable();
+                caveats.dedup();
+                if matches!(
+                    refresh_state,
+                    BlueBrainMemoryCaveatRefreshState::RefreshBlocked
+                        | BlueBrainMemoryCaveatRefreshState::RefreshUnavailable
+                ) {
+                    next.maintenance_status = BlueBrainMemoryMaintenanceStatus::Caveated;
+                } else {
+                    next.maintenance_status = BlueBrainMemoryMaintenanceStatus::CaveatRefreshed;
+                }
+                next.caveat_refresh_state = refresh_state;
+                next.caveats = caveats;
+                (
+                    BlueBrainMemoryMaintenanceResultState::Caveated,
+                    BlueBrainMemoryDiagnosticClass::CaveatRefreshedMemoryDiagnostic,
+                    "maintenance caveated: caveats refreshed/preserved from reference/evidence posture"
+                        .to_string(),
+                    true,
+                )
+            }
+        };
+
+        let caveats = next.caveats.clone();
+        match self.upsert(next.clone()) {
+            Ok(()) => BlueBrainMemoryMaintenanceReport {
+                result_state,
+                memory_record_id: Some(record_id),
+                maintenance_status: Some(next.maintenance_status),
+                caveat_refresh_state: Some(next.caveat_refresh_state),
+                diagnostic_class,
+                diagnostic,
+                caveats,
+                automatic_compute_triggered: false,
+                automatic_action_or_planning_triggered: false,
+                automatic_memory_commit_triggered: false,
+                feedback_backbind: maintenance_feedback(result_state, true, caveated_result),
+            },
+            Err(err) => BlueBrainMemoryMaintenanceReport {
+                result_state: BlueBrainMemoryMaintenanceResultState::Failed,
+                memory_record_id: None,
+                maintenance_status: Some(existing.maintenance_status),
+                caveat_refresh_state: Some(existing.caveat_refresh_state),
+                diagnostic_class: BlueBrainMemoryDiagnosticClass::FailedCommitDiagnostic,
+                diagnostic: format!("memory maintenance write failed: {err}"),
+                caveats: existing.caveats,
+                automatic_compute_triggered: false,
+                automatic_action_or_planning_triggered: false,
+                automatic_memory_commit_triggered: false,
+                feedback_backbind: maintenance_feedback(
+                    BlueBrainMemoryMaintenanceResultState::Failed,
+                    false,
+                    caveated_result,
                 ),
             },
         }
@@ -990,6 +1413,57 @@ fn commit_feedback(
     }
 
     if caveated || state == BlueBrainMemoryCommitResultState::CommittedWithCaveat {
+        runtime_feedback
+            .push(BlueBrainMemoryRuntimeFeedbackClass::MemoryRetrievalMissingOrStaleOrCaveated);
+        context_feedback.push(BlueBrainMemoryContextFeedbackClass::MemoryCaveatCarriedIntoContext);
+        selection_candidate_proposal_feedback.push(
+            BlueBrainMemorySelectionCandidateProposalFeedbackClass::CaveatedMemoryYieldsCaveatedSelectionOrProposal,
+        );
+    }
+
+    BlueBrainMemoryFeedbackBackbind {
+        runtime_feedback,
+        context_feedback,
+        selection_candidate_proposal_feedback,
+    }
+}
+
+fn maintenance_feedback(
+    state: BlueBrainMemoryMaintenanceResultState,
+    maintenance_applied: bool,
+    caveated: bool,
+) -> BlueBrainMemoryFeedbackBackbind {
+    let mut runtime_feedback =
+        vec![BlueBrainMemoryRuntimeFeedbackClass::FeedbackObservedNoAutoComputeOrAction];
+    let mut context_feedback =
+        vec![BlueBrainMemoryContextFeedbackClass::NoAutomaticMemoryCandidateCreation];
+    let mut selection_candidate_proposal_feedback = vec![
+        BlueBrainMemorySelectionCandidateProposalFeedbackClass::RetrievalDoesNotAutomaticallySelectProposeOrExecute,
+    ];
+
+    match state {
+        BlueBrainMemoryMaintenanceResultState::Applied if maintenance_applied => {
+            runtime_feedback.push(BlueBrainMemoryRuntimeFeedbackClass::MemoryRetrieved);
+            context_feedback
+                .push(BlueBrainMemoryContextFeedbackClass::RetrievedMemoryAttachedToCurrentContext);
+        }
+        BlueBrainMemoryMaintenanceResultState::Blocked => {
+            runtime_feedback.push(BlueBrainMemoryRuntimeFeedbackClass::CommitOrRetrievalBlocked);
+            context_feedback
+                .push(BlueBrainMemoryContextFeedbackClass::StaleOrMissingMemoryLimitsContextUpdate);
+            selection_candidate_proposal_feedback.push(
+                BlueBrainMemorySelectionCandidateProposalFeedbackClass::StaleOrMissingMemoryWeakensCandidateBasis,
+            );
+        }
+        BlueBrainMemoryMaintenanceResultState::Failed
+        | BlueBrainMemoryMaintenanceResultState::Unavailable => {
+            runtime_feedback
+                .push(BlueBrainMemoryRuntimeFeedbackClass::CommitOrRetrievalFailedOrUnavailable);
+        }
+        _ => {}
+    }
+
+    if caveated || state == BlueBrainMemoryMaintenanceResultState::Caveated {
         runtime_feedback
             .push(BlueBrainMemoryRuntimeFeedbackClass::MemoryRetrievalMissingOrStaleOrCaveated);
         context_feedback.push(BlueBrainMemoryContextFeedbackClass::MemoryCaveatCarriedIntoContext);
@@ -1359,12 +1833,17 @@ mod tests {
 
     #[test]
     fn diagnostics_map_covers_required_classes() {
-        assert_eq!(CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP.len(), 14);
+        assert_eq!(CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP.len(), 19);
         assert!(CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP
             .iter()
             .any(|lane| {
                 lane.diagnostic_class
                     == BlueBrainMemoryDiagnosticClass::CommittedWithCaveatDiagnostic
+            }));
+        assert!(CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP
+            .iter()
+            .any(|lane| {
+                lane.diagnostic_class == BlueBrainMemoryDiagnosticClass::InvalidatedMemoryDiagnostic
             }));
         assert!(CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP
             .iter()
@@ -1464,6 +1943,221 @@ mod tests {
         assert_eq!(
             unavailable.diagnostic_class,
             BlueBrainMemoryDiagnosticClass::UnavailableMemoryDiagnostic
+        );
+    }
+
+    #[test]
+    fn maintenance_states_are_distinguishable_and_feed_retrieval_context_selection() {
+        let path = temp_store_path("maintenance_states");
+        let _ = std::fs::remove_file(&path);
+        let mut store = BlueBrainMemoryStore::open(&path).expect("open memory store");
+        let report = store.commit_candidate(base_candidate("cand-19"), 119);
+        let record_id = report.memory_record_id.expect("record id");
+
+        let stale = store.apply_maintenance(
+            BlueBrainMemoryMaintenanceRequest {
+                locator: BlueBrainMemoryMaintenanceLocator::MemoryRecordId(&record_id),
+                action: BlueBrainMemoryMaintenanceAction::MarkStale,
+                canonical_maintenance_path_available: true,
+                allow_internal_only_locator: false,
+            },
+            120,
+        );
+        assert_eq!(
+            stale.result_state,
+            BlueBrainMemoryMaintenanceResultState::Applied
+        );
+        assert_eq!(
+            stale.maintenance_status,
+            Some(BlueBrainMemoryMaintenanceStatus::Stale)
+        );
+
+        let stale_read = store.read_reference(BlueBrainMemoryReadRequest {
+            locator: BlueBrainMemoryReferenceLocator::MemoryRecordId(&record_id),
+            canonical_retrieval_path_available: true,
+            allow_internal_only_locator: false,
+        });
+        assert_eq!(
+            stale_read.retrieval_state,
+            BlueBrainMemoryRetrievalState::RetrievedStale
+        );
+        assert_eq!(
+            stale_read.selection_disposition,
+            BlueBrainMemorySelectionDisposition::Deferred
+        );
+
+        let invalidated = store.apply_maintenance(
+            BlueBrainMemoryMaintenanceRequest {
+                locator: BlueBrainMemoryMaintenanceLocator::MemoryRecordId(&record_id),
+                action: BlueBrainMemoryMaintenanceAction::Invalidate {
+                    reason: "reference contradicted by fresh evidence".to_string(),
+                },
+                canonical_maintenance_path_available: true,
+                allow_internal_only_locator: false,
+            },
+            121,
+        );
+        assert_eq!(
+            invalidated.maintenance_status,
+            Some(BlueBrainMemoryMaintenanceStatus::Invalidated)
+        );
+
+        let invalidated_read = store.read_reference(BlueBrainMemoryReadRequest {
+            locator: BlueBrainMemoryReferenceLocator::MemoryRecordId(&record_id),
+            canonical_retrieval_path_available: true,
+            allow_internal_only_locator: false,
+        });
+        assert_eq!(
+            invalidated_read.retrieval_state,
+            BlueBrainMemoryRetrievalState::RetrievedInvalidated
+        );
+        assert_eq!(
+            invalidated_read.diagnostic_class,
+            BlueBrainMemoryDiagnosticClass::InvalidatedMemoryDiagnostic
+        );
+        assert_eq!(
+            invalidated_read.selection_disposition,
+            BlueBrainMemorySelectionDisposition::Insufficient
+        );
+    }
+
+    #[test]
+    fn caveat_refresh_preserves_or_updates_caveats_without_auto_triggers() {
+        let path = temp_store_path("maintenance_caveat_refresh");
+        let _ = std::fs::remove_file(&path);
+        let mut store = BlueBrainMemoryStore::open(&path).expect("open memory store");
+        let report = store.commit_candidate(base_candidate("cand-20"), 122);
+        let record_id = report.memory_record_id.expect("record id");
+
+        let refresh = store.apply_maintenance(
+            BlueBrainMemoryMaintenanceRequest {
+                locator: BlueBrainMemoryMaintenanceLocator::MemoryRecordId(&record_id),
+                action: BlueBrainMemoryMaintenanceAction::RefreshCaveats {
+                    caveats: vec![
+                        "evidence freshness uncertain".to_string(),
+                        "reference partially superseded".to_string(),
+                    ],
+                    refresh_state: BlueBrainMemoryCaveatRefreshState::Strengthened,
+                },
+                canonical_maintenance_path_available: true,
+                allow_internal_only_locator: false,
+            },
+            123,
+        );
+        assert_eq!(
+            refresh.result_state,
+            BlueBrainMemoryMaintenanceResultState::Caveated
+        );
+        assert_eq!(
+            refresh.caveat_refresh_state,
+            Some(BlueBrainMemoryCaveatRefreshState::Strengthened)
+        );
+        assert!(!refresh.automatic_compute_triggered);
+        assert!(!refresh.automatic_action_or_planning_triggered);
+        assert!(!refresh.automatic_memory_commit_triggered);
+
+        let read = store.read_reference(BlueBrainMemoryReadRequest {
+            locator: BlueBrainMemoryReferenceLocator::MemoryRecordId(&record_id),
+            canonical_retrieval_path_available: true,
+            allow_internal_only_locator: false,
+        });
+        assert_eq!(
+            read.diagnostic_class,
+            BlueBrainMemoryDiagnosticClass::CaveatRefreshedMemoryDiagnostic
+        );
+        let reference = read.reference.expect("reference");
+        assert_eq!(
+            reference.maintenance_status,
+            BlueBrainMemoryMaintenanceStatus::CaveatRefreshed
+        );
+        assert_eq!(
+            reference.caveat_refresh_state,
+            BlueBrainMemoryCaveatRefreshState::Strengthened
+        );
+    }
+
+    #[test]
+    fn maintenance_blocked_and_refresh_unavailable_states_are_explicit() {
+        let path = temp_store_path("maintenance_blocked_unavailable");
+        let _ = std::fs::remove_file(&path);
+        let mut store = BlueBrainMemoryStore::open(&path).expect("open memory store");
+        let report = store.commit_candidate(base_candidate("cand-21"), 124);
+        let record_id = report.memory_record_id.expect("record id");
+
+        let blocked = store.apply_maintenance(
+            BlueBrainMemoryMaintenanceRequest {
+                locator: BlueBrainMemoryMaintenanceLocator::MemoryRecordId(&record_id),
+                action: BlueBrainMemoryMaintenanceAction::MarkMaintenanceBlocked {
+                    reason: "maintenance guard triggered".to_string(),
+                },
+                canonical_maintenance_path_available: true,
+                allow_internal_only_locator: false,
+            },
+            125,
+        );
+        assert_eq!(
+            blocked.result_state,
+            BlueBrainMemoryMaintenanceResultState::Blocked
+        );
+
+        let blocked_read = store.read_reference(BlueBrainMemoryReadRequest {
+            locator: BlueBrainMemoryReferenceLocator::MemoryRecordId(&record_id),
+            canonical_retrieval_path_available: true,
+            allow_internal_only_locator: false,
+        });
+        assert_eq!(
+            blocked_read.retrieval_state,
+            BlueBrainMemoryRetrievalState::Blocked
+        );
+        assert_eq!(
+            blocked_read.diagnostic_class,
+            BlueBrainMemoryDiagnosticClass::MaintenanceBlockedMemoryDiagnostic
+        );
+
+        let unavailable = store.apply_maintenance(
+            BlueBrainMemoryMaintenanceRequest {
+                locator: BlueBrainMemoryMaintenanceLocator::MemoryRecordId(&record_id),
+                action: BlueBrainMemoryMaintenanceAction::MarkRefreshUnavailable {
+                    reason: "reference refresh feed unavailable".to_string(),
+                },
+                canonical_maintenance_path_available: true,
+                allow_internal_only_locator: false,
+            },
+            126,
+        );
+        assert_eq!(
+            unavailable.result_state,
+            BlueBrainMemoryMaintenanceResultState::Unavailable
+        );
+        assert_eq!(
+            unavailable.diagnostic_class,
+            BlueBrainMemoryDiagnosticClass::RefreshUnavailableMemoryDiagnostic
+        );
+    }
+
+    #[test]
+    fn non_canonical_internal_only_maintenance_path_is_blocked_and_non_canonical() {
+        let path = temp_store_path("maintenance_non_canonical");
+        let _ = std::fs::remove_file(&path);
+        let mut store = BlueBrainMemoryStore::open(&path).expect("open memory store");
+        let _ = store.commit_candidate(base_candidate("cand-22"), 127);
+
+        let blocked = store.apply_maintenance(
+            BlueBrainMemoryMaintenanceRequest {
+                locator: BlueBrainMemoryMaintenanceLocator::SourceCandidateId("internal:expert"),
+                action: BlueBrainMemoryMaintenanceAction::MarkStale,
+                canonical_maintenance_path_available: true,
+                allow_internal_only_locator: false,
+            },
+            128,
+        );
+        assert_eq!(
+            blocked.maintenance_status,
+            Some(BlueBrainMemoryMaintenanceStatus::NonCanonicalInternalOnlyPath)
+        );
+        assert_eq!(
+            blocked.diagnostic_class,
+            BlueBrainMemoryDiagnosticClass::NonCanonicalInternalOnlyMemoryDiagnostic
         );
     }
 }
