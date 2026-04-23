@@ -45,6 +45,7 @@ use world_model::StageQuality;
 
 pub mod backend_pack;
 pub mod backends;
+pub mod blue_brain_memory;
 #[cfg(any(
     feature = "compute-candle",
     feature = "llm-candle",
@@ -94,6 +95,11 @@ pub use backends::{
     build_backend, build_canonical_production_backend, build_onboarding_reference_backend,
     build_service_compute_backend, ComputeBackendConfig, ComputeBackendKind,
     CANONICAL_ONBOARDING_BACKEND, CANONICAL_ONBOARDING_PACK,
+};
+pub use blue_brain_memory::{
+    BlueBrainMemoryCandidate, BlueBrainMemoryCandidateClass, BlueBrainMemoryCommitReport,
+    BlueBrainMemoryCommitResultState, BlueBrainMemoryFreshness, BlueBrainMemoryOrigin,
+    BlueBrainMemoryStore, BlueBrainMemoryStoreError, PersistedBlueBrainMemoryRecord,
 };
 pub use compute_service::{
     CapacityPressure, CapacityQueueDisposition, ComputeJob, CoordinationFreshness,
