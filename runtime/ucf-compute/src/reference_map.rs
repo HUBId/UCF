@@ -9650,10 +9650,40 @@ mod tests {
         assert!(doc.contains("no tool result"));
         assert!(doc.contains("Placeholder ≠ Result"));
         assert!(doc.contains("Handoff ≠ Action Execution"));
-        assert!(doc.contains("no compute invocation"));
-        assert!(doc.contains("no memory commit"));
+        assert!(doc.contains("Compute Invocation"));
+        assert!(doc.contains("Memory Commit"));
         assert!(doc.contains("canonical=false"));
         assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
+    fn serie_bb7_prompt4_readiness_sweep_doc_keeps_final_planning_action_closure_line_explicit() {
+        let doc = include_str!("../../../docs/blue_brain_readiness_sweep_serie_bb7_prompt4_v1.md");
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_MINIMAL_PLANNING_ACTION_INTERFACE_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_PLAN_ACTION_READINESS_DIAGNOSTICS_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_FUTURE_ACTION_HANDOFF_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_ACTION_RESULT_PLACEHOLDER_MAP"));
+        assert!(doc.contains("stable minimal planning/action interface"));
+        assert!(doc.contains("usable with caveats"));
+        assert!(doc.contains("preparatory / placeholder only"));
+        assert!(doc.contains("non-canonical / internal-only"));
+        assert!(doc.contains("intentionally deferred"));
+        assert!(doc.contains("future-action-ready"));
+        assert!(doc.contains("future-plan-ready"));
+        assert!(doc.contains("result placeholder prepared"));
+        assert!(doc.contains("plan-ready"));
+        assert!(doc.contains("action-ready"));
+        assert!(doc.contains("diagnostic-only"));
+        assert!(doc.contains("Compute Invocation"));
+        assert!(doc.contains("Memory Commit"));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
+        assert!(doc.contains("Planning Engine"));
+        assert!(doc.contains("Reasoning Engine"));
+        assert!(doc.contains("Serie BB8"));
+        assert!(doc.contains("Priorität: Serie BB8 zuerst"));
         assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
     }
 
