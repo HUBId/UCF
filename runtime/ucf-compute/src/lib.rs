@@ -99,7 +99,10 @@ pub use backends::{
 pub use blue_brain_memory::{
     BlueBrainMemoryCandidate, BlueBrainMemoryCandidateClass, BlueBrainMemoryCommitReport,
     BlueBrainMemoryCommitResultState, BlueBrainMemoryFreshness, BlueBrainMemoryOrigin,
-    BlueBrainMemoryStore, BlueBrainMemoryStoreError, PersistedBlueBrainMemoryRecord,
+    BlueBrainMemoryReadRequest, BlueBrainMemoryReadResult, BlueBrainMemoryReferenceLocator,
+    BlueBrainMemoryReferenceMetadata, BlueBrainMemoryReferenceRecord,
+    BlueBrainMemoryRetrievalState, BlueBrainMemorySelectionDisposition, BlueBrainMemoryStore,
+    BlueBrainMemoryStoreError, PersistedBlueBrainMemoryRecord,
 };
 pub use compute_service::{
     CapacityPressure, CapacityQueueDisposition, ComputeJob, CoordinationFreshness,
