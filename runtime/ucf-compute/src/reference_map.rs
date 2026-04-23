@@ -963,6 +963,33 @@ pub struct BlueBrainMinimalPlanningActionInterfaceLane {
     pub canonical_guard: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainPlanActionReadinessDiagnosticClass {
+    PlanReadyDiagnostic,
+    ActionReadyDiagnostic,
+    DiagnosticOnlyProposalDiagnostic,
+    DeferredReadinessDiagnostic,
+    BlockedReadinessDiagnostic,
+    RejectedReadinessDiagnostic,
+    CaveatedReadinessDiagnostic,
+    InsufficientReadinessDiagnostic,
+    NonCanonicalInternalOnlyReadinessDiagnostic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainPlanActionReadinessDiagnosticLane {
+    pub class: BlueBrainPlanActionReadinessDiagnosticClass,
+    pub lane: &'static str,
+    pub readiness_reason: &'static str,
+    pub proposal_boundary_feedback: &'static str,
+    pub selection_deferral_feedback: &'static str,
+    pub context_evidence_memory_feedback: &'static str,
+    pub runtime_feedback: &'static str,
+    pub blocked_action_feedback: &'static str,
+    pub execution_tool_policy_boundary: &'static str,
+    pub canonical_guard: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -5732,6 +5759,183 @@ pub const CANONICAL_BLUE_BRAIN_MINIMAL_PLANNING_ACTION_INTERFACE_MAP:
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_PLAN_ACTION_READINESS_DIAGNOSTICS_MAP:
+    [BlueBrainPlanActionReadinessDiagnosticLane; 9] = [
+    BlueBrainPlanActionReadinessDiagnosticLane {
+        class: BlueBrainPlanActionReadinessDiagnosticClass::PlanReadyDiagnostic,
+        lane: "blue_brain_plan_readiness_diagnostic_canonical",
+        readiness_reason: "ready due to sufficient candidate basis",
+        proposal_boundary_feedback:
+            "candidate becomes plan-ready proposal while remaining non-executing and non-planner",
+        selection_deferral_feedback:
+            "plan-ready can remain selected-for-future-boundary or deferred by current window",
+        context_evidence_memory_feedback:
+            "ready due to sufficient context/evidence + commit feedback remains reference-only",
+        runtime_feedback:
+            "runtime marks plan-ready observed with no action execution/tool invocation/compute invocation/memory commit",
+        blocked_action_feedback:
+            "not blocked: proposal can progress to future planning boundary without execution claim",
+        execution_tool_policy_boundary:
+            "readiness diagnostic only, not planner output, not tool result, not policy decision",
+        canonical_guard:
+            "plan-ready diagnostics stay canonical only when candidate/context/evidence/selection references are present",
+    },
+    BlueBrainPlanActionReadinessDiagnosticLane {
+        class: BlueBrainPlanActionReadinessDiagnosticClass::ActionReadyDiagnostic,
+        lane: "blue_brain_action_readiness_diagnostic_canonical",
+        readiness_reason: "ready due to selection/attention state",
+        proposal_boundary_feedback:
+            "candidate becomes action-ready proposal for future boundary only and remains non-executed",
+        selection_deferral_feedback:
+            "action-ready proposal can be selected for future boundary without auto execution",
+        context_evidence_memory_feedback:
+            "ready due to sufficient candidate/context/evidence with selection-attention support",
+        runtime_feedback:
+            "runtime marks action-ready observed and explicitly preserves no action/tool/compute/memory side effect",
+        blocked_action_feedback:
+            "not blocked unless boundary/readiness basis drops below canonical threshold",
+        execution_tool_policy_boundary:
+            "action-ready diagnostic is not action execution result and not tool invocation status",
+        canonical_guard:
+            "action-ready != executed; canonical only as bounded readiness state",
+    },
+    BlueBrainPlanActionReadinessDiagnosticLane {
+        class: BlueBrainPlanActionReadinessDiagnosticClass::DiagnosticOnlyProposalDiagnostic,
+        lane: "blue_brain_diagnostic_only_proposal_readiness_diagnostic",
+        readiness_reason: "diagnostic-only due to basis still below readiness promotion threshold",
+        proposal_boundary_feedback:
+            "candidate remains candidate/proposal diagnostic and does not become plan-ready/action-ready",
+        selection_deferral_feedback:
+            "diagnostic-only stays visible to selection/deferral without creating selected-action posture",
+        context_evidence_memory_feedback:
+            "context/evidence/memory caveats are attached as diagnostics and remain non-committing",
+        runtime_feedback:
+            "runtime marks diagnostic-only observed with no execution/tool/compute/memory commit",
+        blocked_action_feedback:
+            "blocked-action feedback may appear if missing boundary or insufficient readiness basis is explicit",
+        execution_tool_policy_boundary:
+            "diagnostic-only feedback does not imply planner rejection, policy gate, or tool failure",
+        canonical_guard:
+            "diagnostic-only is canonical and not an implicit execution request",
+    },
+    BlueBrainPlanActionReadinessDiagnosticLane {
+        class: BlueBrainPlanActionReadinessDiagnosticClass::DeferredReadinessDiagnostic,
+        lane: "blue_brain_readiness_deferred_partial_evidence",
+        readiness_reason: "deferred due to partial evidence",
+        proposal_boundary_feedback:
+            "proposal deferred while preserving candidate/proposal boundary and future readiness reevaluation",
+        selection_deferral_feedback:
+            "caveated proposal remains deferred and can re-enter selection when evidence improves",
+        context_evidence_memory_feedback:
+            "deferred due to partial context/evidence freshness; memory feedback remains non-commit",
+        runtime_feedback:
+            "runtime emits deferred readiness with explicit no execution/tool/compute/memory commit",
+        blocked_action_feedback:
+            "deferred is not blocked failure and not action execution failure",
+        execution_tool_policy_boundary:
+            "deferral diagnostic is readiness posture only, not policy or planner arbitration output",
+        canonical_guard:
+            "deferred readiness remains distinct from blocked/rejected/insufficient",
+    },
+    BlueBrainPlanActionReadinessDiagnosticLane {
+        class: BlueBrainPlanActionReadinessDiagnosticClass::BlockedReadinessDiagnostic,
+        lane: "blue_brain_readiness_blocked_stale_or_boundary_gap",
+        readiness_reason:
+            "blocked due to stale context | blocked due to insufficient candidate basis | blocked due to missing action boundary",
+        proposal_boundary_feedback:
+            "proposal stays blocked and cannot transition to action-ready or future-action-ready until basis is repaired",
+        selection_deferral_feedback:
+            "blocked proposal may require stronger context/evidence before selection can consider it again",
+        context_evidence_memory_feedback:
+            "blocked keeps stale context/candidate insufficiency/action-boundary gap explicit and no memory commit implied",
+        runtime_feedback:
+            "runtime emits blocked readiness diagnostics with explicit no action/tool/compute/memory side effects",
+        blocked_action_feedback:
+            "blocked-action feedback means readiness transition could not occur; it never means tool executed, action failed, policy denied, or planner denied",
+        execution_tool_policy_boundary:
+            "blocked readiness is not execution result and not governance decision channel",
+        canonical_guard:
+            "blocked-action feedback is canonical only as readiness/boundary signal",
+    },
+    BlueBrainPlanActionReadinessDiagnosticLane {
+        class: BlueBrainPlanActionReadinessDiagnosticClass::RejectedReadinessDiagnostic,
+        lane: "blue_brain_readiness_rejected_candidate_or_proposal",
+        readiness_reason: "rejected due to candidate/proposal rejection",
+        proposal_boundary_feedback:
+            "proposal rejected in current window and excluded from current readiness promotion",
+        selection_deferral_feedback:
+            "rejected proposal excluded from current selection and does not produce action-ready posture",
+        context_evidence_memory_feedback:
+            "rejection references candidate/context/evidence diagnostics and optional commit-feedback caveats",
+        runtime_feedback:
+            "runtime emits rejected readiness with no action execution/tool invocation/compute invocation/memory commit",
+        blocked_action_feedback:
+            "rejected is distinct from blocked-action feedback and should not be remapped to execution failure",
+        execution_tool_policy_boundary:
+            "rejection diagnostic is proposal-boundary feedback only, not planner execution or policy verdict",
+        canonical_guard:
+            "rejected remains distinct from deferred, blocked, caveated, and insufficient",
+    },
+    BlueBrainPlanActionReadinessDiagnosticLane {
+        class: BlueBrainPlanActionReadinessDiagnosticClass::CaveatedReadinessDiagnostic,
+        lane: "blue_brain_readiness_caveated_commit_unavailable",
+        readiness_reason: "caveated due to memory/commit unavailability",
+        proposal_boundary_feedback:
+            "proposal can remain plan-ready/action-ready with explicit caveat and no execution claim",
+        selection_deferral_feedback:
+            "caveated proposal remains deferred when caveat risk exceeds current selection confidence",
+        context_evidence_memory_feedback:
+            "caveat binds candidate comparison caveats plus memory candidate/commit-unavailable feedback",
+        runtime_feedback:
+            "runtime emits caveated readiness with explicit no tool/compute/action execution/memory commit side effects",
+        blocked_action_feedback:
+            "caveated does not mean blocked-action by default; it can still hand off to future readiness windows",
+        execution_tool_policy_boundary:
+            "caveat feedback is diagnostic metadata, not policy gate or execution outcome",
+        canonical_guard:
+            "caveated readiness must stay compact and canonical, not free-form speculative prose",
+    },
+    BlueBrainPlanActionReadinessDiagnosticLane {
+        class: BlueBrainPlanActionReadinessDiagnosticClass::InsufficientReadinessDiagnostic,
+        lane: "blue_brain_readiness_insufficient_basis",
+        readiness_reason: "blocked due to insufficient candidate basis",
+        proposal_boundary_feedback:
+            "insufficient proposal cannot become selected/action-ready and remains below readiness boundary",
+        selection_deferral_feedback:
+            "insufficient proposal cannot become selected/action-ready until candidate/context/evidence basis improves",
+        context_evidence_memory_feedback:
+            "insufficient keeps context/evidence/reference and candidate-comparison caveats visible",
+        runtime_feedback:
+            "runtime emits insufficient readiness with strict no execution/tool/compute/memory side effects",
+        blocked_action_feedback:
+            "insufficient may surface as blocked-action feedback when action-ready transition is requested",
+        execution_tool_policy_boundary:
+            "insufficient diagnostic is not tool-result/error, not policy decision, and not planner denial",
+        canonical_guard:
+            "insufficient basis remains canonical blocker and cannot be auto-promoted",
+    },
+    BlueBrainPlanActionReadinessDiagnosticLane {
+        class: BlueBrainPlanActionReadinessDiagnosticClass::NonCanonicalInternalOnlyReadinessDiagnostic,
+        lane: "blue_brain_readiness_non_canonical_internal_only",
+        readiness_reason:
+            "non-canonical/internal-only readiness diagnostic (compute-internal/expert/legacy/dev helper path)",
+        proposal_boundary_feedback:
+            "internal-only path cannot author canonical candidate->proposal readiness transition without down-map",
+        selection_deferral_feedback:
+            "internal-only readiness cannot define canonical selected/deferred/rejected state",
+        context_evidence_memory_feedback:
+            "internal-only evidence/context/commit hooks remain non-canonical until mapped to canonical references",
+        runtime_feedback:
+            "runtime marks canonical=false and keeps internal-only readiness separate from canonical diagnostics",
+        blocked_action_feedback:
+            "internal-only blocked-like signals are not canonical blocked-action feedback",
+        execution_tool_policy_boundary:
+            "non-canonical diagnostics must not be exposed as canonical readiness/tool/execution/policy output",
+        canonical_guard:
+            "compute-internal details, expert hooks, legacy compat objects, unstable dev/test surfaces are excluded",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -5773,6 +5977,11 @@ pub fn canonical_blue_brain_candidate_comparison_map() -> &'static [BlueBrainCan
 pub fn canonical_blue_brain_minimal_planning_action_interface_map(
 ) -> &'static [BlueBrainMinimalPlanningActionInterfaceLane] {
     &CANONICAL_BLUE_BRAIN_MINIMAL_PLANNING_ACTION_INTERFACE_MAP
+}
+
+pub fn canonical_blue_brain_plan_action_readiness_diagnostics_map(
+) -> &'static [BlueBrainPlanActionReadinessDiagnosticLane] {
+    &CANONICAL_BLUE_BRAIN_PLAN_ACTION_READINESS_DIAGNOSTICS_MAP
 }
 
 pub fn canonical_final_reference_line() -> CanonicalFinalReferenceLine {
@@ -8841,6 +9050,104 @@ mod tests {
         assert!(doc.contains("no memory commit"));
         assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
         assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
+    fn blue_brain_plan_action_readiness_diagnostics_map_keeps_classes_distinct() {
+        let map = canonical_blue_brain_plan_action_readiness_diagnostics_map();
+        assert_eq!(map.len(), 9);
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainPlanActionReadinessDiagnosticClass::PlanReadyDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainPlanActionReadinessDiagnosticClass::ActionReadyDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainPlanActionReadinessDiagnosticClass::DiagnosticOnlyProposalDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainPlanActionReadinessDiagnosticClass::DeferredReadinessDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainPlanActionReadinessDiagnosticClass::BlockedReadinessDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainPlanActionReadinessDiagnosticClass::RejectedReadinessDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainPlanActionReadinessDiagnosticClass::CaveatedReadinessDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainPlanActionReadinessDiagnosticClass::InsufficientReadinessDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainPlanActionReadinessDiagnosticClass::NonCanonicalInternalOnlyReadinessDiagnostic
+        }));
+    }
+
+    #[test]
+    fn blue_brain_plan_action_readiness_diagnostics_map_keeps_blocked_action_feedback_non_executing(
+    ) {
+        let map = canonical_blue_brain_plan_action_readiness_diagnostics_map();
+        let blocked = map
+            .iter()
+            .find(|lane| {
+                lane.class
+                    == BlueBrainPlanActionReadinessDiagnosticClass::BlockedReadinessDiagnostic
+            })
+            .expect("blocked readiness lane must exist");
+        assert!(blocked
+            .blocked_action_feedback
+            .contains("never means tool executed"));
+        assert!(blocked.blocked_action_feedback.contains("action failed"));
+        assert!(blocked.blocked_action_feedback.contains("policy denied"));
+        assert!(blocked.blocked_action_feedback.contains("planner denied"));
+        assert!(map.iter().all(|lane| lane.runtime_feedback.contains("no")
+            || lane.runtime_feedback.contains("canonical=false")));
+        assert!(map
+            .iter()
+            .all(|lane| lane.execution_tool_policy_boundary.contains("not")
+                || lane.execution_tool_policy_boundary.contains("must not")));
+    }
+
+    #[test]
+    fn serie_bb7_prompt2_readiness_diagnostics_doc_stays_pinned_to_code_map() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_plan_action_readiness_diagnostics_serie_bb7_prompt2_v1.md"
+        );
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_PLAN_ACTION_READINESS_DIAGNOSTICS_MAP"));
+        assert!(doc.contains("plan-ready diagnostic"));
+        assert!(doc.contains("action-ready diagnostic"));
+        assert!(doc.contains("diagnostic-only proposal diagnostic"));
+        assert!(doc.contains("deferred readiness diagnostic"));
+        assert!(doc.contains("blocked readiness diagnostic"));
+        assert!(doc.contains("rejected readiness diagnostic"));
+        assert!(doc.contains("caveated readiness diagnostic"));
+        assert!(doc.contains("insufficient readiness diagnostic"));
+        assert!(doc.contains("non-canonical/internal-only readiness diagnostic"));
+        assert!(doc.contains("ready due to sufficient candidate basis"));
+        assert!(doc.contains("ready due to sufficient context/evidence"));
+        assert!(doc.contains("ready due to selection/attention state"));
+        assert!(doc.contains("deferred due to partial evidence"));
+        assert!(doc.contains("blocked due to stale context"));
+        assert!(doc.contains("blocked due to missing action boundary"));
+        assert!(doc.contains("caveated due to memory/commit unavailability"));
+        assert!(doc.contains("rejected due to candidate/proposal rejection"));
+        assert!(doc.contains("blocked-action feedback means readiness transition could not occur"));
+        assert!(doc.contains("tool executed"));
+        assert!(doc.contains("action failed"));
+        assert!(doc.contains("policy denied"));
+        assert!(doc.contains("planner denied"));
+        assert!(doc.contains("no action execution"));
+        assert!(doc.contains("no tool invocation"));
+        assert!(doc.contains("no compute invocation"));
+        assert!(doc.contains("no memory commit"));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
     }
 
     #[test]

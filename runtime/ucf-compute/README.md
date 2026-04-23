@@ -137,6 +137,13 @@ and strict non-ranking/non-decision/non-execution boundaries), see
 For BB6 Prompt 5 readiness sweep and final planning/reasoning-candidate closure line
 (matrix + canonical candidate/proposal/diagnostics/comparison states + strict non-execution/non-compute-invocation/non-commit boundaries + prioritized next direction), see
 `docs/blue_brain_readiness_sweep_serie_bb6_prompt5_v1.md`.
+For BB7 Prompt 1 minimal planning/action interface and action-ready proposal semantics, see
+`docs/blue_brain_minimal_planning_action_interface_serie_bb7_prompt1_v1.md` and
+`CANONICAL_BLUE_BRAIN_MINIMAL_PLANNING_ACTION_INTERFACE_MAP`.
+For BB7 Prompt 2 plan/action readiness diagnostics and blocked-action feedback bind-back
+(canonical readiness classes + compact readiness reasons + blocked-action semantics + runtime non-execution boundaries), see
+`docs/blue_brain_plan_action_readiness_diagnostics_serie_bb7_prompt2_v1.md` and
+`CANONICAL_BLUE_BRAIN_PLAN_ACTION_READINESS_DIAGNOSTICS_MAP`.
 
 ## Capability model
 
