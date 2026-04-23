@@ -64,9 +64,10 @@ pub enum BlueBrainMemoryRetrievalState {
     Unavailable,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BlueBrainMemoryMaintenanceStatus {
+    #[default]
     Current,
     Stale,
     Caveated,
@@ -77,27 +78,16 @@ pub enum BlueBrainMemoryMaintenanceStatus {
     NonCanonicalInternalOnlyPath,
 }
 
-impl Default for BlueBrainMemoryMaintenanceStatus {
-    fn default() -> Self {
-        Self::Current
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BlueBrainMemoryCaveatRefreshState {
+    #[default]
     Preserved,
     RefreshedFromReferenceOrEvidence,
     Strengthened,
     Weakened,
     RefreshUnavailable,
     RefreshBlocked,
-}
-
-impl Default for BlueBrainMemoryCaveatRefreshState {
-    fn default() -> Self {
-        Self::Preserved
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
