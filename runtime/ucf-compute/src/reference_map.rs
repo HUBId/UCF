@@ -932,6 +932,37 @@ pub struct BlueBrainCandidateComparisonLane {
     pub canonical_guard: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMinimalPlanningActionInterfaceClass {
+    DiagnosticOnlyProposal,
+    PlanReadyProposal,
+    ActionReadyProposal,
+    DeferredProposal,
+    BlockedProposal,
+    RejectedProposal,
+    CaveatedProposal,
+    InsufficientProposalBasis,
+    ExecutedActionCanonicalIfPresent,
+    NonCanonicalInternalOnlyActionPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainMinimalPlanningActionInterfaceLane {
+    pub class: BlueBrainMinimalPlanningActionInterfaceClass,
+    pub lane: &'static str,
+    pub readiness_semantics: &'static str,
+    pub proposal_basis_binding: &'static str,
+    pub diagnostics_comparison_binding: &'static str,
+    pub context_evidence_selection_binding: &'static str,
+    pub memory_commit_feedback_binding: &'static str,
+    pub execution_boundary: &'static str,
+    pub plan_boundary: &'static str,
+    pub compute_invocation_boundary: &'static str,
+    pub tool_invocation_boundary: &'static str,
+    pub memory_commit_boundary: &'static str,
+    pub canonical_guard: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -5373,6 +5404,334 @@ pub const CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP: [BlueBrainCandidateComp
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_MINIMAL_PLANNING_ACTION_INTERFACE_MAP:
+    [BlueBrainMinimalPlanningActionInterfaceLane; 16] = [
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::DiagnosticOnlyProposal,
+        lane: "blue_brain_proposal_diagnostic_only",
+        readiness_semantics:
+            "diagnostic-only proposal remains candidate/proposal diagnostics without plan-ready or action-ready claim",
+        proposal_basis_binding:
+            "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP::ProposalCreated + ProposalCaveated",
+        diagnostics_comparison_binding:
+            "CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP::CandidateBasisDiagnostic|PartialCandidateDiagnostic|CaveatedCandidateDiagnostic + CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP::ComparisonCaveated|ComparisonInconclusive",
+        context_evidence_selection_binding:
+            "context/evidence/selection basis attached but not sufficient for readiness promotion",
+        memory_commit_feedback_binding:
+            "memory-candidate and commit feedback are diagnostics-only and remain non-persistent",
+        execution_boundary: "diagnostic-only: no action execution performed",
+        plan_boundary: "diagnostic-only: no plan generated",
+        compute_invocation_boundary: "diagnostic-only: no compute invocation performed",
+        tool_invocation_boundary: "diagnostic-only: no tool invocation performed",
+        memory_commit_boundary: "diagnostic-only: no memory commit performed",
+        canonical_guard:
+            "diagnostic-only remains canonical as bounded observability and is not an execution proxy",
+    },
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::PlanReadyProposal,
+        lane: "blue_brain_proposal_plan_ready_no_plan_generated",
+        readiness_semantics:
+            "plan-ready proposal means prepared for future planning boundary only; no plan exists yet",
+        proposal_basis_binding:
+            "CANONICAL_BLUE_BRAIN_CANDIDATE_TO_PROPOSAL_TRANSITION_MAP::CandidateYieldsActionProposal + CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP::ProposalCreated",
+        diagnostics_comparison_binding:
+            "CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP::ProposalReadyDiagnostic + CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP::ComparisonBasisAvailable|ComparisonMeaningful",
+        context_evidence_selection_binding:
+            "context/evidence/selection basis is sufficiently attached for future plan processing",
+        memory_commit_feedback_binding:
+            "commit feedback can strengthen or caveat readiness but does not create plan execution semantics",
+        execution_boundary: "plan-ready: no action execution performed",
+        plan_boundary: "plan-ready but no plan generated or executed",
+        compute_invocation_boundary: "plan-ready: no compute invocation performed",
+        tool_invocation_boundary: "plan-ready: no tool invocation performed",
+        memory_commit_boundary: "plan-ready: no memory commit performed",
+        canonical_guard: "plan-ready != plan-generated != plan-executed",
+    },
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::PlanReadyProposal,
+        lane: "blue_brain_proposal_plan_ready_with_caveat",
+        readiness_semantics:
+            "plan-ready can remain caveated when basis is usable but not fully resolved",
+        proposal_basis_binding:
+            "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP::ProposalCaveated + ProposalCreated",
+        diagnostics_comparison_binding:
+            "CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP::CaveatedCandidateDiagnostic|ProposalReadyDiagnostic + CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP::ComparisonCaveated",
+        context_evidence_selection_binding:
+            "context/evidence/selection basis is attached with explicit caveat markers",
+        memory_commit_feedback_binding:
+            "commit unavailable/deferred caveat can be carried as plan-ready caveat",
+        execution_boundary: "plan-ready caveated: no action execution performed",
+        plan_boundary: "plan-ready caveated: no plan generated",
+        compute_invocation_boundary: "plan-ready caveated: no compute invocation performed",
+        tool_invocation_boundary: "plan-ready caveated: no tool invocation performed",
+        memory_commit_boundary: "plan-ready caveated: no memory commit performed",
+        canonical_guard: "caveated plan-ready state is explicit and remains non-executing",
+    },
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::PlanReadyProposal,
+        lane: "blue_brain_proposal_plan_ready_deferred",
+        readiness_semantics:
+            "plan-ready proposal can be deferred while preserving readiness basis for later planning window",
+        proposal_basis_binding:
+            "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP::ProposalDeferred",
+        diagnostics_comparison_binding:
+            "CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP::DeferredCandidateDiagnostic + CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP::ComparisonInconclusive",
+        context_evidence_selection_binding:
+            "selection/deferral posture is explicit and references deferred context/evidence basis",
+        memory_commit_feedback_binding:
+            "deferred readiness can carry memory-candidate caveats without commit authority",
+        execution_boundary: "plan-ready deferred: no action execution performed",
+        plan_boundary: "plan-ready deferred: no plan generated",
+        compute_invocation_boundary: "plan-ready deferred: no compute invocation performed",
+        tool_invocation_boundary: "plan-ready deferred: no tool invocation performed",
+        memory_commit_boundary: "plan-ready deferred: no memory commit performed",
+        canonical_guard: "deferred readiness remains explicit and distinct from rejected/blocked",
+    },
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::PlanReadyProposal,
+        lane: "blue_brain_proposal_plan_ready_blocked_insufficient_basis",
+        readiness_semantics:
+            "plan-ready can be blocked when candidate comparison or basis quality is insufficient",
+        proposal_basis_binding:
+            "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP::ProposalBlocked|ProposalInsufficientBasis",
+        diagnostics_comparison_binding:
+            "CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP::InsufficientCandidateDiagnostic + CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP::ComparisonInconclusive|ComparisonBlocked",
+        context_evidence_selection_binding:
+            "blocked/insufficient context/evidence/selection basis is preserved as explicit blocker",
+        memory_commit_feedback_binding:
+            "insufficient or rejected memory-candidate feedback can block plan-readiness progression",
+        execution_boundary: "plan-ready blocked: no action execution performed",
+        plan_boundary: "plan-ready blocked: no plan generated",
+        compute_invocation_boundary: "plan-ready blocked: no compute invocation performed",
+        tool_invocation_boundary: "plan-ready blocked: no tool invocation performed",
+        memory_commit_boundary: "plan-ready blocked: no memory commit performed",
+        canonical_guard: "blocked due to insufficient basis is canonical and not auto-promoted",
+    },
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::ActionReadyProposal,
+        lane: "blue_brain_proposal_action_ready_not_executed",
+        readiness_semantics:
+            "action-ready proposal means boundary-ready for future action subsystem only and remains non-executed",
+        proposal_basis_binding:
+            "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP::ProposalSelectedForPossibleFutureAction + ProposalCreated",
+        diagnostics_comparison_binding:
+            "CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP::ProposalReadyDiagnostic + CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP::ComparisonMeaningful",
+        context_evidence_selection_binding:
+            "context/evidence/selection basis is sufficient and selection posture marks possible future action",
+        memory_commit_feedback_binding:
+            "memory-candidate/commit feedback may inform confidence and caveats only",
+        execution_boundary: "action-ready but not executed",
+        plan_boundary: "action-ready does not imply plan generated",
+        compute_invocation_boundary: "action-ready: no compute invocation performed",
+        tool_invocation_boundary: "action-ready: no tool invocation performed",
+        memory_commit_boundary: "action-ready: no memory commit performed",
+        canonical_guard: "action-ready != executed action",
+    },
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::ActionReadyProposal,
+        lane: "blue_brain_proposal_action_ready_with_caveat",
+        readiness_semantics:
+            "action-ready proposal can be emitted with caveats and remains non-executing",
+        proposal_basis_binding:
+            "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP::ProposalSelectedForPossibleFutureAction + ProposalCaveated",
+        diagnostics_comparison_binding:
+            "CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP::CaveatedCandidateDiagnostic|ProposalReadyDiagnostic + CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP::ComparisonCaveated",
+        context_evidence_selection_binding:
+            "action basis includes explicit context/evidence/selection caveats",
+        memory_commit_feedback_binding:
+            "commit unavailable/deferred can remain a non-blocking caveat if bounded for future action",
+        execution_boundary: "action-ready with caveat but not executed",
+        plan_boundary: "action-ready with caveat does not imply plan generated",
+        compute_invocation_boundary: "action-ready with caveat: no compute invocation performed",
+        tool_invocation_boundary: "action-ready with caveat: no tool invocation performed",
+        memory_commit_boundary: "action-ready with caveat: no memory commit performed",
+        canonical_guard: "caveated action-ready remains explicit and non-executing",
+    },
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::ActionReadyProposal,
+        lane: "blue_brain_proposal_action_ready_blocked_missing_boundary",
+        readiness_semantics:
+            "action-ready proposal may be blocked by missing explicit action boundary or subsystem handoff",
+        proposal_basis_binding:
+            "CANONICAL_BLUE_BRAIN_CANDIDATE_ACTION_BOUNDARY_MAP::SelectedProposal + BlockedProposal",
+        diagnostics_comparison_binding:
+            "CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP::ProposalReadyDiagnostic|InsufficientCandidateDiagnostic + CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP::ComparisonBlocked",
+        context_evidence_selection_binding:
+            "selection may mark action-ready posture while boundary availability remains blocked",
+        memory_commit_feedback_binding:
+            "memory feedback can remain attached while action boundary is unavailable",
+        execution_boundary: "action-ready blocked by missing boundary: no action execution performed",
+        plan_boundary: "action-ready blocked: no plan generated",
+        compute_invocation_boundary:
+            "action-ready blocked by missing boundary: no compute invocation performed",
+        tool_invocation_boundary:
+            "action-ready blocked by missing boundary: no tool invocation performed",
+        memory_commit_boundary: "action-ready blocked: no memory commit performed",
+        canonical_guard: "missing action boundary blocks promotion to executed action",
+    },
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::ActionReadyProposal,
+        lane: "blue_brain_proposal_action_ready_requires_future_subsystem",
+        readiness_semantics:
+            "action-ready proposal can explicitly require a future action subsystem and stays non-executing today",
+        proposal_basis_binding:
+            "CANONICAL_BLUE_BRAIN_CANDIDATE_ACTION_BOUNDARY_MAP::SelectedProposal + CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP::NoExecutionPerformed",
+        diagnostics_comparison_binding:
+            "CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP::ProposalReadyDiagnostic + CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP::ComparisonMeaningful|ComparisonCaveated",
+        context_evidence_selection_binding:
+            "basis remains attached and can be handed off to future action subsystem without mutation",
+        memory_commit_feedback_binding:
+            "future subsystem requirement does not alter memory commit boundaries",
+        execution_boundary: "action-ready requires future subsystem: no action execution performed",
+        plan_boundary: "action-ready requires future subsystem: no plan generated",
+        compute_invocation_boundary:
+            "action-ready requires future subsystem: no compute invocation performed",
+        tool_invocation_boundary:
+            "action-ready requires future subsystem: no tool invocation performed",
+        memory_commit_boundary:
+            "action-ready requires future subsystem: no memory commit performed",
+        canonical_guard:
+            "future-action-ready marker is preparatory only and does not create execution semantics",
+    },
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::DeferredProposal,
+        lane: "blue_brain_proposal_readiness_deferred",
+        readiness_semantics: "proposal readiness deferred pending basis refresh",
+        proposal_basis_binding:
+            "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP::ProposalDeferred",
+        diagnostics_comparison_binding:
+            "CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP::DeferredCandidateDiagnostic + CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP::ComparisonInconclusive",
+        context_evidence_selection_binding:
+            "deferral references context/evidence freshness and selection posture",
+        memory_commit_feedback_binding:
+            "deferred proposal carries memory-candidate/commit caveats as references only",
+        execution_boundary: "deferred proposal: no action execution performed",
+        plan_boundary: "deferred proposal: no plan generated",
+        compute_invocation_boundary: "deferred proposal: no compute invocation performed",
+        tool_invocation_boundary: "deferred proposal: no tool invocation performed",
+        memory_commit_boundary: "deferred proposal: no memory commit performed",
+        canonical_guard: "deferred readiness is canonical and non-executing",
+    },
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::BlockedProposal,
+        lane: "blue_brain_proposal_readiness_blocked",
+        readiness_semantics: "proposal readiness blocked by insufficient or non-canonical basis",
+        proposal_basis_binding:
+            "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP::ProposalBlocked|ProposalInsufficientBasis",
+        diagnostics_comparison_binding:
+            "CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP::InsufficientCandidateDiagnostic|NonCanonicalInternalOnlyDiagnostic + CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP::ComparisonBlocked|NonCanonicalInternalOnlyComparison",
+        context_evidence_selection_binding:
+            "blocked basis references explicit context/evidence/selection blockers",
+        memory_commit_feedback_binding: "blocked basis has no memory-commit progression authority",
+        execution_boundary: "blocked proposal: no action execution performed",
+        plan_boundary: "blocked proposal: no plan generated",
+        compute_invocation_boundary: "blocked proposal: no compute invocation performed",
+        tool_invocation_boundary: "blocked proposal: no tool invocation performed",
+        memory_commit_boundary: "blocked proposal: no memory commit performed",
+        canonical_guard: "blocked remains separate from rejected and caveated",
+    },
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::RejectedProposal,
+        lane: "blue_brain_proposal_readiness_rejected",
+        readiness_semantics: "proposal rejected in current readiness window",
+        proposal_basis_binding:
+            "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP::ProposalRejected",
+        diagnostics_comparison_binding:
+            "CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP::RejectedCandidateDiagnostic",
+        context_evidence_selection_binding:
+            "rejected basis captures invalid/insufficient context/evidence/selection basis",
+        memory_commit_feedback_binding:
+            "rejected memory-candidate feedback can contribute to rejection reason only",
+        execution_boundary: "rejected proposal: no action execution performed",
+        plan_boundary: "rejected proposal: no plan generated",
+        compute_invocation_boundary: "rejected proposal: no compute invocation performed",
+        tool_invocation_boundary: "rejected proposal: no tool invocation performed",
+        memory_commit_boundary: "rejected proposal: no memory commit performed",
+        canonical_guard: "rejected readiness is explicit and non-interchangeable with blocked/deferred",
+    },
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::CaveatedProposal,
+        lane: "blue_brain_proposal_readiness_caveated",
+        readiness_semantics: "proposal readiness remains caveated with bounded caveat references",
+        proposal_basis_binding:
+            "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP::ProposalCaveated",
+        diagnostics_comparison_binding:
+            "CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP::CaveatedCandidateDiagnostic + CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP::ComparisonCaveated",
+        context_evidence_selection_binding:
+            "caveated context/evidence/selection basis remains explicit",
+        memory_commit_feedback_binding:
+            "caveated commit-feedback can limit readiness while keeping non-commit baseline",
+        execution_boundary: "caveated proposal: no action execution performed",
+        plan_boundary: "caveated proposal: no plan generated",
+        compute_invocation_boundary: "caveated proposal: no compute invocation performed",
+        tool_invocation_boundary: "caveated proposal: no tool invocation performed",
+        memory_commit_boundary: "caveated proposal: no memory commit performed",
+        canonical_guard: "caveated readiness does not collapse into sufficient/blocked automatically",
+    },
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::InsufficientProposalBasis,
+        lane: "blue_brain_proposal_readiness_insufficient_basis",
+        readiness_semantics: "insufficient candidate basis blocks readiness promotion",
+        proposal_basis_binding:
+            "CANONICAL_BLUE_BRAIN_NON_EXECUTING_ACTION_PROPOSAL_STATE_MAP::ProposalInsufficientBasis",
+        diagnostics_comparison_binding:
+            "CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP::InsufficientCandidateDiagnostic + CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP::ComparisonBlocked|ComparisonInconclusive",
+        context_evidence_selection_binding:
+            "insufficient context/evidence/selection basis remains canonical blocker",
+        memory_commit_feedback_binding:
+            "insufficient basis preserves no-commit boundary and cannot become commit-authoritative",
+        execution_boundary: "insufficient basis: no action execution performed",
+        plan_boundary: "insufficient basis: no plan generated",
+        compute_invocation_boundary: "insufficient basis: no compute invocation performed",
+        tool_invocation_boundary: "insufficient basis: no tool invocation performed",
+        memory_commit_boundary: "insufficient basis: no memory commit performed",
+        canonical_guard: "insufficient basis cannot be auto-promoted to plan-ready or action-ready",
+    },
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::ExecutedActionCanonicalIfPresent,
+        lane: "blue_brain_executed_action_canonical_if_explicitly_invoked",
+        readiness_semantics:
+            "executed action is recognized only where canonical compute execution is explicitly invoked",
+        proposal_basis_binding:
+            "CANONICAL_BLUE_BRAIN_CANDIDATE_ACTION_BOUNDARY_MAP::ExecutedActionCanonicalIfPresent",
+        diagnostics_comparison_binding:
+            "readiness diagnostics can hand off context, but do not perform execution",
+        context_evidence_selection_binding:
+            "execution handoff must remain explicit and external to readiness classification",
+        memory_commit_feedback_binding:
+            "execution does not imply memory commit; commit boundary remains separate",
+        execution_boundary:
+            "executed action requires explicit CanonicalComputeEntryPoint::submit invocation",
+        plan_boundary: "executed action recognition does not imply generated plan",
+        compute_invocation_boundary: "compute invocation only via explicit canonical call path",
+        tool_invocation_boundary: "tool invocation remains explicit and outside readiness map",
+        memory_commit_boundary: "executed action does not auto-commit memory",
+        canonical_guard:
+            "execution semantics are out of minimal readiness scope except explicit canonical handoff",
+    },
+    BlueBrainMinimalPlanningActionInterfaceLane {
+        class: BlueBrainMinimalPlanningActionInterfaceClass::NonCanonicalInternalOnlyActionPath,
+        lane: "blue_brain_non_canonical_planning_action_path",
+        readiness_semantics:
+            "internal/expert/legacy planning-action-like path is non-canonical and blocked for readiness authority",
+        proposal_basis_binding:
+            "run_operation_with_entry/replay_with_entry/build_backend(kind=stub|candle|worker)/domains/ai*",
+        diagnostics_comparison_binding:
+            "non-canonical/internal diagnostics and comparison lanes stay excluded from canonical readiness authority",
+        context_evidence_selection_binding:
+            "missing canonical context/evidence/selection bindings block canonical readiness",
+        memory_commit_feedback_binding:
+            "internal-only path has no canonical memory-commit feedback authority",
+        execution_boundary: "non-canonical path: no canonical action execution authority",
+        plan_boundary: "non-canonical path: no canonical plan generation authority",
+        compute_invocation_boundary: "non-canonical path: no canonical compute invocation authority",
+        tool_invocation_boundary: "non-canonical path: no canonical tool invocation authority",
+        memory_commit_boundary: "non-canonical path: no canonical memory commit authority",
+        canonical_guard:
+            "non-canonical planning/action path must be down-mapped before any readiness claim",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -5409,6 +5768,11 @@ pub fn canonical_blue_brain_reasoning_candidate_diagnostics_map(
 pub fn canonical_blue_brain_candidate_comparison_map() -> &'static [BlueBrainCandidateComparisonLane]
 {
     &CANONICAL_BLUE_BRAIN_CANDIDATE_COMPARISON_MAP
+}
+
+pub fn canonical_blue_brain_minimal_planning_action_interface_map(
+) -> &'static [BlueBrainMinimalPlanningActionInterfaceLane] {
+    &CANONICAL_BLUE_BRAIN_MINIMAL_PLANNING_ACTION_INTERFACE_MAP
 }
 
 pub fn canonical_final_reference_line() -> CanonicalFinalReferenceLine {
@@ -8312,6 +8676,170 @@ mod tests {
         assert!(doc.contains("Memory Commit"));
         assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
         assert!(doc.contains("Priorität: Serie BB7 zuerst"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
+    fn blue_brain_minimal_planning_action_interface_map_keeps_readiness_classes_distinct() {
+        let map = canonical_blue_brain_minimal_planning_action_interface_map();
+        assert_eq!(map.len(), 16);
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMinimalPlanningActionInterfaceClass::DiagnosticOnlyProposal
+        }));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class
+                == BlueBrainMinimalPlanningActionInterfaceClass::PlanReadyProposal));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMinimalPlanningActionInterfaceClass::ActionReadyProposal
+        }));
+        assert!(map.iter().any(
+            |lane| lane.class == BlueBrainMinimalPlanningActionInterfaceClass::DeferredProposal
+        ));
+        assert!(map.iter().any(
+            |lane| lane.class == BlueBrainMinimalPlanningActionInterfaceClass::BlockedProposal
+        ));
+        assert!(map.iter().any(
+            |lane| lane.class == BlueBrainMinimalPlanningActionInterfaceClass::RejectedProposal
+        ));
+        assert!(map.iter().any(
+            |lane| lane.class == BlueBrainMinimalPlanningActionInterfaceClass::CaveatedProposal
+        ));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMinimalPlanningActionInterfaceClass::InsufficientProposalBasis
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainMinimalPlanningActionInterfaceClass::ExecutedActionCanonicalIfPresent
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainMinimalPlanningActionInterfaceClass::NonCanonicalInternalOnlyActionPath
+        }));
+    }
+
+    #[test]
+    fn blue_brain_minimal_planning_action_interface_map_keeps_readiness_non_executing_boundaries() {
+        let map = canonical_blue_brain_minimal_planning_action_interface_map();
+        let readiness_lanes: Vec<_> = map
+            .iter()
+            .filter(|lane| {
+                !matches!(
+                    lane.class,
+                    BlueBrainMinimalPlanningActionInterfaceClass::ExecutedActionCanonicalIfPresent
+                        | BlueBrainMinimalPlanningActionInterfaceClass::NonCanonicalInternalOnlyActionPath
+                )
+            })
+            .collect();
+        assert!(readiness_lanes
+            .iter()
+            .all(|lane| lane.execution_boundary.contains("no")));
+        assert!(readiness_lanes
+            .iter()
+            .all(|lane| lane.compute_invocation_boundary.contains("no")));
+        assert!(readiness_lanes
+            .iter()
+            .all(|lane| lane.tool_invocation_boundary.contains("no")));
+        assert!(readiness_lanes
+            .iter()
+            .all(|lane| lane.memory_commit_boundary.contains("no")));
+        assert!(map.iter().any(|lane| {
+            lane.lane == "blue_brain_proposal_action_ready_not_executed"
+                && lane.execution_boundary.contains("not executed")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.lane == "blue_brain_proposal_plan_ready_no_plan_generated"
+                && lane.plan_boundary.contains("no plan generated")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.lane == "blue_brain_proposal_action_ready_blocked_missing_boundary"
+                && lane
+                    .readiness_semantics
+                    .contains("missing explicit action boundary")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.lane == "blue_brain_proposal_action_ready_requires_future_subsystem"
+                && lane.readiness_semantics.contains("future action subsystem")
+        }));
+    }
+
+    #[test]
+    fn blue_brain_minimal_planning_action_interface_map_references_diagnostics_and_comparison_basis(
+    ) {
+        let map = canonical_blue_brain_minimal_planning_action_interface_map();
+        assert!(map
+            .iter()
+            .any(|lane| lane.context_evidence_selection_binding.contains("context")));
+        assert!(map.iter().any(|lane| lane
+            .context_evidence_selection_binding
+            .contains("selection")));
+        assert!(map.iter().all(|lane| lane
+            .diagnostics_comparison_binding
+            .contains("CANONICAL_BLUE_BRAIN_REASONING_CANDIDATE_DIAGNOSTICS_MAP")
+            || lane
+                .diagnostics_comparison_binding
+                .contains("readiness diagnostics")
+            || lane
+                .diagnostics_comparison_binding
+                .contains("non-canonical/internal diagnostics")));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMinimalPlanningActionInterfaceClass::InsufficientProposalBasis
+                && lane
+                    .diagnostics_comparison_binding
+                    .contains("InsufficientCandidateDiagnostic")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainMinimalPlanningActionInterfaceClass::CaveatedProposal
+                && lane
+                    .diagnostics_comparison_binding
+                    .contains("CaveatedCandidateDiagnostic")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainMinimalPlanningActionInterfaceClass::NonCanonicalInternalOnlyActionPath
+                && lane
+                    .diagnostics_comparison_binding
+                    .contains("non-canonical/internal diagnostics")
+        }));
+    }
+
+    #[test]
+    fn serie_bb7_prompt1_minimal_planning_action_interface_doc_stays_pinned_to_code_map() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_minimal_planning_action_interface_serie_bb7_prompt1_v1.md"
+        );
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_MINIMAL_PLANNING_ACTION_INTERFACE_MAP"));
+        assert!(doc.contains("diagnostic-only proposal"));
+        assert!(doc.contains("plan-ready proposal"));
+        assert!(doc.contains("action-ready proposal"));
+        assert!(doc.contains("deferred proposal"));
+        assert!(doc.contains("blocked proposal"));
+        assert!(doc.contains("rejected proposal"));
+        assert!(doc.contains("caveated proposal"));
+        assert!(doc.contains("insufficient proposal basis"));
+        assert!(doc.contains("executed action (canonical path only if explicit invocation exists)"));
+        assert!(doc.contains("non-canonical/internal-only action path"));
+        assert!(doc.contains("action-ready but not executed"));
+        assert!(doc.contains("action-ready with caveat"));
+        assert!(doc.contains("action-ready blocked by missing boundary"));
+        assert!(doc.contains("action-ready requires future action subsystem"));
+        assert!(doc.contains("plan-ready but no plan generated"));
+        assert!(doc.contains("plan-ready with caveat"));
+        assert!(doc.contains("plan-ready deferred"));
+        assert!(doc.contains("plan-ready blocked due to insufficient basis"));
+        assert!(doc.contains("sufficient candidate basis permits readiness"));
+        assert!(doc.contains("caveated candidate basis yields caveated readiness"));
+        assert!(doc.contains("inconclusive comparison limits readiness"));
+        assert!(doc.contains("insufficient candidate basis blocks readiness"));
+        assert!(doc.contains("non-canonical basis blocks readiness"));
+        assert!(doc.contains("no action execution"));
+        assert!(doc.contains("no plan generation"));
+        assert!(doc.contains("no tool invocation"));
+        assert!(doc.contains("no compute invocation"));
+        assert!(doc.contains("no memory commit"));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
         assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
     }
 
