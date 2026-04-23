@@ -990,6 +990,59 @@ pub struct BlueBrainPlanActionReadinessDiagnosticLane {
     pub canonical_guard: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFutureActionHandoffClass {
+    FutureActionReady,
+    FuturePlanReady,
+    HandoffDeferred,
+    HandoffBlocked,
+    HandoffRejected,
+    HandoffCaveated,
+    HandoffUnavailable,
+    DiagnosticOnlyNoHandoff,
+    InternalOnlyNonCanonicalHandoff,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainFutureActionHandoffLane {
+    pub class: BlueBrainFutureActionHandoffClass,
+    pub lane: &'static str,
+    pub handoff_semantics: &'static str,
+    pub proposal_identity_binding: &'static str,
+    pub proposal_origin_binding: &'static str,
+    pub readiness_basis_binding: &'static str,
+    pub evidence_reference_basis_binding: &'static str,
+    pub selection_attention_binding: &'static str,
+    pub caveat_or_blocker_binding: &'static str,
+    pub execution_and_commit_boundary: &'static str,
+    pub runtime_diagnostics_binding: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainActionResultPlaceholderClass {
+    ResultPlaceholderPrepared,
+    ResultPlaceholderUnavailable,
+    ResultPlaceholderBlocked,
+    ResultPlaceholderCaveated,
+    NoResultExpected,
+    NoActionExecuted,
+    NoToolResult,
+    InternalOnlyNonCanonicalPlaceholder,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainActionResultPlaceholderLane {
+    pub class: BlueBrainActionResultPlaceholderClass,
+    pub lane: &'static str,
+    pub placeholder_semantics: &'static str,
+    pub handoff_dependency_binding: &'static str,
+    pub result_slot_shape: &'static str,
+    pub boundary_semantics: &'static str,
+    pub runtime_diagnostics_binding: &'static str,
+    pub canonical_guard: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -5936,6 +5989,339 @@ pub const CANONICAL_BLUE_BRAIN_PLAN_ACTION_READINESS_DIAGNOSTICS_MAP:
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_FUTURE_ACTION_HANDOFF_MAP: [BlueBrainFutureActionHandoffLane; 9] = [
+    BlueBrainFutureActionHandoffLane {
+        class: BlueBrainFutureActionHandoffClass::FutureActionReady,
+        lane: "blue_brain_future_action_handoff_future_action_ready",
+        handoff_semantics:
+            "future-action-ready handoff prepared from action-ready proposal and not executed",
+        proposal_identity_binding:
+            "proposal identity references selected candidate/proposal digest and lane id",
+        proposal_origin_binding:
+            "candidate/context/evidence/selection/comparison/memory-boundary references are attached",
+        readiness_basis_binding:
+            "CANONICAL_BLUE_BRAIN_MINIMAL_PLANNING_ACTION_INTERFACE_MAP::ActionReadyProposal + CANONICAL_BLUE_BRAIN_PLAN_ACTION_READINESS_DIAGNOSTICS_MAP::ActionReadyDiagnostic",
+        evidence_reference_basis_binding:
+            "CANONICAL_BLUE_BRAIN_REFERENCE_CONTEXT_MAP + CANONICAL_BLUE_BRAIN_CONTEXT_EVIDENCE_PRIORITY_MAP",
+        selection_attention_binding:
+            "CANONICAL_BLUE_BRAIN_CONTROL_ATTENTION_SELECTION_MAP selected/attention-supported and still non-executing",
+        caveat_or_blocker_binding:
+            "no blocking reason required; caveat field can remain empty and explicit",
+        execution_and_commit_boundary:
+            "handoff only: no action execution, no tool invocation, no compute invocation, no memory commit",
+        runtime_diagnostics_binding:
+            "runtime marks future-action handoff prepared and keeps no-action/no-tool/no-compute/no-commit flags explicit",
+        canonical_guard:
+            "future-action-ready handoff is preparatory and never an execution or result claim",
+    },
+    BlueBrainFutureActionHandoffLane {
+        class: BlueBrainFutureActionHandoffClass::FuturePlanReady,
+        lane: "blue_brain_future_action_handoff_future_plan_ready",
+        handoff_semantics: "future-plan-ready handoff prepared from plan-ready proposal only",
+        proposal_identity_binding:
+            "proposal identity references plan-ready proposal digest and readiness class",
+        proposal_origin_binding:
+            "proposal origin links candidate/context/evidence/selection/comparison/memory-boundary traces",
+        readiness_basis_binding:
+            "CANONICAL_BLUE_BRAIN_MINIMAL_PLANNING_ACTION_INTERFACE_MAP::PlanReadyProposal + CANONICAL_BLUE_BRAIN_PLAN_ACTION_READINESS_DIAGNOSTICS_MAP::PlanReadyDiagnostic",
+        evidence_reference_basis_binding:
+            "context/evidence references remain explicit and can include caveated basis",
+        selection_attention_binding:
+            "selection can remain deferred or selected-for-future-boundary without plan generation",
+        caveat_or_blocker_binding:
+            "caveat field optional; no blocked/rejected reason required for ready state",
+        execution_and_commit_boundary:
+            "handoff only: no action execution, no tool invocation, no compute invocation, no memory commit",
+        runtime_diagnostics_binding:
+            "runtime marks future-plan handoff prepared and preserves proposal-not-executed semantics",
+        canonical_guard: "future-plan-ready handoff != plan generated != plan executed",
+    },
+    BlueBrainFutureActionHandoffLane {
+        class: BlueBrainFutureActionHandoffClass::HandoffDeferred,
+        lane: "blue_brain_future_action_handoff_deferred",
+        handoff_semantics:
+            "handoff deferred because readiness basis is incomplete or postponed for later window",
+        proposal_identity_binding:
+            "proposal identity retained with deferred reason and retry window references",
+        proposal_origin_binding:
+            "origin remains candidate/proposal/context/evidence/selection/comparison/memory-boundary",
+        readiness_basis_binding:
+            "CANONICAL_BLUE_BRAIN_PLAN_ACTION_READINESS_DIAGNOSTICS_MAP::DeferredReadinessDiagnostic",
+        evidence_reference_basis_binding:
+            "deferred due to partial or stale evidence/reference/context freshness signals",
+        selection_attention_binding: "selection posture can remain deferred without rejection semantics",
+        caveat_or_blocker_binding:
+            "deferred reason must be explicit and not remapped to blocked/rejected",
+        execution_and_commit_boundary:
+            "deferred handoff remains non-executing: no action/tool/compute invocation and no memory commit",
+        runtime_diagnostics_binding:
+            "runtime emits handoff deferred with cause references and no side effects",
+        canonical_guard: "deferred handoff is canonical and non-terminal",
+    },
+    BlueBrainFutureActionHandoffLane {
+        class: BlueBrainFutureActionHandoffClass::HandoffBlocked,
+        lane: "blue_brain_future_action_handoff_blocked",
+        handoff_semantics:
+            "handoff blocked due to insufficient basis or missing canonical action/plan boundary",
+        proposal_identity_binding: "proposal identity retained with blocked reason taxonomy",
+        proposal_origin_binding:
+            "origin links blocked state to candidate/proposal/context/evidence/selection/comparison/memory-boundary references",
+        readiness_basis_binding:
+            "CANONICAL_BLUE_BRAIN_PLAN_ACTION_READINESS_DIAGNOSTICS_MAP::BlockedReadinessDiagnostic|InsufficientReadinessDiagnostic",
+        evidence_reference_basis_binding:
+            "blocked by stale/missing evidence-reference anchors or non-canonical dependencies",
+        selection_attention_binding:
+            "selection state cannot override blocked readiness without basis repair",
+        caveat_or_blocker_binding:
+            "blocked reason required and distinct from deferred/rejected/caveated",
+        execution_and_commit_boundary:
+            "blocked handoff performs no action execution, no tool invocation, no compute invocation, no memory commit",
+        runtime_diagnostics_binding:
+            "runtime emits blocked-action handoff feedback and keeps it separate from execution failure",
+        canonical_guard:
+            "blocked handoff cannot be bypassed by internal hooks or implicit tool/runtime orchestration",
+    },
+    BlueBrainFutureActionHandoffLane {
+        class: BlueBrainFutureActionHandoffClass::HandoffRejected,
+        lane: "blue_brain_future_action_handoff_rejected",
+        handoff_semantics: "handoff rejected due to proposal rejection in current readiness window",
+        proposal_identity_binding: "proposal identity retained for rejected traceability",
+        proposal_origin_binding:
+            "origin captures rejected candidate/proposal and linked context/evidence references",
+        readiness_basis_binding:
+            "CANONICAL_BLUE_BRAIN_PLAN_ACTION_READINESS_DIAGNOSTICS_MAP::RejectedReadinessDiagnostic",
+        evidence_reference_basis_binding:
+            "rejection reason references canonical evidence/context diagnostics only",
+        selection_attention_binding: "rejected proposal excluded from current selection-to-handoff path",
+        caveat_or_blocker_binding:
+            "rejection reason required and cannot be rewritten as execution outcome",
+        execution_and_commit_boundary:
+            "rejected handoff remains non-executing: no action/tool/compute invocation and no memory commit",
+        runtime_diagnostics_binding:
+            "runtime emits handoff rejected and preserves rejected vs blocked separation",
+        canonical_guard: "rejected handoff is proposal-boundary feedback and not action/runtime result",
+    },
+    BlueBrainFutureActionHandoffLane {
+        class: BlueBrainFutureActionHandoffClass::HandoffCaveated,
+        lane: "blue_brain_future_action_handoff_caveated",
+        handoff_semantics:
+            "handoff caveated where basis is usable but caveats from comparison/memory/context persist",
+        proposal_identity_binding:
+            "proposal identity retained with caveat vector and caveat provenance references",
+        proposal_origin_binding:
+            "origin includes candidate comparison and memory-boundary caveats",
+        readiness_basis_binding:
+            "CANONICAL_BLUE_BRAIN_PLAN_ACTION_READINESS_DIAGNOSTICS_MAP::CaveatedReadinessDiagnostic",
+        evidence_reference_basis_binding: "evidence/reference basis attached with explicit caveat markers",
+        selection_attention_binding:
+            "selection can defer or allow caveated handoff but remains non-executing",
+        caveat_or_blocker_binding:
+            "caveat reason required and bounded; no free speculative prose as canonical authority",
+        execution_and_commit_boundary:
+            "caveated handoff performs no action execution, no tool invocation, no compute invocation, no memory commit",
+        runtime_diagnostics_binding:
+            "runtime emits handoff caveated with comparison and memory-boundary caveats retained",
+        canonical_guard: "caveated handoff remains preparatory and does not claim result certainty",
+    },
+    BlueBrainFutureActionHandoffLane {
+        class: BlueBrainFutureActionHandoffClass::HandoffUnavailable,
+        lane: "blue_brain_future_action_handoff_unavailable",
+        handoff_semantics: "handoff unavailable because no canonical future action/plan subsystem is present",
+        proposal_identity_binding:
+            "proposal identity can be present, but handoff endpoint is unavailable",
+        proposal_origin_binding:
+            "origin stays linked to candidate/proposal/context/evidence/selection baseline",
+        readiness_basis_binding:
+            "readiness may be action-ready/plan-ready but handoff endpoint remains unavailable",
+        evidence_reference_basis_binding:
+            "evidence references remain diagnostics-only while handoff endpoint is absent",
+        selection_attention_binding:
+            "selection/attention support does not create fallback execution path",
+        caveat_or_blocker_binding:
+            "unavailable reason required and distinct from blocked/rejected/deferred",
+        execution_and_commit_boundary:
+            "unavailable handoff performs no action execution, no tool invocation, no compute invocation, no memory commit",
+        runtime_diagnostics_binding:
+            "runtime emits handoff unavailable and no-action/no-tool/no-compute/no-commit explicitly",
+        canonical_guard:
+            "handoff unavailable confirms BB7 boundary: no automatic transition to execution subsystems",
+    },
+    BlueBrainFutureActionHandoffLane {
+        class: BlueBrainFutureActionHandoffClass::DiagnosticOnlyNoHandoff,
+        lane: "blue_brain_future_action_handoff_diagnostic_only_no_handoff",
+        handoff_semantics:
+            "diagnostic-only/no-handoff state where proposal remains below future handoff readiness",
+        proposal_identity_binding:
+            "proposal identity optional; if present remains diagnostics-only and non-handoff",
+        proposal_origin_binding:
+            "origin references candidate/proposal diagnostics without handoff claim",
+        readiness_basis_binding:
+            "CANONICAL_BLUE_BRAIN_PLAN_ACTION_READINESS_DIAGNOSTICS_MAP::DiagnosticOnlyProposalDiagnostic",
+        evidence_reference_basis_binding:
+            "diagnostic basis may be partial/caveated and insufficient for handoff transition",
+        selection_attention_binding:
+            "selection feedback may exist but cannot escalate diagnostic-only to handoff",
+        caveat_or_blocker_binding:
+            "diagnostic-only reason required when no handoff object is produced",
+        execution_and_commit_boundary:
+            "diagnostic-only/no-handoff: no action execution, no tool invocation, no compute invocation, no memory commit",
+        runtime_diagnostics_binding:
+            "runtime emits diagnostic-only/no-handoff status as first-class readiness output",
+        canonical_guard:
+            "diagnostic-only/no-handoff is canonical and must not be inferred as hidden execution request",
+    },
+    BlueBrainFutureActionHandoffLane {
+        class: BlueBrainFutureActionHandoffClass::InternalOnlyNonCanonicalHandoff,
+        lane: "blue_brain_future_action_handoff_internal_only_non_canonical",
+        handoff_semantics:
+            "internal/expert/legacy handoff-like path without canonical down-map to proposal/readiness basis",
+        proposal_identity_binding:
+            "identity from internal hooks is non-canonical unless mapped to canonical proposal identity",
+        proposal_origin_binding:
+            "compute-internal/expert/dev/test origins are non-canonical for BB7 future handoff authority",
+        readiness_basis_binding:
+            "internal-only readiness/tool/orchestration helpers cannot define canonical handoff state",
+        evidence_reference_basis_binding:
+            "internal evidence views are non-canonical unless mapped to canonical references",
+        selection_attention_binding:
+            "internal selection hooks cannot produce canonical future-action/future-plan handoff claims",
+        caveat_or_blocker_binding:
+            "internal-only/non-canonical reason required and exported with canonical=false posture",
+        execution_and_commit_boundary:
+            "non-canonical handoff carries no canonical action/tool/compute/memory authority",
+        runtime_diagnostics_binding:
+            "runtime marks internal-only handoff as canonical=false and segregates it from canonical map",
+        canonical_guard:
+            "compute-internal details, expert hooks, legacy compat objects, unstable dev/test surfaces are excluded",
+    },
+];
+
+pub const CANONICAL_BLUE_BRAIN_ACTION_RESULT_PLACEHOLDER_MAP:
+    [BlueBrainActionResultPlaceholderLane; 8] = [
+    BlueBrainActionResultPlaceholderLane {
+        class: BlueBrainActionResultPlaceholderClass::ResultPlaceholderPrepared,
+        lane: "blue_brain_action_result_placeholder_prepared",
+        placeholder_semantics:
+            "result placeholder prepared for future subsystem output shape and no actual result populated",
+        handoff_dependency_binding:
+            "CANONICAL_BLUE_BRAIN_FUTURE_ACTION_HANDOFF_MAP::FutureActionReady|FuturePlanReady|HandoffCaveated",
+        result_slot_shape:
+            "slot supports future status/result/error references while current payload remains placeholder-only",
+        boundary_semantics:
+            "prepared placeholder means no action executed, no tool result, no compute invocation, no memory commit",
+        runtime_diagnostics_binding:
+            "runtime emits result placeholder prepared with explicit no-action/no-tool/no-compute/no-commit flags",
+        canonical_guard:
+            "placeholder prepared is not a result claim and not proof of execution",
+    },
+    BlueBrainActionResultPlaceholderLane {
+        class: BlueBrainActionResultPlaceholderClass::ResultPlaceholderUnavailable,
+        lane: "blue_brain_action_result_placeholder_unavailable",
+        placeholder_semantics:
+            "result placeholder unavailable because handoff endpoint or slot provisioning is unavailable",
+        handoff_dependency_binding:
+            "CANONICAL_BLUE_BRAIN_FUTURE_ACTION_HANDOFF_MAP::HandoffUnavailable",
+        result_slot_shape: "no placeholder slot can be provisioned in current boundary window",
+        boundary_semantics:
+            "unavailable placeholder means no result, no action execution, no tool result, no compute invocation, no memory commit",
+        runtime_diagnostics_binding:
+            "runtime emits placeholder unavailable and keeps it separate from blocked/rejected handoff",
+        canonical_guard: "placeholder unavailable cannot be rewritten as execution failure or result error",
+    },
+    BlueBrainActionResultPlaceholderLane {
+        class: BlueBrainActionResultPlaceholderClass::ResultPlaceholderBlocked,
+        lane: "blue_brain_action_result_placeholder_blocked",
+        placeholder_semantics:
+            "result placeholder blocked when canonical handoff basis is blocked/insufficient",
+        handoff_dependency_binding:
+            "CANONICAL_BLUE_BRAIN_FUTURE_ACTION_HANDOFF_MAP::HandoffBlocked",
+        result_slot_shape:
+            "placeholder slot withheld until blocked basis is repaired and canonical handoff resumes",
+        boundary_semantics:
+            "blocked placeholder means no action executed, no tool result, no compute invocation, no memory commit",
+        runtime_diagnostics_binding:
+            "runtime emits placeholder blocked with blocked reason references",
+        canonical_guard: "placeholder blocked tracks handoff blocker and remains non-executing",
+    },
+    BlueBrainActionResultPlaceholderLane {
+        class: BlueBrainActionResultPlaceholderClass::ResultPlaceholderCaveated,
+        lane: "blue_brain_action_result_placeholder_caveated",
+        placeholder_semantics:
+            "result placeholder caveated when handoff is caveated and future result slot requires caveat carry-over",
+        handoff_dependency_binding:
+            "CANONICAL_BLUE_BRAIN_FUTURE_ACTION_HANDOFF_MAP::HandoffCaveated",
+        result_slot_shape:
+            "placeholder slot includes caveat metadata fields with no actual action/tool result payload",
+        boundary_semantics:
+            "caveated placeholder means no action executed, no tool result, no compute invocation, no memory commit",
+        runtime_diagnostics_binding:
+            "runtime emits placeholder caveated and preserves comparison/memory-boundary caveats",
+        canonical_guard: "placeholder caveat is metadata only and not a result confidence claim",
+    },
+    BlueBrainActionResultPlaceholderLane {
+        class: BlueBrainActionResultPlaceholderClass::NoResultExpected,
+        lane: "blue_brain_action_result_placeholder_no_result_expected",
+        placeholder_semantics:
+            "no result expected for diagnostic-only/no-handoff/rejected paths in current window",
+        handoff_dependency_binding:
+            "CANONICAL_BLUE_BRAIN_FUTURE_ACTION_HANDOFF_MAP::DiagnosticOnlyNoHandoff|HandoffRejected",
+        result_slot_shape: "result slot omitted or explicitly marked no_result_expected",
+        boundary_semantics:
+            "no-result-expected means no action executed, no tool result, no compute invocation, no memory commit",
+        runtime_diagnostics_binding:
+            "runtime emits no-result-expected and keeps proposal diagnostics available",
+        canonical_guard:
+            "no-result-expected is canonical and must not be interpreted as missing execution data",
+    },
+    BlueBrainActionResultPlaceholderLane {
+        class: BlueBrainActionResultPlaceholderClass::NoActionExecuted,
+        lane: "blue_brain_action_result_placeholder_no_action_executed",
+        placeholder_semantics:
+            "explicit no action executed marker carried with placeholder semantics",
+        handoff_dependency_binding:
+            "all canonical handoff classes retain no-action-executed baseline in BB7",
+        result_slot_shape:
+            "placeholder status includes no_action_executed=true and empty action outcome payload",
+        boundary_semantics:
+            "no-action-executed placeholder implies no tool result, no compute invocation, no memory commit",
+        runtime_diagnostics_binding:
+            "runtime emits no_action_executed marker for future handoff and placeholder lanes",
+        canonical_guard: "no-action-executed is mandatory until explicit downstream execution path exists",
+    },
+    BlueBrainActionResultPlaceholderLane {
+        class: BlueBrainActionResultPlaceholderClass::NoToolResult,
+        lane: "blue_brain_action_result_placeholder_no_tool_result",
+        placeholder_semantics:
+            "explicit no tool result marker to avoid false tool execution inference",
+        handoff_dependency_binding:
+            "all canonical handoff classes preserve no_tool_result baseline",
+        result_slot_shape:
+            "placeholder status includes no_tool_result=true and empty tool output references",
+        boundary_semantics:
+            "no-tool-result placeholder implies no action executed, no compute invocation, no memory commit",
+        runtime_diagnostics_binding:
+            "runtime emits no_tool_result marker and keeps tool invocation boundary explicit",
+        canonical_guard:
+            "no_tool_result placeholder cannot be auto-upgraded to tool error or tool success without execution path",
+    },
+    BlueBrainActionResultPlaceholderLane {
+        class: BlueBrainActionResultPlaceholderClass::InternalOnlyNonCanonicalPlaceholder,
+        lane: "blue_brain_action_result_placeholder_internal_only_non_canonical",
+        placeholder_semantics:
+            "internal/expert/dev placeholder-like object without canonical handoff references",
+        handoff_dependency_binding:
+            "internal-only helper/orchestration/tooling path and not canonical BB7 placeholder",
+        result_slot_shape:
+            "shape may resemble result slot but lacks canonical proposal/handoff/readiness binding",
+        boundary_semantics:
+            "internal-only placeholder has no canonical action/tool/compute/memory authority",
+        runtime_diagnostics_binding:
+            "runtime exports internal-only placeholder as canonical=false and excludes it from canonical lane claims",
+        canonical_guard:
+            "internal/expert hooks, legacy compat objects, and unstable dev/test surfaces remain non-canonical",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -5982,6 +6368,16 @@ pub fn canonical_blue_brain_minimal_planning_action_interface_map(
 pub fn canonical_blue_brain_plan_action_readiness_diagnostics_map(
 ) -> &'static [BlueBrainPlanActionReadinessDiagnosticLane] {
     &CANONICAL_BLUE_BRAIN_PLAN_ACTION_READINESS_DIAGNOSTICS_MAP
+}
+
+pub fn canonical_blue_brain_future_action_handoff_map(
+) -> &'static [BlueBrainFutureActionHandoffLane] {
+    &CANONICAL_BLUE_BRAIN_FUTURE_ACTION_HANDOFF_MAP
+}
+
+pub fn canonical_blue_brain_action_result_placeholder_map(
+) -> &'static [BlueBrainActionResultPlaceholderLane] {
+    &CANONICAL_BLUE_BRAIN_ACTION_RESULT_PLACEHOLDER_MAP
 }
 
 pub fn canonical_final_reference_line() -> CanonicalFinalReferenceLine {
@@ -9148,6 +9544,117 @@ mod tests {
         assert!(doc.contains("no compute invocation"));
         assert!(doc.contains("no memory commit"));
         assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
+    }
+
+    #[test]
+    fn blue_brain_future_action_handoff_and_result_placeholder_maps_keep_classes_distinct() {
+        let handoff_map = canonical_blue_brain_future_action_handoff_map();
+        assert_eq!(handoff_map.len(), 9);
+        assert!(handoff_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureActionHandoffClass::FutureActionReady));
+        assert!(handoff_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureActionHandoffClass::FuturePlanReady));
+        assert!(handoff_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureActionHandoffClass::HandoffDeferred));
+        assert!(handoff_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureActionHandoffClass::HandoffBlocked));
+        assert!(handoff_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureActionHandoffClass::HandoffRejected));
+        assert!(handoff_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureActionHandoffClass::HandoffCaveated));
+        assert!(handoff_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureActionHandoffClass::HandoffUnavailable));
+        assert!(handoff_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureActionHandoffClass::DiagnosticOnlyNoHandoff));
+        assert!(handoff_map.iter().any(|lane| {
+            lane.class == BlueBrainFutureActionHandoffClass::InternalOnlyNonCanonicalHandoff
+        }));
+        assert!(handoff_map
+            .iter()
+            .all(|lane| lane.execution_and_commit_boundary.contains("no")));
+        assert!(handoff_map
+            .iter()
+            .all(|lane| lane.runtime_diagnostics_binding.contains("runtime")));
+        assert!(handoff_map.iter().any(|lane| {
+            lane.class == BlueBrainFutureActionHandoffClass::InternalOnlyNonCanonicalHandoff
+                && lane.runtime_diagnostics_binding.contains("canonical=false")
+        }));
+
+        let placeholder_map = canonical_blue_brain_action_result_placeholder_map();
+        assert_eq!(placeholder_map.len(), 8);
+        assert!(placeholder_map.iter().any(|lane| {
+            lane.class == BlueBrainActionResultPlaceholderClass::ResultPlaceholderPrepared
+        }));
+        assert!(placeholder_map.iter().any(|lane| {
+            lane.class == BlueBrainActionResultPlaceholderClass::ResultPlaceholderUnavailable
+        }));
+        assert!(placeholder_map.iter().any(|lane| {
+            lane.class == BlueBrainActionResultPlaceholderClass::ResultPlaceholderBlocked
+        }));
+        assert!(placeholder_map.iter().any(|lane| {
+            lane.class == BlueBrainActionResultPlaceholderClass::ResultPlaceholderCaveated
+        }));
+        assert!(placeholder_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainActionResultPlaceholderClass::NoResultExpected));
+        assert!(placeholder_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainActionResultPlaceholderClass::NoActionExecuted));
+        assert!(placeholder_map
+            .iter()
+            .any(|lane| lane.class == BlueBrainActionResultPlaceholderClass::NoToolResult));
+        assert!(placeholder_map.iter().any(|lane| {
+            lane.class == BlueBrainActionResultPlaceholderClass::InternalOnlyNonCanonicalPlaceholder
+        }));
+        assert!(placeholder_map
+            .iter()
+            .all(|lane| lane.boundary_semantics.contains("no")));
+        assert!(placeholder_map.iter().any(|lane| {
+            lane.class == BlueBrainActionResultPlaceholderClass::ResultPlaceholderPrepared
+                && lane.placeholder_semantics.contains("no actual result")
+        }));
+    }
+
+    #[test]
+    fn serie_bb7_prompt3_future_action_handoff_doc_stays_pinned_to_code_maps() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_future_action_handoff_result_placeholder_serie_bb7_prompt3_v1.md"
+        );
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_FUTURE_ACTION_HANDOFF_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_ACTION_RESULT_PLACEHOLDER_MAP"));
+        assert!(doc.contains("future-action-ready"));
+        assert!(doc.contains("future-plan-ready"));
+        assert!(doc.contains("handoff deferred"));
+        assert!(doc.contains("handoff blocked"));
+        assert!(doc.contains("handoff rejected"));
+        assert!(doc.contains("handoff caveated"));
+        assert!(doc.contains("handoff unavailable"));
+        assert!(doc.contains("diagnostic-only/no-handoff"));
+        assert!(doc.contains("internal-only/non-canonical handoff"));
+        assert!(doc.contains("result placeholder prepared"));
+        assert!(doc.contains("result placeholder unavailable"));
+        assert!(doc.contains("result placeholder blocked"));
+        assert!(doc.contains("result placeholder caveated"));
+        assert!(doc.contains("no result expected"));
+        assert!(doc.contains("no action executed"));
+        assert!(doc.contains("no tool result"));
+        assert!(doc.contains("Placeholder ≠ Result"));
+        assert!(doc.contains("Handoff ≠ Action Execution"));
+        assert!(doc.contains("no compute invocation"));
+        assert!(doc.contains("no memory commit"));
+        assert!(doc.contains("canonical=false"));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
     }
 
     #[test]
