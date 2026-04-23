@@ -144,6 +144,13 @@ For BB7 Prompt 2 plan/action readiness diagnostics and blocked-action feedback b
 (canonical readiness classes + compact readiness reasons + blocked-action semantics + runtime non-execution boundaries), see
 `docs/blue_brain_plan_action_readiness_diagnostics_serie_bb7_prompt2_v1.md` and
 `CANONICAL_BLUE_BRAIN_PLAN_ACTION_READINESS_DIAGNOSTICS_MAP`.
+For BB7 Prompt 3 future action subsystem handoff and action-result placeholder semantics, see
+`docs/blue_brain_future_action_handoff_result_placeholder_serie_bb7_prompt3_v1.md`,
+`CANONICAL_BLUE_BRAIN_FUTURE_ACTION_HANDOFF_MAP`, and
+`CANONICAL_BLUE_BRAIN_ACTION_RESULT_PLACEHOLDER_MAP`.
+For BB7 Prompt 4 readiness sweep and final minimal planning/action closure line
+(matrix + canonical readiness/handoff/placeholder states + strict non-execution/non-tool-invocation/non-compute-invocation/non-commit boundaries + prioritized next direction), see
+`docs/blue_brain_readiness_sweep_serie_bb7_prompt4_v1.md`.
 
 ## Capability model
 
