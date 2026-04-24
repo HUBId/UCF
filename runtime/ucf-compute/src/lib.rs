@@ -98,7 +98,11 @@ pub use backends::{
     CANONICAL_ONBOARDING_BACKEND, CANONICAL_ONBOARDING_PACK,
 };
 pub use blue_brain_dynamics::{
-    evaluate_blue_brain_kuramoto_modulation, BlueBrainKuramotoBoundaryGuard,
+    evaluate_blue_brain_hodgkin_huxley_diagnostic, evaluate_blue_brain_kuramoto_modulation,
+    BlueBrainHodgkinHuxleyBoundaryGuard, BlueBrainHodgkinHuxleyBoundedModelParameters,
+    BlueBrainHodgkinHuxleyDiagnosticClass, BlueBrainHodgkinHuxleyDiagnosticInput,
+    BlueBrainHodgkinHuxleyDiagnosticResult, BlueBrainHodgkinHuxleyScopeState,
+    BlueBrainHodgkinHuxleySimulationParameters, BlueBrainKuramotoBoundaryGuard,
     BlueBrainKuramotoModulationInput, BlueBrainKuramotoModulationResult,
     BlueBrainKuramotoPhaseNodeInput, BlueBrainKuramotoRuntimeCaveatModulation,
     BlueBrainKuramotoRuntimePosture, BlueBrainKuramotoScopeState, BlueBrainKuramotoSelectionHint,

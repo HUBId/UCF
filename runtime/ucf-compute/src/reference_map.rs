@@ -7254,17 +7254,17 @@ pub const CANONICAL_BLUE_BRAIN_NEURAL_DYNAMICS_CANDIDATE_MAP:
         lane: "blue_brain_dynamics_simulation_only_hodgkin_huxley_baseline",
         model_or_family: "Hodgkin-Huxley single/multi-compartment detailed conductance dynamics",
         runtime_memory_selection_fit:
-            "high-fidelity membrane dynamics are informative for offline model research but currently over-detailed for BB2-BB9 canonical runtime handoff surfaces",
+            "high-fidelity membrane dynamics are informative for simulation/diagnostics but remain over-detailed for BB2-BB9 canonical runtime handoff surfaces",
         allowed_inputs:
-            "runtime phase traces, context references, memory references, selection diagnostics, evidence status snapshots, safety boundary snapshots",
+            "bounded simulation parameters, diagnostic run identity, context references, evidence references, bounded model parameters",
         allowed_outputs:
-            "offline simulation traces, calibration metrics, caveated diagnostic summaries mapped to outward references",
+            "simulation diagnostic summary, model caveat, diagnostic trace/reference, insufficient/failed simulation diagnostic, bounded metadata",
         forbidden_direct_effects:
-            "no direct action execution, no direct memory commit, no compute-core mutation, no direct policy decision",
+            "no direct runtime mutation, no direct selection mutation, no direct memory commit, no direct action execution, no action/tool execution, no compute invocation, no safety override, no direct policy decision",
         maturity_and_priority:
-            "simulation-only now; can later feed bounded diagnostics if remapped and deterministic",
+            "simulation/diagnostic-only now; explicitly not a productive runtime modulation lane",
         canonical_guard:
-            "must stay non-executing and cannot claim production runtime authority in current baseline",
+            "must stay non-executing, non-modulating, and cannot claim production runtime/selection/action authority in current baseline",
     },
     BlueBrainNeuralDynamicsCandidateLane {
         class: BlueBrainNeuralDynamicsCandidateClass::DiagnosticOnlyDynamicsCandidate,
@@ -7315,7 +7315,7 @@ pub const CANONICAL_BLUE_BRAIN_NEURAL_DYNAMICS_CANDIDATE_MAP:
         maturity_and_priority:
             "preferred first BB10 integration candidate because of lower state cost and clear BB4 coupling surface",
         canonical_guard:
-            "Kuramoto outputs are modulation-only and require existing canonical selection gates",
+            "Kuramoto outputs are modulation-only and require existing canonical selection gates; this does not grant Hodgkin-Huxley equal modulation authority",
     },
     BlueBrainNeuralDynamicsCandidateLane {
         class: BlueBrainNeuralDynamicsCandidateClass::MemoryContextModulatingCandidate,
@@ -12114,6 +12114,15 @@ mod tests {
         assert!(hh
             .forbidden_direct_effects
             .contains("no direct memory commit"));
+        assert!(hh
+            .forbidden_direct_effects
+            .contains("no direct runtime mutation"));
+        assert!(hh
+            .forbidden_direct_effects
+            .contains("no direct selection mutation"));
+        assert!(hh
+            .allowed_outputs
+            .contains("insufficient/failed simulation diagnostic"));
         let kuramoto = map
             .iter()
             .find(|lane| {
@@ -12127,6 +12136,9 @@ mod tests {
         assert!(kuramoto
             .forbidden_direct_effects
             .contains("no memory commit"));
+        assert!(kuramoto
+            .canonical_guard
+            .contains("does not grant Hodgkin-Huxley"));
     }
 
     #[test]
@@ -12169,5 +12181,24 @@ mod tests {
         assert!(doc.contains("direkte Compute-Invocation"));
         assert!(doc.contains("Safety-Override"));
         assert!(doc.contains("Policy-Result"));
+    }
+
+    #[test]
+    fn serie_bb10_prompt3_hodgkin_huxley_doc_keeps_diagnostic_only_boundary() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_hodgkin_huxley_diagnostic_boundary_serie_bb10_prompt3_v1.md"
+        );
+        assert!(doc.contains("simulation-only Hodgkin-Huxley"));
+        assert!(doc.contains("diagnostic-only Hodgkin-Huxley"));
+        assert!(doc.contains("research/deferred Hodgkin-Huxley"));
+        assert!(doc.contains("not suitable for current Blue-Brain runtime"));
+        assert!(doc.contains("non-canonical/internal-only HH path"));
+        assert!(doc.contains("keine direkte Runtime-State-Mutation"));
+        assert!(doc.contains("keine direkte Selection-Mutation"));
+        assert!(doc.contains("kein Memory-Commit"));
+        assert!(doc.contains("keine Compute-Invocation"));
+        assert!(doc.contains("kein Safety-Override"));
+        assert!(doc.contains("Kuramoto"));
+        assert!(doc.contains("advisory modulation path"));
     }
 }

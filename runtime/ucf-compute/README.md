@@ -188,6 +188,15 @@ For BB9 Prompt 3 future tool/action result boundary and no-execution placeholder
 For BB9 Prompt 4 readiness sweep and final action-safety closure line
 (matrix + canonical eligibility/safety/diagnostics/placeholder/result-boundary states + strict boundaries to tool execution/agent platform/policy/compute invocation/memory commit + prioritized next direction), see
 `docs/blue_brain_readiness_sweep_serie_bb9_prompt4_v1.md`.
+For BB10 Prompt 1 neural-dynamics candidate mapping against Runtime/Memory/Selection/Action-Safety, see
+`docs/blue_brain_neural_dynamics_candidate_map_serie_bb10_prompt1_v1.md` and
+`CANONICAL_BLUE_BRAIN_NEURAL_DYNAMICS_CANDIDATE_MAP`.
+For BB10 Prompt 2 Kuramoto-first minimal modulation path (diagnostic-only + advisory hint/caveat signals), see
+`docs/blue_brain_kuramoto_minimal_modulation_path_serie_bb10_prompt2_v1.md` and
+`runtime/ucf-compute/src/blue_brain_dynamics.rs`.
+For BB10 Prompt 3 Hodgkin-Huxley simulation-/diagnostic-only boundary (no productive runtime/selection/memory/action/compute coupling), see
+`docs/blue_brain_hodgkin_huxley_diagnostic_boundary_serie_bb10_prompt3_v1.md` and
+`evaluate_blue_brain_hodgkin_huxley_diagnostic`.
 
 ## Capability model
 
