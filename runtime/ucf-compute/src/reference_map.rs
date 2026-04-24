@@ -1171,6 +1171,31 @@ pub struct BlueBrainExecutionEligibilityDiagnosticLane {
     pub boundary_guard: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainNeuralDynamicsCandidateClass {
+    SimulationOnlyCandidate,
+    DiagnosticOnlyDynamicsCandidate,
+    RuntimeModulatingCandidate,
+    SelectionAttentionModulatingCandidate,
+    MemoryContextModulatingCandidate,
+    ActionSafetyRelevantCandidate,
+    NotSuitableNowCandidate,
+    NonCanonicalInternalOnlyDynamicsPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainNeuralDynamicsCandidateLane {
+    pub class: BlueBrainNeuralDynamicsCandidateClass,
+    pub lane: &'static str,
+    pub model_or_family: &'static str,
+    pub runtime_memory_selection_fit: &'static str,
+    pub allowed_inputs: &'static str,
+    pub allowed_outputs: &'static str,
+    pub forbidden_direct_effects: &'static str,
+    pub maturity_and_priority: &'static str,
+    pub canonical_guard: &'static str,
+}
+
 pub const WORKFLOW_PATH_INSPECT_DIAGNOSE_ACT: &str =
     "operations_snapshot -> diagnostics assessment -> runtime operation";
 pub const WORKFLOW_PATH_REPLAY_ORIENTED: &str =
@@ -7222,6 +7247,146 @@ pub const CANONICAL_BLUE_BRAIN_EXECUTION_ELIGIBILITY_DIAGNOSTICS_MAP:
     },
 ];
 
+pub const CANONICAL_BLUE_BRAIN_NEURAL_DYNAMICS_CANDIDATE_MAP:
+    [BlueBrainNeuralDynamicsCandidateLane; 8] = [
+    BlueBrainNeuralDynamicsCandidateLane {
+        class: BlueBrainNeuralDynamicsCandidateClass::SimulationOnlyCandidate,
+        lane: "blue_brain_dynamics_simulation_only_hodgkin_huxley_baseline",
+        model_or_family: "Hodgkin-Huxley single/multi-compartment detailed conductance dynamics",
+        runtime_memory_selection_fit:
+            "high-fidelity membrane dynamics are informative for offline model research but currently over-detailed for BB2-BB9 canonical runtime handoff surfaces",
+        allowed_inputs:
+            "runtime phase traces, context references, memory references, selection diagnostics, evidence status snapshots, safety boundary snapshots",
+        allowed_outputs:
+            "offline simulation traces, calibration metrics, caveated diagnostic summaries mapped to outward references",
+        forbidden_direct_effects:
+            "no direct action execution, no direct memory commit, no compute-core mutation, no direct policy decision",
+        maturity_and_priority:
+            "simulation-only now; can later feed bounded diagnostics if remapped and deterministic",
+        canonical_guard:
+            "must stay non-executing and cannot claim production runtime authority in current baseline",
+    },
+    BlueBrainNeuralDynamicsCandidateLane {
+        class: BlueBrainNeuralDynamicsCandidateClass::DiagnosticOnlyDynamicsCandidate,
+        lane: "blue_brain_dynamics_diagnostic_only_stability_probe",
+        model_or_family: "lightweight neural-dynamics probes (e.g. bounded ODE oscillation diagnostics)",
+        runtime_memory_selection_fit:
+            "fits BB2 runtime feedback and BB4 selection diagnostics as supplemental caveat signal without control authority",
+        allowed_inputs:
+            "runtime transition state, evidence freshness, selection deferral state, memory maintenance status, safety precheck status",
+        allowed_outputs:
+            "diagnostic signal, caveat vector, bounded instability marker, runtime caveat",
+        forbidden_direct_effects:
+            "no execution invocation, no commit path activation, no tool calls, no policy override",
+        maturity_and_priority:
+            "realistic near-term candidate when outputs remain diagnostics-only",
+        canonical_guard:
+            "diagnostics must remain distinguishable from execution or memory persistence outcomes",
+    },
+    BlueBrainNeuralDynamicsCandidateLane {
+        class: BlueBrainNeuralDynamicsCandidateClass::RuntimeModulatingCandidate,
+        lane: "blue_brain_dynamics_runtime_modulating_bounded_gain_only",
+        model_or_family: "bounded modulation kernels derived from dynamics state summaries",
+        runtime_memory_selection_fit:
+            "can modulate runtime caveat severity or pacing hints but cannot alter canonical state-transition classes",
+        allowed_inputs:
+            "runtime state class, transition trigger class, feedback caveat state, evidence quality posture",
+        allowed_outputs:
+            "modulation signal, runtime caveat, bounded confidence attenuation signal",
+        forbidden_direct_effects:
+            "no runtime class rewrite, no direct compute invocation, no hidden trigger promotion",
+        maturity_and_priority:
+            "candidate after diagnostic-only path proves deterministic and auditable",
+        canonical_guard:
+            "runtime modulation remains advisory and cannot bypass BB2 transition/trigger contracts",
+    },
+    BlueBrainNeuralDynamicsCandidateLane {
+        class: BlueBrainNeuralDynamicsCandidateClass::SelectionAttentionModulatingCandidate,
+        lane: "blue_brain_dynamics_selection_attention_modulating_kuramoto_candidate",
+        model_or_family: "Kuramoto-style phase/synchrony coupling over candidate groups",
+        runtime_memory_selection_fit:
+            "best fit for BB4 control/attention/selection where synchrony can modulate candidate weighting and deferral confidence",
+        allowed_inputs:
+            "selection state, candidate set metadata, context-evidence basis quality, runtime caveat posture, safety posture",
+        allowed_outputs:
+            "synchrony/phase signal, candidate weight caveat, deferral confidence modulation",
+        forbidden_direct_effects:
+            "no direct candidate acceptance, no proposal promotion, no action execution, no memory commit",
+        maturity_and_priority:
+            "preferred first BB10 integration candidate because of lower state cost and clear BB4 coupling surface",
+        canonical_guard:
+            "Kuramoto outputs are modulation-only and require existing canonical selection gates",
+    },
+    BlueBrainNeuralDynamicsCandidateLane {
+        class: BlueBrainNeuralDynamicsCandidateClass::MemoryContextModulatingCandidate,
+        lane: "blue_brain_dynamics_memory_context_modulating_retrieval_caveat",
+        model_or_family: "bounded context-memory modulation from dynamics stability summaries",
+        runtime_memory_selection_fit:
+            "fits BB3/BB5/BB8 retrieval and maintenance caveat refresh but must not synthesize persistence events",
+        allowed_inputs:
+            "context reference state, memory reference quality, maintenance lifecycle state, evidence freshness",
+        allowed_outputs:
+            "retrieval caveat, memory-context modulation signal, reference confidence annotation",
+        forbidden_direct_effects:
+            "no direct memory write, no commit state mutation, no persistence scheduler control",
+        maturity_and_priority:
+            "secondary candidate after selection-modulation path is proven stable",
+        canonical_guard:
+            "memory modulation cannot be interpreted as commit eligibility or commit result",
+    },
+    BlueBrainNeuralDynamicsCandidateLane {
+        class: BlueBrainNeuralDynamicsCandidateClass::ActionSafetyRelevantCandidate,
+        lane: "blue_brain_dynamics_action_safety_relevant_precheck_support",
+        model_or_family: "dynamics-derived safety caveat support signals",
+        runtime_memory_selection_fit:
+            "can contribute caveated or blocked diagnostics for BB9 precheck/eligibility reasoning without execution authority",
+        allowed_inputs:
+            "execution eligibility class, safety precheck state, context-evidence-memory basis, selection deferral posture",
+        allowed_outputs:
+            "safety caveat signal, blocked-risk marker, eligibility caveat annotation",
+        forbidden_direct_effects:
+            "no action execution, no tool invocation, no eligibility override, no policy decision output",
+        maturity_and_priority:
+            "diagnostic adjunct only; never safety-boundary replacement",
+        canonical_guard:
+            "BB9 safety boundary remains authoritative and dynamics signals are supporting diagnostics only",
+    },
+    BlueBrainNeuralDynamicsCandidateLane {
+        class: BlueBrainNeuralDynamicsCandidateClass::NotSuitableNowCandidate,
+        lane: "blue_brain_dynamics_not_suitable_now_high_cost_biophysical_runtime",
+        model_or_family: "full biophysical network simulation or high-dimensional spiking platform",
+        runtime_memory_selection_fit:
+            "does not fit current maintenance-only compute line or minimal BB runtime/memory/action surfaces",
+        allowed_inputs:
+            "none for canonical runtime integration in current baseline",
+        allowed_outputs:
+            "research notes only, no canonical runtime/memory/selection/action outputs",
+        forbidden_direct_effects:
+            "no runtime insertion, no compute-core dependency expansion, no action/memory authority",
+        maturity_and_priority:
+            "explicitly deferred; not suitable now for production-facing integration",
+        canonical_guard:
+            "avoid platform-buildout drift and keep BB10 scope to candidate mapping",
+    },
+    BlueBrainNeuralDynamicsCandidateLane {
+        class: BlueBrainNeuralDynamicsCandidateClass::NonCanonicalInternalOnlyDynamicsPath,
+        lane: "blue_brain_dynamics_non_canonical_internal_expert_only",
+        model_or_family: "internal/expert/dev-only dynamics experiments",
+        runtime_memory_selection_fit:
+            "internal probes may exist but are non-canonical without down-mapping to outward references",
+        allowed_inputs:
+            "internal traces only when isolated from canonical runtime authority",
+        allowed_outputs:
+            "internal diagnostics tagged canonical=false until explicit down-mapping",
+        forbidden_direct_effects:
+            "no canonical handoff authority, no execution rights, no memory commit rights, no compute mutation rights",
+        maturity_and_priority:
+            "allowed only as internal experiments outside canonical BB10 contract line",
+        canonical_guard:
+            "must never be presented as canonical Blue-Brain dynamics integration state",
+    },
+];
+
 pub fn canonical_compute_reference_map() -> &'static [ComputeReferenceLane] {
     &CANONICAL_COMPUTE_REFERENCE_MAP
 }
@@ -7297,6 +7462,11 @@ pub fn canonical_blue_brain_action_execution_eligibility_map(
 pub fn canonical_blue_brain_execution_eligibility_diagnostics_map(
 ) -> &'static [BlueBrainExecutionEligibilityDiagnosticLane] {
     &CANONICAL_BLUE_BRAIN_EXECUTION_ELIGIBILITY_DIAGNOSTICS_MAP
+}
+
+pub fn canonical_blue_brain_neural_dynamics_candidate_map(
+) -> &'static [BlueBrainNeuralDynamicsCandidateLane] {
+    &CANONICAL_BLUE_BRAIN_NEURAL_DYNAMICS_CANDIDATE_MAP
 }
 
 pub fn canonical_final_reference_line() -> CanonicalFinalReferenceLine {
@@ -11900,5 +12070,87 @@ mod tests {
         assert!(doc.contains("Prioritized next direction: Serie S"));
         assert!(doc.contains("review + prioritization only"));
         assert!(doc.contains("no unplanned rollout"));
+    }
+
+    #[test]
+    fn blue_brain_bb10_neural_dynamics_candidate_map_keeps_classes_boundaries_and_non_execution() {
+        let map = canonical_blue_brain_neural_dynamics_candidate_map();
+        assert_eq!(map.len(), 8);
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainNeuralDynamicsCandidateClass::SimulationOnlyCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainNeuralDynamicsCandidateClass::DiagnosticOnlyDynamicsCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainNeuralDynamicsCandidateClass::RuntimeModulatingCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainNeuralDynamicsCandidateClass::SelectionAttentionModulatingCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainNeuralDynamicsCandidateClass::MemoryContextModulatingCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainNeuralDynamicsCandidateClass::ActionSafetyRelevantCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainNeuralDynamicsCandidateClass::NotSuitableNowCandidate
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class
+                == BlueBrainNeuralDynamicsCandidateClass::NonCanonicalInternalOnlyDynamicsPath
+        }));
+        let hh = map
+            .iter()
+            .find(|lane| {
+                lane.class == BlueBrainNeuralDynamicsCandidateClass::SimulationOnlyCandidate
+            })
+            .expect("simulation-only lane must exist");
+        assert!(hh
+            .forbidden_direct_effects
+            .contains("no direct action execution"));
+        assert!(hh
+            .forbidden_direct_effects
+            .contains("no direct memory commit"));
+        let kuramoto = map
+            .iter()
+            .find(|lane| {
+                lane.class
+                    == BlueBrainNeuralDynamicsCandidateClass::SelectionAttentionModulatingCandidate
+            })
+            .expect("selection modulation lane must exist");
+        assert!(kuramoto
+            .forbidden_direct_effects
+            .contains("no action execution"));
+        assert!(kuramoto
+            .forbidden_direct_effects
+            .contains("no memory commit"));
+    }
+
+    #[test]
+    fn serie_bb10_prompt1_neural_dynamics_doc_stays_pinned_to_candidate_map_and_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_neural_dynamics_candidate_map_serie_bb10_prompt1_v1.md"
+        );
+        let line = canonical_final_reference_line();
+        assert!(doc.contains(line.execution_core));
+        assert!(doc.contains("simulation-only candidate"));
+        assert!(doc.contains("diagnostic-only dynamics candidate"));
+        assert!(doc.contains("runtime-modulating candidate"));
+        assert!(doc.contains("selection/attention-modulating candidate"));
+        assert!(doc.contains("memory/context-modulating candidate"));
+        assert!(doc.contains("action-safety-relevant candidate"));
+        assert!(doc.contains("not suitable now"));
+        assert!(doc.contains("non-canonical/internal-only dynamics path"));
+        assert!(doc.contains("Hodgkin-Huxley"));
+        assert!(doc.contains("Kuramoto"));
+        assert!(doc.contains("keine direkte Action-Ausführung"));
+        assert!(doc.contains("kein direkter Memory-Commit"));
+        assert!(doc.contains("keine Compute-Core-Mutation"));
+        assert!(doc.contains("Priorität 1"));
+        assert!(doc.contains("Kuramoto"));
+        assert!(doc.contains("Hodgkin-Huxley bleibt vorerst simulation-only"));
     }
 }
