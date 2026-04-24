@@ -243,6 +243,10 @@ fn gem_allow_brain_stimulus_emits_spikes() {
     assert!(result.is_ok());
     assert_eq!(adapter.brain_spikes().len(), 2);
     assert_eq!(adapter.take_brain_spike_meta(), Some((2, 23)));
+    assert!(adapter
+        .brain_spikes()
+        .iter()
+        .all(|spike| spike.phase.is_none()));
 }
 
 #[test]

@@ -598,6 +598,9 @@ impl Gem {
                         Err(PolicyError::InvalidFrame("payload/channel mismatch"))
                     }
                     (ChannelCode::BrainStimulus, ControlPayload::BrainStimulus(payload)) => {
+                        // BB11 decision: bridge-level spike phase attachment stays deferred/test-only.
+                        // Operational BlueBrain/Kuramoto integration remains advisory via router+compute,
+                        // while policy emits deterministic phase-empty brainbus spikes.
                         let spikes = BrainStimulusEncoder::encode_to_spikes(ctrl, payload);
                         adapter.emit_brain_spikes(spikes)
                     }

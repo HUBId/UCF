@@ -88,3 +88,15 @@ Prompt 1 bleibt gültig:
 - Kuramoto bleibt der bevorzugte leichte Integrationskandidat.
 - Die jetzt eingeführte Implementierung bleibt strikt unterhalb von Execution/Commit/Safety/Policy-Autorität.
 - Hodgkin-Huxley bleibt in dieser Linie weiterhin nicht als produktiver Runtime-Pfad umgesetzt.
+
+## 7) Bridge-Phase-Pfad Status (BB11 Prompt 3)
+
+- `domains/ucf-bluebrain-bridge::BrainStimulusEncoder::attach_phase(...)` ist **nicht** Teil
+  der operativen Kuramoto-/Neuromod-Linie.
+- Operative Callsites in `runtime/ucf-policy` und `runtime/ucf-runtime` verwenden weiterhin
+  ausschließlich `encode_to_spikes(...)` (phase-empty spike batches).
+- Damit bleibt `attach_phase(...)` derzeit explizit **test-only/deferred**:
+  nutzbar für Tests/Experimente, aber ohne produktive Autorität und ohne End-to-end-Claim.
+- Eine spätere Aktivierung ist nur sinnvoll mit einer expliziten kanonischen
+  Produktions-Callsite und dokumentierter Wirkung innerhalb der bestehenden
+  advisory-only/no-direct-\* Grenzen.
