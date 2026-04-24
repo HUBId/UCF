@@ -45,6 +45,7 @@ use world_model::StageQuality;
 
 pub mod backend_pack;
 pub mod backends;
+pub mod blue_brain_dynamics;
 pub mod blue_brain_memory;
 #[cfg(any(
     feature = "compute-candle",
@@ -95,6 +96,13 @@ pub use backends::{
     build_backend, build_canonical_production_backend, build_onboarding_reference_backend,
     build_service_compute_backend, ComputeBackendConfig, ComputeBackendKind,
     CANONICAL_ONBOARDING_BACKEND, CANONICAL_ONBOARDING_PACK,
+};
+pub use blue_brain_dynamics::{
+    evaluate_blue_brain_kuramoto_modulation, BlueBrainKuramotoBoundaryGuard,
+    BlueBrainKuramotoModulationInput, BlueBrainKuramotoModulationResult,
+    BlueBrainKuramotoPhaseNodeInput, BlueBrainKuramotoRuntimeCaveatModulation,
+    BlueBrainKuramotoRuntimePosture, BlueBrainKuramotoScopeState, BlueBrainKuramotoSelectionHint,
+    BlueBrainKuramotoSelectionPosture, BlueBrainKuramotoSynchronyDiagnostic,
 };
 pub use blue_brain_memory::{
     BlueBrainMemoryCandidate, BlueBrainMemoryCandidateClass, BlueBrainMemoryCaveatRefreshState,
