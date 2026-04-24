@@ -10,6 +10,10 @@ Status: **minimal operational geschlossen** für advisory-only Delta-Weitergabe 
 4. **Produktiver Downstream**:
    - Veröffentlichung als Workspace-Signal `BRAIN_NEUROMOD_HINT=...` (sichtbar im Snapshot/Broadcast),
    - Append eines dedizierten Archive-Records (`RecordKind::Other(166)`) mit Delta-Commit.
+   - Seit BB11 Prompt 2 wird an diesem **gleichen** Konsumpunkt zusätzlich eine
+     deterministische Kuramoto-Runtime-Caveat-Auswertung gerechnet und als
+     `KURAMOTO_RUNTIME=... KURAMOTO_COHERENCE=...` im gleichen
+     `BRAIN_NEUROMOD_HINT`-Signal mitgeführt.
 5. **Lebensdauer**:
    - Delta ist pro Zyklus **ephemeral**,
    - wird bei Konsum aus `pending_neuromod_delta` entfernt,
@@ -24,6 +28,13 @@ Die Downstream-Semantik ist **Runtime-Caveat/Modulationshinweis als Workspace-Br
 - Keine direkte Compute-Invocation.
 - Keine Safety-Override-Semantik.
 - Keine direkte Memory-Persistenz.
+
+Kuramoto bleibt dabei **advisory-only**:
+
+- Eingänge stammen aus vorhandenem Flow (Evidence-Refs, Lens-/Workspace-Kontext,
+  Attention, Runtime-Snapshot, vorhandenes Neuromod-Delta).
+- Ausgänge bleiben auf Runtime-Caveat-Hinweise im bestehenden Delta-Downstream
+  begrenzt (keine zweite Modulationssprache, kein zusätzlicher Autoritätskanal).
 
 ## Determinismus
 

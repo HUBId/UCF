@@ -28,6 +28,12 @@ use ucf_cde_scm::{
     CausalReport, CdeEngine, CdeInputs, CdeNodeId, CdeOutputs, CounterfactualResult,
 };
 use ucf_commit::canonical_control_frame_len;
+use ucf_compute::{
+    evaluate_blue_brain_kuramoto_modulation, BlueBrainKuramotoModulationInput,
+    BlueBrainKuramotoPhaseNodeInput, BlueBrainKuramotoRuntimeCaveatModulation,
+    BlueBrainKuramotoRuntimePosture, BlueBrainKuramotoScopeState,
+    BlueBrainKuramotoSelectionPosture,
+};
 use ucf_consistency_engine::{
     ConsistencyAction, ConsistencyActionKind, ConsistencyEngine, ConsistencyInputs,
     ConsistencyReport, DriftBand,
@@ -98,8 +104,8 @@ use ucf_tom_port::{IntentType, TomPort};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, Digest, ExperienceRecord, PolicyDecision};
 use ucf_types::{AlgoId, Digest32, EvidenceId, GainBudget, LearningSignal, StructuralDelta};
 use ucf_workspace::{
-    output_event_commit, NsrHitSummary, NsrTraceSummary, SignalKind, SleOutputsSnapshot, Workspace,
-    WorkspaceConfig, WorkspaceSignal, WorkspaceSnapshot,
+    output_event_commit, BrainKuramotoHint, NsrHitSummary, NsrTraceSummary, SignalKind,
+    SleOutputsSnapshot, Workspace, WorkspaceConfig, WorkspaceSignal, WorkspaceSnapshot,
 };
 
 const ISM_ANCHOR_TOP_K: usize = 4;
@@ -1805,7 +1811,14 @@ impl Router {
                         lens_selection.as_ref(),
                         pulse.slot,
                     );
-                    self.consume_pending_neuromod_delta(cycle_id, pulse.slot);
+                    self.consume_pending_neuromod_delta(
+                        cycle_id,
+                        pulse.slot,
+                        &cf,
+                        &workspace_snapshot,
+                        &attention_weights,
+                        lens_selection.as_ref(),
+                    );
                     let recursion_inputs = RecursionInputs {
                         phi: iit_output.phi_proxy,
                         drift_score,
@@ -4596,19 +4609,132 @@ impl Router {
         }
     }
 
-    fn consume_pending_neuromod_delta(&self, cycle_id: u64, slot: u8) {
+    fn consume_pending_neuromod_delta(
+        &self,
+        cycle_id: u64,
+        slot: u8,
+        cf: &ControlFrameNormalized,
+        workspace_snapshot: &WorkspaceSnapshot,
+        attention: &AttentionWeights,
+        lens_selection: Option<&LensSelection>,
+    ) {
         let Some(delta) = self.take_pending_neuromod_delta() else {
             return;
         };
+        let kuramoto_result =
+            evaluate_blue_brain_kuramoto_modulation(Self::build_kuramoto_runtime_modulation_input(
+                cf,
+                workspace_snapshot,
+                attention,
+                lens_selection,
+                &delta,
+            ));
         self.publish_workspace_signal(WorkspaceSignal::from_brain_neuromod_hint(
             delta.commit,
             delta.dopamine,
             delta.serotonin,
             delta.norepi,
             delta.cortisol,
+            kuramoto_result
+                .runtime_modulation
+                .map(|runtime_modulation| BrainKuramotoHint {
+                    runtime_modulation: kuramoto_runtime_token(runtime_modulation),
+                    coherence_permille: kuramoto_result.coherence_permille,
+                }),
             Some(slot),
         ));
         self.append_neuromod_delta_record(cycle_id, &delta);
+    }
+
+    fn build_kuramoto_runtime_modulation_input(
+        cf: &ControlFrameNormalized,
+        workspace_snapshot: &WorkspaceSnapshot,
+        attention: &AttentionWeights,
+        lens_selection: Option<&LensSelection>,
+        delta: &NeuromodDelta,
+    ) -> BlueBrainKuramotoModulationInput {
+        let evidence_refs = cf.as_ref().evidence_ids.clone();
+        let mut context_refs = lens_selection
+            .map(|selection| {
+                selection
+                    .topk
+                    .iter()
+                    .map(|feature| format!("lens_feature:{}", feature.id))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if context_refs.is_empty() {
+            context_refs.extend(
+                workspace_snapshot
+                    .broadcast
+                    .iter()
+                    .take(4)
+                    .map(|signal| format!("workspace_signal:{}", signal.digest)),
+            );
+        }
+
+        let mut memory_caveats = Vec::new();
+        if workspace_suppression_count(workspace_snapshot) > 0 {
+            memory_caveats.push("output_suppression_present".to_string());
+        }
+        if workspace_snapshot.nsr_verdict == Some(2) {
+            memory_caveats.push("nsr_warn_verdict".to_string());
+        }
+        if workspace_snapshot.budget_violation_streak > 0 {
+            memory_caveats.push("runtime_budget_violation_streak".to_string());
+        }
+
+        let selection_posture = if lens_selection.is_some() {
+            BlueBrainKuramotoSelectionPosture::Selected
+        } else {
+            BlueBrainKuramotoSelectionPosture::Deferred
+        };
+        let runtime_posture = if workspace_snapshot.budget_violation_streak > 0 {
+            BlueBrainKuramotoRuntimePosture::Caveated
+        } else if workspace_snapshot.update_mode != 0 {
+            BlueBrainKuramotoRuntimePosture::Degraded
+        } else {
+            BlueBrainKuramotoRuntimePosture::Stable
+        };
+
+        BlueBrainKuramotoModulationInput {
+            scope: BlueBrainKuramotoScopeState::RuntimeCaveatModulating,
+            selection_posture,
+            runtime_posture,
+            selected_context_refs: context_refs,
+            selected_evidence_refs: evidence_refs,
+            memory_caveats,
+            phase_nodes: Self::kuramoto_phase_nodes(workspace_snapshot, attention, delta),
+        }
+    }
+
+    fn kuramoto_phase_nodes(
+        workspace_snapshot: &WorkspaceSnapshot,
+        attention: &AttentionWeights,
+        delta: &NeuromodDelta,
+    ) -> Vec<BlueBrainKuramotoPhaseNodeInput> {
+        let delta_abs_sum = i32::from(delta.dopamine).abs()
+            + i32::from(delta.serotonin).abs()
+            + i32::from(delta.norepi).abs()
+            + i32::from(delta.cortisol).abs();
+        let delta_abs_sum = u16::try_from(delta_abs_sum).unwrap_or(u16::MAX);
+        vec![
+            BlueBrainKuramotoPhaseNodeInput {
+                group_ref: "selection_attention_group".to_string(),
+                phase_permille: attention.gain % 1000,
+                coupling_permille: attention.replay_bias.min(10_000) / 10,
+            },
+            BlueBrainKuramotoPhaseNodeInput {
+                group_ref: "runtime_state_group".to_string(),
+                phase_permille: workspace_snapshot.onn_global_plv % 1000,
+                coupling_permille: workspace_snapshot.tcf_attention_gain_cap.min(10_000) / 10,
+            },
+            BlueBrainKuramotoPhaseNodeInput {
+                group_ref: "neuromod_delta_group".to_string(),
+                phase_permille: delta_abs_sum % 1000,
+                coupling_permille: workspace_snapshot.ssm_attention_gain.min(10_000) / 10,
+            },
+        ]
     }
 
     fn append_feature_translation_archive_record(
@@ -5920,6 +6046,16 @@ fn apply_coupling_bias_i16(base: i16, influence: i16, cap: i16) -> i16 {
     let cap = cap.abs();
     let bias = influence.clamp(-cap, cap);
     base.saturating_add(bias)
+}
+
+fn kuramoto_runtime_token(modulation: BlueBrainKuramotoRuntimeCaveatModulation) -> &'static str {
+    match modulation {
+        BlueBrainKuramotoRuntimeCaveatModulation::NoAdditionalCaveat => "no_additional_caveat",
+        BlueBrainKuramotoRuntimeCaveatModulation::AttachDynamicsCaveat => "attach_dynamics_caveat",
+        BlueBrainKuramotoRuntimeCaveatModulation::EscalateRuntimeCaveat => {
+            "escalate_runtime_caveat"
+        }
+    }
 }
 
 fn top_coupling_influences(influences: &[(SignalId, i16)], limit: usize) -> Vec<(u16, i16)> {

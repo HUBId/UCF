@@ -4270,6 +4270,7 @@ dependencies = [
  "ucf-cde-port",
  "ucf-cde-scm",
  "ucf-commit",
+ "ucf-compute",
  "ucf-consistency-engine",
  "ucf-coupling",
  "ucf-digital-brain",

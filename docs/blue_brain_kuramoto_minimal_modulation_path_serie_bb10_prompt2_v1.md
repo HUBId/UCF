@@ -1,6 +1,16 @@
 # Serie BB10 Prompt 2: Kuramoto-first minimal dynamics modulation path (Selection/Runtime)
 
-Status: **minimal implementiert** als begrenzter, deterministischer Modulations-/Diagnostikpfad in `runtime/ucf-compute`.
+Status: **minimal implementiert und operativ eingehängt** als begrenzter, deterministischer Modulations-/Diagnostikpfad.
+
+Operative kanonische Aufrufstelle (BB11 Prompt 2):
+
+- `core/crates/ucf-router/src/lib.rs` im Verify-Puls beim Konsum von
+  `pending_neuromod_delta` (`consume_pending_neuromod_delta`).
+- Dort wird `evaluate_blue_brain_kuramoto_modulation(...)` mit realen
+  Flow-Signalen gespeist (Evidence-Refs, Lens-/Workspace-Kontextgruppen,
+  Attention-State, Runtime-Snapshot, vorhandenes Neuromod-Delta).
+- Das Ergebnis wird advisory-only als Runtime-Caveat-Information in den bereits
+  produktiven Neuromod-Downstream (`BRAIN_NEUROMOD_HINT`) eingeschrieben.
 
 ## 1) Entscheidung und Scope
 

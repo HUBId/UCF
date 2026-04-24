@@ -51,6 +51,12 @@ pub struct WorkspaceSignal {
     pub slot: u8,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BrainKuramotoHint {
+    pub runtime_modulation: &'static str,
+    pub coherence_permille: u16,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InternalUtterance {
     pub commit: Digest32,
@@ -385,12 +391,18 @@ impl WorkspaceSignal {
         serotonin: i16,
         norepi: i16,
         cortisol: i16,
+        kuramoto_hint: Option<BrainKuramotoHint>,
         slot: Option<u8>,
     ) -> Self {
         let kind = SignalKind::Brain;
-        let summary = format!(
-            "BRAIN_NEUROMOD_HINT={delta_commit} DA={dopamine} SE={serotonin} NE={norepi} CO={cortisol}"
-        );
+        let mut summary =
+            format!("BRAIN_NEUROMOD_HINT={delta_commit} DA={dopamine} SE={serotonin} NE={norepi} CO={cortisol}");
+        if let Some(hint) = kuramoto_hint {
+            summary.push_str(&format!(
+                " KURAMOTO_RUNTIME={} KURAMOTO_COHERENCE={}",
+                hint.runtime_modulation, hint.coherence_permille
+            ));
+        }
         let priority = 7000;
         Self {
             kind,
