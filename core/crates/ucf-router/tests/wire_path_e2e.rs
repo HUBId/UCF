@@ -225,7 +225,11 @@ fn brain_response_updates_pending_delta() {
         .broadcast
         .iter()
         .any(|signal| signal.summary.contains("BRAIN_RESP")));
-    assert!(router.pending_neuromod_delta().is_some());
+    assert!(snapshot
+        .broadcast
+        .iter()
+        .any(|signal| signal.summary.contains("BRAIN_NEUROMOD_HINT=")));
+    assert!(router.pending_neuromod_delta().is_none());
 }
 
 #[test]

@@ -115,6 +115,7 @@ const NCDE_RECORD_KIND: u16 = 142;
 const SSM_RECORD_KIND: u16 = 149;
 const UPDATE_MODE_RECORD_KIND: u16 = 156;
 const JEPA_RECORD_KIND: u16 = 160;
+const NEUROMOD_DELTA_RECORD_KIND: u16 = 166;
 const NSR_HIT_SUMMARY_MAX: usize = 8;
 const ONN_COHERENCE_THROTTLE: u16 = 2000;
 const ONN_COHERENCE_THROTTLE_RESTRICT: u16 = 3500;
@@ -1102,6 +1103,13 @@ impl Router {
             .and_then(|guard| guard.clone())
     }
 
+    fn take_pending_neuromod_delta(&self) -> Option<NeuromodDelta> {
+        self.pending_neuromod_delta
+            .lock()
+            .ok()
+            .and_then(|mut guard| guard.take())
+    }
+
     fn current_gain_budget(&self) -> GainBudget {
         self.gain_budget_state
             .lock()
@@ -1797,6 +1805,7 @@ impl Router {
                         lens_selection.as_ref(),
                         pulse.slot,
                     );
+                    self.consume_pending_neuromod_delta(cycle_id, pulse.slot);
                     let recursion_inputs = RecursionInputs {
                         phi: iit_output.phi_proxy,
                         drift_score,
@@ -4587,6 +4596,21 @@ impl Router {
         }
     }
 
+    fn consume_pending_neuromod_delta(&self, cycle_id: u64, slot: u8) {
+        let Some(delta) = self.take_pending_neuromod_delta() else {
+            return;
+        };
+        self.publish_workspace_signal(WorkspaceSignal::from_brain_neuromod_hint(
+            delta.commit,
+            delta.dopamine,
+            delta.serotonin,
+            delta.norepi,
+            delta.cortisol,
+            Some(slot),
+        ));
+        self.append_neuromod_delta_record(cycle_id, &delta);
+    }
+
     fn append_feature_translation_archive_record(
         &self,
         cycle_id: u64,
@@ -4641,6 +4665,20 @@ impl Router {
             boundary_commit: output.commit,
         };
         self.append_archive_record(RecordKind::Other(NCDE_RECORD_KIND), output.commit, meta);
+    }
+
+    fn append_neuromod_delta_record(&self, cycle_id: u64, delta: &NeuromodDelta) {
+        let meta = RecordMeta {
+            cycle_id,
+            tier: 1,
+            flags: 0,
+            boundary_commit: delta.commit,
+        };
+        self.append_archive_record(
+            RecordKind::Other(NEUROMOD_DELTA_RECORD_KIND),
+            delta.commit,
+            meta,
+        );
     }
 
     fn append_cde_output_record(

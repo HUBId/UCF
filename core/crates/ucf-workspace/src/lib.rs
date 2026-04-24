@@ -379,6 +379,28 @@ impl WorkspaceSignal {
         }
     }
 
+    pub fn from_brain_neuromod_hint(
+        delta_commit: Digest32,
+        dopamine: i16,
+        serotonin: i16,
+        norepi: i16,
+        cortisol: i16,
+        slot: Option<u8>,
+    ) -> Self {
+        let kind = SignalKind::Brain;
+        let summary = format!(
+            "BRAIN_NEUROMOD_HINT={delta_commit} DA={dopamine} SE={serotonin} NE={norepi} CO={cortisol}"
+        );
+        let priority = 7000;
+        Self {
+            kind,
+            priority,
+            digest: delta_commit,
+            summary,
+            slot: slot.unwrap_or(0),
+        }
+    }
+
     pub fn from_sleep_triggered(
         triggered: &SleepTriggered,
         attention_gain: Option<u16>,
