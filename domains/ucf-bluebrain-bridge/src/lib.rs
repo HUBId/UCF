@@ -23,6 +23,16 @@ impl BrainStimulusEncoder {
             .collect()
     }
 
+    /// Attaches an oscillation phase to an already encoded spike batch.
+    ///
+    /// This helper is currently **deferred from the operational BlueBrain path**:
+    /// policy/runtime use `encode_to_spikes` directly and therefore keep phase empty.
+    /// The active BB10/BB11 production line is Kuramoto advisory modulation via
+    /// `runtime/ucf-compute` + `core/ucf-router`, not per-spike phase injection
+    /// on this bridge type.
+    ///
+    /// Keep this API for tests/experiments until a canonical, repo-documented
+    /// production callsite is intentionally introduced.
     pub fn attach_phase(spikes: &mut [Spike], cycle_hz: f32, theta_deg: f32) {
         let phase = OscPhase::new(cycle_hz, theta_deg);
         for spike in spikes {
@@ -76,6 +86,7 @@ mod tests {
         assert_eq!(first[0].time.tick.get(), 100);
         assert_eq!(first[1].time.tick.get(), 101);
         assert_eq!(first[2].time.tick.get(), 102);
+        assert!(first.iter().all(|spike| spike.phase.is_none()));
     }
 
     #[test]

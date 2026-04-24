@@ -1001,6 +1001,8 @@ pub fn call_spec_from_control(
         (ChannelCode::BrainStimulus, ControlPayload::BrainStimulus(payload)) => Ok((
             "tools.brain".to_string(),
             "emit_spikes".to_string(),
+            // BB11 decision: this operational path intentionally keeps bridge spike phase empty.
+            // `attach_phase(...)` is deferred/test-only until a canonical production callsite exists.
             encode_spike_meta(&BrainStimulusEncoder::encode_to_spikes(ctrl, payload)),
         )),
         (ChannelCode::InternalThought, _) => {
@@ -1660,6 +1662,35 @@ mod tests {
             .expect("sandbox reply");
         assert_eq!(reply.status, SandboxStatus::Denied);
         assert!(reply.audit.token_digest.is_none());
+    }
+
+    #[test]
+    fn brain_call_spec_is_phase_agnostic() {
+        let ctrl = ControlFrame {
+            time: sim_time(),
+            corr: CorrelationId(2),
+            channel: ChannelCode::BrainStimulus,
+            intent: intent(),
+            payload: ControlPayload::BrainStimulus(BrainStimulusPayload {
+                kind: BrainStimulusKind::SpikeTrain,
+                target: 12,
+                intensity: 111,
+                duration_ms: 25,
+            }),
+        };
+        let spikes = BrainStimulusEncoder::encode_to_spikes(
+            &ctrl,
+            match &ctrl.payload {
+                ControlPayload::BrainStimulus(payload) => payload,
+                _ => unreachable!("brain payload"),
+            },
+        );
+        assert!(spikes.iter().all(|spike| spike.phase.is_none()));
+
+        let encoded = encode_spike_meta(&spikes);
+        assert_eq!(encoded.len(), 4);
+        assert_eq!(u16::from_be_bytes([encoded[0], encoded[1]]), 2);
+        assert_eq!(u16::from_be_bytes([encoded[2], encoded[3]]), 12);
     }
 
     #[test]
