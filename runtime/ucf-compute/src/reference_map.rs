@@ -10982,6 +10982,46 @@ mod tests {
     }
 
     #[test]
+    fn serie_bb9_prompt4_readiness_sweep_doc_stays_pinned_to_code_maps() {
+        let doc = include_str!("../../../docs/blue_brain_readiness_sweep_serie_bb9_prompt4_v1.md");
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_ACTION_EXECUTION_ELIGIBILITY_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_EXECUTION_ELIGIBILITY_DIAGNOSTICS_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_ACTION_RESULT_PLACEHOLDER_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_FUTURE_RESULT_BOUNDARY_MAP"));
+        assert!(doc.contains("future-action-ready handoff"));
+        assert!(doc.contains("execution-eligible handoff"));
+        assert!(doc.contains("execution-ineligible handoff"));
+        assert!(doc.contains("execution-blocked handoff"));
+        assert!(doc.contains("execution-caveated handoff"));
+        assert!(doc.contains("execution-insufficient basis"));
+        assert!(doc.contains("executed action (canonical path only if explicit invocation exists)"));
+        assert!(doc.contains("safety-precheck-passed"));
+        assert!(doc.contains("safety-precheck-failed"));
+        assert!(doc.contains("safety-precheck-blocked"));
+        assert!(doc.contains("safety-precheck-caveated"));
+        assert!(doc.contains("safety-precheck-insufficient"));
+        assert!(doc.contains("safety-precheck-unavailable"));
+        assert!(doc.contains("execution-eligible diagnostic"));
+        assert!(doc.contains("safety-precheck-unavailable diagnostic"));
+        assert!(doc.contains("placeholder prepared"));
+        assert!(doc.contains("placeholder blocked"));
+        assert!(doc.contains("placeholder unavailable"));
+        assert!(doc.contains("placeholder caveated"));
+        assert!(doc.contains("placeholder stale"));
+        assert!(doc.contains("placeholder cancelled"));
+        assert!(doc.contains("no result expected"));
+        assert!(doc.contains("execution-eligible != executed action"));
+        assert!(doc.contains("Placeholder ist kein Result."));
+        assert!(doc.contains("Eligibility löst keine Compute Invocation aus."));
+        assert!(doc.contains("Safety/Precheck/Placeholder lösen keinen Memory Commit aus."));
+        assert!(doc.contains("BB9 ≠ Agentenplattform."));
+        assert!(doc.contains("BB9 ≠ Tool-Execution-Engine."));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only."));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
     fn serie_bb5_prompt1_memory_commit_boundary_doc_stays_pinned_to_code_maps() {
         let doc =
             include_str!("../../../docs/blue_brain_memory_commit_boundary_serie_bb5_prompt1_v1.md");

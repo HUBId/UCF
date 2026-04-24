@@ -180,6 +180,14 @@ For BB9 Prompt 2 execution eligibility diagnostics and blocked/safety feedback b
 (canonical diagnostics classes, compact reasons, runtime/context/selection/proposal/memory bind-back, explicit non-canonical marking, strict non-execution/non-tool/non-compute/non-commit boundaries), see
 `docs/blue_brain_execution_eligibility_diagnostics_serie_bb9_prompt2_v1.md` and
 `CANONICAL_BLUE_BRAIN_EXECUTION_ELIGIBILITY_DIAGNOSTICS_MAP`.
+For BB9 Prompt 3 future tool/action result boundary and no-execution placeholders
+(canonical placeholder + future slot states, explicit actual-result-if-real-path boundary, strict non-execution/non-tool/non-compute/non-commit guarantees), see
+`docs/blue_brain_future_result_placeholder_boundary_serie_bb9_prompt3_v1.md`,
+`CANONICAL_BLUE_BRAIN_ACTION_RESULT_PLACEHOLDER_MAP`, and
+`CANONICAL_BLUE_BRAIN_FUTURE_RESULT_BOUNDARY_MAP`.
+For BB9 Prompt 4 readiness sweep and final action-safety closure line
+(matrix + canonical eligibility/safety/diagnostics/placeholder/result-boundary states + strict boundaries to tool execution/agent platform/policy/compute invocation/memory commit + prioritized next direction), see
+`docs/blue_brain_readiness_sweep_serie_bb9_prompt4_v1.md`.
 
 ## Capability model
 
