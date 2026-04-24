@@ -1,4 +1,72 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainDynamicsDiagnosticClass {
+    DynamicsDiagnosticObserved,
+    KuramotoModulationDiagnostic,
+    HodgkinHuxleySimulationDiagnostic,
+    DynamicsCaveated,
+    DynamicsInsufficient,
+    DynamicsFailed,
+    DynamicsUnavailable,
+    DynamicsIgnored,
+    NonCanonicalInternalOnlyDynamicsDiagnostic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainDynamicsDiagnosticLane {
+    pub diagnostic_class: BlueBrainDynamicsDiagnosticClass,
+    pub lane: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+pub const CANONICAL_BLUE_BRAIN_DYNAMICS_DIAGNOSTICS_MAP: [BlueBrainDynamicsDiagnosticLane; 9] = [
+    BlueBrainDynamicsDiagnosticLane {
+        diagnostic_class: BlueBrainDynamicsDiagnosticClass::DynamicsDiagnosticObserved,
+        lane: "blue_brain_dynamics_diagnostic_observed",
+        canonical_guard: "dynamics diagnostics are observation-only and cannot directly mutate runtime/selection/memory/action/compute/policy",
+    },
+    BlueBrainDynamicsDiagnosticLane {
+        diagnostic_class: BlueBrainDynamicsDiagnosticClass::KuramotoModulationDiagnostic,
+        lane: "blue_brain_dynamics_kuramoto_modulation_diagnostic",
+        canonical_guard: "kuramoto outputs are advisory modulation hints/caveats only and do not execute decisions",
+    },
+    BlueBrainDynamicsDiagnosticLane {
+        diagnostic_class: BlueBrainDynamicsDiagnosticClass::HodgkinHuxleySimulationDiagnostic,
+        lane: "blue_brain_dynamics_hh_simulation_diagnostic",
+        canonical_guard: "hodgkin-huxley remains simulation/diagnostic-only with bounded parameters and no direct runtime authority",
+    },
+    BlueBrainDynamicsDiagnosticLane {
+        diagnostic_class: BlueBrainDynamicsDiagnosticClass::DynamicsCaveated,
+        lane: "blue_brain_dynamics_caveated",
+        canonical_guard: "caveated dynamics must remain caveat feedback and never become direct action/memory/compute authority",
+    },
+    BlueBrainDynamicsDiagnosticLane {
+        diagnostic_class: BlueBrainDynamicsDiagnosticClass::DynamicsInsufficient,
+        lane: "blue_brain_dynamics_insufficient",
+        canonical_guard: "insufficient dynamics signal cannot be escalated to direct modulation or execution",
+    },
+    BlueBrainDynamicsDiagnosticLane {
+        diagnostic_class: BlueBrainDynamicsDiagnosticClass::DynamicsFailed,
+        lane: "blue_brain_dynamics_failed",
+        canonical_guard: "failed dynamics runs must not fabricate modulation outputs or execution eligibility",
+    },
+    BlueBrainDynamicsDiagnosticLane {
+        diagnostic_class: BlueBrainDynamicsDiagnosticClass::DynamicsUnavailable,
+        lane: "blue_brain_dynamics_unavailable",
+        canonical_guard: "unavailable dynamics paths remain explicit diagnostics and cannot trigger fallback execution",
+    },
+    BlueBrainDynamicsDiagnosticLane {
+        diagnostic_class: BlueBrainDynamicsDiagnosticClass::DynamicsIgnored,
+        lane: "blue_brain_dynamics_ignored",
+        canonical_guard: "ignored dynamics output is reported diagnostically and has no transition side-effect",
+    },
+    BlueBrainDynamicsDiagnosticLane {
+        diagnostic_class: BlueBrainDynamicsDiagnosticClass::NonCanonicalInternalOnlyDynamicsDiagnostic,
+        lane: "blue_brain_dynamics_non_canonical_internal_only_diagnostic",
+        canonical_guard: "internal/expert-only dynamics diagnostics are explicitly non-canonical unless down-mapped to outward references",
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainKuramotoScopeState {
     SimulationOnly,
     DiagnosticOnly,
@@ -92,14 +160,19 @@ pub struct BlueBrainHodgkinHuxleyBoundaryGuard {
     pub compute_invocation_allowed: bool,
     pub safety_override_allowed: bool,
     pub policy_decision_allowed: bool,
+    pub actual_action_result_allowed: bool,
+    pub memory_commit_allowed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlueBrainHodgkinHuxleyDiagnosticResult {
+    pub dynamics_diagnostic_class: BlueBrainDynamicsDiagnosticClass,
     pub diagnostic_class: BlueBrainHodgkinHuxleyDiagnosticClass,
     pub caveats: Vec<String>,
     pub trace_ref: Option<String>,
     pub bounded_metadata: Vec<(String, String)>,
+    pub runtime_feedback: BlueBrainDynamicsRuntimeFeedbackClass,
+    pub selection_feedback: BlueBrainDynamicsSelectionFeedbackClass,
     pub boundary_guard: BlueBrainHodgkinHuxleyBoundaryGuard,
 }
 
@@ -126,24 +199,45 @@ pub fn evaluate_blue_brain_hodgkin_huxley_diagnostic(
     if input.diagnostic_run_id.trim().is_empty() {
         caveats.push("missing_diagnostic_run_id".to_string());
         return BlueBrainHodgkinHuxleyDiagnosticResult {
+            dynamics_diagnostic_class: BlueBrainDynamicsDiagnosticClass::DynamicsFailed,
             diagnostic_class: BlueBrainHodgkinHuxleyDiagnosticClass::FailedOrInsufficientDiagnostic,
             caveats,
             trace_ref: None,
             bounded_metadata: vec![("output_surface".to_string(), "diagnostic_only".to_string())],
+            runtime_feedback:
+                BlueBrainDynamicsRuntimeFeedbackClass::DynamicsIgnoredForCurrentTransition,
+            selection_feedback:
+                BlueBrainDynamicsSelectionFeedbackClass::DynamicsIgnoredForCurrentSelection,
             boundary_guard: hh_boundary_guard(),
         };
     }
 
     let effective_stability_permille = compute_effective_stability_permille(&input);
-    let diagnostic_class = if effective_stability_permille >= 700 {
-        BlueBrainHodgkinHuxleyDiagnosticClass::SimulationDiagnosticSummary
+    let (diagnostic_class, dynamics_diagnostic_class) = if effective_stability_permille >= 700 {
+        (
+            BlueBrainHodgkinHuxleyDiagnosticClass::SimulationDiagnosticSummary,
+            BlueBrainDynamicsDiagnosticClass::HodgkinHuxleySimulationDiagnostic,
+        )
     } else if effective_stability_permille >= 450 {
         caveats.push("hh_signal_caveated".to_string());
-        BlueBrainHodgkinHuxleyDiagnosticClass::SimulationDiagnosticCaveated
+        (
+            BlueBrainHodgkinHuxleyDiagnosticClass::SimulationDiagnosticCaveated,
+            BlueBrainDynamicsDiagnosticClass::DynamicsCaveated,
+        )
     } else {
         caveats.push("hh_signal_insufficient".to_string());
-        BlueBrainHodgkinHuxleyDiagnosticClass::FailedOrInsufficientDiagnostic
+        (
+            BlueBrainHodgkinHuxleyDiagnosticClass::FailedOrInsufficientDiagnostic,
+            BlueBrainDynamicsDiagnosticClass::DynamicsInsufficient,
+        )
     };
+    if matches!(
+        input.scope,
+        BlueBrainHodgkinHuxleyScopeState::ResearchDeferred
+            | BlueBrainHodgkinHuxleyScopeState::NotSuitableForCurrentBlueBrainRuntime
+    ) {
+        caveats.push("hh_path_unavailable_for_runtime_modulation".to_string());
+    }
 
     let trace_ref = Some(format!("diag:hh:{}", input.diagnostic_run_id.trim()));
     let bounded_metadata = vec![
@@ -162,10 +256,24 @@ pub fn evaluate_blue_brain_hodgkin_huxley_diagnostic(
     ];
 
     BlueBrainHodgkinHuxleyDiagnosticResult {
+        dynamics_diagnostic_class: match input.scope {
+            BlueBrainHodgkinHuxleyScopeState::NonCanonicalInternalOnly => {
+                BlueBrainDynamicsDiagnosticClass::NonCanonicalInternalOnlyDynamicsDiagnostic
+            }
+            BlueBrainHodgkinHuxleyScopeState::ResearchDeferred
+            | BlueBrainHodgkinHuxleyScopeState::NotSuitableForCurrentBlueBrainRuntime => {
+                BlueBrainDynamicsDiagnosticClass::DynamicsUnavailable
+            }
+            _ => dynamics_diagnostic_class,
+        },
         diagnostic_class,
         caveats,
         trace_ref,
         bounded_metadata,
+        runtime_feedback:
+            BlueBrainDynamicsRuntimeFeedbackClass::DynamicsIgnoredForCurrentTransition,
+        selection_feedback:
+            BlueBrainDynamicsSelectionFeedbackClass::DynamicsIgnoredForCurrentSelection,
         boundary_guard: hh_boundary_guard(),
     }
 }
@@ -245,20 +353,43 @@ pub enum BlueBrainKuramotoRuntimeCaveatModulation {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlueBrainKuramotoBoundaryGuard {
+    pub runtime_state_mutation_allowed: bool,
+    pub selection_mutation_allowed: bool,
     pub action_execution_allowed: bool,
     pub tool_invocation_allowed: bool,
+    pub actual_action_result_allowed: bool,
+    pub memory_persistence_allowed: bool,
     pub memory_commit_allowed: bool,
     pub compute_invocation_allowed: bool,
     pub safety_override_allowed: bool,
     pub policy_decision_allowed: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainDynamicsRuntimeFeedbackClass {
+    RuntimeModulationObserved,
+    DynamicsCaveatAttached,
+    DynamicsInsufficientForModulation,
+    DynamicsIgnoredForCurrentTransition,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainDynamicsSelectionFeedbackClass {
+    SelectionModulationObserved,
+    DynamicsCaveatAttached,
+    DynamicsInsufficientForModulation,
+    DynamicsIgnoredForCurrentSelection,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlueBrainKuramotoModulationResult {
+    pub dynamics_diagnostic_class: BlueBrainDynamicsDiagnosticClass,
     pub diagnostic: BlueBrainKuramotoSynchronyDiagnostic,
     pub coherence_permille: u16,
     pub selection_hint: Option<BlueBrainKuramotoSelectionHint>,
     pub runtime_modulation: Option<BlueBrainKuramotoRuntimeCaveatModulation>,
+    pub runtime_feedback: BlueBrainDynamicsRuntimeFeedbackClass,
+    pub selection_feedback: BlueBrainDynamicsSelectionFeedbackClass,
     pub caveats: Vec<String>,
     pub boundary_guard: BlueBrainKuramotoBoundaryGuard,
 }
@@ -276,14 +407,25 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
     ) {
         caveats.push("scope_non_modulating".to_string());
     }
+    if matches!(
+        input.scope,
+        BlueBrainKuramotoScopeState::NotImplementedOrNotSuitableNow
+    ) {
+        caveats.push("dynamics_path_unavailable".to_string());
+    }
 
     if input.phase_nodes.len() < 2 {
         caveats.push("insufficient_dynamics_input".to_string());
         return BlueBrainKuramotoModulationResult {
+            dynamics_diagnostic_class: BlueBrainDynamicsDiagnosticClass::DynamicsInsufficient,
             diagnostic: BlueBrainKuramotoSynchronyDiagnostic::InsufficientInput,
             coherence_permille: 0,
             selection_hint: None,
             runtime_modulation: None,
+            runtime_feedback:
+                BlueBrainDynamicsRuntimeFeedbackClass::DynamicsInsufficientForModulation,
+            selection_feedback:
+                BlueBrainDynamicsSelectionFeedbackClass::DynamicsInsufficientForModulation,
             caveats,
             boundary_guard: boundary_guard(),
         };
@@ -325,6 +467,21 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         None
     };
 
+    let selection_feedback = match selection_hint {
+        Some(BlueBrainKuramotoSelectionHint::KeepCurrentSelection) => {
+            BlueBrainDynamicsSelectionFeedbackClass::SelectionModulationObserved
+        }
+        Some(_) => BlueBrainDynamicsSelectionFeedbackClass::DynamicsCaveatAttached,
+        None => BlueBrainDynamicsSelectionFeedbackClass::DynamicsIgnoredForCurrentSelection,
+    };
+    let runtime_feedback = match runtime_modulation {
+        Some(BlueBrainKuramotoRuntimeCaveatModulation::NoAdditionalCaveat) => {
+            BlueBrainDynamicsRuntimeFeedbackClass::RuntimeModulationObserved
+        }
+        Some(_) => BlueBrainDynamicsRuntimeFeedbackClass::DynamicsCaveatAttached,
+        None => BlueBrainDynamicsRuntimeFeedbackClass::DynamicsIgnoredForCurrentTransition,
+    };
+
     if matches!(
         diagnostic,
         BlueBrainKuramotoSynchronyDiagnostic::Desynchronized
@@ -342,10 +499,28 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
     }
 
     BlueBrainKuramotoModulationResult {
+        dynamics_diagnostic_class: match input.scope {
+            BlueBrainKuramotoScopeState::NotImplementedOrNotSuitableNow => {
+                BlueBrainDynamicsDiagnosticClass::DynamicsUnavailable
+            }
+            BlueBrainKuramotoScopeState::SimulationOnly => {
+                BlueBrainDynamicsDiagnosticClass::DynamicsIgnored
+            }
+            _ if matches!(
+                diagnostic,
+                BlueBrainKuramotoSynchronyDiagnostic::Desynchronized
+            ) =>
+            {
+                BlueBrainDynamicsDiagnosticClass::DynamicsCaveated
+            }
+            _ => BlueBrainDynamicsDiagnosticClass::KuramotoModulationDiagnostic,
+        },
         diagnostic,
         coherence_permille,
         selection_hint,
         runtime_modulation,
+        runtime_feedback,
+        selection_feedback,
         caveats,
         boundary_guard: boundary_guard(),
     }
@@ -419,8 +594,12 @@ fn runtime_modulation_from_signal(
 
 fn boundary_guard() -> BlueBrainKuramotoBoundaryGuard {
     BlueBrainKuramotoBoundaryGuard {
+        runtime_state_mutation_allowed: false,
+        selection_mutation_allowed: false,
         action_execution_allowed: false,
         tool_invocation_allowed: false,
+        actual_action_result_allowed: false,
+        memory_persistence_allowed: false,
         memory_commit_allowed: false,
         compute_invocation_allowed: false,
         safety_override_allowed: false,
@@ -438,6 +617,8 @@ fn hh_boundary_guard() -> BlueBrainHodgkinHuxleyBoundaryGuard {
         compute_invocation_allowed: false,
         safety_override_allowed: false,
         policy_decision_allowed: false,
+        actual_action_result_allowed: false,
+        memory_commit_allowed: false,
     }
 }
 
@@ -511,6 +692,42 @@ mod tests {
     }
 
     #[test]
+    fn canonical_dynamics_diagnostics_map_contains_required_classes() {
+        let map = CANONICAL_BLUE_BRAIN_DYNAMICS_DIAGNOSTICS_MAP;
+        assert!(map.iter().any(|lane| {
+            lane.diagnostic_class == BlueBrainDynamicsDiagnosticClass::DynamicsDiagnosticObserved
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.diagnostic_class == BlueBrainDynamicsDiagnosticClass::KuramotoModulationDiagnostic
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.diagnostic_class
+                == BlueBrainDynamicsDiagnosticClass::HodgkinHuxleySimulationDiagnostic
+        }));
+        assert!(map.iter().any(
+            |lane| lane.diagnostic_class == BlueBrainDynamicsDiagnosticClass::DynamicsCaveated
+        ));
+        assert!(map.iter().any(|lane| {
+            lane.diagnostic_class == BlueBrainDynamicsDiagnosticClass::DynamicsInsufficient
+        }));
+        assert!(map
+            .iter()
+            .any(|lane| lane.diagnostic_class == BlueBrainDynamicsDiagnosticClass::DynamicsFailed));
+        assert!(map.iter().any(|lane| {
+            lane.diagnostic_class == BlueBrainDynamicsDiagnosticClass::DynamicsUnavailable
+        }));
+        assert!(
+            map.iter()
+                .any(|lane| lane.diagnostic_class
+                    == BlueBrainDynamicsDiagnosticClass::DynamicsIgnored)
+        );
+        assert!(map.iter().any(|lane| {
+            lane.diagnostic_class
+                == BlueBrainDynamicsDiagnosticClass::NonCanonicalInternalOnlyDynamicsDiagnostic
+        }));
+    }
+
+    #[test]
     fn input_surface_stays_canonicalized_and_coherence_is_deterministic() {
         let result = evaluate_blue_brain_kuramoto_modulation(base_input(
             BlueBrainKuramotoScopeState::DiagnosticOnly,
@@ -544,12 +761,24 @@ mod tests {
         ));
         assert!(selection_result.selection_hint.is_some());
         assert!(selection_result.runtime_modulation.is_none());
+        assert_eq!(
+            selection_result.selection_feedback,
+            BlueBrainDynamicsSelectionFeedbackClass::SelectionModulationObserved
+        );
+        assert_eq!(
+            selection_result.runtime_feedback,
+            BlueBrainDynamicsRuntimeFeedbackClass::DynamicsIgnoredForCurrentTransition
+        );
 
         let runtime_result = evaluate_blue_brain_kuramoto_modulation(base_input(
             BlueBrainKuramotoScopeState::RuntimeCaveatModulating,
         ));
         assert!(runtime_result.selection_hint.is_none());
         assert!(runtime_result.runtime_modulation.is_some());
+        assert_eq!(
+            runtime_result.selection_feedback,
+            BlueBrainDynamicsSelectionFeedbackClass::DynamicsIgnoredForCurrentSelection
+        );
     }
 
     #[test]
@@ -559,10 +788,41 @@ mod tests {
         ));
         assert!(!result.boundary_guard.action_execution_allowed);
         assert!(!result.boundary_guard.tool_invocation_allowed);
+        assert!(!result.boundary_guard.actual_action_result_allowed);
+        assert!(!result.boundary_guard.memory_persistence_allowed);
         assert!(!result.boundary_guard.memory_commit_allowed);
         assert!(!result.boundary_guard.compute_invocation_allowed);
         assert!(!result.boundary_guard.safety_override_allowed);
         assert!(!result.boundary_guard.policy_decision_allowed);
+        assert!(!result.boundary_guard.runtime_state_mutation_allowed);
+        assert!(!result.boundary_guard.selection_mutation_allowed);
+    }
+
+    #[test]
+    fn unavailable_or_simulation_only_kuramoto_stays_non_executing_and_ignored() {
+        let simulation_only = evaluate_blue_brain_kuramoto_modulation(base_input(
+            BlueBrainKuramotoScopeState::SimulationOnly,
+        ));
+        assert_eq!(
+            simulation_only.dynamics_diagnostic_class,
+            BlueBrainDynamicsDiagnosticClass::DynamicsIgnored
+        );
+        assert_eq!(
+            simulation_only.selection_feedback,
+            BlueBrainDynamicsSelectionFeedbackClass::DynamicsIgnoredForCurrentSelection
+        );
+
+        let unavailable = evaluate_blue_brain_kuramoto_modulation(base_input(
+            BlueBrainKuramotoScopeState::NotImplementedOrNotSuitableNow,
+        ));
+        assert_eq!(
+            unavailable.dynamics_diagnostic_class,
+            BlueBrainDynamicsDiagnosticClass::DynamicsUnavailable
+        );
+        assert!(unavailable
+            .caveats
+            .iter()
+            .any(|item| item == "dynamics_path_unavailable"));
     }
 
     fn base_hh_input(
@@ -642,10 +902,31 @@ mod tests {
         assert!(!result.boundary_guard.runtime_state_mutation_allowed);
         assert!(!result.boundary_guard.selection_mutation_allowed);
         assert!(!result.boundary_guard.memory_mutation_allowed);
+        assert!(!result.boundary_guard.memory_commit_allowed);
         assert!(!result.boundary_guard.action_execution_allowed);
         assert!(!result.boundary_guard.tool_invocation_allowed);
+        assert!(!result.boundary_guard.actual_action_result_allowed);
         assert!(!result.boundary_guard.compute_invocation_allowed);
         assert!(!result.boundary_guard.safety_override_allowed);
         assert!(!result.boundary_guard.policy_decision_allowed);
+    }
+
+    #[test]
+    fn hh_internal_only_scope_is_marked_non_canonical() {
+        let result = evaluate_blue_brain_hodgkin_huxley_diagnostic(base_hh_input(
+            BlueBrainHodgkinHuxleyScopeState::NonCanonicalInternalOnly,
+        ));
+        assert_eq!(
+            result.dynamics_diagnostic_class,
+            BlueBrainDynamicsDiagnosticClass::NonCanonicalInternalOnlyDynamicsDiagnostic
+        );
+        assert_eq!(
+            result.runtime_feedback,
+            BlueBrainDynamicsRuntimeFeedbackClass::DynamicsIgnoredForCurrentTransition
+        );
+        assert_eq!(
+            result.selection_feedback,
+            BlueBrainDynamicsSelectionFeedbackClass::DynamicsIgnoredForCurrentSelection
+        );
     }
 }
