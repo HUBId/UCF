@@ -31,6 +31,7 @@ Finale Referenzlinie (unverändert):
 - `safety-precheck-passed`
 - `safety-precheck-failed`
 - `safety-precheck-blocked`
+- `safety-precheck-caveated`
 - `safety-precheck-unavailable`
 - `executed action (canonical only if explicit real path exists)`
 - `non-canonical/internal-only execution path`
