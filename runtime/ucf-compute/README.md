@@ -176,6 +176,10 @@ For BB9 Prompt 1 minimal action execution eligibility boundary and safety preche
 `docs/blue_brain_action_execution_eligibility_boundary_serie_bb9_prompt1_v1.md`,
 `CANONICAL_BLUE_BRAIN_ACTION_EXECUTION_ELIGIBILITY_MAP`, and
 `CANONICAL_BLUE_BRAIN_SAFETY_PRECHECK_MAP`.
+For BB9 Prompt 2 execution eligibility diagnostics and blocked/safety feedback bind-back
+(canonical diagnostics classes, compact reasons, runtime/context/selection/proposal/memory bind-back, explicit non-canonical marking, strict non-execution/non-tool/non-compute/non-commit boundaries), see
+`docs/blue_brain_execution_eligibility_diagnostics_serie_bb9_prompt2_v1.md` and
+`CANONICAL_BLUE_BRAIN_EXECUTION_ELIGIBILITY_DIAGNOSTICS_MAP`.
 
 ## Capability model
 
