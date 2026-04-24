@@ -99,6 +99,8 @@ pub use backends::{
 };
 pub use blue_brain_dynamics::{
     evaluate_blue_brain_hodgkin_huxley_diagnostic, evaluate_blue_brain_kuramoto_modulation,
+    BlueBrainDynamicsDiagnosticClass, BlueBrainDynamicsDiagnosticLane,
+    BlueBrainDynamicsRuntimeFeedbackClass, BlueBrainDynamicsSelectionFeedbackClass,
     BlueBrainHodgkinHuxleyBoundaryGuard, BlueBrainHodgkinHuxleyBoundedModelParameters,
     BlueBrainHodgkinHuxleyDiagnosticClass, BlueBrainHodgkinHuxleyDiagnosticInput,
     BlueBrainHodgkinHuxleyDiagnosticResult, BlueBrainHodgkinHuxleyScopeState,
@@ -107,6 +109,7 @@ pub use blue_brain_dynamics::{
     BlueBrainKuramotoPhaseNodeInput, BlueBrainKuramotoRuntimeCaveatModulation,
     BlueBrainKuramotoRuntimePosture, BlueBrainKuramotoScopeState, BlueBrainKuramotoSelectionHint,
     BlueBrainKuramotoSelectionPosture, BlueBrainKuramotoSynchronyDiagnostic,
+    CANONICAL_BLUE_BRAIN_DYNAMICS_DIAGNOSTICS_MAP,
 };
 pub use blue_brain_memory::{
     BlueBrainMemoryCandidate, BlueBrainMemoryCandidateClass, BlueBrainMemoryCaveatRefreshState,

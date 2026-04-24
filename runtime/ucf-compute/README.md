@@ -197,6 +197,10 @@ For BB10 Prompt 2 Kuramoto-first minimal modulation path (diagnostic-only + advi
 For BB10 Prompt 3 Hodgkin-Huxley simulation-/diagnostic-only boundary (no productive runtime/selection/memory/action/compute coupling), see
 `docs/blue_brain_hodgkin_huxley_diagnostic_boundary_serie_bb10_prompt3_v1.md` and
 `evaluate_blue_brain_hodgkin_huxley_diagnostic`.
+For BB10 Prompt 4 neural-dynamics diagnostics backbind and no-direct-action/no-direct-memory/no-direct-compute/no-safety-override guards, see
+`docs/blue_brain_neural_dynamics_diagnostics_guards_serie_bb10_prompt4_v1.md`,
+`CANONICAL_BLUE_BRAIN_DYNAMICS_DIAGNOSTICS_MAP`, and
+`runtime/ucf-compute/src/blue_brain_dynamics.rs`.
 
 ## Capability model
 
