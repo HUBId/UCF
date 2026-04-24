@@ -50,10 +50,12 @@ Die Placeholder-Zustände sind explizit getrennt:
 2. `result placeholder unavailable`
 3. `result placeholder blocked`
 4. `result placeholder caveated`
-5. `no result expected`
-6. `no action executed`
-7. `no tool result`
-8. `internal-only/non-canonical placeholder`
+5. `result placeholder stale`
+6. `result placeholder cancelled`
+7. `no result expected`
+8. `no action executed`
+9. `no tool result`
+10. `internal-only/non-canonical placeholder`
 
 Placeholder ≠ Result.
 
@@ -68,6 +70,7 @@ Runtime kann explizit beobachten:
 - handoff deferred/blocked/rejected/caveated/unavailable,
 - diagnostic-only/no-handoff,
 - result placeholder prepared/unavailable/blocked/caveated,
+- result placeholder stale/cancelled,
 - no result expected,
 - no action executed,
 - no tool result,
