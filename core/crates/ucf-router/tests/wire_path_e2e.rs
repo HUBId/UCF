@@ -229,6 +229,10 @@ fn brain_response_updates_pending_delta() {
         .broadcast
         .iter()
         .any(|signal| signal.summary.contains("BRAIN_NEUROMOD_HINT=")));
+    assert!(snapshot
+        .broadcast
+        .iter()
+        .any(|signal| signal.summary.contains("KURAMOTO_RUNTIME=")));
     assert!(router.pending_neuromod_delta().is_none());
 }
 
