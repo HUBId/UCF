@@ -1025,6 +1025,8 @@ pub enum BlueBrainActionResultPlaceholderClass {
     ResultPlaceholderUnavailable,
     ResultPlaceholderBlocked,
     ResultPlaceholderCaveated,
+    ResultPlaceholderStale,
+    ResultPlaceholderCancelled,
     NoResultExpected,
     NoActionExecuted,
     NoToolResult,
@@ -1040,6 +1042,39 @@ pub struct BlueBrainActionResultPlaceholderLane {
     pub result_slot_shape: &'static str,
     pub boundary_semantics: &'static str,
     pub runtime_diagnostics_binding: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFutureResultBoundaryClass {
+    NoExecutionResultPlaceholder,
+    FutureActionResultSlot,
+    FutureToolResultSlot,
+    PlaceholderPrepared,
+    PlaceholderBlocked,
+    PlaceholderUnavailable,
+    PlaceholderCaveated,
+    PlaceholderStale,
+    PlaceholderCancelled,
+    NoResultExpected,
+    ActualActionResultCanonicalIfPresent,
+    ActualToolResultCanonicalIfPresent,
+    NonCanonicalInternalOnlyResultPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainFutureResultBoundaryLane {
+    pub class: BlueBrainFutureResultBoundaryClass,
+    pub lane: &'static str,
+    pub boundary_semantics: &'static str,
+    pub handoff_identity_binding: &'static str,
+    pub proposal_or_action_identity_binding: &'static str,
+    pub eligibility_and_precheck_binding: &'static str,
+    pub context_evidence_memory_binding: &'static str,
+    pub caveat_or_blocker_binding: &'static str,
+    pub placeholder_state_binding: &'static str,
+    pub execution_assertion: &'static str,
+    pub runtime_feedback_binding: &'static str,
     pub canonical_guard: &'static str,
 }
 
@@ -6290,7 +6325,7 @@ pub const CANONICAL_BLUE_BRAIN_FUTURE_ACTION_HANDOFF_MAP: [BlueBrainFutureAction
 ];
 
 pub const CANONICAL_BLUE_BRAIN_ACTION_RESULT_PLACEHOLDER_MAP:
-    [BlueBrainActionResultPlaceholderLane; 8] = [
+    [BlueBrainActionResultPlaceholderLane; 10] = [
     BlueBrainActionResultPlaceholderLane {
         class: BlueBrainActionResultPlaceholderClass::ResultPlaceholderPrepared,
         lane: "blue_brain_action_result_placeholder_prepared",
@@ -6350,6 +6385,38 @@ pub const CANONICAL_BLUE_BRAIN_ACTION_RESULT_PLACEHOLDER_MAP:
         runtime_diagnostics_binding:
             "runtime emits placeholder caveated and preserves comparison/memory-boundary caveats",
         canonical_guard: "placeholder caveat is metadata only and not a result confidence claim",
+    },
+    BlueBrainActionResultPlaceholderLane {
+        class: BlueBrainActionResultPlaceholderClass::ResultPlaceholderStale,
+        lane: "blue_brain_action_result_placeholder_stale",
+        placeholder_semantics:
+            "result placeholder stale when prepared slot exists but evidence/eligibility basis aged out before any execution",
+        handoff_dependency_binding:
+            "CANONICAL_BLUE_BRAIN_FUTURE_ACTION_HANDOFF_MAP::FutureActionReady|HandoffDeferred with stale basis signal",
+        result_slot_shape:
+            "placeholder slot preserved with stale marker and without action/tool payload",
+        boundary_semantics:
+            "stale placeholder means no action executed, no tool result, no compute invocation, no memory commit",
+        runtime_diagnostics_binding:
+            "runtime emits placeholder stale as freshness caveat and keeps no-execution markers explicit",
+        canonical_guard:
+            "stale placeholder must not be interpreted as execution timeout/failure result",
+    },
+    BlueBrainActionResultPlaceholderLane {
+        class: BlueBrainActionResultPlaceholderClass::ResultPlaceholderCancelled,
+        lane: "blue_brain_action_result_placeholder_cancelled",
+        placeholder_semantics:
+            "result placeholder cancelled when canonical handoff window is intentionally cancelled before execution",
+        handoff_dependency_binding:
+            "CANONICAL_BLUE_BRAIN_FUTURE_ACTION_HANDOFF_MAP::HandoffRejected|HandoffDeferred cancellation reason",
+        result_slot_shape:
+            "placeholder slot retained with cancelled marker and without action/tool payload",
+        boundary_semantics:
+            "cancelled placeholder means no action executed, no tool result, no compute invocation, no memory commit",
+        runtime_diagnostics_binding:
+            "runtime emits placeholder cancelled and preserves cancellation reason references",
+        canonical_guard:
+            "cancelled placeholder cannot be rewritten as failed action/tool execution result",
     },
     BlueBrainActionResultPlaceholderLane {
         class: BlueBrainActionResultPlaceholderClass::NoResultExpected,
@@ -6412,6 +6479,244 @@ pub const CANONICAL_BLUE_BRAIN_ACTION_RESULT_PLACEHOLDER_MAP:
             "runtime exports internal-only placeholder as canonical=false and excludes it from canonical lane claims",
         canonical_guard:
             "internal/expert hooks, legacy compat objects, and unstable dev/test surfaces remain non-canonical",
+    },
+];
+
+pub const CANONICAL_BLUE_BRAIN_FUTURE_RESULT_BOUNDARY_MAP: [BlueBrainFutureResultBoundaryLane;
+    13] = [
+    BlueBrainFutureResultBoundaryLane {
+        class: BlueBrainFutureResultBoundaryClass::NoExecutionResultPlaceholder,
+        lane: "blue_brain_future_result_boundary_no_execution_placeholder",
+        boundary_semantics:
+            "no-execution result placeholder is metadata-only boundary state and never an actual action/tool/policy/compute/memory result",
+        handoff_identity_binding:
+            "requires canonical future-action/future-plan handoff identity or explicit diagnostic no-handoff identity",
+        proposal_or_action_identity_binding:
+            "proposal/action identity is traced for slot bookkeeping only and does not imply execution",
+        eligibility_and_precheck_binding:
+            "binds to execution eligibility + safety precheck posture without creating execution side effects",
+        context_evidence_memory_binding:
+            "binds to canonical BB3/BB8 basis references as provenance, not as commit/output authority",
+        caveat_or_blocker_binding:
+            "carries blocker/caveat vectors when present and keeps them diagnostic-only",
+        placeholder_state_binding:
+            "prepared|blocked|unavailable|caveated|stale|cancelled|no_result_expected",
+        execution_assertion:
+            "execution_performed=false; tool_invoked=false; compute_invoked=false; memory_commit_performed=false",
+        runtime_feedback_binding:
+            "runtime reports placeholder boundary state and preserves no-execution posture across handoff + diagnostics",
+        canonical_guard:
+            "placeholder semantics are canonical only as boundary metadata and must never be promoted to result truth",
+    },
+    BlueBrainFutureResultBoundaryLane {
+        class: BlueBrainFutureResultBoundaryClass::FutureActionResultSlot,
+        lane: "blue_brain_future_result_boundary_future_action_result_slot",
+        boundary_semantics:
+            "future-action result slot reserves shape for downstream action subsystem output while staying placeholder-only",
+        handoff_identity_binding: "requires canonical future-action-ready handoff id",
+        proposal_or_action_identity_binding:
+            "binds selected proposal/action identity for deterministic slot targeting",
+        eligibility_and_precheck_binding:
+            "stores eligibility + precheck state snapshot at slot preparation time",
+        context_evidence_memory_binding:
+            "stores context/evidence/memory basis references used by eligibility determination",
+        caveat_or_blocker_binding:
+            "stores caveats/blockers for downstream subsystem interpretation with no autonomous execution",
+        placeholder_state_binding:
+            "slot starts placeholder-prepared unless blocked/unavailable/caveated/stale/cancelled/no_result_expected",
+        execution_assertion:
+            "no action execution is performed by slot preparation and no result payload is produced",
+        runtime_feedback_binding:
+            "runtime exposes slot metadata as preparatory boundary output only",
+        canonical_guard:
+            "future-action slot != action result and cannot auto-transition to execution result",
+    },
+    BlueBrainFutureResultBoundaryLane {
+        class: BlueBrainFutureResultBoundaryClass::FutureToolResultSlot,
+        lane: "blue_brain_future_result_boundary_future_tool_result_slot",
+        boundary_semantics:
+            "future-tool result slot reserves tool-output envelope for a later tool subsystem and remains placeholder-only",
+        handoff_identity_binding: "requires canonical handoff identity with tool-boundary marker",
+        proposal_or_action_identity_binding:
+            "binds proposal/action identity and anticipated tool-facing action identity metadata",
+        eligibility_and_precheck_binding:
+            "captures eligibility + precheck posture to avoid inferring implicit tool authorization",
+        context_evidence_memory_binding:
+            "captures canonical context/evidence/memory references that informed tool-slot preparation",
+        caveat_or_blocker_binding:
+            "captures caveats/blockers; no tool invocation is attempted in BB9 boundary",
+        placeholder_state_binding:
+            "tool slot states mirror placeholder states and are never interpreted as tool output",
+        execution_assertion:
+            "tool_invoked=false; tool_result_present=false; no compute/memory side effects",
+        runtime_feedback_binding:
+            "runtime emits future-tool slot readiness as non-executing metadata",
+        canonical_guard:
+            "future-tool slot != tool result and cannot be converted to success/error without real execution path",
+    },
+    BlueBrainFutureResultBoundaryLane {
+        class: BlueBrainFutureResultBoundaryClass::PlaceholderPrepared,
+        lane: "blue_brain_future_result_boundary_placeholder_prepared",
+        boundary_semantics: "placeholder prepared with canonical handoff basis and explicit non-execution status",
+        handoff_identity_binding: "canonical handoff id present and stable",
+        proposal_or_action_identity_binding: "canonical proposal identity bound to placeholder slot",
+        eligibility_and_precheck_binding:
+            "execution-eligible or future-action-ready posture can prepare placeholder without executing",
+        context_evidence_memory_binding: "canonical basis references are attached and auditable",
+        caveat_or_blocker_binding: "optional caveat vector, no blocker required",
+        placeholder_state_binding: "prepared",
+        execution_assertion:
+            "no action/tool execution has occurred and placeholder remains non-result",
+        runtime_feedback_binding: "runtime marks placeholder prepared and no-execution flags",
+        canonical_guard: "prepared placeholder cannot assert action/tool/policy/compute/memory result",
+    },
+    BlueBrainFutureResultBoundaryLane {
+        class: BlueBrainFutureResultBoundaryClass::PlaceholderBlocked,
+        lane: "blue_brain_future_result_boundary_placeholder_blocked",
+        boundary_semantics: "placeholder blocked before execution because eligibility/precheck blockers are active",
+        handoff_identity_binding: "handoff id retained with blocker references",
+        proposal_or_action_identity_binding: "proposal/action identity retained for blocked diagnostics",
+        eligibility_and_precheck_binding: "execution-blocked or safety-precheck-failed/blocked",
+        context_evidence_memory_binding: "blocked due to missing/invalid/stale basis or non-canonical dependency",
+        caveat_or_blocker_binding: "blocker vector mandatory",
+        placeholder_state_binding: "blocked",
+        execution_assertion:
+            "execution did not run; blocked state is pre-execution boundary only",
+        runtime_feedback_binding: "runtime emits blocked placeholder with blocker reasons",
+        canonical_guard: "blocked placeholder must not be represented as failed execution result",
+    },
+    BlueBrainFutureResultBoundaryLane {
+        class: BlueBrainFutureResultBoundaryClass::PlaceholderUnavailable,
+        lane: "blue_brain_future_result_boundary_placeholder_unavailable",
+        boundary_semantics:
+            "placeholder unavailable because no execution/tool subsystem endpoint is available in current boundary scope",
+        handoff_identity_binding: "handoff identity may exist while slot endpoint remains unavailable",
+        proposal_or_action_identity_binding: "proposal/action identity retained when available",
+        eligibility_and_precheck_binding: "safety-precheck unavailable or subsystem absent",
+        context_evidence_memory_binding: "basis may be sufficient but cannot bypass subsystem absence",
+        caveat_or_blocker_binding: "unavailable reason required",
+        placeholder_state_binding: "unavailable",
+        execution_assertion:
+            "no execution attempted; unavailable is subsystem-absence marker only",
+        runtime_feedback_binding: "runtime emits unavailable placeholder separate from blocked/failure semantics",
+        canonical_guard: "unavailable placeholder is not tool/action failure output",
+    },
+    BlueBrainFutureResultBoundaryLane {
+        class: BlueBrainFutureResultBoundaryClass::PlaceholderCaveated,
+        lane: "blue_brain_future_result_boundary_placeholder_caveated",
+        boundary_semantics:
+            "placeholder caveated carries eligibility/safety caveats while preserving strict non-execution posture",
+        handoff_identity_binding: "canonical handoff id plus caveat provenance references",
+        proposal_or_action_identity_binding: "proposal/action identity retained with caveat vector",
+        eligibility_and_precheck_binding: "execution-caveated and/or safety-precheck-caveated",
+        context_evidence_memory_binding: "partial/caveated basis explicitly recorded",
+        caveat_or_blocker_binding: "caveat vector mandatory",
+        placeholder_state_binding: "caveated",
+        execution_assertion: "no execution occurred; caveated state is metadata only",
+        runtime_feedback_binding: "runtime emits caveated placeholder and caveat carry-over",
+        canonical_guard: "caveated placeholder must not be interpreted as probabilistic result payload",
+    },
+    BlueBrainFutureResultBoundaryLane {
+        class: BlueBrainFutureResultBoundaryClass::PlaceholderStale,
+        lane: "blue_brain_future_result_boundary_placeholder_stale",
+        boundary_semantics:
+            "placeholder stale indicates prior prepared slot basis is now stale before any execution occurred",
+        handoff_identity_binding: "handoff id retained with stale freshness marker",
+        proposal_or_action_identity_binding: "identity retained for stale re-evaluation",
+        eligibility_and_precheck_binding: "eligibility snapshot aged out and requires re-check before any execution",
+        context_evidence_memory_binding: "stale context/evidence/memory references captured explicitly",
+        caveat_or_blocker_binding: "stale rationale required",
+        placeholder_state_binding: "stale",
+        execution_assertion: "no execution happened; stale only marks freshness decay",
+        runtime_feedback_binding: "runtime emits stale placeholder and revalidation requirement",
+        canonical_guard: "stale placeholder is not a timeout/error result from execution",
+    },
+    BlueBrainFutureResultBoundaryLane {
+        class: BlueBrainFutureResultBoundaryClass::PlaceholderCancelled,
+        lane: "blue_brain_future_result_boundary_placeholder_cancelled",
+        boundary_semantics:
+            "placeholder cancelled indicates slot lifecycle stopped before execution due to explicit cancellation",
+        handoff_identity_binding: "handoff id retained with cancellation reason",
+        proposal_or_action_identity_binding: "identity retained for cancellation audit",
+        eligibility_and_precheck_binding: "eligibility may have been valid but cancellation prevents execution",
+        context_evidence_memory_binding: "basis references retained without side effects",
+        caveat_or_blocker_binding: "cancellation reason required",
+        placeholder_state_binding: "cancelled",
+        execution_assertion: "execution not performed and no result payload exists",
+        runtime_feedback_binding: "runtime emits cancelled placeholder and keeps no-execution flags",
+        canonical_guard: "cancelled placeholder must never be rewritten as action/tool execution outcome",
+    },
+    BlueBrainFutureResultBoundaryLane {
+        class: BlueBrainFutureResultBoundaryClass::NoResultExpected,
+        lane: "blue_brain_future_result_boundary_no_result_expected",
+        boundary_semantics:
+            "no-result-expected marks flows where canonical boundary intentionally expects no action/tool result payload",
+        handoff_identity_binding: "diagnostic-only/rejected/ineligible handoff references",
+        proposal_or_action_identity_binding: "proposal identity optional and diagnostic-only when present",
+        eligibility_and_precheck_binding: "ineligible/insufficient/unavailable pathways",
+        context_evidence_memory_binding: "basis references kept for diagnostics only",
+        caveat_or_blocker_binding: "reason taxonomy required",
+        placeholder_state_binding: "no_result_expected",
+        execution_assertion: "no execution attempted and no result slot payload expected",
+        runtime_feedback_binding: "runtime emits no_result_expected as canonical explicit state",
+        canonical_guard: "no_result_expected is not missing data and not implicit execution failure",
+    },
+    BlueBrainFutureResultBoundaryLane {
+        class: BlueBrainFutureResultBoundaryClass::ActualActionResultCanonicalIfPresent,
+        lane: "blue_brain_future_result_boundary_actual_action_result_only_if_real_path_exists",
+        boundary_semantics:
+            "actual action result is recognized only when a real repository execution path explicitly provides it",
+        handoff_identity_binding: "must bind to canonical handoff + eligibility + precheck lineage",
+        proposal_or_action_identity_binding: "must bind to canonical executed action identity",
+        eligibility_and_precheck_binding: "must remain downstream of execution-eligible + precheck constraints",
+        context_evidence_memory_binding: "must retain provenance references without auto-committing memory",
+        caveat_or_blocker_binding: "must retain caveat/blocker history if present",
+        placeholder_state_binding: "not a placeholder state",
+        execution_assertion:
+            "if absent, no result claim is allowed; BB9 does not create execution engine behavior",
+        runtime_feedback_binding:
+            "runtime must keep actual-result path distinct from placeholder feedback",
+        canonical_guard: "placeholder lanes can never auto-upgrade into actual action result",
+    },
+    BlueBrainFutureResultBoundaryLane {
+        class: BlueBrainFutureResultBoundaryClass::ActualToolResultCanonicalIfPresent,
+        lane: "blue_brain_future_result_boundary_actual_tool_result_only_if_real_path_exists",
+        boundary_semantics:
+            "actual tool result is recognized only when a real repository tool execution path explicitly provides it",
+        handoff_identity_binding: "must bind to canonical handoff lineage + explicit tool execution trace",
+        proposal_or_action_identity_binding:
+            "must bind to canonical proposal/action identity that authorized real tool execution",
+        eligibility_and_precheck_binding:
+            "must stay downstream of canonical eligibility + safety precheck boundary",
+        context_evidence_memory_binding:
+            "must retain context/evidence/memory provenance and no implicit memory commit",
+        caveat_or_blocker_binding: "must retain caveat/blocker history if present",
+        placeholder_state_binding: "not a placeholder state",
+        execution_assertion:
+            "if absent, tool-result fields remain unpopulated and cannot be inferred from placeholders",
+        runtime_feedback_binding:
+            "runtime keeps actual tool results separate from safety/policy/compute diagnostics",
+        canonical_guard: "safety/policy/compute feedback is never equivalent to tool result payload",
+    },
+    BlueBrainFutureResultBoundaryLane {
+        class: BlueBrainFutureResultBoundaryClass::NonCanonicalInternalOnlyResultPath,
+        lane: "blue_brain_future_result_boundary_internal_only_non_canonical",
+        boundary_semantics:
+            "internal/expert/legacy/dev result-like path that is excluded from canonical BB9 boundary authority",
+        handoff_identity_binding: "lacks canonical handoff identity binding or down-mapped lineage",
+        proposal_or_action_identity_binding:
+            "identity from internal hooks/compat helpers is non-canonical unless remapped",
+        eligibility_and_precheck_binding:
+            "internal-only diagnostics cannot define canonical eligibility/precheck outcomes",
+        context_evidence_memory_binding:
+            "compute-internal or unstable basis remains non-canonical until down-mapped",
+        caveat_or_blocker_binding: "non-canonical marker required",
+        placeholder_state_binding: "internal_only_non_canonical",
+        execution_assertion: "no canonical execution/result authority is granted",
+        runtime_feedback_binding:
+            "runtime exports canonical=false and excludes path from canonical future-result claims",
+        canonical_guard:
+            "non-canonical/internal-only result-like paths must never appear as canonical placeholder or result truth",
     },
 ];
 
@@ -6973,6 +7278,11 @@ pub fn canonical_blue_brain_future_action_handoff_map(
 pub fn canonical_blue_brain_action_result_placeholder_map(
 ) -> &'static [BlueBrainActionResultPlaceholderLane] {
     &CANONICAL_BLUE_BRAIN_ACTION_RESULT_PLACEHOLDER_MAP
+}
+
+pub fn canonical_blue_brain_future_result_boundary_map(
+) -> &'static [BlueBrainFutureResultBoundaryLane] {
+    &CANONICAL_BLUE_BRAIN_FUTURE_RESULT_BOUNDARY_MAP
 }
 
 pub fn canonical_blue_brain_safety_precheck_map() -> &'static [BlueBrainSafetyPrecheckLane] {
@@ -10198,7 +10508,7 @@ mod tests {
         }));
 
         let placeholder_map = canonical_blue_brain_action_result_placeholder_map();
-        assert_eq!(placeholder_map.len(), 8);
+        assert_eq!(placeholder_map.len(), 10);
         assert!(placeholder_map.iter().any(|lane| {
             lane.class == BlueBrainActionResultPlaceholderClass::ResultPlaceholderPrepared
         }));
@@ -10210,6 +10520,12 @@ mod tests {
         }));
         assert!(placeholder_map.iter().any(|lane| {
             lane.class == BlueBrainActionResultPlaceholderClass::ResultPlaceholderCaveated
+        }));
+        assert!(placeholder_map.iter().any(|lane| {
+            lane.class == BlueBrainActionResultPlaceholderClass::ResultPlaceholderStale
+        }));
+        assert!(placeholder_map.iter().any(|lane| {
+            lane.class == BlueBrainActionResultPlaceholderClass::ResultPlaceholderCancelled
         }));
         assert!(placeholder_map
             .iter()
@@ -10229,6 +10545,14 @@ mod tests {
         assert!(placeholder_map.iter().any(|lane| {
             lane.class == BlueBrainActionResultPlaceholderClass::ResultPlaceholderPrepared
                 && lane.placeholder_semantics.contains("no actual result")
+        }));
+        assert!(placeholder_map.iter().any(|lane| {
+            lane.class == BlueBrainActionResultPlaceholderClass::ResultPlaceholderStale
+                && lane.boundary_semantics.contains("no action executed")
+        }));
+        assert!(placeholder_map.iter().any(|lane| {
+            lane.class == BlueBrainActionResultPlaceholderClass::ResultPlaceholderCancelled
+                && lane.boundary_semantics.contains("no action executed")
         }));
     }
 
@@ -10254,6 +10578,8 @@ mod tests {
         assert!(doc.contains("result placeholder unavailable"));
         assert!(doc.contains("result placeholder blocked"));
         assert!(doc.contains("result placeholder caveated"));
+        assert!(doc.contains("result placeholder stale"));
+        assert!(doc.contains("result placeholder cancelled"));
         assert!(doc.contains("no result expected"));
         assert!(doc.contains("no action executed"));
         assert!(doc.contains("no tool result"));
@@ -10264,6 +10590,66 @@ mod tests {
         assert!(doc.contains("canonical=false"));
         assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
         assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
+    }
+
+    #[test]
+    fn blue_brain_bb9_future_result_boundary_map_keeps_placeholder_and_actual_result_split() {
+        let map = canonical_blue_brain_future_result_boundary_map();
+        assert_eq!(map.len(), 13);
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainFutureResultBoundaryClass::NoExecutionResultPlaceholder
+        }));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureResultBoundaryClass::FutureActionResultSlot));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureResultBoundaryClass::FutureToolResultSlot));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureResultBoundaryClass::PlaceholderPrepared));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureResultBoundaryClass::PlaceholderBlocked));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureResultBoundaryClass::PlaceholderUnavailable));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureResultBoundaryClass::PlaceholderCaveated));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureResultBoundaryClass::PlaceholderStale));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureResultBoundaryClass::PlaceholderCancelled));
+        assert!(map
+            .iter()
+            .any(|lane| lane.class == BlueBrainFutureResultBoundaryClass::NoResultExpected));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainFutureResultBoundaryClass::ActualActionResultCanonicalIfPresent
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainFutureResultBoundaryClass::ActualToolResultCanonicalIfPresent
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainFutureResultBoundaryClass::NonCanonicalInternalOnlyResultPath
+        }));
+        assert!(map.iter().all(|lane| {
+            lane.execution_assertion.contains("no")
+                || lane.execution_assertion.contains("false")
+                || lane.execution_assertion.contains("absent")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainFutureResultBoundaryClass::FutureToolResultSlot
+                && lane.execution_assertion.contains("tool_invoked=false")
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.class == BlueBrainFutureResultBoundaryClass::ActualToolResultCanonicalIfPresent
+                && lane
+                    .canonical_guard
+                    .contains("never equivalent to tool result")
+        }));
     }
 
     #[test]
@@ -10565,6 +10951,34 @@ mod tests {
         assert!(doc.contains("no tool invocation"));
         assert!(doc.contains("no compute invocation"));
         assert!(doc.contains("no memory commit"));
+    }
+
+    #[test]
+    fn serie_bb9_prompt3_future_result_placeholder_boundary_doc_stays_pinned_to_code_maps() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_future_result_placeholder_boundary_serie_bb9_prompt3_v1.md"
+        );
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_ACTION_RESULT_PLACEHOLDER_MAP"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_FUTURE_RESULT_BOUNDARY_MAP"));
+        assert!(doc.contains("no-execution result placeholder"));
+        assert!(doc.contains("future-action result slot"));
+        assert!(doc.contains("future-tool result slot"));
+        assert!(doc.contains("placeholder prepared"));
+        assert!(doc.contains("placeholder blocked"));
+        assert!(doc.contains("placeholder unavailable"));
+        assert!(doc.contains("placeholder caveated"));
+        assert!(doc.contains("placeholder stale"));
+        assert!(doc.contains("placeholder cancelled"));
+        assert!(doc.contains("no result expected"));
+        assert!(doc.contains("actual action result (only if real path exists)"));
+        assert!(doc.contains("actual tool result (only if real path exists)"));
+        assert!(doc.contains("non-canonical/internal-only result path"));
+        assert!(doc.contains("placeholder exists but no action/tool executed"));
+        assert!(doc.contains("placeholder does not update memory automatically"));
+        assert!(doc.contains("placeholder does not trigger compute automatically"));
+        assert!(doc.contains("Safety/Policy feedback ≠ Tool Result"));
+        assert!(doc.contains("Compute-Kern bleibt maintenance-only"));
+        assert!(doc.contains("Hodgkin-Huxley/Kuramoto"));
     }
 
     #[test]
