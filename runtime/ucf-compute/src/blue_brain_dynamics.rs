@@ -912,6 +912,40 @@ mod tests {
     }
 
     #[test]
+    fn diagnostic_only_kuramoto_provides_bounded_feedback_without_authority() {
+        let result = evaluate_blue_brain_kuramoto_modulation(base_input(
+            BlueBrainKuramotoScopeState::DiagnosticOnly,
+        ));
+        assert!(result.selection_hint.is_some());
+        assert!(result.runtime_modulation.is_some());
+        assert_eq!(
+            result.dynamics_diagnostic_class,
+            BlueBrainDynamicsDiagnosticClass::KuramotoModulationDiagnostic
+        );
+        assert!(!result.boundary_guard.action_execution_allowed);
+        assert!(!result.boundary_guard.memory_commit_allowed);
+        assert!(!result.boundary_guard.compute_invocation_allowed);
+        assert!(!result.boundary_guard.safety_override_allowed);
+        assert!(!result.boundary_guard.policy_decision_allowed);
+    }
+
+    #[test]
+    fn canonical_dynamics_diagnostics_map_lanes_are_unique_and_non_empty() {
+        let mut lanes: Vec<&str> = CANONICAL_BLUE_BRAIN_DYNAMICS_DIAGNOSTICS_MAP
+            .iter()
+            .map(|lane| lane.lane)
+            .collect();
+        lanes.sort_unstable();
+        lanes.dedup();
+        assert_eq!(
+            lanes.len(),
+            CANONICAL_BLUE_BRAIN_DYNAMICS_DIAGNOSTICS_MAP.len()
+        );
+        assert!(CANONICAL_BLUE_BRAIN_DYNAMICS_DIAGNOSTICS_MAP
+            .iter()
+            .all(|lane| !lane.canonical_guard.trim().is_empty()));
+    }
+    #[test]
     fn hh_internal_only_scope_is_marked_non_canonical() {
         let result = evaluate_blue_brain_hodgkin_huxley_diagnostic(base_hh_input(
             BlueBrainHodgkinHuxleyScopeState::NonCanonicalInternalOnly,
