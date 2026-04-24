@@ -2,6 +2,8 @@
 
 Status: **minimal operational geschlossen** für advisory-only Delta-Weitergabe im Router-Pfad.
 
+Hinweis: Der kanonische BB11-Abschlussstand (inkl. Matrix, Bridge-Phase-Status, Priorisierung nächste Richtung) steht in `docs/blue_brain_readiness_sweep_serie_bb11_prompt4_v1.md`.
+
 ## Kanonischer Pfad
 
 1. **Quelle**: `BlueBrainPort::stimulate` erzeugt `BrainResponse { delta: NeuromodDelta, ... }`.

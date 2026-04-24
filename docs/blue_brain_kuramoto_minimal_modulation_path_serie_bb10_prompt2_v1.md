@@ -2,6 +2,8 @@
 
 Status: **minimal implementiert und operativ eingehängt** als begrenzter, deterministischer Modulations-/Diagnostikpfad.
 
+Hinweis: Der kanonische BB11-Abschlussstand der operativen Minimal-Dynamics-Linie steht in `docs/blue_brain_readiness_sweep_serie_bb11_prompt4_v1.md`.
+
 Operative kanonische Aufrufstelle (BB11 Prompt 2):
 
 - `core/crates/ucf-router/src/lib.rs` im Verify-Puls beim Konsum von
