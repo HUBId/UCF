@@ -12153,4 +12153,21 @@ mod tests {
         assert!(doc.contains("Kuramoto"));
         assert!(doc.contains("Hodgkin-Huxley bleibt vorerst simulation-only"));
     }
+
+    #[test]
+    fn serie_bb10_prompt2_kuramoto_modulation_doc_keeps_advisory_only_boundary() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_kuramoto_minimal_modulation_path_serie_bb10_prompt2_v1.md"
+        );
+        assert!(doc.contains("diagnostic-only Kuramoto"));
+        assert!(doc.contains("selection-modulating Kuramoto"));
+        assert!(doc.contains("runtime-caveat-modulating Kuramoto"));
+        assert!(doc.contains("advisory only"));
+        assert!(doc.contains("Explizit verboten"));
+        assert!(doc.contains("direkte Action-Ausführung"));
+        assert!(doc.contains("direkter Memory-Commit"));
+        assert!(doc.contains("direkte Compute-Invocation"));
+        assert!(doc.contains("Safety-Override"));
+        assert!(doc.contains("Policy-Result"));
+    }
 }
