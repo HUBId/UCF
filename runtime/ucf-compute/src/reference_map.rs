@@ -10424,7 +10424,9 @@ mod tests {
         }));
         assert!(diagnostics_map.iter().any(|lane| {
             lane.class == BlueBrainExecutionEligibilityDiagnosticClass::ExecutionEligibleDiagnostic
-                && lane.runtime_feedback_binding.contains("no action execution")
+                && lane
+                    .runtime_feedback_binding
+                    .contains("no action execution")
         }));
     }
 
