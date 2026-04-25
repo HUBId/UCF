@@ -218,6 +218,11 @@ valid/caveated/insufficient/unsupported/blocked/no-op input-basis classes, and u
 advisory-only/no-direct-* boundaries), see
 `docs/blue_brain_kuramoto_input_groups_parametrization_hardening_serie_bb12_prompt3_v1.md`,
 `runtime/ucf-compute/src/blue_brain_dynamics.rs`, and `core/crates/ucf-router/src/lib.rs`.
+For BB12 Prompt 4 readiness sweep and bounded neural-dynamics closure line
+(closure matrix, explicit operational Kuramoto advisory-only line, canonical modulation/diagnostics/input
+semantics, no-direct-* boundaries, HH/bridge/deferred demarcation, and prioritized BB13 next step), see
+`docs/blue_brain_bb12_bounded_neural_dynamics_closure_serie_bb12_prompt4_v1.md`,
+`runtime/ucf-compute/src/blue_brain_dynamics.rs`, and `core/crates/ucf-router/src/lib.rs`.
 
 ## Capability model
 

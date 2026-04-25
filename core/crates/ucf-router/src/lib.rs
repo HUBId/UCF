@@ -6085,6 +6085,18 @@ fn kuramoto_caveat_tag(caveats: &[String]) -> &'static str {
     if caveats.iter().any(|c| c == "insufficient_dynamics_input") {
         return "insufficient_dynamics_input";
     }
+    if caveats
+        .iter()
+        .any(|c| c == "unsupported_input_group_present")
+    {
+        return "unsupported_input_group_present";
+    }
+    if caveats
+        .iter()
+        .any(|c| c == "unsupported_phase_node_group_ref")
+    {
+        return "unsupported_phase_node_group_ref";
+    }
     if caveats.iter().any(|c| c == "no_direct_action_allowed") {
         return "no_direct_action_allowed";
     }
@@ -7745,5 +7757,17 @@ mod tests {
         );
         assert_eq!(stable_relax, 12);
         assert_eq!(state_relax.current.master, 9200);
+    }
+
+    #[test]
+    fn kuramoto_caveat_tag_reports_unsupported_inputs_explicitly() {
+        assert_eq!(
+            kuramoto_caveat_tag(&["unsupported_input_group_present".to_string()]),
+            "unsupported_input_group_present"
+        );
+        assert_eq!(
+            kuramoto_caveat_tag(&["unsupported_phase_node_group_ref".to_string()]),
+            "unsupported_phase_node_group_ref"
+        );
     }
 }
