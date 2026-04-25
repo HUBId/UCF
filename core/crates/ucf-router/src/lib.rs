@@ -29,7 +29,8 @@ use ucf_cde_scm::{
 };
 use ucf_commit::canonical_control_frame_len;
 use ucf_compute::{
-    evaluate_blue_brain_kuramoto_modulation, kuramoto_modulation_state_token,
+    evaluate_blue_brain_kuramoto_modulation, kuramoto_modulation_diagnostic_class_token,
+    kuramoto_modulation_reason_token, kuramoto_modulation_state_token,
     BlueBrainKuramotoModulationInput, BlueBrainKuramotoPhaseNodeInput,
     BlueBrainKuramotoRuntimeCaveatModulation, BlueBrainKuramotoRuntimePosture,
     BlueBrainKuramotoScopeState, BlueBrainKuramotoSelectionPosture,
@@ -4637,6 +4638,10 @@ impl Router {
             delta.cortisol,
             Some(BrainKuramotoHint {
                 modulation_state: kuramoto_modulation_state_token(kuramoto_result.modulation_state),
+                diagnostic_class: kuramoto_modulation_diagnostic_class_token(
+                    kuramoto_result.diagnostic_class,
+                ),
+                reason_tag: kuramoto_modulation_reason_token(kuramoto_result.modulation_reason),
                 runtime_modulation: kuramoto_runtime_token(kuramoto_result.runtime_modulation),
                 coherence_permille: kuramoto_result.coherence_permille,
                 caveat_tag: kuramoto_caveat_tag(kuramoto_result.caveats.as_slice()),
@@ -6069,6 +6074,18 @@ fn kuramoto_runtime_token(
 fn kuramoto_caveat_tag(caveats: &[String]) -> &'static str {
     if caveats.iter().any(|c| c == "insufficient_dynamics_input") {
         return "insufficient_dynamics_input";
+    }
+    if caveats.iter().any(|c| c == "no_direct_action_allowed") {
+        return "no_direct_action_allowed";
+    }
+    if caveats.iter().any(|c| c == "no_direct_memory_allowed") {
+        return "no_direct_memory_allowed";
+    }
+    if caveats.iter().any(|c| c == "no_direct_compute_allowed") {
+        return "no_direct_compute_allowed";
+    }
+    if caveats.iter().any(|c| c == "no_safety_override_allowed") {
+        return "no_safety_override_allowed";
     }
     if caveats.iter().any(|c| c == "dynamics_path_unavailable") {
         return "dynamics_path_unavailable";

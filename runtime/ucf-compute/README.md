@@ -206,6 +206,12 @@ For BB12 Prompt 1 bounded Kuramoto modulation hardening over the operational lin
 diagnostic runtime/selection backbind tokens, and unchanged no-direct-* boundaries), see
 `docs/blue_brain_kuramoto_modulation_hardening_serie_bb12_prompt1_v1.md` and
 `runtime/ucf-compute/src/blue_brain_dynamics.rs`.
+For BB12 Prompt 2 Kuramoto modulation diagnostics/caveat/no-op feedback hardening
+(canonical modulation diagnostics classes, compact deterministic reason tags, explicit no-direct-*
+guard diagnostics for blocked/unavailable/internal-only states, and router/workspace downstream
+token alignment), see `docs/blue_brain_kuramoto_modulation_diagnostics_hardening_serie_bb12_prompt2_v1.md`,
+`runtime/ucf-compute/src/blue_brain_dynamics.rs`, `core/crates/ucf-router/src/lib.rs`, and
+`core/crates/ucf-workspace/src/lib.rs`.
 
 ## Capability model
 
