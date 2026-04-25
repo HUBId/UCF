@@ -29,10 +29,10 @@ use ucf_cde_scm::{
 };
 use ucf_commit::canonical_control_frame_len;
 use ucf_compute::{
-    evaluate_blue_brain_kuramoto_modulation, BlueBrainKuramotoModulationInput,
-    BlueBrainKuramotoPhaseNodeInput, BlueBrainKuramotoRuntimeCaveatModulation,
-    BlueBrainKuramotoRuntimePosture, BlueBrainKuramotoScopeState,
-    BlueBrainKuramotoSelectionPosture,
+    evaluate_blue_brain_kuramoto_modulation, kuramoto_modulation_state_token,
+    BlueBrainKuramotoModulationInput, BlueBrainKuramotoPhaseNodeInput,
+    BlueBrainKuramotoRuntimeCaveatModulation, BlueBrainKuramotoRuntimePosture,
+    BlueBrainKuramotoScopeState, BlueBrainKuramotoSelectionPosture,
 };
 use ucf_consistency_engine::{
     ConsistencyAction, ConsistencyActionKind, ConsistencyEngine, ConsistencyInputs,
@@ -4635,12 +4635,12 @@ impl Router {
             delta.serotonin,
             delta.norepi,
             delta.cortisol,
-            kuramoto_result
-                .runtime_modulation
-                .map(|runtime_modulation| BrainKuramotoHint {
-                    runtime_modulation: kuramoto_runtime_token(runtime_modulation),
-                    coherence_permille: kuramoto_result.coherence_permille,
-                }),
+            Some(BrainKuramotoHint {
+                modulation_state: kuramoto_modulation_state_token(kuramoto_result.modulation_state),
+                runtime_modulation: kuramoto_runtime_token(kuramoto_result.runtime_modulation),
+                coherence_permille: kuramoto_result.coherence_permille,
+                caveat_tag: kuramoto_caveat_tag(kuramoto_result.caveats.as_slice()),
+            }),
             Some(slot),
         ));
         self.append_neuromod_delta_record(cycle_id, &delta);
@@ -4705,6 +4705,7 @@ impl Router {
             selected_evidence_refs: evidence_refs,
             memory_caveats,
             phase_nodes: Self::kuramoto_phase_nodes(workspace_snapshot, attention, delta),
+            non_canonical_internal_only_path: false,
         }
     }
 
@@ -6048,14 +6049,49 @@ fn apply_coupling_bias_i16(base: i16, influence: i16, cap: i16) -> i16 {
     base.saturating_add(bias)
 }
 
-fn kuramoto_runtime_token(modulation: BlueBrainKuramotoRuntimeCaveatModulation) -> &'static str {
+fn kuramoto_runtime_token(
+    modulation: Option<BlueBrainKuramotoRuntimeCaveatModulation>,
+) -> &'static str {
     match modulation {
-        BlueBrainKuramotoRuntimeCaveatModulation::NoAdditionalCaveat => "no_additional_caveat",
-        BlueBrainKuramotoRuntimeCaveatModulation::AttachDynamicsCaveat => "attach_dynamics_caveat",
-        BlueBrainKuramotoRuntimeCaveatModulation::EscalateRuntimeCaveat => {
+        None => "none",
+        Some(BlueBrainKuramotoRuntimeCaveatModulation::NoAdditionalCaveat) => {
+            "no_additional_caveat"
+        }
+        Some(BlueBrainKuramotoRuntimeCaveatModulation::AttachDynamicsCaveat) => {
+            "attach_dynamics_caveat"
+        }
+        Some(BlueBrainKuramotoRuntimeCaveatModulation::EscalateRuntimeCaveat) => {
             "escalate_runtime_caveat"
         }
     }
+}
+
+fn kuramoto_caveat_tag(caveats: &[String]) -> &'static str {
+    if caveats.iter().any(|c| c == "insufficient_dynamics_input") {
+        return "insufficient_dynamics_input";
+    }
+    if caveats.iter().any(|c| c == "dynamics_path_unavailable") {
+        return "dynamics_path_unavailable";
+    }
+    if caveats
+        .iter()
+        .any(|c| c == "non_canonical_internal_only_modulation_path")
+    {
+        return "non_canonical_internal_only_modulation_path";
+    }
+    if caveats
+        .iter()
+        .any(|c| c == "runtime_caveat_posture_present")
+    {
+        return "runtime_caveat_posture_present";
+    }
+    if caveats.iter().any(|c| c == "dynamics_desynchrony") {
+        return "dynamics_desynchrony";
+    }
+    if caveats.iter().any(|c| c == "scope_non_modulating") {
+        return "scope_non_modulating";
+    }
+    "none"
 }
 
 fn top_coupling_influences(influences: &[(SignalId, i16)], limit: usize) -> Vec<(u16, i16)> {

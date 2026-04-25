@@ -53,8 +53,10 @@ pub struct WorkspaceSignal {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BrainKuramotoHint {
+    pub modulation_state: &'static str,
     pub runtime_modulation: &'static str,
     pub coherence_permille: u16,
+    pub caveat_tag: &'static str,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -399,8 +401,11 @@ impl WorkspaceSignal {
             format!("BRAIN_NEUROMOD_HINT={delta_commit} DA={dopamine} SE={serotonin} NE={norepi} CO={cortisol}");
         if let Some(hint) = kuramoto_hint {
             summary.push_str(&format!(
-                " KURAMOTO_RUNTIME={} KURAMOTO_COHERENCE={}",
-                hint.runtime_modulation, hint.coherence_permille
+                " KURAMOTO_STATE={} KURAMOTO_RUNTIME={} KURAMOTO_COHERENCE={} KURAMOTO_CAVEAT={}",
+                hint.modulation_state,
+                hint.runtime_modulation,
+                hint.coherence_permille,
+                hint.caveat_tag
             ));
         }
         let priority = 7000;
@@ -2510,5 +2515,32 @@ mod tests {
         let snapshot_b = workspace_b.arbitrate(12);
 
         assert_ne!(snapshot_a.commit, snapshot_b.commit);
+    }
+
+    #[test]
+    fn neuromod_hint_summary_contains_kuramoto_state_runtime_coherence_and_caveat() {
+        let signal = WorkspaceSignal::from_brain_neuromod_hint(
+            Digest32::new([9u8; 32]),
+            11,
+            -7,
+            3,
+            -2,
+            Some(BrainKuramotoHint {
+                modulation_state: "caveated",
+                runtime_modulation: "attach_dynamics_caveat",
+                coherence_permille: 640,
+                caveat_tag: "runtime_caveat_posture_present",
+            }),
+            Some(3),
+        );
+        assert_eq!(signal.kind, SignalKind::Brain);
+        assert!(signal.summary.contains("KURAMOTO_STATE=caveated"));
+        assert!(signal
+            .summary
+            .contains("KURAMOTO_RUNTIME=attach_dynamics_caveat"));
+        assert!(signal.summary.contains("KURAMOTO_COHERENCE=640"));
+        assert!(signal
+            .summary
+            .contains("KURAMOTO_CAVEAT=runtime_caveat_posture_present"));
     }
 }

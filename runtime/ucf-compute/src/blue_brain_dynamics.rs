@@ -312,6 +312,7 @@ pub struct BlueBrainKuramotoModulationInput {
     pub selected_evidence_refs: Vec<String>,
     pub memory_caveats: Vec<String>,
     pub phase_nodes: Vec<BlueBrainKuramotoPhaseNodeInput>,
+    pub non_canonical_internal_only_path: bool,
 }
 
 impl BlueBrainKuramotoModulationInput {
@@ -351,6 +352,18 @@ pub enum BlueBrainKuramotoRuntimeCaveatModulation {
     EscalateRuntimeCaveat,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainKuramotoModulationState {
+    AppliedAdvisoryOnly,
+    Caveated,
+    Insufficient,
+    Ignored,
+    NoOp,
+    Blocked,
+    Unavailable,
+    NonCanonicalInternalOnlyPath,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlueBrainKuramotoBoundaryGuard {
     pub runtime_state_mutation_allowed: bool,
@@ -384,6 +397,7 @@ pub enum BlueBrainDynamicsSelectionFeedbackClass {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlueBrainKuramotoModulationResult {
     pub dynamics_diagnostic_class: BlueBrainDynamicsDiagnosticClass,
+    pub modulation_state: BlueBrainKuramotoModulationState,
     pub diagnostic: BlueBrainKuramotoSynchronyDiagnostic,
     pub coherence_permille: u16,
     pub selection_hint: Option<BlueBrainKuramotoSelectionHint>,
@@ -413,11 +427,15 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
     ) {
         caveats.push("dynamics_path_unavailable".to_string());
     }
+    if input.non_canonical_internal_only_path {
+        caveats.push("non_canonical_internal_only_modulation_path".to_string());
+    }
 
     if input.phase_nodes.len() < 2 {
         caveats.push("insufficient_dynamics_input".to_string());
         return BlueBrainKuramotoModulationResult {
             dynamics_diagnostic_class: BlueBrainDynamicsDiagnosticClass::DynamicsInsufficient,
+            modulation_state: BlueBrainKuramotoModulationState::Insufficient,
             diagnostic: BlueBrainKuramotoSynchronyDiagnostic::InsufficientInput,
             coherence_permille: 0,
             selection_hint: None,
@@ -498,23 +516,53 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         caveats.push("runtime_caveat_posture_present".to_string());
     }
 
+    let modulation_state = if input.non_canonical_internal_only_path {
+        BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath
+    } else if matches!(
+        input.scope,
+        BlueBrainKuramotoScopeState::NotImplementedOrNotSuitableNow
+    ) {
+        BlueBrainKuramotoModulationState::Unavailable
+    } else if matches!(input.scope, BlueBrainKuramotoScopeState::SimulationOnly) {
+        BlueBrainKuramotoModulationState::Ignored
+    } else if matches!(
+        (input.selection_posture, input.runtime_posture),
+        (BlueBrainKuramotoSelectionPosture::Blocked, _)
+            | (_, BlueBrainKuramotoRuntimePosture::Blocked)
+    ) {
+        BlueBrainKuramotoModulationState::Blocked
+    } else if !caveats.is_empty() {
+        BlueBrainKuramotoModulationState::Caveated
+    } else if selection_hint == Some(BlueBrainKuramotoSelectionHint::KeepCurrentSelection)
+        && runtime_modulation == Some(BlueBrainKuramotoRuntimeCaveatModulation::NoAdditionalCaveat)
+    {
+        BlueBrainKuramotoModulationState::NoOp
+    } else {
+        BlueBrainKuramotoModulationState::AppliedAdvisoryOnly
+    };
+
     BlueBrainKuramotoModulationResult {
-        dynamics_diagnostic_class: match input.scope {
-            BlueBrainKuramotoScopeState::NotImplementedOrNotSuitableNow => {
-                BlueBrainDynamicsDiagnosticClass::DynamicsUnavailable
+        dynamics_diagnostic_class: if input.non_canonical_internal_only_path {
+            BlueBrainDynamicsDiagnosticClass::NonCanonicalInternalOnlyDynamicsDiagnostic
+        } else {
+            match input.scope {
+                BlueBrainKuramotoScopeState::NotImplementedOrNotSuitableNow => {
+                    BlueBrainDynamicsDiagnosticClass::DynamicsUnavailable
+                }
+                BlueBrainKuramotoScopeState::SimulationOnly => {
+                    BlueBrainDynamicsDiagnosticClass::DynamicsIgnored
+                }
+                _ if matches!(
+                    diagnostic,
+                    BlueBrainKuramotoSynchronyDiagnostic::Desynchronized
+                ) =>
+                {
+                    BlueBrainDynamicsDiagnosticClass::DynamicsCaveated
+                }
+                _ => BlueBrainDynamicsDiagnosticClass::KuramotoModulationDiagnostic,
             }
-            BlueBrainKuramotoScopeState::SimulationOnly => {
-                BlueBrainDynamicsDiagnosticClass::DynamicsIgnored
-            }
-            _ if matches!(
-                diagnostic,
-                BlueBrainKuramotoSynchronyDiagnostic::Desynchronized
-            ) =>
-            {
-                BlueBrainDynamicsDiagnosticClass::DynamicsCaveated
-            }
-            _ => BlueBrainDynamicsDiagnosticClass::KuramotoModulationDiagnostic,
         },
+        modulation_state,
         diagnostic,
         coherence_permille,
         selection_hint,
@@ -523,6 +571,21 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         selection_feedback,
         caveats,
         boundary_guard: boundary_guard(),
+    }
+}
+
+pub fn kuramoto_modulation_state_token(state: BlueBrainKuramotoModulationState) -> &'static str {
+    match state {
+        BlueBrainKuramotoModulationState::AppliedAdvisoryOnly => "applied_advisory_only",
+        BlueBrainKuramotoModulationState::Caveated => "caveated",
+        BlueBrainKuramotoModulationState::Insufficient => "insufficient",
+        BlueBrainKuramotoModulationState::Ignored => "ignored",
+        BlueBrainKuramotoModulationState::NoOp => "no_op",
+        BlueBrainKuramotoModulationState::Blocked => "blocked",
+        BlueBrainKuramotoModulationState::Unavailable => "unavailable",
+        BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath => {
+            "non_canonical_internal_only_path"
+        }
     }
 }
 
@@ -660,6 +723,7 @@ mod tests {
             selected_context_refs: vec!["ctx:b".to_string(), "ctx:a".to_string()],
             selected_evidence_refs: vec!["ev:2".to_string(), "ev:1".to_string()],
             memory_caveats: vec![],
+            non_canonical_internal_only_path: false,
             phase_nodes: vec![
                 BlueBrainKuramotoPhaseNodeInput {
                     group_ref: "g2".to_string(),
@@ -748,6 +812,10 @@ mod tests {
             result.diagnostic,
             BlueBrainKuramotoSynchronyDiagnostic::InsufficientInput
         );
+        assert_eq!(
+            result.modulation_state,
+            BlueBrainKuramotoModulationState::Insufficient
+        );
         assert!(result
             .caveats
             .iter()
@@ -819,10 +887,96 @@ mod tests {
             unavailable.dynamics_diagnostic_class,
             BlueBrainDynamicsDiagnosticClass::DynamicsUnavailable
         );
+        assert_eq!(
+            unavailable.modulation_state,
+            BlueBrainKuramotoModulationState::Unavailable
+        );
         assert!(unavailable
             .caveats
             .iter()
             .any(|item| item == "dynamics_path_unavailable"));
+    }
+
+    #[test]
+    fn modulation_states_are_explicitly_distinguishable_for_operational_hardening() {
+        let mut caveated = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        caveated.runtime_posture = BlueBrainKuramotoRuntimePosture::Caveated;
+        assert_eq!(
+            evaluate_blue_brain_kuramoto_modulation(caveated).modulation_state,
+            BlueBrainKuramotoModulationState::Caveated
+        );
+
+        let ignored = evaluate_blue_brain_kuramoto_modulation(base_input(
+            BlueBrainKuramotoScopeState::SimulationOnly,
+        ));
+        assert_eq!(
+            ignored.modulation_state,
+            BlueBrainKuramotoModulationState::Ignored
+        );
+
+        let no_op = evaluate_blue_brain_kuramoto_modulation(base_input(
+            BlueBrainKuramotoScopeState::DiagnosticOnly,
+        ));
+        assert_eq!(
+            no_op.modulation_state,
+            BlueBrainKuramotoModulationState::NoOp
+        );
+
+        let mut blocked = base_input(BlueBrainKuramotoScopeState::RuntimeCaveatModulating);
+        blocked.runtime_posture = BlueBrainKuramotoRuntimePosture::Blocked;
+        assert_eq!(
+            evaluate_blue_brain_kuramoto_modulation(blocked).modulation_state,
+            BlueBrainKuramotoModulationState::Blocked
+        );
+
+        let mut applied = base_input(BlueBrainKuramotoScopeState::SelectionModulating);
+        applied.selection_posture = BlueBrainKuramotoSelectionPosture::Deferred;
+        applied.memory_caveats.clear();
+        assert_eq!(
+            evaluate_blue_brain_kuramoto_modulation(applied).modulation_state,
+            BlueBrainKuramotoModulationState::AppliedAdvisoryOnly
+        );
+
+        let mut non_canonical = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        non_canonical.non_canonical_internal_only_path = true;
+        let non_canonical_result = evaluate_blue_brain_kuramoto_modulation(non_canonical);
+        assert_eq!(
+            non_canonical_result.modulation_state,
+            BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath
+        );
+        assert_eq!(
+            non_canonical_result.dynamics_diagnostic_class,
+            BlueBrainDynamicsDiagnosticClass::NonCanonicalInternalOnlyDynamicsDiagnostic
+        );
+    }
+
+    #[test]
+    fn modulation_state_tokens_cover_canonical_operational_states() {
+        let states = [
+            BlueBrainKuramotoModulationState::AppliedAdvisoryOnly,
+            BlueBrainKuramotoModulationState::Caveated,
+            BlueBrainKuramotoModulationState::Insufficient,
+            BlueBrainKuramotoModulationState::Ignored,
+            BlueBrainKuramotoModulationState::NoOp,
+            BlueBrainKuramotoModulationState::Blocked,
+            BlueBrainKuramotoModulationState::Unavailable,
+            BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath,
+        ];
+        let mut tokens: Vec<&str> = states
+            .into_iter()
+            .map(kuramoto_modulation_state_token)
+            .collect();
+        tokens.sort_unstable();
+        tokens.dedup();
+        assert_eq!(tokens.len(), 8);
+        assert!(tokens.contains(&"applied_advisory_only"));
+        assert!(tokens.contains(&"caveated"));
+        assert!(tokens.contains(&"insufficient"));
+        assert!(tokens.contains(&"ignored"));
+        assert!(tokens.contains(&"no_op"));
+        assert!(tokens.contains(&"blocked"));
+        assert!(tokens.contains(&"unavailable"));
+        assert!(tokens.contains(&"non_canonical_internal_only_path"));
     }
 
     fn base_hh_input(
