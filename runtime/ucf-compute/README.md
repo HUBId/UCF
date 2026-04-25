@@ -201,6 +201,11 @@ For BB10 Prompt 4 neural-dynamics diagnostics backbind and no-direct-action/no-d
 `docs/blue_brain_neural_dynamics_diagnostics_guards_serie_bb10_prompt4_v1.md`,
 `CANONICAL_BLUE_BRAIN_DYNAMICS_DIAGNOSTICS_MAP`, and
 `runtime/ucf-compute/src/blue_brain_dynamics.rs`.
+For BB12 Prompt 1 bounded Kuramoto modulation hardening over the operational line
+(canonical modulation-state map, deterministic no-op/ignored/unavailable/blocked/caveated handling,
+diagnostic runtime/selection backbind tokens, and unchanged no-direct-* boundaries), see
+`docs/blue_brain_kuramoto_modulation_hardening_serie_bb12_prompt1_v1.md` and
+`runtime/ucf-compute/src/blue_brain_dynamics.rs`.
 
 ## Capability model
 
