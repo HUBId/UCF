@@ -212,6 +212,12 @@ guard diagnostics for blocked/unavailable/internal-only states, and router/works
 token alignment), see `docs/blue_brain_kuramoto_modulation_diagnostics_hardening_serie_bb12_prompt2_v1.md`,
 `runtime/ucf-compute/src/blue_brain_dynamics.rs`, `core/crates/ucf-router/src/lib.rs`, and
 `core/crates/ucf-workspace/src/lib.rs`.
+For BB12 Prompt 3 operative Kuramoto input-group and parametrization hardening
+(canonical input-group map, deterministic group canonicalization/filtering, explicit
+valid/caveated/insufficient/unsupported/blocked/no-op input-basis classes, and unchanged
+advisory-only/no-direct-* boundaries), see
+`docs/blue_brain_kuramoto_input_groups_parametrization_hardening_serie_bb12_prompt3_v1.md`,
+`runtime/ucf-compute/src/blue_brain_dynamics.rs`, and `core/crates/ucf-router/src/lib.rs`.
 
 ## Capability model
 

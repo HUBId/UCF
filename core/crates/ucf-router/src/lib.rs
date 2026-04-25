@@ -4701,6 +4701,14 @@ impl Router {
         } else {
             BlueBrainKuramotoRuntimePosture::Stable
         };
+        let mut blocked_input_refs = Vec::new();
+        if workspace_snapshot.nsr_verdict == Some(3) {
+            blocked_input_refs.push("nsr_block_verdict".to_string());
+        }
+        let mut unsupported_input_refs = Vec::new();
+        if evidence_refs.is_empty() {
+            unsupported_input_refs.push("missing_evidence_reference_basis".to_string());
+        }
 
         BlueBrainKuramotoModulationInput {
             scope: BlueBrainKuramotoScopeState::RuntimeCaveatModulating,
@@ -4710,6 +4718,8 @@ impl Router {
             selected_evidence_refs: evidence_refs,
             memory_caveats,
             phase_nodes: Self::kuramoto_phase_nodes(workspace_snapshot, attention, delta),
+            unsupported_input_refs,
+            blocked_input_refs,
             non_canonical_internal_only_path: false,
         }
     }
@@ -4736,7 +4746,7 @@ impl Router {
                 coupling_permille: workspace_snapshot.tcf_attention_gain_cap.min(10_000) / 10,
             },
             BlueBrainKuramotoPhaseNodeInput {
-                group_ref: "neuromod_delta_group".to_string(),
+                group_ref: "evidence_derived_advisory_group".to_string(),
                 phase_permille: delta_abs_sum % 1000,
                 coupling_permille: workspace_snapshot.ssm_attention_gain.min(10_000) / 10,
             },

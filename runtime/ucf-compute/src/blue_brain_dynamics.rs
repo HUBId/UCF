@@ -312,6 +312,8 @@ pub struct BlueBrainKuramotoModulationInput {
     pub selected_evidence_refs: Vec<String>,
     pub memory_caveats: Vec<String>,
     pub phase_nodes: Vec<BlueBrainKuramotoPhaseNodeInput>,
+    pub unsupported_input_refs: Vec<String>,
+    pub blocked_input_refs: Vec<String>,
     pub non_canonical_internal_only_path: bool,
 }
 
@@ -323,6 +325,10 @@ impl BlueBrainKuramotoModulationInput {
         self.selected_evidence_refs.dedup();
         self.memory_caveats.sort_unstable();
         self.memory_caveats.dedup();
+        self.unsupported_input_refs.sort_unstable();
+        self.unsupported_input_refs.dedup();
+        self.blocked_input_refs.sort_unstable();
+        self.blocked_input_refs.dedup();
         self.phase_nodes
             .sort_by(|left, right| left.group_ref.cmp(&right.group_ref));
         self.phase_nodes
@@ -387,6 +393,59 @@ pub enum BlueBrainKuramotoModulationReason {
     NonCanonicalInternalOnlyPath,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainKuramotoInputGroupClass {
+    RuntimeStateGroup,
+    SelectionAttentionGroup,
+    ContextReferenceGroup,
+    MemoryCaveatReferenceGroup,
+    EvidenceDerivedAdvisoryGroup,
+    UnsupportedNonCanonicalInputGroup,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainKuramotoInputGroupLane {
+    pub group_class: BlueBrainKuramotoInputGroupClass,
+    pub group_ref: &'static str,
+}
+
+pub const CANONICAL_BLUE_BRAIN_KURAMOTO_INPUT_GROUP_MAP: [BlueBrainKuramotoInputGroupLane; 6] = [
+    BlueBrainKuramotoInputGroupLane {
+        group_class: BlueBrainKuramotoInputGroupClass::RuntimeStateGroup,
+        group_ref: "runtime_state_group",
+    },
+    BlueBrainKuramotoInputGroupLane {
+        group_class: BlueBrainKuramotoInputGroupClass::SelectionAttentionGroup,
+        group_ref: "selection_attention_group",
+    },
+    BlueBrainKuramotoInputGroupLane {
+        group_class: BlueBrainKuramotoInputGroupClass::ContextReferenceGroup,
+        group_ref: "context_reference_group",
+    },
+    BlueBrainKuramotoInputGroupLane {
+        group_class: BlueBrainKuramotoInputGroupClass::MemoryCaveatReferenceGroup,
+        group_ref: "memory_caveat_reference_group",
+    },
+    BlueBrainKuramotoInputGroupLane {
+        group_class: BlueBrainKuramotoInputGroupClass::EvidenceDerivedAdvisoryGroup,
+        group_ref: "evidence_derived_advisory_group",
+    },
+    BlueBrainKuramotoInputGroupLane {
+        group_class: BlueBrainKuramotoInputGroupClass::UnsupportedNonCanonicalInputGroup,
+        group_ref: "unsupported_non_canonical_input_group",
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainKuramotoInputBasisClass {
+    ValidInputBasis,
+    CaveatedInputBasis,
+    InsufficientInputBasis,
+    UnsupportedInputBasis,
+    BlockedInputBasis,
+    NoOpNeutralInputBasis,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlueBrainKuramotoBoundaryGuard {
     pub runtime_state_mutation_allowed: bool,
@@ -429,6 +488,7 @@ pub struct BlueBrainKuramotoModulationResult {
     pub runtime_modulation: Option<BlueBrainKuramotoRuntimeCaveatModulation>,
     pub runtime_feedback: BlueBrainDynamicsRuntimeFeedbackClass,
     pub selection_feedback: BlueBrainDynamicsSelectionFeedbackClass,
+    pub input_basis: BlueBrainKuramotoInputBasisClass,
     pub caveats: Vec<String>,
     pub boundary_guard: BlueBrainKuramotoBoundaryGuard,
 }
@@ -455,8 +515,32 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
     if input.non_canonical_internal_only_path {
         caveats.push("non_canonical_internal_only_modulation_path".to_string());
     }
+    if !input.blocked_input_refs.is_empty() {
+        caveats.push("blocked_input_group_present".to_string());
+    }
+    if !input.unsupported_input_refs.is_empty() {
+        caveats.push("unsupported_input_group_present".to_string());
+    }
 
-    if input.phase_nodes.len() < 2 {
+    let mut canonical_phase_nodes = Vec::new();
+    for node in &input.phase_nodes {
+        match classify_kuramoto_input_group(node.group_ref.as_str()) {
+            BlueBrainKuramotoInputGroupClass::RuntimeStateGroup
+            | BlueBrainKuramotoInputGroupClass::SelectionAttentionGroup
+            | BlueBrainKuramotoInputGroupClass::ContextReferenceGroup
+            | BlueBrainKuramotoInputGroupClass::MemoryCaveatReferenceGroup
+            | BlueBrainKuramotoInputGroupClass::EvidenceDerivedAdvisoryGroup => {
+                canonical_phase_nodes.push(node.clone());
+            }
+            BlueBrainKuramotoInputGroupClass::UnsupportedNonCanonicalInputGroup => {
+                caveats.push("unsupported_phase_node_group_ref".to_string());
+            }
+        }
+    }
+    canonical_phase_nodes.sort_by(|left, right| left.group_ref.cmp(&right.group_ref));
+    canonical_phase_nodes.dedup_by(|left, right| left.group_ref == right.group_ref);
+
+    if canonical_phase_nodes.len() < 2 {
         caveats.push("insufficient_dynamics_input".to_string());
         return BlueBrainKuramotoModulationResult {
             dynamics_diagnostic_class: BlueBrainDynamicsDiagnosticClass::DynamicsInsufficient,
@@ -472,12 +556,13 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
                 BlueBrainDynamicsRuntimeFeedbackClass::DynamicsInsufficientForModulation,
             selection_feedback:
                 BlueBrainDynamicsSelectionFeedbackClass::DynamicsInsufficientForModulation,
+            input_basis: BlueBrainKuramotoInputBasisClass::InsufficientInputBasis,
             caveats,
             boundary_guard: boundary_guard(),
         };
     }
 
-    let coherence_permille = coherence_from_phase_nodes(&input.phase_nodes);
+    let coherence_permille = coherence_from_phase_nodes(&canonical_phase_nodes);
     let diagnostic = if coherence_permille >= 800 {
         BlueBrainKuramotoSynchronyDiagnostic::Synchronized
     } else if coherence_permille >= 500 {
@@ -546,6 +631,10 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
 
     let modulation_state = if input.non_canonical_internal_only_path {
         BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath
+    } else if !input.blocked_input_refs.is_empty() {
+        BlueBrainKuramotoModulationState::Blocked
+    } else if !input.unsupported_input_refs.is_empty() {
+        BlueBrainKuramotoModulationState::Caveated
     } else if matches!(
         input.scope,
         BlueBrainKuramotoScopeState::NotImplementedOrNotSuitableNow
@@ -567,6 +656,26 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         BlueBrainKuramotoModulationState::NoOp
     } else {
         BlueBrainKuramotoModulationState::AppliedAdvisoryOnly
+    };
+    let input_basis = if matches!(
+        modulation_state,
+        BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath
+            | BlueBrainKuramotoModulationState::Blocked
+    ) {
+        BlueBrainKuramotoInputBasisClass::BlockedInputBasis
+    } else if !input.unsupported_input_refs.is_empty() {
+        BlueBrainKuramotoInputBasisClass::UnsupportedInputBasis
+    } else if matches!(
+        modulation_state,
+        BlueBrainKuramotoModulationState::Insufficient
+    ) {
+        BlueBrainKuramotoInputBasisClass::InsufficientInputBasis
+    } else if matches!(modulation_state, BlueBrainKuramotoModulationState::NoOp) {
+        BlueBrainKuramotoInputBasisClass::NoOpNeutralInputBasis
+    } else if !caveats.is_empty() {
+        BlueBrainKuramotoInputBasisClass::CaveatedInputBasis
+    } else {
+        BlueBrainKuramotoInputBasisClass::ValidInputBasis
     };
 
     let (diagnostic_class, modulation_reason) = match modulation_state {
@@ -635,6 +744,7 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         runtime_modulation,
         runtime_feedback,
         selection_feedback,
+        input_basis,
         caveats,
         boundary_guard: boundary_guard(),
     }
@@ -781,6 +891,21 @@ fn runtime_modulation_from_signal(
     }
 }
 
+fn classify_kuramoto_input_group(group_ref: &str) -> BlueBrainKuramotoInputGroupClass {
+    match group_ref {
+        "runtime_state_group" => BlueBrainKuramotoInputGroupClass::RuntimeStateGroup,
+        "selection_attention_group" => BlueBrainKuramotoInputGroupClass::SelectionAttentionGroup,
+        "context_reference_group" => BlueBrainKuramotoInputGroupClass::ContextReferenceGroup,
+        "memory_caveat_reference_group" => {
+            BlueBrainKuramotoInputGroupClass::MemoryCaveatReferenceGroup
+        }
+        "evidence_derived_advisory_group" => {
+            BlueBrainKuramotoInputGroupClass::EvidenceDerivedAdvisoryGroup
+        }
+        _ => BlueBrainKuramotoInputGroupClass::UnsupportedNonCanonicalInputGroup,
+    }
+}
+
 fn boundary_guard() -> BlueBrainKuramotoBoundaryGuard {
     BlueBrainKuramotoBoundaryGuard {
         runtime_state_mutation_allowed: false,
@@ -867,15 +992,17 @@ mod tests {
             selected_context_refs: vec!["ctx:b".to_string(), "ctx:a".to_string()],
             selected_evidence_refs: vec!["ev:2".to_string(), "ev:1".to_string()],
             memory_caveats: vec![],
+            unsupported_input_refs: vec![],
+            blocked_input_refs: vec![],
             non_canonical_internal_only_path: false,
             phase_nodes: vec![
                 BlueBrainKuramotoPhaseNodeInput {
-                    group_ref: "g2".to_string(),
+                    group_ref: "selection_attention_group".to_string(),
                     phase_permille: 120,
                     coupling_permille: 700,
                 },
                 BlueBrainKuramotoPhaseNodeInput {
-                    group_ref: "g1".to_string(),
+                    group_ref: "runtime_state_group".to_string(),
                     phase_permille: 130,
                     coupling_permille: 700,
                 },
@@ -964,6 +1091,61 @@ mod tests {
             .caveats
             .iter()
             .any(|item| item == "insufficient_dynamics_input"));
+    }
+
+    #[test]
+    fn canonical_kuramoto_input_group_map_is_unique_and_complete() {
+        let mut refs: Vec<&str> = CANONICAL_BLUE_BRAIN_KURAMOTO_INPUT_GROUP_MAP
+            .iter()
+            .map(|lane| lane.group_ref)
+            .collect();
+        refs.sort_unstable();
+        refs.dedup();
+        assert_eq!(
+            refs.len(),
+            CANONICAL_BLUE_BRAIN_KURAMOTO_INPUT_GROUP_MAP.len()
+        );
+        assert!(refs.contains(&"runtime_state_group"));
+        assert!(refs.contains(&"selection_attention_group"));
+        assert!(refs.contains(&"context_reference_group"));
+        assert!(refs.contains(&"memory_caveat_reference_group"));
+        assert!(refs.contains(&"evidence_derived_advisory_group"));
+        assert!(refs.contains(&"unsupported_non_canonical_input_group"));
+    }
+
+    #[test]
+    fn unsupported_and_blocked_input_groups_remain_explicit() {
+        let mut unsupported = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        unsupported.unsupported_input_refs = vec!["tool:direct_action".to_string()];
+        let unsupported_result = evaluate_blue_brain_kuramoto_modulation(unsupported);
+        assert_eq!(
+            unsupported_result.input_basis,
+            BlueBrainKuramotoInputBasisClass::UnsupportedInputBasis
+        );
+        assert_eq!(
+            unsupported_result.modulation_state,
+            BlueBrainKuramotoModulationState::Caveated
+        );
+        assert!(unsupported_result
+            .caveats
+            .iter()
+            .any(|item| item == "unsupported_input_group_present"));
+
+        let mut blocked = base_input(BlueBrainKuramotoScopeState::RuntimeCaveatModulating);
+        blocked.blocked_input_refs = vec!["policy:authority_hook".to_string()];
+        let blocked_result = evaluate_blue_brain_kuramoto_modulation(blocked);
+        assert_eq!(
+            blocked_result.input_basis,
+            BlueBrainKuramotoInputBasisClass::BlockedInputBasis
+        );
+        assert_eq!(
+            blocked_result.modulation_state,
+            BlueBrainKuramotoModulationState::Blocked
+        );
+        assert!(blocked_result
+            .caveats
+            .iter()
+            .any(|item| item == "blocked_input_group_present"));
     }
 
     #[test]
