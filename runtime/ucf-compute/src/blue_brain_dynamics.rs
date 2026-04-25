@@ -364,6 +364,29 @@ pub enum BlueBrainKuramotoModulationState {
     NonCanonicalInternalOnlyPath,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainKuramotoModulationDiagnosticClass {
+    ModulationAppliedDiagnostic,
+    ModulationCaveatedDiagnostic,
+    ModulationInsufficientDiagnostic,
+    ModulationIgnoredDiagnostic,
+    ModulationNoOpDiagnostic,
+    ModulationBlockedDiagnostic,
+    ModulationUnavailableDiagnostic,
+    NonCanonicalInternalOnlyDynamicsDiagnostic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainKuramotoModulationReason {
+    InsufficientInputGroupBasis,
+    CaveatedPartialOrWeakBasis,
+    NoOpNeutralDeterministicResult,
+    IgnoredByRuntimeSelectionContext,
+    BlockedByGuardBoundaryCondition,
+    UnavailableOperationalPreconditions,
+    NonCanonicalInternalOnlyPath,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlueBrainKuramotoBoundaryGuard {
     pub runtime_state_mutation_allowed: bool,
@@ -397,7 +420,9 @@ pub enum BlueBrainDynamicsSelectionFeedbackClass {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlueBrainKuramotoModulationResult {
     pub dynamics_diagnostic_class: BlueBrainDynamicsDiagnosticClass,
+    pub diagnostic_class: BlueBrainKuramotoModulationDiagnosticClass,
     pub modulation_state: BlueBrainKuramotoModulationState,
+    pub modulation_reason: Option<BlueBrainKuramotoModulationReason>,
     pub diagnostic: BlueBrainKuramotoSynchronyDiagnostic,
     pub coherence_permille: u16,
     pub selection_hint: Option<BlueBrainKuramotoSelectionHint>,
@@ -435,7 +460,10 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         caveats.push("insufficient_dynamics_input".to_string());
         return BlueBrainKuramotoModulationResult {
             dynamics_diagnostic_class: BlueBrainDynamicsDiagnosticClass::DynamicsInsufficient,
+            diagnostic_class:
+                BlueBrainKuramotoModulationDiagnosticClass::ModulationInsufficientDiagnostic,
             modulation_state: BlueBrainKuramotoModulationState::Insufficient,
+            modulation_reason: Some(BlueBrainKuramotoModulationReason::InsufficientInputGroupBasis),
             diagnostic: BlueBrainKuramotoSynchronyDiagnostic::InsufficientInput,
             coherence_permille: 0,
             selection_hint: None,
@@ -541,6 +569,42 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         BlueBrainKuramotoModulationState::AppliedAdvisoryOnly
     };
 
+    let (diagnostic_class, modulation_reason) = match modulation_state {
+        BlueBrainKuramotoModulationState::AppliedAdvisoryOnly => (
+            BlueBrainKuramotoModulationDiagnosticClass::ModulationAppliedDiagnostic,
+            None,
+        ),
+        BlueBrainKuramotoModulationState::Caveated => (
+            BlueBrainKuramotoModulationDiagnosticClass::ModulationCaveatedDiagnostic,
+            Some(BlueBrainKuramotoModulationReason::CaveatedPartialOrWeakBasis),
+        ),
+        BlueBrainKuramotoModulationState::Insufficient => (
+            BlueBrainKuramotoModulationDiagnosticClass::ModulationInsufficientDiagnostic,
+            Some(BlueBrainKuramotoModulationReason::InsufficientInputGroupBasis),
+        ),
+        BlueBrainKuramotoModulationState::Ignored => (
+            BlueBrainKuramotoModulationDiagnosticClass::ModulationIgnoredDiagnostic,
+            Some(BlueBrainKuramotoModulationReason::IgnoredByRuntimeSelectionContext),
+        ),
+        BlueBrainKuramotoModulationState::NoOp => (
+            BlueBrainKuramotoModulationDiagnosticClass::ModulationNoOpDiagnostic,
+            Some(BlueBrainKuramotoModulationReason::NoOpNeutralDeterministicResult),
+        ),
+        BlueBrainKuramotoModulationState::Blocked => (
+            BlueBrainKuramotoModulationDiagnosticClass::ModulationBlockedDiagnostic,
+            Some(BlueBrainKuramotoModulationReason::BlockedByGuardBoundaryCondition),
+        ),
+        BlueBrainKuramotoModulationState::Unavailable => (
+            BlueBrainKuramotoModulationDiagnosticClass::ModulationUnavailableDiagnostic,
+            Some(BlueBrainKuramotoModulationReason::UnavailableOperationalPreconditions),
+        ),
+        BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath => (
+            BlueBrainKuramotoModulationDiagnosticClass::NonCanonicalInternalOnlyDynamicsDiagnostic,
+            Some(BlueBrainKuramotoModulationReason::NonCanonicalInternalOnlyPath),
+        ),
+    };
+    append_kuramoto_guard_caveats(&mut caveats, modulation_state);
+
     BlueBrainKuramotoModulationResult {
         dynamics_diagnostic_class: if input.non_canonical_internal_only_path {
             BlueBrainDynamicsDiagnosticClass::NonCanonicalInternalOnlyDynamicsDiagnostic
@@ -562,7 +626,9 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
                 _ => BlueBrainDynamicsDiagnosticClass::KuramotoModulationDiagnostic,
             }
         },
+        diagnostic_class,
         modulation_state,
+        modulation_reason,
         diagnostic,
         coherence_permille,
         selection_hint,
@@ -584,6 +650,66 @@ pub fn kuramoto_modulation_state_token(state: BlueBrainKuramotoModulationState) 
         BlueBrainKuramotoModulationState::Blocked => "blocked",
         BlueBrainKuramotoModulationState::Unavailable => "unavailable",
         BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath => {
+            "non_canonical_internal_only_path"
+        }
+    }
+}
+
+pub fn kuramoto_modulation_diagnostic_class_token(
+    class: BlueBrainKuramotoModulationDiagnosticClass,
+) -> &'static str {
+    match class {
+        BlueBrainKuramotoModulationDiagnosticClass::ModulationAppliedDiagnostic => {
+            "modulation_applied_diagnostic"
+        }
+        BlueBrainKuramotoModulationDiagnosticClass::ModulationCaveatedDiagnostic => {
+            "modulation_caveated_diagnostic"
+        }
+        BlueBrainKuramotoModulationDiagnosticClass::ModulationInsufficientDiagnostic => {
+            "modulation_insufficient_diagnostic"
+        }
+        BlueBrainKuramotoModulationDiagnosticClass::ModulationIgnoredDiagnostic => {
+            "modulation_ignored_diagnostic"
+        }
+        BlueBrainKuramotoModulationDiagnosticClass::ModulationNoOpDiagnostic => {
+            "modulation_no_op_diagnostic"
+        }
+        BlueBrainKuramotoModulationDiagnosticClass::ModulationBlockedDiagnostic => {
+            "modulation_blocked_diagnostic"
+        }
+        BlueBrainKuramotoModulationDiagnosticClass::ModulationUnavailableDiagnostic => {
+            "modulation_unavailable_diagnostic"
+        }
+        BlueBrainKuramotoModulationDiagnosticClass::NonCanonicalInternalOnlyDynamicsDiagnostic => {
+            "non_canonical_internal_only_dynamics_diagnostic"
+        }
+    }
+}
+
+pub fn kuramoto_modulation_reason_token(
+    reason: Option<BlueBrainKuramotoModulationReason>,
+) -> &'static str {
+    match reason {
+        None => "none",
+        Some(BlueBrainKuramotoModulationReason::InsufficientInputGroupBasis) => {
+            "insufficient_input_group_basis"
+        }
+        Some(BlueBrainKuramotoModulationReason::CaveatedPartialOrWeakBasis) => {
+            "caveated_partial_or_weak_basis"
+        }
+        Some(BlueBrainKuramotoModulationReason::NoOpNeutralDeterministicResult) => {
+            "no_op_neutral_deterministic_result"
+        }
+        Some(BlueBrainKuramotoModulationReason::IgnoredByRuntimeSelectionContext) => {
+            "ignored_by_runtime_selection_context"
+        }
+        Some(BlueBrainKuramotoModulationReason::BlockedByGuardBoundaryCondition) => {
+            "blocked_by_guard_boundary_condition"
+        }
+        Some(BlueBrainKuramotoModulationReason::UnavailableOperationalPreconditions) => {
+            "unavailable_operational_preconditions"
+        }
+        Some(BlueBrainKuramotoModulationReason::NonCanonicalInternalOnlyPath) => {
             "non_canonical_internal_only_path"
         }
     }
@@ -668,6 +794,24 @@ fn boundary_guard() -> BlueBrainKuramotoBoundaryGuard {
         safety_override_allowed: false,
         policy_decision_allowed: false,
     }
+}
+
+fn append_kuramoto_guard_caveats(
+    caveats: &mut Vec<String>,
+    modulation_state: BlueBrainKuramotoModulationState,
+) {
+    if !matches!(
+        modulation_state,
+        BlueBrainKuramotoModulationState::Blocked
+            | BlueBrainKuramotoModulationState::Unavailable
+            | BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath
+    ) {
+        return;
+    }
+    caveats.push("no_direct_action_allowed".to_string());
+    caveats.push("no_direct_memory_allowed".to_string());
+    caveats.push("no_direct_compute_allowed".to_string());
+    caveats.push("no_safety_override_allowed".to_string());
 }
 
 fn hh_boundary_guard() -> BlueBrainHodgkinHuxleyBoundaryGuard {
@@ -913,6 +1057,10 @@ mod tests {
             ignored.modulation_state,
             BlueBrainKuramotoModulationState::Ignored
         );
+        assert_eq!(
+            ignored.modulation_reason,
+            Some(BlueBrainKuramotoModulationReason::IgnoredByRuntimeSelectionContext)
+        );
 
         let no_op = evaluate_blue_brain_kuramoto_modulation(base_input(
             BlueBrainKuramotoScopeState::DiagnosticOnly,
@@ -920,6 +1068,10 @@ mod tests {
         assert_eq!(
             no_op.modulation_state,
             BlueBrainKuramotoModulationState::NoOp
+        );
+        assert_eq!(
+            no_op.modulation_reason,
+            Some(BlueBrainKuramotoModulationReason::NoOpNeutralDeterministicResult)
         );
 
         let mut blocked = base_input(BlueBrainKuramotoScopeState::RuntimeCaveatModulating);
@@ -977,6 +1129,95 @@ mod tests {
         assert!(tokens.contains(&"blocked"));
         assert!(tokens.contains(&"unavailable"));
         assert!(tokens.contains(&"non_canonical_internal_only_path"));
+    }
+
+    #[test]
+    fn modulation_diagnostic_classes_cover_canonical_kuramoto_feedback_states() {
+        let classes = [
+            BlueBrainKuramotoModulationDiagnosticClass::ModulationAppliedDiagnostic,
+            BlueBrainKuramotoModulationDiagnosticClass::ModulationCaveatedDiagnostic,
+            BlueBrainKuramotoModulationDiagnosticClass::ModulationInsufficientDiagnostic,
+            BlueBrainKuramotoModulationDiagnosticClass::ModulationIgnoredDiagnostic,
+            BlueBrainKuramotoModulationDiagnosticClass::ModulationNoOpDiagnostic,
+            BlueBrainKuramotoModulationDiagnosticClass::ModulationBlockedDiagnostic,
+            BlueBrainKuramotoModulationDiagnosticClass::ModulationUnavailableDiagnostic,
+            BlueBrainKuramotoModulationDiagnosticClass::NonCanonicalInternalOnlyDynamicsDiagnostic,
+        ];
+        let mut tokens: Vec<&str> = classes
+            .into_iter()
+            .map(kuramoto_modulation_diagnostic_class_token)
+            .collect();
+        tokens.sort_unstable();
+        tokens.dedup();
+        assert_eq!(tokens.len(), 8);
+        assert!(tokens.contains(&"modulation_applied_diagnostic"));
+        assert!(tokens.contains(&"modulation_caveated_diagnostic"));
+        assert!(tokens.contains(&"modulation_insufficient_diagnostic"));
+        assert!(tokens.contains(&"modulation_ignored_diagnostic"));
+        assert!(tokens.contains(&"modulation_no_op_diagnostic"));
+        assert!(tokens.contains(&"modulation_blocked_diagnostic"));
+        assert!(tokens.contains(&"modulation_unavailable_diagnostic"));
+        assert!(tokens.contains(&"non_canonical_internal_only_dynamics_diagnostic"));
+    }
+
+    #[test]
+    fn modulation_reason_tokens_cover_canonical_caveat_noop_blocked_and_unavailable_reasons() {
+        let reasons = [
+            None,
+            Some(BlueBrainKuramotoModulationReason::InsufficientInputGroupBasis),
+            Some(BlueBrainKuramotoModulationReason::CaveatedPartialOrWeakBasis),
+            Some(BlueBrainKuramotoModulationReason::NoOpNeutralDeterministicResult),
+            Some(BlueBrainKuramotoModulationReason::IgnoredByRuntimeSelectionContext),
+            Some(BlueBrainKuramotoModulationReason::BlockedByGuardBoundaryCondition),
+            Some(BlueBrainKuramotoModulationReason::UnavailableOperationalPreconditions),
+            Some(BlueBrainKuramotoModulationReason::NonCanonicalInternalOnlyPath),
+        ];
+        let mut tokens: Vec<&str> = reasons
+            .into_iter()
+            .map(kuramoto_modulation_reason_token)
+            .collect();
+        tokens.sort_unstable();
+        tokens.dedup();
+        assert_eq!(tokens.len(), 8);
+        assert!(tokens.contains(&"none"));
+        assert!(tokens.contains(&"insufficient_input_group_basis"));
+        assert!(tokens.contains(&"caveated_partial_or_weak_basis"));
+        assert!(tokens.contains(&"no_op_neutral_deterministic_result"));
+        assert!(tokens.contains(&"ignored_by_runtime_selection_context"));
+        assert!(tokens.contains(&"blocked_by_guard_boundary_condition"));
+        assert!(tokens.contains(&"unavailable_operational_preconditions"));
+        assert!(tokens.contains(&"non_canonical_internal_only_path"));
+    }
+
+    #[test]
+    fn blocked_kuramoto_state_includes_explicit_no_direct_guard_caveats() {
+        let mut blocked = base_input(BlueBrainKuramotoScopeState::RuntimeCaveatModulating);
+        blocked.runtime_posture = BlueBrainKuramotoRuntimePosture::Blocked;
+        let result = evaluate_blue_brain_kuramoto_modulation(blocked);
+        assert_eq!(
+            result.diagnostic_class,
+            BlueBrainKuramotoModulationDiagnosticClass::ModulationBlockedDiagnostic
+        );
+        assert_eq!(
+            result.modulation_reason,
+            Some(BlueBrainKuramotoModulationReason::BlockedByGuardBoundaryCondition)
+        );
+        assert!(result
+            .caveats
+            .iter()
+            .any(|item| item == "no_direct_action_allowed"));
+        assert!(result
+            .caveats
+            .iter()
+            .any(|item| item == "no_direct_memory_allowed"));
+        assert!(result
+            .caveats
+            .iter()
+            .any(|item| item == "no_direct_compute_allowed"));
+        assert!(result
+            .caveats
+            .iter()
+            .any(|item| item == "no_safety_override_allowed"));
     }
 
     fn base_hh_input(

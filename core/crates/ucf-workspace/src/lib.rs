@@ -54,6 +54,8 @@ pub struct WorkspaceSignal {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BrainKuramotoHint {
     pub modulation_state: &'static str,
+    pub diagnostic_class: &'static str,
+    pub reason_tag: &'static str,
     pub runtime_modulation: &'static str,
     pub coherence_permille: u16,
     pub caveat_tag: &'static str,
@@ -401,11 +403,13 @@ impl WorkspaceSignal {
             format!("BRAIN_NEUROMOD_HINT={delta_commit} DA={dopamine} SE={serotonin} NE={norepi} CO={cortisol}");
         if let Some(hint) = kuramoto_hint {
             summary.push_str(&format!(
-                " KURAMOTO_STATE={} KURAMOTO_RUNTIME={} KURAMOTO_COHERENCE={} KURAMOTO_CAVEAT={}",
+                " KURAMOTO_STATE={} KURAMOTO_RUNTIME={} KURAMOTO_COHERENCE={} KURAMOTO_CAVEAT={} KURAMOTO_DIAGNOSTIC={} KURAMOTO_REASON={}",
                 hint.modulation_state,
                 hint.runtime_modulation,
                 hint.coherence_permille,
-                hint.caveat_tag
+                hint.caveat_tag,
+                hint.diagnostic_class,
+                hint.reason_tag
             ));
         }
         let priority = 7000;
@@ -2527,6 +2531,8 @@ mod tests {
             -2,
             Some(BrainKuramotoHint {
                 modulation_state: "caveated",
+                diagnostic_class: "modulation_caveated_diagnostic",
+                reason_tag: "caveated_partial_or_weak_basis",
                 runtime_modulation: "attach_dynamics_caveat",
                 coherence_permille: 640,
                 caveat_tag: "runtime_caveat_posture_present",
@@ -2535,6 +2541,12 @@ mod tests {
         );
         assert_eq!(signal.kind, SignalKind::Brain);
         assert!(signal.summary.contains("KURAMOTO_STATE=caveated"));
+        assert!(signal
+            .summary
+            .contains("KURAMOTO_DIAGNOSTIC=modulation_caveated_diagnostic"));
+        assert!(signal
+            .summary
+            .contains("KURAMOTO_REASON=caveated_partial_or_weak_basis"));
         assert!(signal
             .summary
             .contains("KURAMOTO_RUNTIME=attach_dynamics_caveat"));
