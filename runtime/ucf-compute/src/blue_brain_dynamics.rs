@@ -598,21 +598,6 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         None
     };
 
-    let selection_feedback = match selection_hint {
-        Some(BlueBrainKuramotoSelectionHint::KeepCurrentSelection) => {
-            BlueBrainDynamicsSelectionFeedbackClass::SelectionModulationObserved
-        }
-        Some(_) => BlueBrainDynamicsSelectionFeedbackClass::DynamicsCaveatAttached,
-        None => BlueBrainDynamicsSelectionFeedbackClass::DynamicsIgnoredForCurrentSelection,
-    };
-    let runtime_feedback = match runtime_modulation {
-        Some(BlueBrainKuramotoRuntimeCaveatModulation::NoAdditionalCaveat) => {
-            BlueBrainDynamicsRuntimeFeedbackClass::RuntimeModulationObserved
-        }
-        Some(_) => BlueBrainDynamicsRuntimeFeedbackClass::DynamicsCaveatAttached,
-        None => BlueBrainDynamicsRuntimeFeedbackClass::DynamicsIgnoredForCurrentTransition,
-    };
-
     if matches!(
         diagnostic,
         BlueBrainKuramotoSynchronyDiagnostic::Desynchronized
@@ -713,6 +698,10 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         ),
     };
     append_kuramoto_guard_caveats(&mut caveats, modulation_state);
+    let selection_feedback =
+        selection_feedback_from_modulation_state(modulation_state, selection_hint);
+    let runtime_feedback =
+        runtime_feedback_from_modulation_state(modulation_state, runtime_modulation);
 
     BlueBrainKuramotoModulationResult {
         dynamics_diagnostic_class: if input.non_canonical_internal_only_path {
@@ -903,6 +892,62 @@ fn classify_kuramoto_input_group(group_ref: &str) -> BlueBrainKuramotoInputGroup
             BlueBrainKuramotoInputGroupClass::EvidenceDerivedAdvisoryGroup
         }
         _ => BlueBrainKuramotoInputGroupClass::UnsupportedNonCanonicalInputGroup,
+    }
+}
+
+fn selection_feedback_from_modulation_state(
+    modulation_state: BlueBrainKuramotoModulationState,
+    selection_hint: Option<BlueBrainKuramotoSelectionHint>,
+) -> BlueBrainDynamicsSelectionFeedbackClass {
+    match modulation_state {
+        BlueBrainKuramotoModulationState::Insufficient => {
+            BlueBrainDynamicsSelectionFeedbackClass::DynamicsInsufficientForModulation
+        }
+        BlueBrainKuramotoModulationState::Ignored
+        | BlueBrainKuramotoModulationState::Blocked
+        | BlueBrainKuramotoModulationState::Unavailable
+        | BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath => {
+            BlueBrainDynamicsSelectionFeedbackClass::DynamicsIgnoredForCurrentSelection
+        }
+        BlueBrainKuramotoModulationState::Caveated => {
+            BlueBrainDynamicsSelectionFeedbackClass::DynamicsCaveatAttached
+        }
+        BlueBrainKuramotoModulationState::AppliedAdvisoryOnly
+        | BlueBrainKuramotoModulationState::NoOp => match selection_hint {
+            Some(BlueBrainKuramotoSelectionHint::KeepCurrentSelection) => {
+                BlueBrainDynamicsSelectionFeedbackClass::SelectionModulationObserved
+            }
+            Some(_) => BlueBrainDynamicsSelectionFeedbackClass::DynamicsCaveatAttached,
+            None => BlueBrainDynamicsSelectionFeedbackClass::DynamicsIgnoredForCurrentSelection,
+        },
+    }
+}
+
+fn runtime_feedback_from_modulation_state(
+    modulation_state: BlueBrainKuramotoModulationState,
+    runtime_modulation: Option<BlueBrainKuramotoRuntimeCaveatModulation>,
+) -> BlueBrainDynamicsRuntimeFeedbackClass {
+    match modulation_state {
+        BlueBrainKuramotoModulationState::Insufficient => {
+            BlueBrainDynamicsRuntimeFeedbackClass::DynamicsInsufficientForModulation
+        }
+        BlueBrainKuramotoModulationState::Ignored
+        | BlueBrainKuramotoModulationState::Blocked
+        | BlueBrainKuramotoModulationState::Unavailable
+        | BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath => {
+            BlueBrainDynamicsRuntimeFeedbackClass::DynamicsIgnoredForCurrentTransition
+        }
+        BlueBrainKuramotoModulationState::Caveated => {
+            BlueBrainDynamicsRuntimeFeedbackClass::DynamicsCaveatAttached
+        }
+        BlueBrainKuramotoModulationState::AppliedAdvisoryOnly
+        | BlueBrainKuramotoModulationState::NoOp => match runtime_modulation {
+            Some(BlueBrainKuramotoRuntimeCaveatModulation::NoAdditionalCaveat) => {
+                BlueBrainDynamicsRuntimeFeedbackClass::RuntimeModulationObserved
+            }
+            Some(_) => BlueBrainDynamicsRuntimeFeedbackClass::DynamicsCaveatAttached,
+            None => BlueBrainDynamicsRuntimeFeedbackClass::DynamicsIgnoredForCurrentTransition,
+        },
     }
 }
 
@@ -1400,6 +1445,44 @@ mod tests {
             .caveats
             .iter()
             .any(|item| item == "no_safety_override_allowed"));
+    }
+
+    #[test]
+    fn caveated_kuramoto_state_never_reports_strong_selection_or_runtime_feedback() {
+        let mut input = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        input.runtime_posture = BlueBrainKuramotoRuntimePosture::Caveated;
+        let result = evaluate_blue_brain_kuramoto_modulation(input);
+        assert_eq!(
+            result.modulation_state,
+            BlueBrainKuramotoModulationState::Caveated
+        );
+        assert_eq!(
+            result.selection_feedback,
+            BlueBrainDynamicsSelectionFeedbackClass::DynamicsCaveatAttached
+        );
+        assert_eq!(
+            result.runtime_feedback,
+            BlueBrainDynamicsRuntimeFeedbackClass::DynamicsCaveatAttached
+        );
+    }
+
+    #[test]
+    fn insufficient_kuramoto_state_never_reports_supported_feedback() {
+        let mut input = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        input.phase_nodes.truncate(1);
+        let result = evaluate_blue_brain_kuramoto_modulation(input);
+        assert_eq!(
+            result.modulation_state,
+            BlueBrainKuramotoModulationState::Insufficient
+        );
+        assert_eq!(
+            result.selection_feedback,
+            BlueBrainDynamicsSelectionFeedbackClass::DynamicsInsufficientForModulation
+        );
+        assert_eq!(
+            result.runtime_feedback,
+            BlueBrainDynamicsRuntimeFeedbackClass::DynamicsInsufficientForModulation
+        );
     }
 
     fn base_hh_input(
