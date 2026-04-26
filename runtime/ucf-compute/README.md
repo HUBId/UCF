@@ -223,6 +223,15 @@ For BB12 Prompt 4 readiness sweep and bounded neural-dynamics closure line
 semantics, no-direct-* boundaries, HH/bridge/deferred demarcation, and prioritized BB13 next step), see
 `docs/blue_brain_bb12_bounded_neural_dynamics_closure_serie_bb12_prompt4_v1.md`,
 `runtime/ucf-compute/src/blue_brain_dynamics.rs`, and `core/crates/ucf-router/src/lib.rs`.
+For BB13 Prompt 1 minimal real execution line on top of BB7/BB9 boundary semantics, see
+`docs/blue_brain_minimal_execution_line_serie_bb13_prompt1_v1.md` and
+`runtime/ucf-compute/src/blue_brain_minimal_execution.rs`.
+For BB13 Prompt 2 execution feedback backbind (runtime/selection/memory) over the minimal execution line, see
+`docs/blue_brain_execution_feedback_backbind_serie_bb13_prompt2_v1.md` and
+`blue_brain_execution_feedback_backbind`.
+For BB13 Prompt 3 minimal tool capability surface and canonical allowed-actions scope hardening, see
+`docs/blue_brain_minimal_tool_capability_surface_serie_bb13_prompt3_v1.md`,
+`blue_brain_minimal_capability_scope`, and `execute_blue_brain_minimal_action`.
 
 ## Capability model
 

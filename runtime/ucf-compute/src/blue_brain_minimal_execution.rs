@@ -6,6 +6,7 @@ use crate::reference_map::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainMinimalExecutionAction {
     EmitCanonicalSignal,
+    UnsupportedAction,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,6 +16,7 @@ pub enum BlueBrainMinimalExecutionState {
     ExecutionStarted,
     ExecutionCompleted,
     ExecutionFailed,
+    ExecutionUnsupported,
     ExecutionBlocked,
     ExecutionCancelled,
     ExecutionUnavailable,
@@ -27,8 +29,19 @@ pub enum BlueBrainMinimalExecutionResultBoundary {
     ExecutionRequested,
     ActualExecutionResult,
     FailedExecutionResult,
+    UnsupportedNoResult,
     BlockedNoResult,
     UnavailableExecutionPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMinimalCapabilityScopeClass {
+    AllowedCanonicalAction,
+    AllowedCanonicalToolCall,
+    BlockedAction,
+    UnsupportedAction,
+    UnavailableAction,
+    NonCanonicalInternalOnlyActionPath,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +74,7 @@ pub struct BlueBrainMinimalExecutionReport {
 pub enum BlueBrainExecutionFeedbackClass {
     ExecutionCompletedFeedback,
     ExecutionFailedFeedback,
+    ExecutionUnsupportedFeedback,
     ExecutionCancelledFeedback,
     ExecutionBlockedFeedback,
     ExecutionUnavailableFeedback,
@@ -71,6 +85,7 @@ pub enum BlueBrainExecutionFeedbackClass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainExecutionFailureReasonClass {
     ExecutionPathError,
+    UnsupportedAction,
     CancelledBeforeCompletion,
     NotRequestedPlaceholderOnly,
     SafetyOrBoundaryBlocked,
@@ -85,6 +100,7 @@ pub enum BlueBrainProposalExecutionFeedbackClass {
     ProposalConsumedByExecution,
     ProposalExecutionCompleted,
     ProposalExecutionFailed,
+    ProposalExecutionUnsupported,
     ProposalExecutionCancelled,
     ProposalExecutionBlocked,
     ProposalExecutionUnavailable,
@@ -153,6 +169,12 @@ pub fn blue_brain_execution_feedback_backbind(
                 BlueBrainProposalExecutionFeedbackClass::ProposalExecutionFailed,
                 true,
             ),
+            BlueBrainMinimalExecutionState::ExecutionUnsupported => (
+                BlueBrainExecutionFeedbackClass::ExecutionUnsupportedFeedback,
+                Some(BlueBrainExecutionFailureReasonClass::UnsupportedAction),
+                BlueBrainProposalExecutionFeedbackClass::ProposalExecutionUnsupported,
+                false,
+            ),
             BlueBrainMinimalExecutionState::ExecutionCancelled => (
                 BlueBrainExecutionFeedbackClass::ExecutionCancelledFeedback,
                 Some(BlueBrainExecutionFailureReasonClass::CancelledBeforeCompletion),
@@ -217,24 +239,96 @@ pub fn blue_brain_execution_feedback_backbind(
     }
 }
 
+pub fn blue_brain_minimal_capability_scope(
+    request: &BlueBrainMinimalExecutionRequest,
+) -> BlueBrainMinimalCapabilityScopeClass {
+    if request.internal_only_path {
+        return BlueBrainMinimalCapabilityScopeClass::NonCanonicalInternalOnlyActionPath;
+    }
+
+    if request.action == BlueBrainMinimalExecutionAction::UnsupportedAction {
+        return BlueBrainMinimalCapabilityScopeClass::UnsupportedAction;
+    }
+
+    if request.safety_precheck == BlueBrainSafetyPrecheckClass::Unavailable {
+        return BlueBrainMinimalCapabilityScopeClass::UnavailableAction;
+    }
+
+    if request.handoff_class != BlueBrainFutureActionHandoffClass::FutureActionReady
+        || request.eligibility_class
+            != BlueBrainActionExecutionEligibilityClass::ExecutionEligibleHandoff
+        || matches!(
+            request.safety_precheck,
+            BlueBrainSafetyPrecheckClass::Failed
+                | BlueBrainSafetyPrecheckClass::Blocked
+                | BlueBrainSafetyPrecheckClass::Insufficient
+                | BlueBrainSafetyPrecheckClass::NotApplicable
+        )
+    {
+        return BlueBrainMinimalCapabilityScopeClass::BlockedAction;
+    }
+
+    BlueBrainMinimalCapabilityScopeClass::AllowedCanonicalAction
+}
+
 pub fn execute_blue_brain_minimal_action(
     request: &BlueBrainMinimalExecutionRequest,
 ) -> BlueBrainMinimalExecutionReport {
-    if request.internal_only_path {
-        return BlueBrainMinimalExecutionReport {
-            state: BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath,
-            result_boundary: BlueBrainMinimalExecutionResultBoundary::UnavailableExecutionPath,
-            execution_requested: request.execution_requested,
-            execution_started: false,
-            execution_completed: false,
-            execution_failed: false,
-            executed_action_result: None,
-            error_code: Some("non_canonical_internal_only_execution_path"),
-            notes: vec![
-                "canonical=false",
-                "non-canonical/internal-only execution path is never executable",
-            ],
-        };
+    match blue_brain_minimal_capability_scope(request) {
+        BlueBrainMinimalCapabilityScopeClass::NonCanonicalInternalOnlyActionPath => {
+            return BlueBrainMinimalExecutionReport {
+                state: BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath,
+                result_boundary: BlueBrainMinimalExecutionResultBoundary::UnavailableExecutionPath,
+                execution_requested: request.execution_requested,
+                execution_started: false,
+                execution_completed: false,
+                execution_failed: false,
+                executed_action_result: None,
+                error_code: Some("non_canonical_internal_only_execution_path"),
+                notes: vec![
+                    "canonical=false",
+                    "non-canonical/internal-only execution path is never executable",
+                ],
+            };
+        }
+        BlueBrainMinimalCapabilityScopeClass::UnsupportedAction => {
+            return BlueBrainMinimalExecutionReport {
+                state: BlueBrainMinimalExecutionState::ExecutionUnsupported,
+                result_boundary: BlueBrainMinimalExecutionResultBoundary::UnsupportedNoResult,
+                execution_requested: request.execution_requested,
+                execution_started: false,
+                execution_completed: false,
+                execution_failed: false,
+                executed_action_result: None,
+                error_code: Some("execution_action_unsupported"),
+                notes: vec![
+                    "requested action is outside canonical minimal execution surface",
+                    "unsupported action is not promoted to blocked/unavailable",
+                    "no_action_executed",
+                    "no_tool_result",
+                ],
+            };
+        }
+        BlueBrainMinimalCapabilityScopeClass::UnavailableAction => {
+            return BlueBrainMinimalExecutionReport {
+                state: BlueBrainMinimalExecutionState::ExecutionUnavailable,
+                result_boundary: BlueBrainMinimalExecutionResultBoundary::UnavailableExecutionPath,
+                execution_requested: request.execution_requested,
+                execution_started: false,
+                execution_completed: false,
+                execution_failed: false,
+                executed_action_result: None,
+                error_code: Some("safety_precheck_unavailable"),
+                notes: vec![
+                    "execution subsystem unavailable through safety path",
+                    "no_action_executed",
+                    "no_tool_result",
+                ],
+            };
+        }
+        BlueBrainMinimalCapabilityScopeClass::BlockedAction
+        | BlueBrainMinimalCapabilityScopeClass::AllowedCanonicalToolCall
+        | BlueBrainMinimalCapabilityScopeClass::AllowedCanonicalAction => {}
     }
 
     if request.cancelled {
@@ -294,23 +388,9 @@ pub fn execute_blue_brain_minimal_action(
                 ],
             };
         }
-        BlueBrainSafetyPrecheckClass::Unavailable => {
-            return BlueBrainMinimalExecutionReport {
-                state: BlueBrainMinimalExecutionState::ExecutionUnavailable,
-                result_boundary: BlueBrainMinimalExecutionResultBoundary::UnavailableExecutionPath,
-                execution_requested: request.execution_requested,
-                execution_started: false,
-                execution_completed: false,
-                execution_failed: false,
-                executed_action_result: None,
-                error_code: Some("safety_precheck_unavailable"),
-                notes: vec![
-                    "execution subsystem unavailable through safety path",
-                    "no_action_executed",
-                    "no_tool_result",
-                ],
-            };
-        }
+        BlueBrainSafetyPrecheckClass::Unavailable => unreachable!(
+            "unavailable precheck is classified by blue_brain_minimal_capability_scope"
+        ),
         BlueBrainSafetyPrecheckClass::Insufficient
         | BlueBrainSafetyPrecheckClass::NotApplicable => {
             return BlueBrainMinimalExecutionReport {
@@ -365,6 +445,9 @@ pub fn execute_blue_brain_minimal_action(
 
     let action_token = match request.action {
         BlueBrainMinimalExecutionAction::EmitCanonicalSignal => "emit_canonical_signal",
+        BlueBrainMinimalExecutionAction::UnsupportedAction => {
+            unreachable!("unsupported action is classified by blue_brain_minimal_capability_scope")
+        }
     };
     let result = format!("executed:{action_token}:{}", request.handoff_id.trim());
 
@@ -390,8 +473,9 @@ pub fn execute_blue_brain_minimal_action(
 #[cfg(test)]
 mod tests {
     use super::{
-        blue_brain_execution_feedback_backbind, execute_blue_brain_minimal_action,
-        BlueBrainExecutionFeedbackClass, BlueBrainMinimalExecutionAction,
+        blue_brain_execution_feedback_backbind, blue_brain_minimal_capability_scope,
+        execute_blue_brain_minimal_action, BlueBrainExecutionFeedbackClass,
+        BlueBrainMinimalCapabilityScopeClass, BlueBrainMinimalExecutionAction,
         BlueBrainMinimalExecutionRequest, BlueBrainMinimalExecutionResultBoundary,
         BlueBrainMinimalExecutionState,
     };
@@ -482,6 +566,50 @@ mod tests {
     }
 
     #[test]
+    fn unsupported_vs_blocked_vs_unavailable_vs_non_canonical_stay_distinct() {
+        let mut unsupported = base_request();
+        unsupported.execution_requested = true;
+        unsupported.action = BlueBrainMinimalExecutionAction::UnsupportedAction;
+        assert_eq!(
+            blue_brain_minimal_capability_scope(&unsupported),
+            BlueBrainMinimalCapabilityScopeClass::UnsupportedAction
+        );
+        let unsupported_report = execute_blue_brain_minimal_action(&unsupported);
+        assert_eq!(
+            unsupported_report.state,
+            BlueBrainMinimalExecutionState::ExecutionUnsupported
+        );
+        assert_eq!(
+            unsupported_report.result_boundary,
+            BlueBrainMinimalExecutionResultBoundary::UnsupportedNoResult
+        );
+
+        let mut blocked = base_request();
+        blocked.execution_requested = true;
+        blocked.handoff_class = BlueBrainFutureActionHandoffClass::HandoffBlocked;
+        assert_eq!(
+            blue_brain_minimal_capability_scope(&blocked),
+            BlueBrainMinimalCapabilityScopeClass::BlockedAction
+        );
+
+        let mut unavailable = base_request();
+        unavailable.execution_requested = true;
+        unavailable.safety_precheck = BlueBrainSafetyPrecheckClass::Unavailable;
+        assert_eq!(
+            blue_brain_minimal_capability_scope(&unavailable),
+            BlueBrainMinimalCapabilityScopeClass::UnavailableAction
+        );
+
+        let mut non_canonical = base_request();
+        non_canonical.execution_requested = true;
+        non_canonical.internal_only_path = true;
+        assert_eq!(
+            blue_brain_minimal_capability_scope(&non_canonical),
+            BlueBrainMinimalCapabilityScopeClass::NonCanonicalInternalOnlyActionPath
+        );
+    }
+
+    #[test]
     fn execution_failure_and_cancelled_are_distinct() {
         let mut failed = base_request();
         failed.execution_requested = true;
@@ -548,6 +676,17 @@ mod tests {
         assert_eq!(
             failed_feedback.runtime.class,
             BlueBrainExecutionFeedbackClass::ExecutionFailedFeedback
+        );
+
+        let mut unsupported = base_request();
+        unsupported.execution_requested = true;
+        unsupported.action = BlueBrainMinimalExecutionAction::UnsupportedAction;
+        let unsupported_feedback = blue_brain_execution_feedback_backbind(
+            &execute_blue_brain_minimal_action(&unsupported),
+        );
+        assert_eq!(
+            unsupported_feedback.runtime.class,
+            BlueBrainExecutionFeedbackClass::ExecutionUnsupportedFeedback
         );
 
         let mut cancelled = base_request();

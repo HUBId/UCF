@@ -133,10 +133,11 @@ pub use blue_brain_memory::{
     CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP,
 };
 pub use blue_brain_minimal_execution::{
-    blue_brain_execution_feedback_backbind, execute_blue_brain_minimal_action,
-    BlueBrainExecutionFailureReasonClass, BlueBrainExecutionFeedbackBackbind,
-    BlueBrainExecutionFeedbackClass, BlueBrainExecutionMemoryFeedback,
-    BlueBrainExecutionRuntimeFeedback, BlueBrainExecutionSelectionFeedback,
+    blue_brain_execution_feedback_backbind, blue_brain_minimal_capability_scope,
+    execute_blue_brain_minimal_action, BlueBrainExecutionFailureReasonClass,
+    BlueBrainExecutionFeedbackBackbind, BlueBrainExecutionFeedbackClass,
+    BlueBrainExecutionMemoryFeedback, BlueBrainExecutionRuntimeFeedback,
+    BlueBrainExecutionSelectionFeedback, BlueBrainMinimalCapabilityScopeClass,
     BlueBrainMinimalExecutionAction, BlueBrainMinimalExecutionReport,
     BlueBrainMinimalExecutionRequest, BlueBrainMinimalExecutionResultBoundary,
     BlueBrainMinimalExecutionState, BlueBrainProposalExecutionFeedbackClass,
