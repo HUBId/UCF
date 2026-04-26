@@ -1472,6 +1472,45 @@ mod tests {
     }
 
     #[test]
+    fn placeholder_unsupported_and_non_canonical_are_nonretryable_nonfailure_paths() {
+        let placeholder = execute_blue_brain_minimal_action(&base_request());
+        assert_eq!(
+            placeholder.retry_disposition,
+            BlueBrainExecutionRetryDisposition::RetryNotApplicable
+        );
+        assert_eq!(
+            placeholder.failure_path_class,
+            BlueBrainExecutionFailurePathClass::NotAFailurePath
+        );
+
+        let mut unsupported_request = base_request();
+        unsupported_request.execution_requested = true;
+        unsupported_request.action = BlueBrainMinimalExecutionAction::UnsupportedAction;
+        let unsupported = execute_blue_brain_minimal_action(&unsupported_request);
+        assert_eq!(
+            unsupported.retry_disposition,
+            BlueBrainExecutionRetryDisposition::RetryNotApplicable
+        );
+        assert_eq!(
+            unsupported.failure_path_class,
+            BlueBrainExecutionFailurePathClass::NotAFailurePath
+        );
+
+        let mut non_canonical_request = base_request();
+        non_canonical_request.execution_requested = true;
+        non_canonical_request.internal_only_path = true;
+        let non_canonical = execute_blue_brain_minimal_action(&non_canonical_request);
+        assert_eq!(
+            non_canonical.retry_disposition,
+            BlueBrainExecutionRetryDisposition::RetryNotApplicable
+        );
+        assert_eq!(
+            non_canonical.failure_path_class,
+            BlueBrainExecutionFailurePathClass::NonCanonicalInternalOnlyFailurePath
+        );
+    }
+
+    #[test]
     fn integrity_map_distinguishes_terminal_classes_and_detects_mismatch() {
         let placeholder = execute_blue_brain_minimal_action(&base_request());
         let placeholder_integrity = blue_brain_execution_result_integrity(&placeholder);
