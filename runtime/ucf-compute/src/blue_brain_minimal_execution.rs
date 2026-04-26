@@ -29,9 +29,36 @@ pub enum BlueBrainMinimalExecutionResultBoundary {
     ExecutionRequested,
     ActualExecutionResult,
     FailedExecutionResult,
-    UnsupportedNoResult,
+    CancelledExecutionResult,
     BlockedNoResult,
+    UnsupportedNoResult,
     UnavailableExecutionPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainExecutionResultIntegrityClass {
+    ResultRecordedCanonical,
+    ResultFailedCanonical,
+    ResultCancelledCanonical,
+    ResultBlockedCanonical,
+    ResultUnavailableCanonical,
+    ResultCaveatedCanonical,
+    IntegrityMismatch,
+    NonCanonicalInternalOnlyResultPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainExecutionTransitionClass {
+    PreExecutionBoundary,
+    EnteredExecution,
+    TerminalCompleted,
+    TerminalFailed,
+    TerminalCancelled,
+    TerminalBlocked,
+    TerminalUnavailable,
+    TerminalUnsupported,
+    TerminalNonCanonical,
+    InvalidTransition,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,6 +106,7 @@ pub enum BlueBrainExecutionFeedbackClass {
     ExecutionBlockedFeedback,
     ExecutionUnavailableFeedback,
     ExecutionCaveatedFeedback,
+    EligibilityPlaceholderOnlyFeedback,
     NonCanonicalInternalOnlyExecutionFeedback,
 }
 
@@ -135,6 +163,141 @@ pub struct BlueBrainExecutionFeedbackBackbind {
     pub memory: BlueBrainExecutionMemoryFeedback,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainExecutionResultIntegrity {
+    pub class: BlueBrainExecutionResultIntegrityClass,
+    pub transition: BlueBrainExecutionTransitionClass,
+    pub is_terminal: bool,
+    pub canonical: bool,
+}
+
+pub fn blue_brain_execution_result_integrity(
+    report: &BlueBrainMinimalExecutionReport,
+) -> BlueBrainExecutionResultIntegrity {
+    use BlueBrainExecutionResultIntegrityClass as Integrity;
+    use BlueBrainExecutionTransitionClass as Transition;
+
+    let transition = match report.state {
+        BlueBrainMinimalExecutionState::ExecutionEligibleButNotExecuted => {
+            Transition::PreExecutionBoundary
+        }
+        BlueBrainMinimalExecutionState::ExecutionRequested
+        | BlueBrainMinimalExecutionState::ExecutionStarted => Transition::EnteredExecution,
+        BlueBrainMinimalExecutionState::ExecutionCompleted => Transition::TerminalCompleted,
+        BlueBrainMinimalExecutionState::ExecutionFailed => Transition::TerminalFailed,
+        BlueBrainMinimalExecutionState::ExecutionCancelled => Transition::TerminalCancelled,
+        BlueBrainMinimalExecutionState::ExecutionBlocked => Transition::TerminalBlocked,
+        BlueBrainMinimalExecutionState::ExecutionUnavailable => Transition::TerminalUnavailable,
+        BlueBrainMinimalExecutionState::ExecutionUnsupported => Transition::TerminalUnsupported,
+        BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath => {
+            Transition::TerminalNonCanonical
+        }
+    };
+
+    let class = match report.state {
+        BlueBrainMinimalExecutionState::ExecutionCompleted => {
+            if report
+                .notes
+                .iter()
+                .any(|n| n.contains("caveat") || *n == "execution-caveated")
+            {
+                Integrity::ResultCaveatedCanonical
+            } else {
+                Integrity::ResultRecordedCanonical
+            }
+        }
+        BlueBrainMinimalExecutionState::ExecutionFailed => Integrity::ResultFailedCanonical,
+        BlueBrainMinimalExecutionState::ExecutionCancelled => Integrity::ResultCancelledCanonical,
+        BlueBrainMinimalExecutionState::ExecutionBlocked
+        | BlueBrainMinimalExecutionState::ExecutionEligibleButNotExecuted
+        | BlueBrainMinimalExecutionState::ExecutionRequested
+        | BlueBrainMinimalExecutionState::ExecutionStarted => Integrity::ResultBlockedCanonical,
+        BlueBrainMinimalExecutionState::ExecutionUnavailable
+        | BlueBrainMinimalExecutionState::ExecutionUnsupported => {
+            Integrity::ResultUnavailableCanonical
+        }
+        BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath => {
+            Integrity::NonCanonicalInternalOnlyResultPath
+        }
+    };
+
+    let boundary_matches = matches!(
+        (report.state, report.result_boundary),
+        (
+            BlueBrainMinimalExecutionState::ExecutionEligibleButNotExecuted,
+            BlueBrainMinimalExecutionResultBoundary::PlaceholderOnly,
+        ) | (
+            BlueBrainMinimalExecutionState::ExecutionCompleted,
+            BlueBrainMinimalExecutionResultBoundary::ActualExecutionResult,
+        ) | (
+            BlueBrainMinimalExecutionState::ExecutionFailed,
+            BlueBrainMinimalExecutionResultBoundary::FailedExecutionResult,
+        ) | (
+            BlueBrainMinimalExecutionState::ExecutionCancelled,
+            BlueBrainMinimalExecutionResultBoundary::CancelledExecutionResult,
+        ) | (
+            BlueBrainMinimalExecutionState::ExecutionBlocked,
+            BlueBrainMinimalExecutionResultBoundary::BlockedNoResult,
+        ) | (
+            BlueBrainMinimalExecutionState::ExecutionUnavailable,
+            BlueBrainMinimalExecutionResultBoundary::UnavailableExecutionPath,
+        ) | (
+            BlueBrainMinimalExecutionState::ExecutionUnsupported,
+            BlueBrainMinimalExecutionResultBoundary::UnsupportedNoResult,
+        ) | (
+            BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath,
+            BlueBrainMinimalExecutionResultBoundary::UnavailableExecutionPath,
+        )
+    );
+
+    let lifecycle_matches = match report.state {
+        BlueBrainMinimalExecutionState::ExecutionCompleted => {
+            report.execution_started && report.execution_completed && !report.execution_failed
+        }
+        BlueBrainMinimalExecutionState::ExecutionFailed => {
+            report.execution_started && !report.execution_completed && report.execution_failed
+        }
+        BlueBrainMinimalExecutionState::ExecutionCancelled => {
+            !report.execution_started && !report.execution_completed && !report.execution_failed
+        }
+        BlueBrainMinimalExecutionState::ExecutionBlocked
+        | BlueBrainMinimalExecutionState::ExecutionUnavailable
+        | BlueBrainMinimalExecutionState::ExecutionUnsupported
+        | BlueBrainMinimalExecutionState::ExecutionEligibleButNotExecuted
+        | BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath => {
+            !report.execution_started && !report.execution_completed && !report.execution_failed
+        }
+        BlueBrainMinimalExecutionState::ExecutionRequested
+        | BlueBrainMinimalExecutionState::ExecutionStarted => true,
+    };
+
+    let result_matches = match report.state {
+        BlueBrainMinimalExecutionState::ExecutionCompleted => {
+            report.executed_action_result.is_some()
+        }
+        _ => report.executed_action_result.is_none(),
+    };
+
+    if !boundary_matches || !lifecycle_matches || !result_matches {
+        return BlueBrainExecutionResultIntegrity {
+            class: Integrity::IntegrityMismatch,
+            transition: Transition::InvalidTransition,
+            is_terminal: true,
+            canonical: false,
+        };
+    }
+
+    BlueBrainExecutionResultIntegrity {
+        class,
+        transition,
+        is_terminal: !matches!(
+            transition,
+            Transition::PreExecutionBoundary | Transition::EnteredExecution
+        ),
+        canonical: !matches!(class, Integrity::NonCanonicalInternalOnlyResultPath),
+    }
+}
+
 pub fn blue_brain_execution_feedback_backbind(
     report: &BlueBrainMinimalExecutionReport,
 ) -> BlueBrainExecutionFeedbackBackbind {
@@ -188,7 +351,7 @@ pub fn blue_brain_execution_feedback_backbind(
                 false,
             ),
             BlueBrainMinimalExecutionState::ExecutionEligibleButNotExecuted => (
-                BlueBrainExecutionFeedbackClass::ExecutionBlockedFeedback,
+                BlueBrainExecutionFeedbackClass::EligibilityPlaceholderOnlyFeedback,
                 Some(BlueBrainExecutionFailureReasonClass::NotRequestedPlaceholderOnly),
                 BlueBrainProposalExecutionFeedbackClass::ProposalNotConsumedByExecution,
                 false,
@@ -334,7 +497,7 @@ pub fn execute_blue_brain_minimal_action(
     if request.cancelled {
         return BlueBrainMinimalExecutionReport {
             state: BlueBrainMinimalExecutionState::ExecutionCancelled,
-            result_boundary: BlueBrainMinimalExecutionResultBoundary::ExecutionRequested,
+            result_boundary: BlueBrainMinimalExecutionResultBoundary::CancelledExecutionResult,
             execution_requested: request.execution_requested,
             execution_started: false,
             execution_completed: false,
@@ -473,11 +636,12 @@ pub fn execute_blue_brain_minimal_action(
 #[cfg(test)]
 mod tests {
     use super::{
-        blue_brain_execution_feedback_backbind, blue_brain_minimal_capability_scope,
-        execute_blue_brain_minimal_action, BlueBrainExecutionFeedbackClass,
-        BlueBrainMinimalCapabilityScopeClass, BlueBrainMinimalExecutionAction,
-        BlueBrainMinimalExecutionRequest, BlueBrainMinimalExecutionResultBoundary,
-        BlueBrainMinimalExecutionState,
+        blue_brain_execution_feedback_backbind, blue_brain_execution_result_integrity,
+        blue_brain_minimal_capability_scope, execute_blue_brain_minimal_action,
+        BlueBrainExecutionFeedbackClass, BlueBrainExecutionResultIntegrityClass,
+        BlueBrainExecutionTransitionClass, BlueBrainMinimalCapabilityScopeClass,
+        BlueBrainMinimalExecutionAction, BlueBrainMinimalExecutionRequest,
+        BlueBrainMinimalExecutionResultBoundary, BlueBrainMinimalExecutionState,
     };
     use crate::reference_map::{
         BlueBrainActionExecutionEligibilityClass, BlueBrainFutureActionHandoffClass,
@@ -635,7 +799,7 @@ mod tests {
         );
         assert_eq!(
             cancelled_report.result_boundary,
-            BlueBrainMinimalExecutionResultBoundary::ExecutionRequested
+            BlueBrainMinimalExecutionResultBoundary::CancelledExecutionResult
         );
         assert!(!cancelled_report.execution_started);
     }
@@ -704,7 +868,7 @@ mod tests {
         );
         assert_eq!(
             blocked_feedback.runtime.class,
-            BlueBrainExecutionFeedbackClass::ExecutionBlockedFeedback
+            BlueBrainExecutionFeedbackClass::EligibilityPlaceholderOnlyFeedback
         );
 
         let mut unavailable = base_request();
@@ -761,7 +925,7 @@ mod tests {
         );
         assert_eq!(
             report.result_boundary,
-            BlueBrainMinimalExecutionResultBoundary::ExecutionRequested
+            BlueBrainMinimalExecutionResultBoundary::CancelledExecutionResult
         );
         assert!(!report.execution_failed);
         assert!(!report.execution_started);
@@ -772,5 +936,65 @@ mod tests {
             BlueBrainExecutionFeedbackClass::ExecutionCancelledFeedback
         );
         assert!(!feedback.selection.proposal_consumed_by_execution);
+    }
+
+    #[test]
+    fn integrity_map_distinguishes_terminal_classes_and_detects_mismatch() {
+        let placeholder = execute_blue_brain_minimal_action(&base_request());
+        let placeholder_integrity = blue_brain_execution_result_integrity(&placeholder);
+        assert_eq!(
+            placeholder_integrity.class,
+            BlueBrainExecutionResultIntegrityClass::ResultBlockedCanonical
+        );
+        assert_eq!(
+            placeholder_integrity.transition,
+            BlueBrainExecutionTransitionClass::PreExecutionBoundary
+        );
+
+        let mut completed = base_request();
+        completed.execution_requested = true;
+        let completed_integrity =
+            blue_brain_execution_result_integrity(&execute_blue_brain_minimal_action(&completed));
+        assert_eq!(
+            completed_integrity.class,
+            BlueBrainExecutionResultIntegrityClass::ResultRecordedCanonical
+        );
+        assert_eq!(
+            completed_integrity.transition,
+            BlueBrainExecutionTransitionClass::TerminalCompleted
+        );
+
+        let mut cancelled = base_request();
+        cancelled.execution_requested = true;
+        cancelled.cancelled = true;
+        let cancelled_integrity =
+            blue_brain_execution_result_integrity(&execute_blue_brain_minimal_action(&cancelled));
+        assert_eq!(
+            cancelled_integrity.class,
+            BlueBrainExecutionResultIntegrityClass::ResultCancelledCanonical
+        );
+
+        let mut unavailable = base_request();
+        unavailable.execution_requested = true;
+        unavailable.safety_precheck = BlueBrainSafetyPrecheckClass::Unavailable;
+        let unavailable_integrity =
+            blue_brain_execution_result_integrity(&execute_blue_brain_minimal_action(&unavailable));
+        assert_eq!(
+            unavailable_integrity.class,
+            BlueBrainExecutionResultIntegrityClass::ResultUnavailableCanonical
+        );
+
+        let mut mismatch = execute_blue_brain_minimal_action(&completed);
+        mismatch.execution_completed = false;
+        let mismatch_integrity = blue_brain_execution_result_integrity(&mismatch);
+        assert_eq!(
+            mismatch_integrity.class,
+            BlueBrainExecutionResultIntegrityClass::IntegrityMismatch
+        );
+        assert_eq!(
+            mismatch_integrity.transition,
+            BlueBrainExecutionTransitionClass::InvalidTransition
+        );
+        assert!(!mismatch_integrity.canonical);
     }
 }

@@ -237,6 +237,11 @@ For BB13 Prompt 4 readiness sweep and minimal real execution closure line
 strict no-direct-* guards, compute-core maintenance reaffirmation, and prioritized BB14 direction), see
 `docs/blue_brain_bb13_readiness_sweep_serie_bb13_prompt4_v1.md` and
 `runtime/ucf-compute/src/blue_brain_minimal_execution.rs`.
+For BB14 Prompt 1 execution hardening / result-integrity consolidation on the minimal real execution path
+(canonical result-integrity map, deterministic transition/terminal semantics, placeholder/eligibility/result split hardening,
+and safety+allowed-action integrity binding without platform expansion), see
+`docs/blue_brain_execution_result_integrity_hardening_serie_bb14_prompt1_v1.md` and
+`runtime/ucf-compute/src/blue_brain_minimal_execution.rs`.
 
 ## Capability model
 
