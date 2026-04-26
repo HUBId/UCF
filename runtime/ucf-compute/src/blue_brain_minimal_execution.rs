@@ -728,4 +728,49 @@ mod tests {
         assert!(!feedback.selection.automatic_next_proposal_generation);
         assert!(!feedback.memory.automatic_memory_commit_performed);
     }
+
+    #[test]
+    fn placeholder_eligibility_is_not_execution_or_failed_result() {
+        let report = execute_blue_brain_minimal_action(&base_request());
+        assert_eq!(
+            report.state,
+            BlueBrainMinimalExecutionState::ExecutionEligibleButNotExecuted
+        );
+        assert_eq!(
+            report.result_boundary,
+            BlueBrainMinimalExecutionResultBoundary::PlaceholderOnly
+        );
+        assert!(!report.execution_started);
+        assert!(!report.execution_failed);
+        assert!(report.executed_action_result.is_none());
+
+        let feedback = blue_brain_execution_feedback_backbind(&report);
+        assert!(feedback.runtime.sees_placeholder_only);
+        assert!(!feedback.runtime.sees_actual_execution_result);
+    }
+
+    #[test]
+    fn cancelled_is_not_failed_and_not_consumed_by_execution() {
+        let mut request = base_request();
+        request.execution_requested = true;
+        request.cancelled = true;
+        let report = execute_blue_brain_minimal_action(&request);
+        assert_eq!(
+            report.state,
+            BlueBrainMinimalExecutionState::ExecutionCancelled
+        );
+        assert_eq!(
+            report.result_boundary,
+            BlueBrainMinimalExecutionResultBoundary::ExecutionRequested
+        );
+        assert!(!report.execution_failed);
+        assert!(!report.execution_started);
+
+        let feedback = blue_brain_execution_feedback_backbind(&report);
+        assert_eq!(
+            feedback.runtime.class,
+            BlueBrainExecutionFeedbackClass::ExecutionCancelledFeedback
+        );
+        assert!(!feedback.selection.proposal_consumed_by_execution);
+    }
 }
