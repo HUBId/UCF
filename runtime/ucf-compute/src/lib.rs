@@ -45,6 +45,7 @@ use world_model::StageQuality;
 
 pub mod backend_pack;
 pub mod backends;
+pub mod blue_brain_combined_retrieval;
 pub mod blue_brain_dynamics;
 pub mod blue_brain_memory;
 pub mod blue_brain_minimal_execution;
@@ -97,6 +98,11 @@ pub use backends::{
     build_backend, build_canonical_production_backend, build_onboarding_reference_backend,
     build_service_compute_backend, ComputeBackendConfig, ComputeBackendKind,
     CANONICAL_ONBOARDING_BACKEND, CANONICAL_ONBOARDING_PACK,
+};
+pub use blue_brain_combined_retrieval::{
+    blue_brain_build_combined_retrieval_basis, BlueBrainCombinedReferenceStatus,
+    BlueBrainCombinedRetrievalBasis, BlueBrainCombinedRetrievalInput,
+    BlueBrainRetrievalConsolidationCandidateClass,
 };
 pub use blue_brain_dynamics::{
     evaluate_blue_brain_hodgkin_huxley_diagnostic, evaluate_blue_brain_kuramoto_modulation,
