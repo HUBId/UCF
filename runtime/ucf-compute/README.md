@@ -232,6 +232,11 @@ For BB13 Prompt 2 execution feedback backbind (runtime/selection/memory) over th
 For BB13 Prompt 3 minimal tool capability surface and canonical allowed-actions scope hardening, see
 `docs/blue_brain_minimal_tool_capability_surface_serie_bb13_prompt3_v1.md`,
 `blue_brain_minimal_capability_scope`, and `execute_blue_brain_minimal_action`.
+For BB13 Prompt 4 readiness sweep and minimal real execution closure line
+(closure matrix, explicit minimal operative execution scope, canonical eligibility/safety/execution/result/capability boundaries,
+strict no-direct-* guards, compute-core maintenance reaffirmation, and prioritized BB14 direction), see
+`docs/blue_brain_bb13_readiness_sweep_serie_bb13_prompt4_v1.md` and
+`runtime/ucf-compute/src/blue_brain_minimal_execution.rs`.
 
 ## Capability model
 
