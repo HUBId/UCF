@@ -24,6 +24,32 @@ pub enum BlueBrainMinimalExecutionState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainExecutionOutcomeClass {
+    ExecutionCompleted,
+    ExecutionBlocked,
+    ExecutionUnavailable,
+    ExecutionFailed,
+    ExecutionCancelled,
+    ExecutionUnsupported,
+    ExecutionPlaceholderOnly,
+    NonCanonicalInternalOnlyPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainExecutionRetryDisposition {
+    RetryableFailure,
+    NonRetryableFailure,
+    RetryNotApplicable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainExecutionFailurePathClass {
+    CanonicalFailurePath,
+    NonCanonicalInternalOnlyFailurePath,
+    NotAFailurePath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainMinimalExecutionResultBoundary {
     PlaceholderOnly,
     ExecutionRequested,
@@ -74,6 +100,9 @@ pub struct BlueBrainMinimalExecutionTraceCore {
     pub eligibility_class: BlueBrainActionExecutionEligibilityClass,
     pub safety_precheck: BlueBrainSafetyPrecheckClass,
     pub state: BlueBrainMinimalExecutionState,
+    pub outcome_class: BlueBrainExecutionOutcomeClass,
+    pub retry_disposition: BlueBrainExecutionRetryDisposition,
+    pub failure_path_class: BlueBrainExecutionFailurePathClass,
     pub result_boundary: BlueBrainMinimalExecutionResultBoundary,
 }
 
@@ -124,6 +153,7 @@ pub struct BlueBrainMinimalExecutionRequest {
     pub cancelled: bool,
     pub internal_only_path: bool,
     pub force_execution_failure: bool,
+    pub force_nonretryable_failure: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,6 +161,9 @@ pub struct BlueBrainMinimalExecutionReport {
     pub trace_core: BlueBrainMinimalExecutionTraceCore,
     pub references: BlueBrainExecutionReferenceMap,
     pub state: BlueBrainMinimalExecutionState,
+    pub outcome_class: BlueBrainExecutionOutcomeClass,
+    pub retry_disposition: BlueBrainExecutionRetryDisposition,
+    pub failure_path_class: BlueBrainExecutionFailurePathClass,
     pub result_boundary: BlueBrainMinimalExecutionResultBoundary,
     pub execution_requested: bool,
     pub execution_started: bool,
@@ -184,6 +217,7 @@ pub struct BlueBrainExecutionRuntimeFeedback {
     pub reason: Option<BlueBrainExecutionFailureReasonClass>,
     pub sees_actual_execution_result: bool,
     pub sees_placeholder_only: bool,
+    pub retry_disposition: BlueBrainExecutionRetryDisposition,
     pub canonical_result_reference: Option<String>,
 }
 
@@ -555,6 +589,7 @@ pub fn blue_brain_execution_feedback_backbind(
             reason,
             sees_actual_execution_result,
             sees_placeholder_only,
+            retry_disposition: report.retry_disposition,
             canonical_result_reference: report
                 .references
                 .execution_result_reference
@@ -628,11 +663,19 @@ pub fn execute_blue_brain_minimal_action(
                     eligibility_class: request.eligibility_class,
                     safety_precheck: request.safety_precheck,
                     state: BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath,
+                    outcome_class: BlueBrainExecutionOutcomeClass::NonCanonicalInternalOnlyPath,
+                    retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+                    failure_path_class:
+                        BlueBrainExecutionFailurePathClass::NonCanonicalInternalOnlyFailurePath,
                     result_boundary:
                         BlueBrainMinimalExecutionResultBoundary::UnavailableExecutionPath,
                 },
                 references: empty_reference_map(request),
                 state: BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath,
+                outcome_class: BlueBrainExecutionOutcomeClass::NonCanonicalInternalOnlyPath,
+                retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+                failure_path_class:
+                    BlueBrainExecutionFailurePathClass::NonCanonicalInternalOnlyFailurePath,
                 result_boundary: BlueBrainMinimalExecutionResultBoundary::UnavailableExecutionPath,
                 execution_requested: request.execution_requested,
                 execution_started: false,
@@ -656,10 +699,16 @@ pub fn execute_blue_brain_minimal_action(
                     eligibility_class: request.eligibility_class,
                     safety_precheck: request.safety_precheck,
                     state: BlueBrainMinimalExecutionState::ExecutionUnsupported,
+                    outcome_class: BlueBrainExecutionOutcomeClass::ExecutionUnsupported,
+                    retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+                    failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
                     result_boundary: BlueBrainMinimalExecutionResultBoundary::UnsupportedNoResult,
                 },
                 references: empty_reference_map(request),
                 state: BlueBrainMinimalExecutionState::ExecutionUnsupported,
+                outcome_class: BlueBrainExecutionOutcomeClass::ExecutionUnsupported,
+                retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+                failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
                 result_boundary: BlueBrainMinimalExecutionResultBoundary::UnsupportedNoResult,
                 execution_requested: request.execution_requested,
                 execution_started: false,
@@ -685,11 +734,17 @@ pub fn execute_blue_brain_minimal_action(
                     eligibility_class: request.eligibility_class,
                     safety_precheck: request.safety_precheck,
                     state: BlueBrainMinimalExecutionState::ExecutionUnavailable,
+                    outcome_class: BlueBrainExecutionOutcomeClass::ExecutionUnavailable,
+                    retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+                    failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
                     result_boundary:
                         BlueBrainMinimalExecutionResultBoundary::UnavailableExecutionPath,
                 },
                 references: empty_reference_map(request),
                 state: BlueBrainMinimalExecutionState::ExecutionUnavailable,
+                outcome_class: BlueBrainExecutionOutcomeClass::ExecutionUnavailable,
+                retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+                failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
                 result_boundary: BlueBrainMinimalExecutionResultBoundary::UnavailableExecutionPath,
                 execution_requested: request.execution_requested,
                 execution_started: false,
@@ -719,10 +774,16 @@ pub fn execute_blue_brain_minimal_action(
                 eligibility_class: request.eligibility_class,
                 safety_precheck: request.safety_precheck,
                 state: BlueBrainMinimalExecutionState::ExecutionCancelled,
+                outcome_class: BlueBrainExecutionOutcomeClass::ExecutionCancelled,
+                retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+                failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
                 result_boundary: BlueBrainMinimalExecutionResultBoundary::CancelledExecutionResult,
             },
             references: empty_reference_map(request),
             state: BlueBrainMinimalExecutionState::ExecutionCancelled,
+            outcome_class: BlueBrainExecutionOutcomeClass::ExecutionCancelled,
+            retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+            failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
             result_boundary: BlueBrainMinimalExecutionResultBoundary::CancelledExecutionResult,
             execution_requested: request.execution_requested,
             execution_started: false,
@@ -751,10 +812,16 @@ pub fn execute_blue_brain_minimal_action(
                 eligibility_class: request.eligibility_class,
                 safety_precheck: request.safety_precheck,
                 state: BlueBrainMinimalExecutionState::ExecutionBlocked,
+                outcome_class: BlueBrainExecutionOutcomeClass::ExecutionBlocked,
+                retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+                failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
                 result_boundary: BlueBrainMinimalExecutionResultBoundary::BlockedNoResult,
             },
             references: empty_reference_map(request),
             state: BlueBrainMinimalExecutionState::ExecutionBlocked,
+            outcome_class: BlueBrainExecutionOutcomeClass::ExecutionBlocked,
+            retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+            failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
             result_boundary: BlueBrainMinimalExecutionResultBoundary::BlockedNoResult,
             execution_requested: request.execution_requested,
             execution_started: false,
@@ -781,10 +848,16 @@ pub fn execute_blue_brain_minimal_action(
                     eligibility_class: request.eligibility_class,
                     safety_precheck: request.safety_precheck,
                     state: BlueBrainMinimalExecutionState::ExecutionBlocked,
+                    outcome_class: BlueBrainExecutionOutcomeClass::ExecutionBlocked,
+                    retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+                    failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
                     result_boundary: BlueBrainMinimalExecutionResultBoundary::BlockedNoResult,
                 },
                 references: empty_reference_map(request),
                 state: BlueBrainMinimalExecutionState::ExecutionBlocked,
+                outcome_class: BlueBrainExecutionOutcomeClass::ExecutionBlocked,
+                retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+                failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
                 result_boundary: BlueBrainMinimalExecutionResultBoundary::BlockedNoResult,
                 execution_requested: request.execution_requested,
                 execution_started: false,
@@ -813,10 +886,16 @@ pub fn execute_blue_brain_minimal_action(
                     eligibility_class: request.eligibility_class,
                     safety_precheck: request.safety_precheck,
                     state: BlueBrainMinimalExecutionState::ExecutionBlocked,
+                    outcome_class: BlueBrainExecutionOutcomeClass::ExecutionBlocked,
+                    retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+                    failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
                     result_boundary: BlueBrainMinimalExecutionResultBoundary::BlockedNoResult,
                 },
                 references: empty_reference_map(request),
                 state: BlueBrainMinimalExecutionState::ExecutionBlocked,
+                outcome_class: BlueBrainExecutionOutcomeClass::ExecutionBlocked,
+                retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+                failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
                 result_boundary: BlueBrainMinimalExecutionResultBoundary::BlockedNoResult,
                 execution_requested: request.execution_requested,
                 execution_started: false,
@@ -844,10 +923,16 @@ pub fn execute_blue_brain_minimal_action(
                 eligibility_class: request.eligibility_class,
                 safety_precheck: request.safety_precheck,
                 state: BlueBrainMinimalExecutionState::ExecutionEligibleButNotExecuted,
+                outcome_class: BlueBrainExecutionOutcomeClass::ExecutionPlaceholderOnly,
+                retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+                failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
                 result_boundary: BlueBrainMinimalExecutionResultBoundary::PlaceholderOnly,
             },
             references: empty_reference_map(request),
             state: BlueBrainMinimalExecutionState::ExecutionEligibleButNotExecuted,
+            outcome_class: BlueBrainExecutionOutcomeClass::ExecutionPlaceholderOnly,
+            retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+            failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
             result_boundary: BlueBrainMinimalExecutionResultBoundary::PlaceholderOnly,
             execution_requested: false,
             execution_started: false,
@@ -865,6 +950,11 @@ pub fn execute_blue_brain_minimal_action(
     }
 
     if request.force_execution_failure {
+        let retry_disposition = if request.force_nonretryable_failure {
+            BlueBrainExecutionRetryDisposition::NonRetryableFailure
+        } else {
+            BlueBrainExecutionRetryDisposition::RetryableFailure
+        };
         let mut report = BlueBrainMinimalExecutionReport {
             trace_core: BlueBrainMinimalExecutionTraceCore {
                 canonical_action: request.action,
@@ -872,10 +962,16 @@ pub fn execute_blue_brain_minimal_action(
                 eligibility_class: request.eligibility_class,
                 safety_precheck: request.safety_precheck,
                 state: BlueBrainMinimalExecutionState::ExecutionFailed,
+                outcome_class: BlueBrainExecutionOutcomeClass::ExecutionFailed,
+                retry_disposition,
+                failure_path_class: BlueBrainExecutionFailurePathClass::CanonicalFailurePath,
                 result_boundary: BlueBrainMinimalExecutionResultBoundary::FailedExecutionResult,
             },
             references: empty_reference_map(request),
             state: BlueBrainMinimalExecutionState::ExecutionFailed,
+            outcome_class: BlueBrainExecutionOutcomeClass::ExecutionFailed,
+            retry_disposition,
+            failure_path_class: BlueBrainExecutionFailurePathClass::CanonicalFailurePath,
             result_boundary: BlueBrainMinimalExecutionResultBoundary::FailedExecutionResult,
             execution_requested: true,
             execution_started: true,
@@ -883,7 +979,16 @@ pub fn execute_blue_brain_minimal_action(
             execution_failed: true,
             executed_action_result: None,
             error_code: Some("minimal_execution_failed"),
-            notes: vec!["execution-started", "execution-failed", "no_memory_commit"],
+            notes: vec![
+                "execution-started",
+                "execution-failed",
+                if request.force_nonretryable_failure {
+                    "failure-nonretryable"
+                } else {
+                    "failure-retryable"
+                },
+                "no_memory_commit",
+            ],
         };
         report.references = build_reference_map(request, &report);
         return report;
@@ -904,10 +1009,16 @@ pub fn execute_blue_brain_minimal_action(
             eligibility_class: request.eligibility_class,
             safety_precheck: request.safety_precheck,
             state: BlueBrainMinimalExecutionState::ExecutionCompleted,
+            outcome_class: BlueBrainExecutionOutcomeClass::ExecutionCompleted,
+            retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+            failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
             result_boundary: BlueBrainMinimalExecutionResultBoundary::ActualExecutionResult,
         },
         references: empty_reference_map(request),
         state: BlueBrainMinimalExecutionState::ExecutionCompleted,
+        outcome_class: BlueBrainExecutionOutcomeClass::ExecutionCompleted,
+        retry_disposition: BlueBrainExecutionRetryDisposition::RetryNotApplicable,
+        failure_path_class: BlueBrainExecutionFailurePathClass::NotAFailurePath,
         result_boundary: BlueBrainMinimalExecutionResultBoundary::ActualExecutionResult,
         execution_requested: true,
         execution_started: true,
@@ -968,8 +1079,9 @@ mod tests {
     use super::{
         blue_brain_execution_feedback_backbind, blue_brain_execution_result_integrity,
         blue_brain_minimal_capability_scope, execute_blue_brain_minimal_action,
-        BlueBrainExecutionFeedbackClass, BlueBrainExecutionReferenceClass,
-        BlueBrainExecutionResultIntegrityClass, BlueBrainExecutionTransitionClass,
+        BlueBrainExecutionFailurePathClass, BlueBrainExecutionFeedbackClass,
+        BlueBrainExecutionReferenceClass, BlueBrainExecutionResultIntegrityClass,
+        BlueBrainExecutionRetryDisposition, BlueBrainExecutionTransitionClass,
         BlueBrainMinimalCapabilityScopeClass, BlueBrainMinimalExecutionAction,
         BlueBrainMinimalExecutionRequest, BlueBrainMinimalExecutionResultBoundary,
         BlueBrainMinimalExecutionState,
@@ -990,6 +1102,7 @@ mod tests {
             cancelled: false,
             internal_only_path: false,
             force_execution_failure: false,
+            force_nonretryable_failure: false,
         }
     }
 
@@ -1023,6 +1136,10 @@ mod tests {
         );
         assert!(report.execution_started);
         assert!(report.execution_completed);
+        assert_eq!(
+            report.retry_disposition,
+            BlueBrainExecutionRetryDisposition::RetryNotApplicable
+        );
         assert_eq!(
             report.executed_action_result.as_deref(),
             Some("executed:emit_canonical_signal:handoff-42")
@@ -1119,6 +1236,10 @@ mod tests {
             BlueBrainMinimalExecutionResultBoundary::FailedExecutionResult
         );
         assert!(failed_report.execution_started);
+        assert_eq!(
+            failed_report.retry_disposition,
+            BlueBrainExecutionRetryDisposition::RetryableFailure
+        );
 
         let mut cancelled = base_request();
         cancelled.execution_requested = true;
@@ -1133,6 +1254,10 @@ mod tests {
             BlueBrainMinimalExecutionResultBoundary::CancelledExecutionResult
         );
         assert!(!cancelled_report.execution_started);
+        assert_eq!(
+            cancelled_report.retry_disposition,
+            BlueBrainExecutionRetryDisposition::RetryNotApplicable
+        );
     }
 
     #[test]
@@ -1275,6 +1400,75 @@ mod tests {
             BlueBrainExecutionFeedbackClass::ExecutionCancelledFeedback
         );
         assert!(!feedback.selection.proposal_consumed_by_execution);
+        assert_eq!(
+            feedback.runtime.retry_disposition,
+            BlueBrainExecutionRetryDisposition::RetryNotApplicable
+        );
+    }
+
+    #[test]
+    fn retry_boundary_distinguishes_retryable_and_nonretryable_failures() {
+        let mut retryable = base_request();
+        retryable.execution_requested = true;
+        retryable.force_execution_failure = true;
+        let retryable_report = execute_blue_brain_minimal_action(&retryable);
+        assert_eq!(
+            retryable_report.retry_disposition,
+            BlueBrainExecutionRetryDisposition::RetryableFailure
+        );
+        assert_eq!(
+            retryable_report.failure_path_class,
+            BlueBrainExecutionFailurePathClass::CanonicalFailurePath
+        );
+
+        let mut nonretryable = retryable;
+        nonretryable.force_nonretryable_failure = true;
+        let nonretryable_report = execute_blue_brain_minimal_action(&nonretryable);
+        assert_eq!(
+            nonretryable_report.retry_disposition,
+            BlueBrainExecutionRetryDisposition::NonRetryableFailure
+        );
+        assert!(nonretryable_report.notes.contains(&"failure-nonretryable"));
+    }
+
+    #[test]
+    fn blocked_unavailable_and_cancelled_are_retry_not_applicable() {
+        let mut blocked_request = base_request();
+        blocked_request.handoff_class = BlueBrainFutureActionHandoffClass::HandoffBlocked;
+        let blocked = execute_blue_brain_minimal_action(&blocked_request);
+        assert_eq!(
+            blocked.retry_disposition,
+            BlueBrainExecutionRetryDisposition::RetryNotApplicable
+        );
+        assert_eq!(
+            blocked.failure_path_class,
+            BlueBrainExecutionFailurePathClass::NotAFailurePath
+        );
+
+        let mut unavailable_request = base_request();
+        unavailable_request.safety_precheck = BlueBrainSafetyPrecheckClass::Unavailable;
+        let unavailable = execute_blue_brain_minimal_action(&unavailable_request);
+        assert_eq!(
+            unavailable.retry_disposition,
+            BlueBrainExecutionRetryDisposition::RetryNotApplicable
+        );
+        assert_eq!(
+            unavailable.failure_path_class,
+            BlueBrainExecutionFailurePathClass::NotAFailurePath
+        );
+
+        let mut cancelled_request = base_request();
+        cancelled_request.execution_requested = true;
+        cancelled_request.cancelled = true;
+        let cancelled = execute_blue_brain_minimal_action(&cancelled_request);
+        assert_eq!(
+            cancelled.retry_disposition,
+            BlueBrainExecutionRetryDisposition::RetryNotApplicable
+        );
+        assert_eq!(
+            cancelled.failure_path_class,
+            BlueBrainExecutionFailurePathClass::NotAFailurePath
+        );
     }
 
     #[test]
