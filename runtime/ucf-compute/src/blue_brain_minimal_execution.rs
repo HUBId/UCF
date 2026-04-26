@@ -36,6 +36,48 @@ pub enum BlueBrainMinimalExecutionResultBoundary {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainExecutionReferenceClass {
+    ExecutionRequestReference,
+    ExecutionResultReference,
+    FailureResultReference,
+    CancellationResultReference,
+    BlockedOrUnavailableReference,
+    PlaceholderReference,
+    EligibilityReference,
+    NonCanonicalInternalOnlyReferencePath,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlueBrainExecutionReference {
+    pub class: BlueBrainExecutionReferenceClass,
+    pub path: String,
+    pub terminal: bool,
+    pub canonical: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlueBrainExecutionReferenceMap {
+    pub execution_request_reference: BlueBrainExecutionReference,
+    pub execution_result_reference: Option<BlueBrainExecutionReference>,
+    pub failure_result_reference: Option<BlueBrainExecutionReference>,
+    pub cancellation_result_reference: Option<BlueBrainExecutionReference>,
+    pub blocked_or_unavailable_reference: Option<BlueBrainExecutionReference>,
+    pub placeholder_reference: Option<BlueBrainExecutionReference>,
+    pub eligibility_reference: BlueBrainExecutionReference,
+    pub non_canonical_internal_only_reference_path: Option<BlueBrainExecutionReference>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlueBrainMinimalExecutionTraceCore {
+    pub canonical_action: BlueBrainMinimalExecutionAction,
+    pub handoff_id: String,
+    pub eligibility_class: BlueBrainActionExecutionEligibilityClass,
+    pub safety_precheck: BlueBrainSafetyPrecheckClass,
+    pub state: BlueBrainMinimalExecutionState,
+    pub result_boundary: BlueBrainMinimalExecutionResultBoundary,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainExecutionResultIntegrityClass {
     ResultRecordedCanonical,
     ResultFailedCanonical,
@@ -86,6 +128,8 @@ pub struct BlueBrainMinimalExecutionRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlueBrainMinimalExecutionReport {
+    pub trace_core: BlueBrainMinimalExecutionTraceCore,
+    pub references: BlueBrainExecutionReferenceMap,
     pub state: BlueBrainMinimalExecutionState,
     pub result_boundary: BlueBrainMinimalExecutionResultBoundary,
     pub execution_requested: bool,
@@ -140,6 +184,7 @@ pub struct BlueBrainExecutionRuntimeFeedback {
     pub reason: Option<BlueBrainExecutionFailureReasonClass>,
     pub sees_actual_execution_result: bool,
     pub sees_placeholder_only: bool,
+    pub canonical_result_reference: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -147,6 +192,8 @@ pub struct BlueBrainExecutionSelectionFeedback {
     pub proposal_feedback_class: BlueBrainProposalExecutionFeedbackClass,
     pub proposal_consumed_by_execution: bool,
     pub automatic_next_proposal_generation: bool,
+    pub canonical_request_reference: String,
+    pub canonical_eligibility_reference: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,6 +201,126 @@ pub struct BlueBrainExecutionMemoryFeedback {
     pub may_attach_context_reference: bool,
     pub may_attach_diagnostic_reference: bool,
     pub automatic_memory_commit_performed: bool,
+    pub canonical_memory_basis_reference: Option<String>,
+}
+
+fn minimal_action_token(action: BlueBrainMinimalExecutionAction) -> &'static str {
+    match action {
+        BlueBrainMinimalExecutionAction::EmitCanonicalSignal => "emit_canonical_signal",
+        BlueBrainMinimalExecutionAction::UnsupportedAction => "unsupported_action",
+    }
+}
+
+fn make_reference(
+    class: BlueBrainExecutionReferenceClass,
+    path: String,
+    terminal: bool,
+    canonical: bool,
+) -> BlueBrainExecutionReference {
+    BlueBrainExecutionReference {
+        class,
+        path,
+        terminal,
+        canonical,
+    }
+}
+
+fn build_reference_map(
+    request: &BlueBrainMinimalExecutionRequest,
+    report: &BlueBrainMinimalExecutionReport,
+) -> BlueBrainExecutionReferenceMap {
+    let action = minimal_action_token(request.action);
+    let base = format!(
+        "bb14:minimal_execution:{}:{}",
+        request.handoff_id.trim(),
+        action
+    );
+    let execution_request_reference = make_reference(
+        BlueBrainExecutionReferenceClass::ExecutionRequestReference,
+        format!("{base}:request"),
+        false,
+        !request.internal_only_path,
+    );
+    let eligibility_reference = make_reference(
+        BlueBrainExecutionReferenceClass::EligibilityReference,
+        format!(
+            "{base}:eligibility:{:?}:precheck:{:?}",
+            request.eligibility_class, request.safety_precheck
+        ),
+        false,
+        !request.internal_only_path,
+    );
+    let execution_result_reference =
+        (report.state == BlueBrainMinimalExecutionState::ExecutionCompleted).then(|| {
+            make_reference(
+                BlueBrainExecutionReferenceClass::ExecutionResultReference,
+                format!("{base}:result:completed"),
+                true,
+                true,
+            )
+        });
+    let failure_result_reference =
+        (report.state == BlueBrainMinimalExecutionState::ExecutionFailed).then(|| {
+            make_reference(
+                BlueBrainExecutionReferenceClass::FailureResultReference,
+                format!("{base}:result:failed"),
+                true,
+                true,
+            )
+        });
+    let cancellation_result_reference =
+        (report.state == BlueBrainMinimalExecutionState::ExecutionCancelled).then(|| {
+            make_reference(
+                BlueBrainExecutionReferenceClass::CancellationResultReference,
+                format!("{base}:result:cancelled"),
+                true,
+                true,
+            )
+        });
+    let blocked_or_unavailable_reference = matches!(
+        report.state,
+        BlueBrainMinimalExecutionState::ExecutionBlocked
+            | BlueBrainMinimalExecutionState::ExecutionUnavailable
+            | BlueBrainMinimalExecutionState::ExecutionUnsupported
+    )
+    .then(|| {
+        make_reference(
+            BlueBrainExecutionReferenceClass::BlockedOrUnavailableReference,
+            format!("{base}:result:{:?}", report.state),
+            true,
+            true,
+        )
+    });
+    let placeholder_reference = (report.state
+        == BlueBrainMinimalExecutionState::ExecutionEligibleButNotExecuted)
+        .then(|| {
+            make_reference(
+                BlueBrainExecutionReferenceClass::PlaceholderReference,
+                format!("{base}:placeholder:eligible_not_executed"),
+                false,
+                true,
+            )
+        });
+    let non_canonical_internal_only_reference_path =
+        (report.state == BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath).then(|| {
+            make_reference(
+                BlueBrainExecutionReferenceClass::NonCanonicalInternalOnlyReferencePath,
+                format!("{base}:non_canonical_internal_only"),
+                true,
+                false,
+            )
+        });
+
+    BlueBrainExecutionReferenceMap {
+        execution_request_reference,
+        execution_result_reference,
+        failure_result_reference,
+        cancellation_result_reference,
+        blocked_or_unavailable_reference,
+        placeholder_reference,
+        eligibility_reference,
+        non_canonical_internal_only_reference_path,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -388,16 +555,31 @@ pub fn blue_brain_execution_feedback_backbind(
             reason,
             sees_actual_execution_result,
             sees_placeholder_only,
+            canonical_result_reference: report
+                .references
+                .execution_result_reference
+                .as_ref()
+                .map(|reference| reference.path.clone()),
         },
         selection: BlueBrainExecutionSelectionFeedback {
             proposal_feedback_class,
             proposal_consumed_by_execution,
             automatic_next_proposal_generation: false,
+            canonical_request_reference: report.references.execution_request_reference.path.clone(),
+            canonical_eligibility_reference: report.references.eligibility_reference.path.clone(),
         },
         memory: BlueBrainExecutionMemoryFeedback {
             may_attach_context_reference: true,
             may_attach_diagnostic_reference: true,
             automatic_memory_commit_performed: false,
+            canonical_memory_basis_reference: report
+                .references
+                .execution_result_reference
+                .as_ref()
+                .or(report.references.failure_result_reference.as_ref())
+                .or(report.references.cancellation_result_reference.as_ref())
+                .or(report.references.blocked_or_unavailable_reference.as_ref())
+                .map(|reference| reference.path.clone()),
         },
     }
 }
@@ -439,7 +621,17 @@ pub fn execute_blue_brain_minimal_action(
 ) -> BlueBrainMinimalExecutionReport {
     match blue_brain_minimal_capability_scope(request) {
         BlueBrainMinimalCapabilityScopeClass::NonCanonicalInternalOnlyActionPath => {
-            return BlueBrainMinimalExecutionReport {
+            let mut report = BlueBrainMinimalExecutionReport {
+                trace_core: BlueBrainMinimalExecutionTraceCore {
+                    canonical_action: request.action,
+                    handoff_id: request.handoff_id.clone(),
+                    eligibility_class: request.eligibility_class,
+                    safety_precheck: request.safety_precheck,
+                    state: BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath,
+                    result_boundary:
+                        BlueBrainMinimalExecutionResultBoundary::UnavailableExecutionPath,
+                },
+                references: empty_reference_map(request),
                 state: BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath,
                 result_boundary: BlueBrainMinimalExecutionResultBoundary::UnavailableExecutionPath,
                 execution_requested: request.execution_requested,
@@ -453,9 +645,20 @@ pub fn execute_blue_brain_minimal_action(
                     "non-canonical/internal-only execution path is never executable",
                 ],
             };
+            report.references = build_reference_map(request, &report);
+            return report;
         }
         BlueBrainMinimalCapabilityScopeClass::UnsupportedAction => {
-            return BlueBrainMinimalExecutionReport {
+            let mut report = BlueBrainMinimalExecutionReport {
+                trace_core: BlueBrainMinimalExecutionTraceCore {
+                    canonical_action: request.action,
+                    handoff_id: request.handoff_id.clone(),
+                    eligibility_class: request.eligibility_class,
+                    safety_precheck: request.safety_precheck,
+                    state: BlueBrainMinimalExecutionState::ExecutionUnsupported,
+                    result_boundary: BlueBrainMinimalExecutionResultBoundary::UnsupportedNoResult,
+                },
+                references: empty_reference_map(request),
                 state: BlueBrainMinimalExecutionState::ExecutionUnsupported,
                 result_boundary: BlueBrainMinimalExecutionResultBoundary::UnsupportedNoResult,
                 execution_requested: request.execution_requested,
@@ -471,9 +674,21 @@ pub fn execute_blue_brain_minimal_action(
                     "no_tool_result",
                 ],
             };
+            report.references = build_reference_map(request, &report);
+            return report;
         }
         BlueBrainMinimalCapabilityScopeClass::UnavailableAction => {
-            return BlueBrainMinimalExecutionReport {
+            let mut report = BlueBrainMinimalExecutionReport {
+                trace_core: BlueBrainMinimalExecutionTraceCore {
+                    canonical_action: request.action,
+                    handoff_id: request.handoff_id.clone(),
+                    eligibility_class: request.eligibility_class,
+                    safety_precheck: request.safety_precheck,
+                    state: BlueBrainMinimalExecutionState::ExecutionUnavailable,
+                    result_boundary:
+                        BlueBrainMinimalExecutionResultBoundary::UnavailableExecutionPath,
+                },
+                references: empty_reference_map(request),
                 state: BlueBrainMinimalExecutionState::ExecutionUnavailable,
                 result_boundary: BlueBrainMinimalExecutionResultBoundary::UnavailableExecutionPath,
                 execution_requested: request.execution_requested,
@@ -488,6 +703,8 @@ pub fn execute_blue_brain_minimal_action(
                     "no_tool_result",
                 ],
             };
+            report.references = build_reference_map(request, &report);
+            return report;
         }
         BlueBrainMinimalCapabilityScopeClass::BlockedAction
         | BlueBrainMinimalCapabilityScopeClass::AllowedCanonicalToolCall
@@ -495,7 +712,16 @@ pub fn execute_blue_brain_minimal_action(
     }
 
     if request.cancelled {
-        return BlueBrainMinimalExecutionReport {
+        let mut report = BlueBrainMinimalExecutionReport {
+            trace_core: BlueBrainMinimalExecutionTraceCore {
+                canonical_action: request.action,
+                handoff_id: request.handoff_id.clone(),
+                eligibility_class: request.eligibility_class,
+                safety_precheck: request.safety_precheck,
+                state: BlueBrainMinimalExecutionState::ExecutionCancelled,
+                result_boundary: BlueBrainMinimalExecutionResultBoundary::CancelledExecutionResult,
+            },
+            references: empty_reference_map(request),
             state: BlueBrainMinimalExecutionState::ExecutionCancelled,
             result_boundary: BlueBrainMinimalExecutionResultBoundary::CancelledExecutionResult,
             execution_requested: request.execution_requested,
@@ -510,13 +736,24 @@ pub fn execute_blue_brain_minimal_action(
                 "no_tool_result",
             ],
         };
+        report.references = build_reference_map(request, &report);
+        return report;
     }
 
     if request.handoff_class != BlueBrainFutureActionHandoffClass::FutureActionReady
         || request.eligibility_class
             != BlueBrainActionExecutionEligibilityClass::ExecutionEligibleHandoff
     {
-        return BlueBrainMinimalExecutionReport {
+        let mut report = BlueBrainMinimalExecutionReport {
+            trace_core: BlueBrainMinimalExecutionTraceCore {
+                canonical_action: request.action,
+                handoff_id: request.handoff_id.clone(),
+                eligibility_class: request.eligibility_class,
+                safety_precheck: request.safety_precheck,
+                state: BlueBrainMinimalExecutionState::ExecutionBlocked,
+                result_boundary: BlueBrainMinimalExecutionResultBoundary::BlockedNoResult,
+            },
+            references: empty_reference_map(request),
             state: BlueBrainMinimalExecutionState::ExecutionBlocked,
             result_boundary: BlueBrainMinimalExecutionResultBoundary::BlockedNoResult,
             execution_requested: request.execution_requested,
@@ -531,11 +768,22 @@ pub fn execute_blue_brain_minimal_action(
                 "no_tool_result",
             ],
         };
+        report.references = build_reference_map(request, &report);
+        return report;
     }
 
     match request.safety_precheck {
         BlueBrainSafetyPrecheckClass::Failed | BlueBrainSafetyPrecheckClass::Blocked => {
-            return BlueBrainMinimalExecutionReport {
+            let mut report = BlueBrainMinimalExecutionReport {
+                trace_core: BlueBrainMinimalExecutionTraceCore {
+                    canonical_action: request.action,
+                    handoff_id: request.handoff_id.clone(),
+                    eligibility_class: request.eligibility_class,
+                    safety_precheck: request.safety_precheck,
+                    state: BlueBrainMinimalExecutionState::ExecutionBlocked,
+                    result_boundary: BlueBrainMinimalExecutionResultBoundary::BlockedNoResult,
+                },
+                references: empty_reference_map(request),
                 state: BlueBrainMinimalExecutionState::ExecutionBlocked,
                 result_boundary: BlueBrainMinimalExecutionResultBoundary::BlockedNoResult,
                 execution_requested: request.execution_requested,
@@ -550,13 +798,24 @@ pub fn execute_blue_brain_minimal_action(
                     "no_tool_result",
                 ],
             };
+            report.references = build_reference_map(request, &report);
+            return report;
         }
         BlueBrainSafetyPrecheckClass::Unavailable => unreachable!(
             "unavailable precheck is classified by blue_brain_minimal_capability_scope"
         ),
         BlueBrainSafetyPrecheckClass::Insufficient
         | BlueBrainSafetyPrecheckClass::NotApplicable => {
-            return BlueBrainMinimalExecutionReport {
+            let mut report = BlueBrainMinimalExecutionReport {
+                trace_core: BlueBrainMinimalExecutionTraceCore {
+                    canonical_action: request.action,
+                    handoff_id: request.handoff_id.clone(),
+                    eligibility_class: request.eligibility_class,
+                    safety_precheck: request.safety_precheck,
+                    state: BlueBrainMinimalExecutionState::ExecutionBlocked,
+                    result_boundary: BlueBrainMinimalExecutionResultBoundary::BlockedNoResult,
+                },
+                references: empty_reference_map(request),
                 state: BlueBrainMinimalExecutionState::ExecutionBlocked,
                 result_boundary: BlueBrainMinimalExecutionResultBoundary::BlockedNoResult,
                 execution_requested: request.execution_requested,
@@ -571,12 +830,23 @@ pub fn execute_blue_brain_minimal_action(
                     "no_tool_result",
                 ],
             };
+            report.references = build_reference_map(request, &report);
+            return report;
         }
         BlueBrainSafetyPrecheckClass::Passed | BlueBrainSafetyPrecheckClass::Caveated => {}
     }
 
     if !request.execution_requested {
-        return BlueBrainMinimalExecutionReport {
+        let mut report = BlueBrainMinimalExecutionReport {
+            trace_core: BlueBrainMinimalExecutionTraceCore {
+                canonical_action: request.action,
+                handoff_id: request.handoff_id.clone(),
+                eligibility_class: request.eligibility_class,
+                safety_precheck: request.safety_precheck,
+                state: BlueBrainMinimalExecutionState::ExecutionEligibleButNotExecuted,
+                result_boundary: BlueBrainMinimalExecutionResultBoundary::PlaceholderOnly,
+            },
+            references: empty_reference_map(request),
             state: BlueBrainMinimalExecutionState::ExecutionEligibleButNotExecuted,
             result_boundary: BlueBrainMinimalExecutionResultBoundary::PlaceholderOnly,
             execution_requested: false,
@@ -590,10 +860,21 @@ pub fn execute_blue_brain_minimal_action(
                 "placeholder-only result boundary",
             ],
         };
+        report.references = build_reference_map(request, &report);
+        return report;
     }
 
     if request.force_execution_failure {
-        return BlueBrainMinimalExecutionReport {
+        let mut report = BlueBrainMinimalExecutionReport {
+            trace_core: BlueBrainMinimalExecutionTraceCore {
+                canonical_action: request.action,
+                handoff_id: request.handoff_id.clone(),
+                eligibility_class: request.eligibility_class,
+                safety_precheck: request.safety_precheck,
+                state: BlueBrainMinimalExecutionState::ExecutionFailed,
+                result_boundary: BlueBrainMinimalExecutionResultBoundary::FailedExecutionResult,
+            },
+            references: empty_reference_map(request),
             state: BlueBrainMinimalExecutionState::ExecutionFailed,
             result_boundary: BlueBrainMinimalExecutionResultBoundary::FailedExecutionResult,
             execution_requested: true,
@@ -604,6 +885,8 @@ pub fn execute_blue_brain_minimal_action(
             error_code: Some("minimal_execution_failed"),
             notes: vec!["execution-started", "execution-failed", "no_memory_commit"],
         };
+        report.references = build_reference_map(request, &report);
+        return report;
     }
 
     let action_token = match request.action {
@@ -614,7 +897,16 @@ pub fn execute_blue_brain_minimal_action(
     };
     let result = format!("executed:{action_token}:{}", request.handoff_id.trim());
 
-    BlueBrainMinimalExecutionReport {
+    let mut report = BlueBrainMinimalExecutionReport {
+        trace_core: BlueBrainMinimalExecutionTraceCore {
+            canonical_action: request.action,
+            handoff_id: request.handoff_id.clone(),
+            eligibility_class: request.eligibility_class,
+            safety_precheck: request.safety_precheck,
+            state: BlueBrainMinimalExecutionState::ExecutionCompleted,
+            result_boundary: BlueBrainMinimalExecutionResultBoundary::ActualExecutionResult,
+        },
+        references: empty_reference_map(request),
         state: BlueBrainMinimalExecutionState::ExecutionCompleted,
         result_boundary: BlueBrainMinimalExecutionResultBoundary::ActualExecutionResult,
         execution_requested: true,
@@ -630,6 +922,44 @@ pub fn execute_blue_brain_minimal_action(
             "no_memory_commit",
             "no_compute_core_mutation",
         ],
+    };
+    report.references = build_reference_map(request, &report);
+    report
+}
+
+fn empty_reference_map(
+    request: &BlueBrainMinimalExecutionRequest,
+) -> BlueBrainExecutionReferenceMap {
+    let action = minimal_action_token(request.action);
+    let request_ref = make_reference(
+        BlueBrainExecutionReferenceClass::ExecutionRequestReference,
+        format!(
+            "bb14:minimal_execution:{}:{}:request:pending",
+            request.handoff_id.trim(),
+            action
+        ),
+        false,
+        !request.internal_only_path,
+    );
+    let eligibility = make_reference(
+        BlueBrainExecutionReferenceClass::EligibilityReference,
+        format!(
+            "bb14:minimal_execution:{}:{}:eligibility:pending",
+            request.handoff_id.trim(),
+            action
+        ),
+        false,
+        !request.internal_only_path,
+    );
+    BlueBrainExecutionReferenceMap {
+        execution_request_reference: request_ref,
+        execution_result_reference: None,
+        failure_result_reference: None,
+        cancellation_result_reference: None,
+        blocked_or_unavailable_reference: None,
+        placeholder_reference: None,
+        eligibility_reference: eligibility,
+        non_canonical_internal_only_reference_path: None,
     }
 }
 
@@ -638,10 +968,11 @@ mod tests {
     use super::{
         blue_brain_execution_feedback_backbind, blue_brain_execution_result_integrity,
         blue_brain_minimal_capability_scope, execute_blue_brain_minimal_action,
-        BlueBrainExecutionFeedbackClass, BlueBrainExecutionResultIntegrityClass,
-        BlueBrainExecutionTransitionClass, BlueBrainMinimalCapabilityScopeClass,
-        BlueBrainMinimalExecutionAction, BlueBrainMinimalExecutionRequest,
-        BlueBrainMinimalExecutionResultBoundary, BlueBrainMinimalExecutionState,
+        BlueBrainExecutionFeedbackClass, BlueBrainExecutionReferenceClass,
+        BlueBrainExecutionResultIntegrityClass, BlueBrainExecutionTransitionClass,
+        BlueBrainMinimalCapabilityScopeClass, BlueBrainMinimalExecutionAction,
+        BlueBrainMinimalExecutionRequest, BlueBrainMinimalExecutionResultBoundary,
+        BlueBrainMinimalExecutionState,
     };
     use crate::reference_map::{
         BlueBrainActionExecutionEligibilityClass, BlueBrainFutureActionHandoffClass,
@@ -891,6 +1222,14 @@ mod tests {
         let feedback = blue_brain_execution_feedback_backbind(&report);
         assert!(!feedback.selection.automatic_next_proposal_generation);
         assert!(!feedback.memory.automatic_memory_commit_performed);
+        assert!(feedback
+            .selection
+            .canonical_request_reference
+            .contains(":request"));
+        assert!(feedback
+            .selection
+            .canonical_eligibility_reference
+            .contains(":eligibility:"));
     }
 
     #[test]
@@ -996,5 +1335,99 @@ mod tests {
             BlueBrainExecutionTransitionClass::InvalidTransition
         );
         assert!(!mismatch_integrity.canonical);
+    }
+
+    #[test]
+    fn canonical_reference_map_keeps_result_types_strictly_separated() {
+        let placeholder = execute_blue_brain_minimal_action(&base_request());
+        assert!(placeholder.references.execution_result_reference.is_none());
+        assert!(placeholder.references.failure_result_reference.is_none());
+        assert!(placeholder
+            .references
+            .cancellation_result_reference
+            .is_none());
+        assert!(placeholder
+            .references
+            .placeholder_reference
+            .as_ref()
+            .is_some_and(|reference| {
+                reference.class == BlueBrainExecutionReferenceClass::PlaceholderReference
+            }));
+
+        let mut completed_request = base_request();
+        completed_request.execution_requested = true;
+        let completed = execute_blue_brain_minimal_action(&completed_request);
+        assert!(completed
+            .references
+            .execution_result_reference
+            .as_ref()
+            .is_some_and(|reference| {
+                reference.class == BlueBrainExecutionReferenceClass::ExecutionResultReference
+                    && reference.terminal
+            }));
+        assert!(completed.references.placeholder_reference.is_none());
+        assert!(completed.references.failure_result_reference.is_none());
+
+        let mut failed_request = completed_request.clone();
+        failed_request.force_execution_failure = true;
+        let failed = execute_blue_brain_minimal_action(&failed_request);
+        assert!(failed.references.execution_result_reference.is_none());
+        assert!(failed
+            .references
+            .failure_result_reference
+            .as_ref()
+            .is_some_and(|reference| {
+                reference.class == BlueBrainExecutionReferenceClass::FailureResultReference
+            }));
+
+        let mut cancelled_request = completed_request.clone();
+        cancelled_request.cancelled = true;
+        let cancelled = execute_blue_brain_minimal_action(&cancelled_request);
+        assert!(cancelled
+            .references
+            .cancellation_result_reference
+            .as_ref()
+            .is_some_and(|reference| {
+                reference.class == BlueBrainExecutionReferenceClass::CancellationResultReference
+            }));
+        assert!(cancelled.references.failure_result_reference.is_none());
+    }
+
+    #[test]
+    fn blocked_unavailable_and_non_canonical_references_do_not_claim_completed_result() {
+        let mut blocked_request = base_request();
+        blocked_request.handoff_class = BlueBrainFutureActionHandoffClass::HandoffBlocked;
+        let blocked = execute_blue_brain_minimal_action(&blocked_request);
+        assert!(blocked.references.execution_result_reference.is_none());
+        assert!(blocked
+            .references
+            .blocked_or_unavailable_reference
+            .as_ref()
+            .is_some_and(|reference| {
+                reference.class == BlueBrainExecutionReferenceClass::BlockedOrUnavailableReference
+            }));
+
+        let mut unavailable_request = base_request();
+        unavailable_request.safety_precheck = BlueBrainSafetyPrecheckClass::Unavailable;
+        let unavailable = execute_blue_brain_minimal_action(&unavailable_request);
+        assert!(unavailable.references.execution_result_reference.is_none());
+        assert!(unavailable.references.failure_result_reference.is_none());
+        assert!(unavailable
+            .references
+            .cancellation_result_reference
+            .is_none());
+
+        let mut non_canonical_request = base_request();
+        non_canonical_request.internal_only_path = true;
+        let non_canonical = execute_blue_brain_minimal_action(&non_canonical_request);
+        assert!(non_canonical
+            .references
+            .non_canonical_internal_only_reference_path
+            .as_ref()
+            .is_some_and(|reference| {
+                reference.class
+                    == BlueBrainExecutionReferenceClass::NonCanonicalInternalOnlyReferencePath
+                    && !reference.canonical
+            }));
     }
 }

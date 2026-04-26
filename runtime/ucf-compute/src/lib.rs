@@ -136,13 +136,15 @@ pub use blue_brain_minimal_execution::{
     blue_brain_execution_feedback_backbind, blue_brain_execution_result_integrity,
     blue_brain_minimal_capability_scope, execute_blue_brain_minimal_action,
     BlueBrainExecutionFailureReasonClass, BlueBrainExecutionFeedbackBackbind,
-    BlueBrainExecutionFeedbackClass, BlueBrainExecutionMemoryFeedback,
+    BlueBrainExecutionFeedbackClass, BlueBrainExecutionMemoryFeedback, BlueBrainExecutionReference,
+    BlueBrainExecutionReferenceClass, BlueBrainExecutionReferenceMap,
     BlueBrainExecutionResultIntegrity, BlueBrainExecutionResultIntegrityClass,
     BlueBrainExecutionRuntimeFeedback, BlueBrainExecutionSelectionFeedback,
     BlueBrainExecutionTransitionClass, BlueBrainMinimalCapabilityScopeClass,
     BlueBrainMinimalExecutionAction, BlueBrainMinimalExecutionReport,
     BlueBrainMinimalExecutionRequest, BlueBrainMinimalExecutionResultBoundary,
-    BlueBrainMinimalExecutionState, BlueBrainProposalExecutionFeedbackClass,
+    BlueBrainMinimalExecutionState, BlueBrainMinimalExecutionTraceCore,
+    BlueBrainProposalExecutionFeedbackClass,
 };
 pub use compute_service::{
     CapacityPressure, CapacityQueueDisposition, ComputeJob, CoordinationFreshness,
