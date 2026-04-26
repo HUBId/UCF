@@ -57,6 +57,166 @@ pub struct BlueBrainMinimalExecutionReport {
     pub notes: Vec<&'static str>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainExecutionFeedbackClass {
+    ExecutionCompletedFeedback,
+    ExecutionFailedFeedback,
+    ExecutionCancelledFeedback,
+    ExecutionBlockedFeedback,
+    ExecutionUnavailableFeedback,
+    ExecutionCaveatedFeedback,
+    NonCanonicalInternalOnlyExecutionFeedback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainExecutionFailureReasonClass {
+    ExecutionPathError,
+    CancelledBeforeCompletion,
+    NotRequestedPlaceholderOnly,
+    SafetyOrBoundaryBlocked,
+    ExecutionPathUnavailable,
+    CaveatedCompletion,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainProposalExecutionFeedbackClass {
+    ProposalNotConsumedByExecution,
+    ProposalConsumedByExecution,
+    ProposalExecutionCompleted,
+    ProposalExecutionFailed,
+    ProposalExecutionCancelled,
+    ProposalExecutionBlocked,
+    ProposalExecutionUnavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlueBrainExecutionRuntimeFeedback {
+    pub class: BlueBrainExecutionFeedbackClass,
+    pub reason: Option<BlueBrainExecutionFailureReasonClass>,
+    pub sees_actual_execution_result: bool,
+    pub sees_placeholder_only: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlueBrainExecutionSelectionFeedback {
+    pub proposal_feedback_class: BlueBrainProposalExecutionFeedbackClass,
+    pub proposal_consumed_by_execution: bool,
+    pub automatic_next_proposal_generation: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlueBrainExecutionMemoryFeedback {
+    pub may_attach_context_reference: bool,
+    pub may_attach_diagnostic_reference: bool,
+    pub automatic_memory_commit_performed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlueBrainExecutionFeedbackBackbind {
+    pub runtime: BlueBrainExecutionRuntimeFeedback,
+    pub selection: BlueBrainExecutionSelectionFeedback,
+    pub memory: BlueBrainExecutionMemoryFeedback,
+}
+
+pub fn blue_brain_execution_feedback_backbind(
+    report: &BlueBrainMinimalExecutionReport,
+) -> BlueBrainExecutionFeedbackBackbind {
+    let (runtime_class, reason, proposal_feedback_class, proposal_consumed_by_execution) =
+        match report.state {
+            BlueBrainMinimalExecutionState::ExecutionCompleted => {
+                let class = if report
+                    .notes
+                    .iter()
+                    .any(|n| n.contains("caveat") || *n == "execution-caveated")
+                {
+                    BlueBrainExecutionFeedbackClass::ExecutionCaveatedFeedback
+                } else {
+                    BlueBrainExecutionFeedbackClass::ExecutionCompletedFeedback
+                };
+                let reason = if class == BlueBrainExecutionFeedbackClass::ExecutionCaveatedFeedback
+                {
+                    Some(BlueBrainExecutionFailureReasonClass::CaveatedCompletion)
+                } else {
+                    None
+                };
+                (
+                    class,
+                    reason,
+                    BlueBrainProposalExecutionFeedbackClass::ProposalExecutionCompleted,
+                    true,
+                )
+            }
+            BlueBrainMinimalExecutionState::ExecutionFailed => (
+                BlueBrainExecutionFeedbackClass::ExecutionFailedFeedback,
+                Some(BlueBrainExecutionFailureReasonClass::ExecutionPathError),
+                BlueBrainProposalExecutionFeedbackClass::ProposalExecutionFailed,
+                true,
+            ),
+            BlueBrainMinimalExecutionState::ExecutionCancelled => (
+                BlueBrainExecutionFeedbackClass::ExecutionCancelledFeedback,
+                Some(BlueBrainExecutionFailureReasonClass::CancelledBeforeCompletion),
+                BlueBrainProposalExecutionFeedbackClass::ProposalExecutionCancelled,
+                false,
+            ),
+            BlueBrainMinimalExecutionState::ExecutionBlocked => (
+                BlueBrainExecutionFeedbackClass::ExecutionBlockedFeedback,
+                Some(BlueBrainExecutionFailureReasonClass::SafetyOrBoundaryBlocked),
+                BlueBrainProposalExecutionFeedbackClass::ProposalExecutionBlocked,
+                false,
+            ),
+            BlueBrainMinimalExecutionState::ExecutionEligibleButNotExecuted => (
+                BlueBrainExecutionFeedbackClass::ExecutionBlockedFeedback,
+                Some(BlueBrainExecutionFailureReasonClass::NotRequestedPlaceholderOnly),
+                BlueBrainProposalExecutionFeedbackClass::ProposalNotConsumedByExecution,
+                false,
+            ),
+            BlueBrainMinimalExecutionState::ExecutionUnavailable => (
+                BlueBrainExecutionFeedbackClass::ExecutionUnavailableFeedback,
+                Some(BlueBrainExecutionFailureReasonClass::ExecutionPathUnavailable),
+                BlueBrainProposalExecutionFeedbackClass::ProposalExecutionUnavailable,
+                false,
+            ),
+            BlueBrainMinimalExecutionState::ExecutionRequested
+            | BlueBrainMinimalExecutionState::ExecutionStarted => (
+                BlueBrainExecutionFeedbackClass::ExecutionBlockedFeedback,
+                Some(BlueBrainExecutionFailureReasonClass::SafetyOrBoundaryBlocked),
+                BlueBrainProposalExecutionFeedbackClass::ProposalConsumedByExecution,
+                false,
+            ),
+            BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath => (
+                BlueBrainExecutionFeedbackClass::NonCanonicalInternalOnlyExecutionFeedback,
+                Some(BlueBrainExecutionFailureReasonClass::NonCanonicalInternalOnly),
+                BlueBrainProposalExecutionFeedbackClass::ProposalNotConsumedByExecution,
+                false,
+            ),
+        };
+
+    let sees_actual_execution_result =
+        report.result_boundary == BlueBrainMinimalExecutionResultBoundary::ActualExecutionResult;
+    let sees_placeholder_only =
+        report.result_boundary == BlueBrainMinimalExecutionResultBoundary::PlaceholderOnly;
+
+    BlueBrainExecutionFeedbackBackbind {
+        runtime: BlueBrainExecutionRuntimeFeedback {
+            class: runtime_class,
+            reason,
+            sees_actual_execution_result,
+            sees_placeholder_only,
+        },
+        selection: BlueBrainExecutionSelectionFeedback {
+            proposal_feedback_class,
+            proposal_consumed_by_execution,
+            automatic_next_proposal_generation: false,
+        },
+        memory: BlueBrainExecutionMemoryFeedback {
+            may_attach_context_reference: true,
+            may_attach_diagnostic_reference: true,
+            automatic_memory_commit_performed: false,
+        },
+    }
+}
+
 pub fn execute_blue_brain_minimal_action(
     request: &BlueBrainMinimalExecutionRequest,
 ) -> BlueBrainMinimalExecutionReport {
@@ -80,7 +240,7 @@ pub fn execute_blue_brain_minimal_action(
     if request.cancelled {
         return BlueBrainMinimalExecutionReport {
             state: BlueBrainMinimalExecutionState::ExecutionCancelled,
-            result_boundary: BlueBrainMinimalExecutionResultBoundary::BlockedNoResult,
+            result_boundary: BlueBrainMinimalExecutionResultBoundary::ExecutionRequested,
             execution_requested: request.execution_requested,
             execution_started: false,
             execution_completed: false,
@@ -230,7 +390,8 @@ pub fn execute_blue_brain_minimal_action(
 #[cfg(test)]
 mod tests {
     use super::{
-        execute_blue_brain_minimal_action, BlueBrainMinimalExecutionAction,
+        blue_brain_execution_feedback_backbind, execute_blue_brain_minimal_action,
+        BlueBrainExecutionFeedbackClass, BlueBrainMinimalExecutionAction,
         BlueBrainMinimalExecutionRequest, BlueBrainMinimalExecutionResultBoundary,
         BlueBrainMinimalExecutionState,
     };
@@ -346,7 +507,7 @@ mod tests {
         );
         assert_eq!(
             cancelled_report.result_boundary,
-            BlueBrainMinimalExecutionResultBoundary::BlockedNoResult
+            BlueBrainMinimalExecutionResultBoundary::ExecutionRequested
         );
         assert!(!cancelled_report.execution_started);
     }
@@ -365,5 +526,67 @@ mod tests {
             report.result_boundary,
             BlueBrainMinimalExecutionResultBoundary::UnavailableExecutionPath
         );
+    }
+
+    #[test]
+    fn backbind_distinguishes_completed_failed_cancelled_blocked_and_unavailable() {
+        let mut completed = base_request();
+        completed.execution_requested = true;
+        let completed_report = execute_blue_brain_minimal_action(&completed);
+        let completed_feedback = blue_brain_execution_feedback_backbind(&completed_report);
+        assert_eq!(
+            completed_feedback.runtime.class,
+            BlueBrainExecutionFeedbackClass::ExecutionCompletedFeedback
+        );
+        assert!(completed_feedback.selection.proposal_consumed_by_execution);
+
+        let mut failed = base_request();
+        failed.execution_requested = true;
+        failed.force_execution_failure = true;
+        let failed_feedback =
+            blue_brain_execution_feedback_backbind(&execute_blue_brain_minimal_action(&failed));
+        assert_eq!(
+            failed_feedback.runtime.class,
+            BlueBrainExecutionFeedbackClass::ExecutionFailedFeedback
+        );
+
+        let mut cancelled = base_request();
+        cancelled.execution_requested = true;
+        cancelled.cancelled = true;
+        let cancelled_feedback =
+            blue_brain_execution_feedback_backbind(&execute_blue_brain_minimal_action(&cancelled));
+        assert_eq!(
+            cancelled_feedback.runtime.class,
+            BlueBrainExecutionFeedbackClass::ExecutionCancelledFeedback
+        );
+
+        let blocked_feedback = blue_brain_execution_feedback_backbind(
+            &execute_blue_brain_minimal_action(&base_request()),
+        );
+        assert_eq!(
+            blocked_feedback.runtime.class,
+            BlueBrainExecutionFeedbackClass::ExecutionBlockedFeedback
+        );
+
+        let mut unavailable = base_request();
+        unavailable.execution_requested = true;
+        unavailable.safety_precheck = BlueBrainSafetyPrecheckClass::Unavailable;
+        let unavailable_feedback = blue_brain_execution_feedback_backbind(
+            &execute_blue_brain_minimal_action(&unavailable),
+        );
+        assert_eq!(
+            unavailable_feedback.runtime.class,
+            BlueBrainExecutionFeedbackClass::ExecutionUnavailableFeedback
+        );
+    }
+
+    #[test]
+    fn backbind_preserves_no_direct_followup_execution_and_no_memory_commit() {
+        let mut request = base_request();
+        request.execution_requested = true;
+        let report = execute_blue_brain_minimal_action(&request);
+        let feedback = blue_brain_execution_feedback_backbind(&report);
+        assert!(!feedback.selection.automatic_next_proposal_generation);
+        assert!(!feedback.memory.automatic_memory_commit_performed);
     }
 }
