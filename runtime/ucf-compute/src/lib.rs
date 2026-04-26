@@ -47,6 +47,7 @@ pub mod backend_pack;
 pub mod backends;
 pub mod blue_brain_dynamics;
 pub mod blue_brain_memory;
+pub mod blue_brain_minimal_execution;
 #[cfg(any(
     feature = "compute-candle",
     feature = "llm-candle",
@@ -130,6 +131,11 @@ pub use blue_brain_memory::{
     BlueBrainMemorySelectionCandidateProposalFeedbackClass, BlueBrainMemorySelectionDisposition,
     BlueBrainMemoryStore, BlueBrainMemoryStoreError, PersistedBlueBrainMemoryRecord,
     CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP,
+};
+pub use blue_brain_minimal_execution::{
+    execute_blue_brain_minimal_action, BlueBrainMinimalExecutionAction,
+    BlueBrainMinimalExecutionReport, BlueBrainMinimalExecutionRequest,
+    BlueBrainMinimalExecutionResultBoundary, BlueBrainMinimalExecutionState,
 };
 pub use compute_service::{
     CapacityPressure, CapacityQueueDisposition, ComputeJob, CoordinationFreshness,
