@@ -29,14 +29,14 @@ use ucf_cde_scm::{
 };
 use ucf_commit::canonical_control_frame_len;
 use ucf_compute::{
-    classify_blue_brain_reference_path, dynamics_advisory_coupling_state_token,
-    dynamics_execution_feedback_state_token, evaluate_blue_brain_kuramoto_modulation,
-    kuramoto_modulation_diagnostic_class_token, kuramoto_modulation_reason_token,
-    kuramoto_modulation_state_token, BlueBrainCanonicalReferenceKind,
-    BlueBrainExecutionReferenceOutcome, BlueBrainKuramotoModulationInput,
-    BlueBrainKuramotoPhaseNodeInput, BlueBrainKuramotoRuntimeCaveatModulation,
-    BlueBrainKuramotoRuntimePosture, BlueBrainKuramotoScopeState,
-    BlueBrainKuramotoSelectionPosture,
+    canonical_reference_validity_state, classify_blue_brain_reference_path,
+    dynamics_advisory_coupling_state_token, dynamics_execution_feedback_state_token,
+    evaluate_blue_brain_kuramoto_modulation, kuramoto_modulation_diagnostic_class_token,
+    kuramoto_modulation_reason_token, kuramoto_modulation_state_token,
+    BlueBrainCanonicalReferenceKind, BlueBrainExecutionReferenceOutcome,
+    BlueBrainKuramotoModulationInput, BlueBrainKuramotoPhaseNodeInput,
+    BlueBrainKuramotoRuntimeCaveatModulation, BlueBrainKuramotoRuntimePosture,
+    BlueBrainKuramotoScopeState, BlueBrainKuramotoSelectionPosture, BlueBrainReferenceValidity,
 };
 use ucf_consistency_engine::{
     ConsistencyAction, ConsistencyActionKind, ConsistencyEngine, ConsistencyInputs,
@@ -4728,27 +4728,35 @@ impl Router {
         let mut diagnostic_only_feedback_refs = Vec::new();
         for evidence_ref in &evidence_refs {
             let classified = classify_blue_brain_reference_path(evidence_ref);
+            let validity = canonical_reference_validity_state(&classified);
             match classified.kind {
                 BlueBrainCanonicalReferenceKind::ExecutionResultReference => {
-                    match classified.execution_outcome {
-                        BlueBrainExecutionReferenceOutcome::Successful => {
+                    match (classified.execution_outcome, validity) {
+                        (BlueBrainExecutionReferenceOutcome::Successful, _) => {
                             canonical_execution_result_refs.push(evidence_ref.clone())
                         }
-                        BlueBrainExecutionReferenceOutcome::Failed
-                        | BlueBrainExecutionReferenceOutcome::Cancelled => {
-                            failed_or_cancelled_execution_result_refs.push(evidence_ref.clone())
-                        }
-                        BlueBrainExecutionReferenceOutcome::Blocked => {
+                        (
+                            BlueBrainExecutionReferenceOutcome::Failed
+                            | BlueBrainExecutionReferenceOutcome::Cancelled,
+                            _,
+                        ) => failed_or_cancelled_execution_result_refs.push(evidence_ref.clone()),
+                        (BlueBrainExecutionReferenceOutcome::Blocked, _)
+                        | (_, BlueBrainReferenceValidity::Blocked) => {
                             blocked_execution_result_refs.push(evidence_ref.clone())
                         }
-                        BlueBrainExecutionReferenceOutcome::Unavailable
-                        | BlueBrainExecutionReferenceOutcome::Unsupported => {
+                        (
+                            BlueBrainExecutionReferenceOutcome::Unavailable
+                            | BlueBrainExecutionReferenceOutcome::Unsupported,
+                            _,
+                        )
+                        | (_, BlueBrainReferenceValidity::Insufficient) => {
                             unavailable_execution_result_refs.push(evidence_ref.clone())
                         }
-                        BlueBrainExecutionReferenceOutcome::PlaceholderOnly
-                        | BlueBrainExecutionReferenceOutcome::NotExecutionResult => {
-                            diagnostic_only_feedback_refs.push(evidence_ref.clone())
-                        }
+                        (
+                            BlueBrainExecutionReferenceOutcome::PlaceholderOnly
+                            | BlueBrainExecutionReferenceOutcome::NotExecutionResult,
+                            _,
+                        ) => diagnostic_only_feedback_refs.push(evidence_ref.clone()),
                     }
                 }
                 BlueBrainCanonicalReferenceKind::DiagnosticReference
@@ -7876,13 +7884,13 @@ mod tests {
         assert_eq!(input.canonical_execution_result_refs.len(), 1);
         assert_eq!(input.failed_or_cancelled_execution_result_refs.len(), 2);
         assert_eq!(input.blocked_execution_result_refs.len(), 1);
-        assert_eq!(input.unavailable_execution_result_refs.len(), 1);
+        assert_eq!(input.unavailable_execution_result_refs.len(), 2);
         assert!(input
             .diagnostic_only_feedback_refs
             .iter()
             .any(|entry| entry == "diag:runtime:status"));
         assert!(input
-            .diagnostic_only_feedback_refs
+            .unavailable_execution_result_refs
             .iter()
             .any(|entry| entry == "bb14:execution:h6:placeholder:pending"));
         assert!(input

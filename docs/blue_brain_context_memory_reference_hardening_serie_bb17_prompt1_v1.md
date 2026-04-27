@@ -40,6 +40,13 @@ Reference validity remains explicit and bounded:
 - `stale`
 - `invalidated`
 
+Prompt 2 extends this to the shared runtime map:
+
+- `blocked`
+- `insufficient`
+- `reference_only`
+- `non_canonical_internal_only_path`
+
 Execution-result basis remains explicit and distinct:
 
 - `successful`

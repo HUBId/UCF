@@ -15,7 +15,10 @@ pub enum BlueBrainReferenceValidity {
     Caveated,
     Stale,
     Invalidated,
-    Unknown,
+    Blocked,
+    Insufficient,
+    ReferenceOnly,
+    NonCanonicalInternalOnlyPath,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +40,69 @@ pub struct BlueBrainCanonicalReference {
     pub validity: BlueBrainReferenceValidity,
     pub execution_outcome: BlueBrainExecutionReferenceOutcome,
     pub canonical: bool,
+}
+
+pub fn canonical_reference_validity_state(
+    classified: &BlueBrainCanonicalReference,
+) -> BlueBrainReferenceValidity {
+    if matches!(
+        classified.kind,
+        BlueBrainCanonicalReferenceKind::NonCanonicalInternalOnlyPath
+    ) {
+        return BlueBrainReferenceValidity::NonCanonicalInternalOnlyPath;
+    }
+
+    if matches!(
+        classified.kind,
+        BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
+            | BlueBrainCanonicalReferenceKind::DiagnosticReference
+    ) {
+        return BlueBrainReferenceValidity::ReferenceOnly;
+    }
+
+    if matches!(
+        classified.execution_outcome,
+        BlueBrainExecutionReferenceOutcome::Blocked
+    ) || classified.raw.contains("maintenance_blocked")
+        || classified.raw.contains(":blocked")
+    {
+        return BlueBrainReferenceValidity::Blocked;
+    }
+
+    if (matches!(
+        classified.kind,
+        BlueBrainCanonicalReferenceKind::ExecutionResultReference
+    ) && matches!(
+        classified.execution_outcome,
+        BlueBrainExecutionReferenceOutcome::Unavailable
+            | BlueBrainExecutionReferenceOutcome::Unsupported
+            | BlueBrainExecutionReferenceOutcome::PlaceholderOnly
+            | BlueBrainExecutionReferenceOutcome::NotExecutionResult
+    )) || classified.raw.contains("missing")
+        || classified.raw.contains("unavailable")
+        || classified.raw.contains("insufficient")
+    {
+        return BlueBrainReferenceValidity::Insufficient;
+    }
+
+    if classified.raw.contains("invalidated") {
+        return BlueBrainReferenceValidity::Invalidated;
+    }
+    if classified.raw.contains("stale") {
+        return BlueBrainReferenceValidity::Stale;
+    }
+    if classified.raw.contains("caveat")
+        || classified.raw.contains("caveated")
+        || matches!(
+            classified.execution_outcome,
+            BlueBrainExecutionReferenceOutcome::Failed
+                | BlueBrainExecutionReferenceOutcome::Cancelled
+        )
+    {
+        return BlueBrainReferenceValidity::Caveated;
+    }
+
+    BlueBrainReferenceValidity::Current
 }
 
 pub fn classify_blue_brain_reference_path(path: &str) -> BlueBrainCanonicalReference {
@@ -65,19 +131,6 @@ pub fn classify_blue_brain_reference_path(path: &str) -> BlueBrainCanonicalRefer
         BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
     };
 
-    let validity = if lowered.contains("invalidated") {
-        BlueBrainReferenceValidity::Invalidated
-    } else if lowered.contains("stale") {
-        BlueBrainReferenceValidity::Stale
-    } else if lowered.contains("caveat")
-        || lowered.contains("caveated")
-        || path.contains(":placeholder:")
-    {
-        BlueBrainReferenceValidity::Caveated
-    } else {
-        BlueBrainReferenceValidity::Current
-    };
-
     let execution_outcome = if !matches!(
         kind,
         BlueBrainCanonicalReferenceKind::ExecutionResultReference
@@ -101,16 +154,18 @@ pub fn classify_blue_brain_reference_path(path: &str) -> BlueBrainCanonicalRefer
         BlueBrainExecutionReferenceOutcome::NotExecutionResult
     };
 
-    BlueBrainCanonicalReference {
+    let mut classified = BlueBrainCanonicalReference {
         raw: path.to_string(),
         kind,
-        validity,
+        validity: BlueBrainReferenceValidity::Current,
         execution_outcome,
         canonical: !matches!(
             kind,
             BlueBrainCanonicalReferenceKind::NonCanonicalInternalOnlyPath
         ),
-    }
+    };
+    classified.validity = canonical_reference_validity_state(&classified);
+    classified
 }
 
 #[cfg(test)]
@@ -193,6 +248,27 @@ mod tests {
             placeholder.execution_outcome,
             BlueBrainExecutionReferenceOutcome::PlaceholderOnly
         );
-        assert_eq!(placeholder.validity, BlueBrainReferenceValidity::Caveated);
+        assert_eq!(
+            placeholder.validity,
+            BlueBrainReferenceValidity::Insufficient
+        );
+
+        let reference_only = classify_blue_brain_reference_path("diag:runtime:insufficient_basis");
+        assert_eq!(
+            reference_only.validity,
+            BlueBrainReferenceValidity::ReferenceOnly
+        );
+
+        let blocked_memory =
+            classify_blue_brain_reference_path("bb8:memory_record:mem-1:maintenance_blocked");
+        assert_eq!(blocked_memory.validity, BlueBrainReferenceValidity::Blocked);
+
+        let unavailable_execution = classify_blue_brain_reference_path(
+            "bb14:execution:h2:result:ExecutionUnavailable:insufficient",
+        );
+        assert_eq!(
+            unavailable_execution.validity,
+            BlueBrainReferenceValidity::Insufficient
+        );
     }
 }
