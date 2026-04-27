@@ -755,6 +755,53 @@ mod tests {
     }
 
     #[test]
+    fn memory_only_or_execution_only_reference_stays_not_a_consolidation_candidate() {
+        let memory_only =
+            blue_brain_build_combined_retrieval_basis(BlueBrainCombinedRetrievalInput {
+                memory_read: Some(sample_memory_read(
+                    BlueBrainMemoryRetrievalState::RetrievedReferenceOnly,
+                )),
+                execution_report: None,
+                candidate_reference: Some("cand-memory-only".to_string()),
+                proposal_reference: None,
+                context_reference: Some("ctx-memory-only".to_string()),
+            });
+        assert_eq!(
+            memory_only.candidate_class,
+            BlueBrainRetrievalConsolidationCandidateClass::MemoryRetrievalCandidate
+        );
+        assert_eq!(
+            memory_only.consolidation_candidate_state,
+            BlueBrainConsolidationCandidateState::NotAConsolidationCandidate
+        );
+        assert_eq!(
+            memory_only.diagnostic_class,
+            BlueBrainCombinedRetrievalDiagnosticClass::CombinedReferenceInsufficientDiagnostic
+        );
+
+        let execution_only =
+            blue_brain_build_combined_retrieval_basis(BlueBrainCombinedRetrievalInput {
+                memory_read: None,
+                execution_report: Some(sample_execution_report()),
+                candidate_reference: None,
+                proposal_reference: Some("proposal-exec-only".to_string()),
+                context_reference: Some("ctx-exec-only".to_string()),
+            });
+        assert_eq!(
+            execution_only.candidate_class,
+            BlueBrainRetrievalConsolidationCandidateClass::ExecutionResultRetrievalCandidate
+        );
+        assert_eq!(
+            execution_only.consolidation_candidate_state,
+            BlueBrainConsolidationCandidateState::NotAConsolidationCandidate
+        );
+        assert_eq!(
+            execution_only.diagnostic_class,
+            BlueBrainCombinedRetrievalDiagnosticClass::CombinedReferenceInsufficientDiagnostic
+        );
+    }
+
+    #[test]
     fn non_canonical_path_is_marked_non_canonical() {
         let mut report = sample_execution_report();
         report.state = crate::blue_brain_minimal_execution::BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath;
@@ -893,5 +940,30 @@ mod tests {
             stale_basis.combined_reference_status,
             BlueBrainCombinedReferenceStatus::CombinedReferenceStale
         );
+    }
+
+    #[test]
+    fn combined_basis_remains_advisory_only_and_never_merge_or_ranking_capable() {
+        let basis = blue_brain_build_combined_retrieval_basis(BlueBrainCombinedRetrievalInput {
+            memory_read: Some(sample_memory_read(
+                BlueBrainMemoryRetrievalState::RetrievedWithCaveat,
+            )),
+            execution_report: Some(sample_execution_report()),
+            candidate_reference: Some("cand-advisory".to_string()),
+            proposal_reference: Some("proposal-advisory".to_string()),
+            context_reference: Some("ctx-advisory".to_string()),
+        });
+
+        assert_eq!(
+            basis.combined_reference_status,
+            BlueBrainCombinedReferenceStatus::CombinedReferenceCaveated
+        );
+        assert!(!basis.automatic_compute_invoked);
+        assert!(!basis.automatic_action_executed);
+        assert!(!basis.automatic_memory_persisted);
+        assert!(!basis.merge_or_record_mutation_permitted);
+        assert!(!basis.ranking_permitted);
+        assert!(!basis.semantic_search_permitted);
+        assert!(!basis.reasoning_output_permitted);
     }
 }
