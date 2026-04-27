@@ -2,6 +2,8 @@
 
 Status: Die BB15 Combined-Retrieval-Linie bleibt strikt **bounded advisory-only**. Diese Härtung ergänzt eine kanonische Diagnostics-Map und trennt Memory-/Execution-Zustände für Combined-Reference-Feedback ohne Consolidation, Ranking, Semantic Search oder Reasoning.
 
+Hinweis BB15 Prompt 3: Die harte Candidate-Boundary wird zusätzlich über eine kanonische Consolidation-Candidate-Map abgesichert (siehe `docs/blue_brain_bounded_consolidation_candidate_boundary_serie_bb15_prompt3_v1.md`).
+
 ## Kanonische Combined-Retrieval-Diagnostics-Map
 
 `runtime/ucf-compute/src/blue_brain_combined_retrieval.rs` führt `CANONICAL_BLUE_BRAIN_COMBINED_RETRIEVAL_DIAGNOSTICS_MAP` mit genau diesen Klassen:
