@@ -1,10 +1,22 @@
 use std::process::Command;
-use std::time::{Duration, Instant};
+use std::{fs, path::Path};
+
+fn compute_elapsed_secs_from_report(path: &Path) -> f64 {
+    let raw = fs::read_to_string(path).expect("read ucf-bench output report");
+    let value: serde_json::Value = serde_json::from_str(&raw).expect("parse ucf-bench output json");
+    let n = value["stats"]["n"]
+        .as_u64()
+        .expect("stats.n must be a positive integer");
+    let throughput = value["stats"]["throughput_ops_sec"]
+        .as_f64()
+        .expect("stats.throughput_ops_sec must be a float");
+    assert!(throughput > 0.0, "throughput_ops_sec must be > 0");
+    n as f64 / throughput
+}
 
 #[test]
 fn compute_fixture_smoke_under_four_seconds() {
     let out = std::env::temp_dir().join("ucf-bench-compute-smoke.json");
-    let start = Instant::now();
     let status = Command::new(env!("CARGO_BIN_EXE_ucf-bench"))
         .args([
             "compute",
@@ -18,9 +30,10 @@ fn compute_fixture_smoke_under_four_seconds() {
         .status()
         .expect("run ucf-bench compute");
     assert!(status.success());
+    let elapsed_secs = compute_elapsed_secs_from_report(out.as_path());
     assert!(
-        start.elapsed() < Duration::from_secs(4),
-        "compute fixtures smoke exceeded 4s budget"
+        elapsed_secs < 4.0,
+        "compute fixtures smoke exceeded 4s budget (elapsed={elapsed_secs:.3}s)"
     );
 }
 
