@@ -29,11 +29,12 @@ use ucf_cde_scm::{
 };
 use ucf_commit::canonical_control_frame_len;
 use ucf_compute::{
-    evaluate_blue_brain_kuramoto_modulation, kuramoto_modulation_diagnostic_class_token,
-    kuramoto_modulation_reason_token, kuramoto_modulation_state_token,
-    BlueBrainKuramotoModulationInput, BlueBrainKuramotoPhaseNodeInput,
-    BlueBrainKuramotoRuntimeCaveatModulation, BlueBrainKuramotoRuntimePosture,
-    BlueBrainKuramotoScopeState, BlueBrainKuramotoSelectionPosture,
+    dynamics_execution_feedback_state_token, evaluate_blue_brain_kuramoto_modulation,
+    kuramoto_modulation_diagnostic_class_token, kuramoto_modulation_reason_token,
+    kuramoto_modulation_state_token, BlueBrainKuramotoModulationInput,
+    BlueBrainKuramotoPhaseNodeInput, BlueBrainKuramotoRuntimeCaveatModulation,
+    BlueBrainKuramotoRuntimePosture, BlueBrainKuramotoScopeState,
+    BlueBrainKuramotoSelectionPosture,
 };
 use ucf_consistency_engine::{
     ConsistencyAction, ConsistencyActionKind, ConsistencyEngine, ConsistencyInputs,
@@ -4642,6 +4643,9 @@ impl Router {
                     kuramoto_result.diagnostic_class,
                 ),
                 reason_tag: kuramoto_modulation_reason_token(kuramoto_result.modulation_reason),
+                execution_feedback_state: dynamics_execution_feedback_state_token(
+                    kuramoto_result.execution_feedback_state,
+                ),
                 runtime_modulation: kuramoto_runtime_token(kuramoto_result.runtime_modulation),
                 coherence_permille: kuramoto_result.coherence_permille,
                 caveat_tag: kuramoto_caveat_tag(kuramoto_result.caveats.as_slice()),
@@ -4709,6 +4713,26 @@ impl Router {
         if evidence_refs.is_empty() {
             unsupported_input_refs.push("missing_evidence_reference_basis".to_string());
         }
+        let mut canonical_execution_result_refs = Vec::new();
+        let mut failed_or_cancelled_execution_result_refs = Vec::new();
+        let mut blocked_or_unavailable_execution_result_refs = Vec::new();
+        let mut diagnostic_only_feedback_refs = Vec::new();
+        for evidence_ref in &evidence_refs {
+            if evidence_ref.contains(":result:completed") {
+                canonical_execution_result_refs.push(evidence_ref.clone());
+            } else if evidence_ref.contains(":result:failed")
+                || evidence_ref.contains(":result:cancelled")
+            {
+                failed_or_cancelled_execution_result_refs.push(evidence_ref.clone());
+            } else if evidence_ref.contains(":result:ExecutionBlocked")
+                || evidence_ref.contains(":result:ExecutionUnavailable")
+                || evidence_ref.contains(":result:ExecutionUnsupported")
+            {
+                blocked_or_unavailable_execution_result_refs.push(evidence_ref.clone());
+            } else if evidence_ref.starts_with("diag:") || evidence_ref.contains(":placeholder:") {
+                diagnostic_only_feedback_refs.push(evidence_ref.clone());
+            }
+        }
 
         BlueBrainKuramotoModulationInput {
             scope: BlueBrainKuramotoScopeState::RuntimeCaveatModulating,
@@ -4720,6 +4744,10 @@ impl Router {
             phase_nodes: Self::kuramoto_phase_nodes(workspace_snapshot, attention, delta),
             unsupported_input_refs,
             blocked_input_refs,
+            canonical_execution_result_refs,
+            failed_or_cancelled_execution_result_refs,
+            blocked_or_unavailable_execution_result_refs,
+            diagnostic_only_feedback_refs,
             non_canonical_internal_only_path: false,
         }
     }

@@ -56,6 +56,7 @@ pub struct BrainKuramotoHint {
     pub modulation_state: &'static str,
     pub diagnostic_class: &'static str,
     pub reason_tag: &'static str,
+    pub execution_feedback_state: &'static str,
     pub runtime_modulation: &'static str,
     pub coherence_permille: u16,
     pub caveat_tag: &'static str,
@@ -403,13 +404,14 @@ impl WorkspaceSignal {
             format!("BRAIN_NEUROMOD_HINT={delta_commit} DA={dopamine} SE={serotonin} NE={norepi} CO={cortisol}");
         if let Some(hint) = kuramoto_hint {
             summary.push_str(&format!(
-                " KURAMOTO_STATE={} KURAMOTO_RUNTIME={} KURAMOTO_COHERENCE={} KURAMOTO_CAVEAT={} KURAMOTO_DIAGNOSTIC={} KURAMOTO_REASON={}",
+                " KURAMOTO_STATE={} KURAMOTO_RUNTIME={} KURAMOTO_COHERENCE={} KURAMOTO_CAVEAT={} KURAMOTO_DIAGNOSTIC={} KURAMOTO_REASON={} KURAMOTO_EXEC_FEEDBACK={}",
                 hint.modulation_state,
                 hint.runtime_modulation,
                 hint.coherence_permille,
                 hint.caveat_tag,
                 hint.diagnostic_class,
-                hint.reason_tag
+                hint.reason_tag,
+                hint.execution_feedback_state
             ));
         }
         let priority = 7000;
@@ -2533,6 +2535,7 @@ mod tests {
                 modulation_state: "caveated",
                 diagnostic_class: "modulation_caveated_diagnostic",
                 reason_tag: "caveated_partial_or_weak_basis",
+                execution_feedback_state: "caveated_execution_informed_dynamics_input",
                 runtime_modulation: "attach_dynamics_caveat",
                 coherence_permille: 640,
                 caveat_tag: "runtime_caveat_posture_present",
@@ -2554,5 +2557,8 @@ mod tests {
         assert!(signal
             .summary
             .contains("KURAMOTO_CAVEAT=runtime_caveat_posture_present"));
+        assert!(signal
+            .summary
+            .contains("KURAMOTO_EXEC_FEEDBACK=caveated_execution_informed_dynamics_input"));
     }
 }
