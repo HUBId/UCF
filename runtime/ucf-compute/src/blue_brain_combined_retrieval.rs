@@ -2,6 +2,9 @@ use crate::blue_brain_memory::{BlueBrainMemoryReadResult, BlueBrainMemoryRetriev
 use crate::blue_brain_minimal_execution::{
     BlueBrainExecutionOutcomeClass, BlueBrainMinimalExecutionReport, BlueBrainMinimalExecutionState,
 };
+use crate::canonical_reference::{
+    classify_blue_brain_reference_path, BlueBrainCanonicalReferenceKind,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainRetrievalConsolidationCandidateClass {
@@ -221,6 +224,37 @@ pub fn blue_brain_build_combined_retrieval_basis(
     input: BlueBrainCombinedRetrievalInput,
 ) -> BlueBrainCombinedRetrievalBasis {
     let mut caveats = Vec::new();
+    if let Some(context_reference) = input.context_reference.as_ref() {
+        let classified = classify_blue_brain_reference_path(context_reference);
+        if !matches!(
+            classified.kind,
+            BlueBrainCanonicalReferenceKind::ContextReference
+                | BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
+        ) {
+            caveats.push("context reference boundary mismatch".to_string());
+        }
+    }
+    if let Some(candidate_reference) = input.candidate_reference.as_ref() {
+        let classified = classify_blue_brain_reference_path(candidate_reference);
+        if matches!(
+            classified.kind,
+            BlueBrainCanonicalReferenceKind::MemoryRecordReference
+                | BlueBrainCanonicalReferenceKind::ExecutionResultReference
+        ) {
+            caveats.push("candidate reference must not be memory/result reference".to_string());
+        }
+    }
+    if let Some(proposal_reference) = input.proposal_reference.as_ref() {
+        let classified = classify_blue_brain_reference_path(proposal_reference);
+        if matches!(
+            classified.kind,
+            BlueBrainCanonicalReferenceKind::MemoryRecordReference
+                | BlueBrainCanonicalReferenceKind::ExecutionResultReference
+                | BlueBrainCanonicalReferenceKind::DiagnosticReference
+        ) {
+            caveats.push("proposal reference boundary mismatch".to_string());
+        }
+    }
 
     let memory_record_reference = input
         .memory_read
@@ -532,7 +566,10 @@ pub fn blue_brain_build_combined_retrieval_basis(
         .memory_read
         .as_ref()
         .is_some_and(|read| read.context_attached)
-        || input.context_reference.is_some();
+        || (input.context_reference.is_some()
+            && !caveats
+                .iter()
+                .any(|entry| entry == "context reference boundary mismatch"));
 
     BlueBrainCombinedRetrievalBasis {
         candidate_class,
@@ -965,5 +1002,40 @@ mod tests {
         assert!(!basis.ranking_permitted);
         assert!(!basis.semantic_search_permitted);
         assert!(!basis.reasoning_output_permitted);
+    }
+
+    #[test]
+    fn context_reference_boundary_mismatch_is_caveated_and_not_attached() {
+        let basis = blue_brain_build_combined_retrieval_basis(BlueBrainCombinedRetrievalInput {
+            memory_read: None,
+            execution_report: None,
+            candidate_reference: None,
+            proposal_reference: None,
+            context_reference: Some("bb14:execution:h1:result:completed".to_string()),
+        });
+        assert!(basis
+            .caveats
+            .iter()
+            .any(|entry| entry == "context reference boundary mismatch"));
+        assert!(!basis.reference_basis_attached_to_context);
+    }
+
+    #[test]
+    fn candidate_and_proposal_boundaries_reject_memory_execution_and_diagnostic_refs() {
+        let basis = blue_brain_build_combined_retrieval_basis(BlueBrainCombinedRetrievalInput {
+            memory_read: None,
+            execution_report: None,
+            candidate_reference: Some("bb8:memory_record:mem-7".to_string()),
+            proposal_reference: Some("diag:proposal:runtime".to_string()),
+            context_reference: Some("ctx:allowed".to_string()),
+        });
+        assert!(basis
+            .caveats
+            .iter()
+            .any(|entry| entry == "candidate reference must not be memory/result reference"));
+        assert!(basis
+            .caveats
+            .iter()
+            .any(|entry| entry == "proposal reference boundary mismatch"));
     }
 }

@@ -59,6 +59,7 @@ pub mod blue_brain_minimal_execution;
     feature = "lfm-burn"
 ))]
 pub mod candle_weights;
+pub mod canonical_reference;
 pub mod capabilities;
 pub mod compute_service;
 pub mod contracts;
@@ -162,6 +163,11 @@ pub use blue_brain_minimal_execution::{
     BlueBrainMinimalExecutionReport, BlueBrainMinimalExecutionRequest,
     BlueBrainMinimalExecutionResultBoundary, BlueBrainMinimalExecutionState,
     BlueBrainMinimalExecutionTraceCore, BlueBrainProposalExecutionFeedbackClass,
+};
+pub use canonical_reference::{
+    classify_blue_brain_reference_path, BlueBrainCanonicalReference,
+    BlueBrainCanonicalReferenceKind, BlueBrainExecutionReferenceOutcome,
+    BlueBrainReferenceValidity,
 };
 pub use compute_service::{
     CapacityPressure, CapacityQueueDisposition, ComputeJob, CoordinationFreshness,
