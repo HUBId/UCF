@@ -2264,4 +2264,42 @@ mod tests {
         assert!(doc.contains("kein direct compute invocation"));
         assert!(doc.contains("kein direct memory commit"));
     }
+
+    #[test]
+    fn serie_bb16_prompt4_doc_stays_pinned_to_closure_matrix_and_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_bb16_readiness_sweep_bounded_dynamics_execution_line_serie_bb16_prompt4_v1.md"
+        );
+        assert!(doc.contains("stable bounded dynamics ↔ execution line"));
+        assert!(doc.contains("usable with caveats"));
+        assert!(doc.contains("advisory-only"));
+        assert!(doc.contains("blocked/insufficient"));
+        assert!(doc.contains("deferred/non-canonical"));
+
+        assert!(doc.contains("execution_informed_dynamics_input"));
+        assert!(doc.contains("reference_informed_dynamics_input"));
+        assert!(doc.contains("caveated_execution_informed_dynamics_input"));
+        assert!(doc.contains("insufficient_dynamics_feedback_basis"));
+        assert!(doc.contains("blocked_dynamics_feedback_basis"));
+        assert!(doc.contains("unavailable_dynamics_feedback_basis"));
+        assert!(doc.contains("diagnostic_only_dynamics_feedback"));
+        assert!(doc.contains("non_canonical_internal_only_feedback_path"));
+
+        assert!(doc.contains("runtime_advisory_coupling"));
+        assert!(doc.contains("selection_advisory_coupling"));
+        assert!(doc.contains("caveated_advisory_coupling"));
+        assert!(doc.contains("insufficient_advisory_coupling"));
+        assert!(doc.contains("blocked_advisory_coupling"));
+        assert!(doc.contains("ignored_advisory_coupling"));
+        assert!(doc.contains("non_canonical_internal_only_coupling_path"));
+
+        assert!(doc.contains("keine direkte Action-Execution"));
+        assert!(doc.contains("keine direkte Retry-Orchestrierung"));
+        assert!(doc.contains("keine Policy-/Governance-Entscheidungsautorität"));
+        assert!(doc.contains("keine automatische Compute-Invocation"));
+        assert!(doc.contains("keine automatische Memory-Persistenz"));
+        assert!(doc.contains("keine Safety-Override-Semantik"));
+        assert!(doc.contains("maintenance-only"));
+        assert!(doc.contains("Priorität 1: BB17 context/memory/reference hardening follow-up"));
+    }
 }
