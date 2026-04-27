@@ -2,6 +2,8 @@
 
 Status: BB15 erweitert die kanonische Retrieval-Basis **nur bounded** über bereits vorhandene BB8-Memory-Records und BB14-Execution-Result-Referenzen. Es wird **keine** Consolidation-Engine, **kein** Ranking, **keine** Semantic Search und **kein** Reasoning-/Action-Autoritäts-Pfad eingeführt.
 
+Hinweis: Prompt 2 härtet diese Linie über eine kanonische Combined-Retrieval-Diagnostics-Map sowie explizite stale/invalidated/failed/cancelled/blocked/insufficient-Trennungen weiter (siehe `docs/blue_brain_combined_retrieval_diagnostics_stale_invalidated_failed_feedback_serie_bb15_prompt2_v1.md`).
+
 ## Kanonische Combined-Retrieval-Linie
 
 `runtime/ucf-compute/src/blue_brain_combined_retrieval.rs` führt eine minimale gemeinsame Basis ein:

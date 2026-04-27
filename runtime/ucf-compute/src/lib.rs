@@ -100,9 +100,12 @@ pub use backends::{
     CANONICAL_ONBOARDING_BACKEND, CANONICAL_ONBOARDING_PACK,
 };
 pub use blue_brain_combined_retrieval::{
-    blue_brain_build_combined_retrieval_basis, BlueBrainCombinedReferenceStatus,
-    BlueBrainCombinedRetrievalBasis, BlueBrainCombinedRetrievalInput,
+    blue_brain_build_combined_retrieval_basis, BlueBrainCombinedExecutionBasisState,
+    BlueBrainCombinedMemoryBasisState, BlueBrainCombinedReferenceStatus,
+    BlueBrainCombinedRetrievalBasis, BlueBrainCombinedRetrievalDiagnosticClass,
+    BlueBrainCombinedRetrievalDiagnosticLane, BlueBrainCombinedRetrievalInput,
     BlueBrainRetrievalConsolidationCandidateClass,
+    CANONICAL_BLUE_BRAIN_COMBINED_RETRIEVAL_DIAGNOSTICS_MAP,
 };
 pub use blue_brain_dynamics::{
     evaluate_blue_brain_hodgkin_huxley_diagnostic, evaluate_blue_brain_kuramoto_modulation,
