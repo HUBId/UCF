@@ -104,8 +104,10 @@ pub use blue_brain_combined_retrieval::{
     BlueBrainCombinedMemoryBasisState, BlueBrainCombinedReferenceStatus,
     BlueBrainCombinedRetrievalBasis, BlueBrainCombinedRetrievalDiagnosticClass,
     BlueBrainCombinedRetrievalDiagnosticLane, BlueBrainCombinedRetrievalInput,
+    BlueBrainConsolidationCandidateLane, BlueBrainConsolidationCandidateState,
     BlueBrainRetrievalConsolidationCandidateClass,
     CANONICAL_BLUE_BRAIN_COMBINED_RETRIEVAL_DIAGNOSTICS_MAP,
+    CANONICAL_BLUE_BRAIN_CONSOLIDATION_CANDIDATE_MAP,
 };
 pub use blue_brain_dynamics::{
     evaluate_blue_brain_hodgkin_huxley_diagnostic, evaluate_blue_brain_kuramoto_modulation,

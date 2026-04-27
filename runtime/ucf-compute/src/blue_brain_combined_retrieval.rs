@@ -15,6 +15,57 @@ pub enum BlueBrainRetrievalConsolidationCandidateClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainConsolidationCandidateState {
+    ConsolidationCandidateOnly,
+    CaveatedConsolidationCandidate,
+    InsufficientConsolidationCandidate,
+    BlockedConsolidationCandidate,
+    NotAConsolidationCandidate,
+    NonCanonicalInternalOnlyConsolidationPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainConsolidationCandidateLane {
+    pub state: BlueBrainConsolidationCandidateState,
+    pub lane: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+pub const CANONICAL_BLUE_BRAIN_CONSOLIDATION_CANDIDATE_MAP: [BlueBrainConsolidationCandidateLane;
+    6] = [
+    BlueBrainConsolidationCandidateLane {
+        state: BlueBrainConsolidationCandidateState::ConsolidationCandidateOnly,
+        lane: "blue_brain_consolidation_candidate_only",
+        canonical_guard: "candidate-only marks bounded combined-reference eligibility and never performs merge, ranking, semantic retrieval, or reasoning",
+    },
+    BlueBrainConsolidationCandidateLane {
+        state: BlueBrainConsolidationCandidateState::CaveatedConsolidationCandidate,
+        lane: "blue_brain_consolidation_candidate_caveated",
+        canonical_guard: "caveated candidate stays advisory-only and is never promoted to merged or ranked output",
+    },
+    BlueBrainConsolidationCandidateLane {
+        state: BlueBrainConsolidationCandidateState::InsufficientConsolidationCandidate,
+        lane: "blue_brain_consolidation_candidate_insufficient",
+        canonical_guard: "insufficient candidate keeps weakened references explicit and never repairs basis through implicit consolidation",
+    },
+    BlueBrainConsolidationCandidateLane {
+        state: BlueBrainConsolidationCandidateState::BlockedConsolidationCandidate,
+        lane: "blue_brain_consolidation_candidate_blocked",
+        canonical_guard: "blocked candidate remains blocked under stale/invalidated/failed/cancelled/blocked maintenance boundaries",
+    },
+    BlueBrainConsolidationCandidateLane {
+        state: BlueBrainConsolidationCandidateState::NotAConsolidationCandidate,
+        lane: "blue_brain_not_a_consolidation_candidate",
+        canonical_guard: "single-source or context-only retrieval basis is not a consolidation candidate",
+    },
+    BlueBrainConsolidationCandidateLane {
+        state: BlueBrainConsolidationCandidateState::NonCanonicalInternalOnlyConsolidationPath,
+        lane: "blue_brain_non_canonical_internal_only_consolidation_path",
+        canonical_guard: "internal-only paths remain non-canonical and cannot become canonical candidate outputs",
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainCombinedReferenceStatus {
     CombinedReferenceAvailable,
     CombinedReferenceCaveated,
@@ -131,6 +182,7 @@ pub enum BlueBrainCombinedExecutionBasisState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlueBrainCombinedRetrievalBasis {
     pub candidate_class: BlueBrainRetrievalConsolidationCandidateClass,
+    pub consolidation_candidate_state: BlueBrainConsolidationCandidateState,
     pub combined_reference_status: BlueBrainCombinedReferenceStatus,
     pub diagnostic_class: BlueBrainCombinedRetrievalDiagnosticClass,
     pub memory_record_reference: Option<String>,
@@ -150,6 +202,10 @@ pub struct BlueBrainCombinedRetrievalBasis {
     pub automatic_compute_invoked: bool,
     pub automatic_action_executed: bool,
     pub automatic_memory_persisted: bool,
+    pub merge_or_record_mutation_permitted: bool,
+    pub ranking_permitted: bool,
+    pub semantic_search_permitted: bool,
+    pub reasoning_output_permitted: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -373,6 +429,42 @@ pub fn blue_brain_build_combined_retrieval_basis(
             BlueBrainCombinedReferenceStatus::ConsolidationCandidateOnly
         }
     };
+    let consolidation_candidate_state = match candidate_class {
+        BlueBrainRetrievalConsolidationCandidateClass::NonCanonicalInternalOnlyRetrievalPath => {
+            BlueBrainConsolidationCandidateState::NonCanonicalInternalOnlyConsolidationPath
+        }
+        BlueBrainRetrievalConsolidationCandidateClass::CombinedReferenceCandidate => {
+            match combined_reference_status {
+                BlueBrainCombinedReferenceStatus::CombinedReferenceAvailable => {
+                    BlueBrainConsolidationCandidateState::ConsolidationCandidateOnly
+                }
+                BlueBrainCombinedReferenceStatus::CombinedReferenceCaveated => {
+                    BlueBrainConsolidationCandidateState::CaveatedConsolidationCandidate
+                }
+                BlueBrainCombinedReferenceStatus::CombinedReferenceStale
+                | BlueBrainCombinedReferenceStatus::CombinedReferenceInvalidated
+                | BlueBrainCombinedReferenceStatus::CombinedReferenceFailed
+                | BlueBrainCombinedReferenceStatus::CombinedReferenceCancelled
+                | BlueBrainCombinedReferenceStatus::CombinedReferenceInsufficient => {
+                    BlueBrainConsolidationCandidateState::InsufficientConsolidationCandidate
+                }
+                BlueBrainCombinedReferenceStatus::CombinedReferenceBlocked => {
+                    BlueBrainConsolidationCandidateState::BlockedConsolidationCandidate
+                }
+                BlueBrainCombinedReferenceStatus::ConsolidationCandidateOnly
+                | BlueBrainCombinedReferenceStatus::NoConsolidationPerformed => {
+                    BlueBrainConsolidationCandidateState::NotAConsolidationCandidate
+                }
+            }
+        }
+        BlueBrainRetrievalConsolidationCandidateClass::MemoryRetrievalCandidate
+        | BlueBrainRetrievalConsolidationCandidateClass::ExecutionResultRetrievalCandidate
+        | BlueBrainRetrievalConsolidationCandidateClass::RetrievalSupportingContextCandidate
+        | BlueBrainRetrievalConsolidationCandidateClass::InsufficientRetrievalBasis
+        | BlueBrainRetrievalConsolidationCandidateClass::ConsolidationCandidateOnly => {
+            BlueBrainConsolidationCandidateState::NotAConsolidationCandidate
+        }
+    };
     let diagnostic_class = match candidate_class {
         BlueBrainRetrievalConsolidationCandidateClass::NonCanonicalInternalOnlyRetrievalPath => {
             BlueBrainCombinedRetrievalDiagnosticClass::NonCanonicalInternalOnlyCombinedReferenceDiagnostic
@@ -444,6 +536,7 @@ pub fn blue_brain_build_combined_retrieval_basis(
 
     BlueBrainCombinedRetrievalBasis {
         candidate_class,
+        consolidation_candidate_state,
         combined_reference_status,
         diagnostic_class,
         memory_record_reference,
@@ -463,6 +556,10 @@ pub fn blue_brain_build_combined_retrieval_basis(
         automatic_compute_invoked: false,
         automatic_action_executed: false,
         automatic_memory_persisted: false,
+        merge_or_record_mutation_permitted: false,
+        ranking_permitted: false,
+        semantic_search_permitted: false,
+        reasoning_output_permitted: false,
     }
 }
 
@@ -472,8 +569,9 @@ mod tests {
         blue_brain_build_combined_retrieval_basis, BlueBrainCombinedExecutionBasisState,
         BlueBrainCombinedMemoryBasisState, BlueBrainCombinedReferenceStatus,
         BlueBrainCombinedRetrievalDiagnosticClass, BlueBrainCombinedRetrievalInput,
-        BlueBrainRetrievalConsolidationCandidateClass,
+        BlueBrainConsolidationCandidateState, BlueBrainRetrievalConsolidationCandidateClass,
         CANONICAL_BLUE_BRAIN_COMBINED_RETRIEVAL_DIAGNOSTICS_MAP,
+        CANONICAL_BLUE_BRAIN_CONSOLIDATION_CANDIDATE_MAP,
     };
     use crate::blue_brain_memory::{
         BlueBrainMemoryDiagnosticClass, BlueBrainMemoryReadResult,
@@ -570,6 +668,10 @@ mod tests {
             BlueBrainCombinedReferenceStatus::CombinedReferenceAvailable
         );
         assert_eq!(
+            basis.consolidation_candidate_state,
+            BlueBrainConsolidationCandidateState::ConsolidationCandidateOnly
+        );
+        assert_eq!(
             basis.diagnostic_class,
             BlueBrainCombinedRetrievalDiagnosticClass::CombinedReferenceAvailableDiagnostic
         );
@@ -585,6 +687,10 @@ mod tests {
         assert!(!basis.automatic_compute_invoked);
         assert!(!basis.automatic_action_executed);
         assert!(!basis.automatic_memory_persisted);
+        assert!(!basis.merge_or_record_mutation_permitted);
+        assert!(!basis.ranking_permitted);
+        assert!(!basis.semantic_search_permitted);
+        assert!(!basis.reasoning_output_permitted);
     }
 
     #[test]
@@ -610,6 +716,10 @@ mod tests {
             BlueBrainCombinedReferenceStatus::CombinedReferenceStale
         );
         assert_eq!(
+            basis.consolidation_candidate_state,
+            BlueBrainConsolidationCandidateState::InsufficientConsolidationCandidate
+        );
+        assert_eq!(
             basis.diagnostic_class,
             BlueBrainCombinedRetrievalDiagnosticClass::CombinedReferenceStaleDiagnostic
         );
@@ -633,6 +743,10 @@ mod tests {
         assert_eq!(
             basis.combined_reference_status,
             BlueBrainCombinedReferenceStatus::CombinedReferenceInsufficient
+        );
+        assert_eq!(
+            basis.consolidation_candidate_state,
+            BlueBrainConsolidationCandidateState::NotAConsolidationCandidate
         );
         assert_eq!(
             basis.diagnostic_class,
@@ -665,6 +779,10 @@ mod tests {
             basis.diagnostic_class,
             BlueBrainCombinedRetrievalDiagnosticClass::NonCanonicalInternalOnlyCombinedReferenceDiagnostic
         );
+        assert_eq!(
+            basis.consolidation_candidate_state,
+            BlueBrainConsolidationCandidateState::NonCanonicalInternalOnlyConsolidationPath
+        );
     }
 
     #[test]
@@ -679,6 +797,15 @@ mod tests {
                 lane.diagnostic_class
                 == BlueBrainCombinedRetrievalDiagnosticClass::CombinedReferenceCancelledDiagnostic
             }));
+    }
+
+    #[test]
+    fn consolidation_candidate_map_covers_required_states() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_CONSOLIDATION_CANDIDATE_MAP.len(), 6);
+        assert!(CANONICAL_BLUE_BRAIN_CONSOLIDATION_CANDIDATE_MAP
+            .iter()
+            .any(|lane| lane.state
+                == BlueBrainConsolidationCandidateState::BlockedConsolidationCandidate));
     }
 
     #[test]
