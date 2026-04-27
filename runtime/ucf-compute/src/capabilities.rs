@@ -544,12 +544,12 @@ mod tests {
         })
         .expect("candle backend");
         let req = base_request();
-        let a = backend
-            .infer(&req, ComputeBudget::default())
-            .expect("infer a");
-        let b = backend
-            .infer(&req, ComputeBudget::default())
-            .expect("infer b");
+        let budget = ComputeBudget {
+            hard_timeout_micros: 50_000,
+            ..ComputeBudget::default()
+        };
+        let a = backend.infer(&req, budget).expect("infer a");
+        let b = backend.infer(&req, budget).expect("infer b");
         assert_eq!(a.digest, b.digest);
         assert_eq!(a.text, b.text);
     }
