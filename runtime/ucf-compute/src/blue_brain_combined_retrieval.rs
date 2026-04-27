@@ -3,7 +3,7 @@ use crate::blue_brain_minimal_execution::{
     BlueBrainExecutionOutcomeClass, BlueBrainMinimalExecutionReport, BlueBrainMinimalExecutionState,
 };
 use crate::canonical_reference::{
-    classify_blue_brain_reference_path, BlueBrainCanonicalReferenceKind,
+    classify_blue_brain_reference_path, BlueBrainCanonicalReferenceKind, BlueBrainReferenceValidity,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,6 +195,7 @@ pub struct BlueBrainCombinedRetrievalBasis {
     pub context_reference: Option<String>,
     pub memory_basis_state: Option<BlueBrainCombinedMemoryBasisState>,
     pub execution_basis_state: BlueBrainCombinedExecutionBasisState,
+    pub canonical_reference_validity: BlueBrainReferenceValidity,
     pub caveats: Vec<String>,
     pub freshness_or_staleness: Option<String>,
     pub maintenance_or_failure_state: Option<String>,
@@ -561,6 +562,48 @@ pub fn blue_brain_build_combined_retrieval_basis(
         .as_ref()
         .map(|report| format!("{:?}:{:?}", report.state, report.outcome_class));
 
+    let canonical_reference_validity = match (memory_basis_state, execution_basis_state) {
+        (_, BlueBrainCombinedExecutionBasisState::NonCanonicalInternalOnlyPath)
+        | (Some(BlueBrainCombinedMemoryBasisState::Blocked), _)
+            if memory_non_canonical || execution_non_canonical =>
+        {
+            BlueBrainReferenceValidity::NonCanonicalInternalOnlyPath
+        }
+        (_, BlueBrainCombinedExecutionBasisState::Blocked)
+        | (Some(BlueBrainCombinedMemoryBasisState::Blocked), _) => {
+            BlueBrainReferenceValidity::Blocked
+        }
+        (
+            Some(
+                BlueBrainCombinedMemoryBasisState::Missing
+                | BlueBrainCombinedMemoryBasisState::Unavailable,
+            ),
+            _,
+        )
+        | (
+            _,
+            BlueBrainCombinedExecutionBasisState::Unavailable
+            | BlueBrainCombinedExecutionBasisState::Unsupported
+            | BlueBrainCombinedExecutionBasisState::PlaceholderOnly
+            | BlueBrainCombinedExecutionBasisState::NotObserved,
+        ) => BlueBrainReferenceValidity::Insufficient,
+        (Some(BlueBrainCombinedMemoryBasisState::Invalidated), _) => {
+            BlueBrainReferenceValidity::Invalidated
+        }
+        (Some(BlueBrainCombinedMemoryBasisState::Stale), _) => BlueBrainReferenceValidity::Stale,
+        (Some(BlueBrainCombinedMemoryBasisState::Caveated), _)
+        | (
+            _,
+            BlueBrainCombinedExecutionBasisState::Failed
+            | BlueBrainCombinedExecutionBasisState::Cancelled,
+        ) => BlueBrainReferenceValidity::Caveated,
+        (
+            Some(BlueBrainCombinedMemoryBasisState::Current),
+            BlueBrainCombinedExecutionBasisState::Completed,
+        ) => BlueBrainReferenceValidity::Current,
+        _ => BlueBrainReferenceValidity::ReferenceOnly,
+    };
+
     let reference_basis_observed = has_memory_reference || has_execution_reference;
     let reference_basis_attached_to_context = input
         .memory_read
@@ -583,6 +626,7 @@ pub fn blue_brain_build_combined_retrieval_basis(
         context_reference: input.context_reference,
         memory_basis_state,
         execution_basis_state,
+        canonical_reference_validity,
         caveats,
         freshness_or_staleness,
         maintenance_or_failure_state,
@@ -619,6 +663,7 @@ mod tests {
         execute_blue_brain_minimal_action, BlueBrainMinimalExecutionAction,
         BlueBrainMinimalExecutionRequest,
     };
+    use crate::canonical_reference::BlueBrainReferenceValidity;
     use crate::reference_map::{
         BlueBrainActionExecutionEligibilityClass, BlueBrainFutureActionHandoffClass,
         BlueBrainSafetyPrecheckClass,
@@ -720,6 +765,10 @@ mod tests {
             basis.execution_basis_state,
             BlueBrainCombinedExecutionBasisState::Completed
         );
+        assert_eq!(
+            basis.canonical_reference_validity,
+            BlueBrainReferenceValidity::Current
+        );
         assert!(basis.reference_basis_supports_selection_or_proposal_only);
         assert!(!basis.automatic_compute_invoked);
         assert!(!basis.automatic_action_executed);
@@ -755,6 +804,10 @@ mod tests {
         assert_eq!(
             basis.consolidation_candidate_state,
             BlueBrainConsolidationCandidateState::InsufficientConsolidationCandidate
+        );
+        assert_eq!(
+            basis.canonical_reference_validity,
+            BlueBrainReferenceValidity::Stale
         );
         assert_eq!(
             basis.diagnostic_class,
