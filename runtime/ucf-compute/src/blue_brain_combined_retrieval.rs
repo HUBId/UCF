@@ -3,7 +3,9 @@ use crate::blue_brain_minimal_execution::{
     BlueBrainExecutionOutcomeClass, BlueBrainMinimalExecutionReport, BlueBrainMinimalExecutionState,
 };
 use crate::canonical_reference::{
-    classify_blue_brain_reference_path, BlueBrainCanonicalReferenceKind, BlueBrainReferenceValidity,
+    canonical_reference_consumption_decision, classify_blue_brain_reference_path,
+    BlueBrainCanonicalReferenceKind, BlueBrainReferenceConsumptionLayer,
+    BlueBrainReferenceValidity,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -227,6 +229,13 @@ pub fn blue_brain_build_combined_retrieval_basis(
     let mut caveats = Vec::new();
     if let Some(context_reference) = input.context_reference.as_ref() {
         let classified = classify_blue_brain_reference_path(context_reference);
+        let consumption = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Retrieval,
+            &classified,
+        );
+        if !consumption.allowed {
+            caveats.push("context reference uses non-canonical consumption path".to_string());
+        }
         if !matches!(
             classified.kind,
             BlueBrainCanonicalReferenceKind::ContextReference
@@ -237,6 +246,13 @@ pub fn blue_brain_build_combined_retrieval_basis(
     }
     if let Some(candidate_reference) = input.candidate_reference.as_ref() {
         let classified = classify_blue_brain_reference_path(candidate_reference);
+        let consumption = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Selection,
+            &classified,
+        );
+        if !consumption.allowed {
+            caveats.push("candidate reference uses non-canonical selection path".to_string());
+        }
         if matches!(
             classified.kind,
             BlueBrainCanonicalReferenceKind::MemoryRecordReference
@@ -247,6 +263,13 @@ pub fn blue_brain_build_combined_retrieval_basis(
     }
     if let Some(proposal_reference) = input.proposal_reference.as_ref() {
         let classified = classify_blue_brain_reference_path(proposal_reference);
+        let consumption = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Selection,
+            &classified,
+        );
+        if !consumption.allowed {
+            caveats.push("proposal reference uses non-canonical selection path".to_string());
+        }
         if matches!(
             classified.kind,
             BlueBrainCanonicalReferenceKind::MemoryRecordReference
@@ -1090,5 +1113,36 @@ mod tests {
             .caveats
             .iter()
             .any(|entry| entry == "proposal reference boundary mismatch"));
+        assert!(basis
+            .caveats
+            .iter()
+            .any(|entry| entry == "proposal reference uses non-canonical selection path"));
+    }
+
+    #[test]
+    fn context_candidate_and_proposal_non_canonical_paths_are_explicitly_caveated() {
+        let basis = blue_brain_build_combined_retrieval_basis(BlueBrainCombinedRetrievalInput {
+            memory_read: None,
+            execution_report: None,
+            candidate_reference: Some("bb14:execution:h1:result:completed".to_string()),
+            proposal_reference: Some(
+                "bb14:execution:h1:result:completed:non_canonical_internal_only".to_string(),
+            ),
+            context_reference: Some(
+                "bb14:execution:h1:result:completed:non_canonical_internal_only".to_string(),
+            ),
+        });
+        assert!(basis
+            .caveats
+            .iter()
+            .any(|entry| entry == "context reference uses non-canonical consumption path"));
+        assert!(basis
+            .caveats
+            .iter()
+            .any(|entry| entry == "candidate reference uses non-canonical selection path"));
+        assert!(basis
+            .caveats
+            .iter()
+            .any(|entry| entry == "proposal reference uses non-canonical selection path"));
     }
 }

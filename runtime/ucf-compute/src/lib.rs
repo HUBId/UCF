@@ -165,9 +165,11 @@ pub use blue_brain_minimal_execution::{
     BlueBrainMinimalExecutionTraceCore, BlueBrainProposalExecutionFeedbackClass,
 };
 pub use canonical_reference::{
-    canonical_reference_validity_state, classify_blue_brain_reference_path,
-    BlueBrainCanonicalReference, BlueBrainCanonicalReferenceKind,
-    BlueBrainExecutionReferenceOutcome, BlueBrainReferenceValidity,
+    canonical_reference_consumption_decision, canonical_reference_validity_state,
+    classify_blue_brain_reference_path, BlueBrainCanonicalReference,
+    BlueBrainCanonicalReferenceKind, BlueBrainExecutionReferenceOutcome,
+    BlueBrainReferenceConsumptionDecision, BlueBrainReferenceConsumptionLayer,
+    BlueBrainReferenceConsumptionPath, BlueBrainReferenceValidity,
 };
 pub use compute_service::{
     CapacityPressure, CapacityQueueDisposition, ComputeJob, CoordinationFreshness,

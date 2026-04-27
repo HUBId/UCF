@@ -29,14 +29,16 @@ use ucf_cde_scm::{
 };
 use ucf_commit::canonical_control_frame_len;
 use ucf_compute::{
-    canonical_reference_validity_state, classify_blue_brain_reference_path,
-    dynamics_advisory_coupling_state_token, dynamics_execution_feedback_state_token,
-    evaluate_blue_brain_kuramoto_modulation, kuramoto_modulation_diagnostic_class_token,
-    kuramoto_modulation_reason_token, kuramoto_modulation_state_token,
-    BlueBrainCanonicalReferenceKind, BlueBrainExecutionReferenceOutcome,
-    BlueBrainKuramotoModulationInput, BlueBrainKuramotoPhaseNodeInput,
-    BlueBrainKuramotoRuntimeCaveatModulation, BlueBrainKuramotoRuntimePosture,
-    BlueBrainKuramotoScopeState, BlueBrainKuramotoSelectionPosture, BlueBrainReferenceValidity,
+    canonical_reference_consumption_decision, canonical_reference_validity_state,
+    classify_blue_brain_reference_path, dynamics_advisory_coupling_state_token,
+    dynamics_execution_feedback_state_token, evaluate_blue_brain_kuramoto_modulation,
+    kuramoto_modulation_diagnostic_class_token, kuramoto_modulation_reason_token,
+    kuramoto_modulation_state_token, BlueBrainCanonicalReferenceKind,
+    BlueBrainExecutionReferenceOutcome, BlueBrainKuramotoModulationInput,
+    BlueBrainKuramotoPhaseNodeInput, BlueBrainKuramotoRuntimeCaveatModulation,
+    BlueBrainKuramotoRuntimePosture, BlueBrainKuramotoScopeState,
+    BlueBrainKuramotoSelectionPosture, BlueBrainReferenceConsumptionLayer,
+    BlueBrainReferenceValidity,
 };
 use ucf_consistency_engine::{
     ConsistencyAction, ConsistencyActionKind, ConsistencyEngine, ConsistencyInputs,
@@ -4726,9 +4728,17 @@ impl Router {
         let mut blocked_execution_result_refs = Vec::new();
         let mut unavailable_execution_result_refs = Vec::new();
         let mut diagnostic_only_feedback_refs = Vec::new();
+        let mut saw_non_canonical_internal_only_path = false;
         for evidence_ref in &evidence_refs {
             let classified = classify_blue_brain_reference_path(evidence_ref);
             let validity = canonical_reference_validity_state(&classified);
+            let consumption = canonical_reference_consumption_decision(
+                BlueBrainReferenceConsumptionLayer::Dynamics,
+                &classified,
+            );
+            if !consumption.allowed {
+                unsupported_input_refs.push("non_canonical_reference_consumption_path".to_string());
+            }
             match classified.kind {
                 BlueBrainCanonicalReferenceKind::ExecutionResultReference => {
                     match (classified.execution_outcome, validity) {
@@ -4764,6 +4774,7 @@ impl Router {
                     diagnostic_only_feedback_refs.push(evidence_ref.clone());
                 }
                 BlueBrainCanonicalReferenceKind::NonCanonicalInternalOnlyPath => {
+                    saw_non_canonical_internal_only_path = true;
                     unsupported_input_refs.push("non_canonical_reference_path_present".to_string());
                 }
                 BlueBrainCanonicalReferenceKind::ContextReference
@@ -4791,7 +4802,7 @@ impl Router {
             blocked_execution_result_refs,
             unavailable_execution_result_refs,
             diagnostic_only_feedback_refs,
-            non_canonical_internal_only_path: false,
+            non_canonical_internal_only_path: saw_non_canonical_internal_only_path,
         }
     }
 
@@ -7901,5 +7912,10 @@ mod tests {
             .unsupported_input_refs
             .iter()
             .any(|entry| entry == "non_canonical_reference_path_present"));
+        assert!(input
+            .unsupported_input_refs
+            .iter()
+            .any(|entry| entry == "non_canonical_reference_consumption_path"));
+        assert!(input.non_canonical_internal_only_path);
     }
 }
