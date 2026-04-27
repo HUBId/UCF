@@ -10,6 +10,33 @@ pub enum BlueBrainCanonicalReferenceKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainReferenceConsumptionLayer {
+    Runtime,
+    Selection,
+    Dynamics,
+    Execution,
+    Retrieval,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainReferenceConsumptionPath {
+    RuntimeCanonicalReferenceConsumption,
+    SelectionCanonicalReferenceConsumption,
+    DynamicsCanonicalReferenceConsumption,
+    ExecutionCanonicalReferenceConsumption,
+    RetrievalCanonicalReferenceConsumption,
+    NonCanonicalInternalOnlyReferenceConsumptionPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainReferenceConsumptionDecision {
+    pub path: BlueBrainReferenceConsumptionPath,
+    pub allowed: bool,
+    pub advisory_only: bool,
+    pub candidate_only: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainReferenceValidity {
     Current,
     Caveated,
@@ -168,6 +195,91 @@ pub fn classify_blue_brain_reference_path(path: &str) -> BlueBrainCanonicalRefer
     classified
 }
 
+pub fn canonical_reference_consumption_decision(
+    layer: BlueBrainReferenceConsumptionLayer,
+    classified: &BlueBrainCanonicalReference,
+) -> BlueBrainReferenceConsumptionDecision {
+    if matches!(
+        classified.kind,
+        BlueBrainCanonicalReferenceKind::NonCanonicalInternalOnlyPath
+    ) {
+        return BlueBrainReferenceConsumptionDecision {
+            path:
+                BlueBrainReferenceConsumptionPath::NonCanonicalInternalOnlyReferenceConsumptionPath,
+            allowed: false,
+            advisory_only: true,
+            candidate_only: true,
+        };
+    }
+
+    let (path, allowed, advisory_only, candidate_only) = match layer {
+        BlueBrainReferenceConsumptionLayer::Runtime => (
+            BlueBrainReferenceConsumptionPath::RuntimeCanonicalReferenceConsumption,
+            matches!(
+                classified.kind,
+                BlueBrainCanonicalReferenceKind::ExecutionResultReference
+                    | BlueBrainCanonicalReferenceKind::DiagnosticReference
+                    | BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
+            ),
+            true,
+            false,
+        ),
+        BlueBrainReferenceConsumptionLayer::Selection => (
+            BlueBrainReferenceConsumptionPath::SelectionCanonicalReferenceConsumption,
+            matches!(
+                classified.kind,
+                BlueBrainCanonicalReferenceKind::ContextReference
+                    | BlueBrainCanonicalReferenceKind::MemoryRecordReference
+                    | BlueBrainCanonicalReferenceKind::CombinedBoundedReference
+                    | BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
+            ),
+            true,
+            true,
+        ),
+        BlueBrainReferenceConsumptionLayer::Dynamics => (
+            BlueBrainReferenceConsumptionPath::DynamicsCanonicalReferenceConsumption,
+            matches!(
+                classified.kind,
+                BlueBrainCanonicalReferenceKind::ExecutionResultReference
+                    | BlueBrainCanonicalReferenceKind::DiagnosticReference
+                    | BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
+            ),
+            true,
+            false,
+        ),
+        BlueBrainReferenceConsumptionLayer::Execution => (
+            BlueBrainReferenceConsumptionPath::ExecutionCanonicalReferenceConsumption,
+            matches!(
+                classified.kind,
+                BlueBrainCanonicalReferenceKind::ExecutionResultReference
+            ),
+            false,
+            false,
+        ),
+        BlueBrainReferenceConsumptionLayer::Retrieval => (
+            BlueBrainReferenceConsumptionPath::RetrievalCanonicalReferenceConsumption,
+            matches!(
+                classified.kind,
+                BlueBrainCanonicalReferenceKind::ContextReference
+                    | BlueBrainCanonicalReferenceKind::MemoryRecordReference
+                    | BlueBrainCanonicalReferenceKind::ExecutionResultReference
+                    | BlueBrainCanonicalReferenceKind::CombinedBoundedReference
+                    | BlueBrainCanonicalReferenceKind::DiagnosticReference
+                    | BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
+            ),
+            true,
+            true,
+        ),
+    };
+
+    BlueBrainReferenceConsumptionDecision {
+        path,
+        allowed,
+        advisory_only,
+        candidate_only,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,5 +382,59 @@ mod tests {
             unavailable_execution.validity,
             BlueBrainReferenceValidity::Insufficient
         );
+    }
+
+    #[test]
+    fn reference_consumption_layers_reject_non_canonical_internal_only_paths() {
+        let internal = classify_blue_brain_reference_path(
+            "bb8:memory_record:mem-1:non_canonical_internal_only",
+        );
+        for layer in [
+            BlueBrainReferenceConsumptionLayer::Runtime,
+            BlueBrainReferenceConsumptionLayer::Selection,
+            BlueBrainReferenceConsumptionLayer::Dynamics,
+            BlueBrainReferenceConsumptionLayer::Execution,
+            BlueBrainReferenceConsumptionLayer::Retrieval,
+        ] {
+            let decision = canonical_reference_consumption_decision(layer, &internal);
+            assert_eq!(
+                decision.path,
+                BlueBrainReferenceConsumptionPath::NonCanonicalInternalOnlyReferenceConsumptionPath
+            );
+            assert!(!decision.allowed);
+        }
+    }
+
+    #[test]
+    fn reference_consumption_layers_enforce_expected_canonical_reference_kinds() {
+        let context = classify_blue_brain_reference_path("bb3:context:turn:42");
+        let execution = classify_blue_brain_reference_path("bb14:execution:h7:result:completed");
+        let combined = classify_blue_brain_reference_path("bb15:combined:candidate-1");
+
+        let runtime_context = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Runtime,
+            &context,
+        );
+        assert!(!runtime_context.allowed);
+
+        let runtime_execution = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Runtime,
+            &execution,
+        );
+        assert!(runtime_execution.allowed);
+        assert!(runtime_execution.advisory_only);
+
+        let selection_combined = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Selection,
+            &combined,
+        );
+        assert!(selection_combined.allowed);
+        assert!(selection_combined.candidate_only);
+
+        let execution_context = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Execution,
+            &context,
+        );
+        assert!(!execution_context.allowed);
     }
 }
