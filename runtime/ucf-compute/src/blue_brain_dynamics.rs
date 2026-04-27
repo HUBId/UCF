@@ -18,6 +18,63 @@ pub struct BlueBrainDynamicsDiagnosticLane {
     pub canonical_guard: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainDynamicsExecutionFeedbackState {
+    ExecutionInformedDynamicsInput,
+    ReferenceInformedDynamicsInput,
+    CaveatedExecutionInformedDynamicsInput,
+    InsufficientDynamicsFeedbackBasis,
+    BlockedDynamicsFeedbackBasis,
+    DiagnosticOnlyDynamicsFeedback,
+    NonCanonicalInternalOnlyFeedbackPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainDynamicsExecutionFeedbackLane {
+    pub state: BlueBrainDynamicsExecutionFeedbackState,
+    pub lane: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+pub const CANONICAL_BLUE_BRAIN_DYNAMICS_EXECUTION_FEEDBACK_MAP:
+    [BlueBrainDynamicsExecutionFeedbackLane; 7] = [
+    BlueBrainDynamicsExecutionFeedbackLane {
+        state: BlueBrainDynamicsExecutionFeedbackState::ExecutionInformedDynamicsInput,
+        lane: "blue_brain_dynamics_execution_informed_input",
+        canonical_guard: "canonical execution result references may inform dynamics modulation in advisory-only mode",
+    },
+    BlueBrainDynamicsExecutionFeedbackLane {
+        state: BlueBrainDynamicsExecutionFeedbackState::ReferenceInformedDynamicsInput,
+        lane: "blue_brain_dynamics_reference_informed_input",
+        canonical_guard: "bounded canonical references/context may inform dynamics diagnostics without direct execution authority",
+    },
+    BlueBrainDynamicsExecutionFeedbackLane {
+        state: BlueBrainDynamicsExecutionFeedbackState::CaveatedExecutionInformedDynamicsInput,
+        lane: "blue_brain_dynamics_execution_informed_caveated_input",
+        canonical_guard: "failed/cancelled/blocked/unavailable execution basis remains caveated and never promoted to successful modulation basis",
+    },
+    BlueBrainDynamicsExecutionFeedbackLane {
+        state: BlueBrainDynamicsExecutionFeedbackState::InsufficientDynamicsFeedbackBasis,
+        lane: "blue_brain_dynamics_feedback_basis_insufficient",
+        canonical_guard: "insufficient feedback basis remains explicit and cannot trigger direct action/retry/re-execution",
+    },
+    BlueBrainDynamicsExecutionFeedbackLane {
+        state: BlueBrainDynamicsExecutionFeedbackState::BlockedDynamicsFeedbackBasis,
+        lane: "blue_brain_dynamics_feedback_basis_blocked",
+        canonical_guard: "blocked basis stays bounded and cannot override safety or execution-integrity boundaries",
+    },
+    BlueBrainDynamicsExecutionFeedbackLane {
+        state: BlueBrainDynamicsExecutionFeedbackState::DiagnosticOnlyDynamicsFeedback,
+        lane: "blue_brain_dynamics_feedback_diagnostic_only",
+        canonical_guard: "diagnostic-only feedback is observable but does not select actions, re-execute, retry, or mutate memory",
+    },
+    BlueBrainDynamicsExecutionFeedbackLane {
+        state: BlueBrainDynamicsExecutionFeedbackState::NonCanonicalInternalOnlyFeedbackPath,
+        lane: "blue_brain_dynamics_feedback_non_canonical_internal_only",
+        canonical_guard: "non-canonical/internal-only feedback paths cannot become canonical modulation inputs",
+    },
+];
+
 pub const CANONICAL_BLUE_BRAIN_DYNAMICS_DIAGNOSTICS_MAP: [BlueBrainDynamicsDiagnosticLane; 9] = [
     BlueBrainDynamicsDiagnosticLane {
         diagnostic_class: BlueBrainDynamicsDiagnosticClass::DynamicsDiagnosticObserved,
@@ -314,6 +371,10 @@ pub struct BlueBrainKuramotoModulationInput {
     pub phase_nodes: Vec<BlueBrainKuramotoPhaseNodeInput>,
     pub unsupported_input_refs: Vec<String>,
     pub blocked_input_refs: Vec<String>,
+    pub canonical_execution_result_refs: Vec<String>,
+    pub failed_or_cancelled_execution_result_refs: Vec<String>,
+    pub blocked_or_unavailable_execution_result_refs: Vec<String>,
+    pub diagnostic_only_feedback_refs: Vec<String>,
     pub non_canonical_internal_only_path: bool,
 }
 
@@ -329,6 +390,16 @@ impl BlueBrainKuramotoModulationInput {
         self.unsupported_input_refs.dedup();
         self.blocked_input_refs.sort_unstable();
         self.blocked_input_refs.dedup();
+        self.canonical_execution_result_refs.sort_unstable();
+        self.canonical_execution_result_refs.dedup();
+        self.failed_or_cancelled_execution_result_refs
+            .sort_unstable();
+        self.failed_or_cancelled_execution_result_refs.dedup();
+        self.blocked_or_unavailable_execution_result_refs
+            .sort_unstable();
+        self.blocked_or_unavailable_execution_result_refs.dedup();
+        self.diagnostic_only_feedback_refs.sort_unstable();
+        self.diagnostic_only_feedback_refs.dedup();
         self.phase_nodes
             .sort_by(|left, right| left.group_ref.cmp(&right.group_ref));
         self.phase_nodes
@@ -458,6 +529,8 @@ pub struct BlueBrainKuramotoBoundaryGuard {
     pub compute_invocation_allowed: bool,
     pub safety_override_allowed: bool,
     pub policy_decision_allowed: bool,
+    pub direct_reexecute_allowed: bool,
+    pub direct_retry_orchestration_allowed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -489,6 +562,7 @@ pub struct BlueBrainKuramotoModulationResult {
     pub runtime_feedback: BlueBrainDynamicsRuntimeFeedbackClass,
     pub selection_feedback: BlueBrainDynamicsSelectionFeedbackClass,
     pub input_basis: BlueBrainKuramotoInputBasisClass,
+    pub execution_feedback_state: BlueBrainDynamicsExecutionFeedbackState,
     pub caveats: Vec<String>,
     pub boundary_guard: BlueBrainKuramotoBoundaryGuard,
 }
@@ -521,6 +595,7 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
     if !input.unsupported_input_refs.is_empty() {
         caveats.push("unsupported_input_group_present".to_string());
     }
+    let execution_feedback_state = classify_execution_feedback_state(&input);
 
     let mut canonical_phase_nodes = Vec::new();
     for node in &input.phase_nodes {
@@ -557,6 +632,7 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
             selection_feedback:
                 BlueBrainDynamicsSelectionFeedbackClass::DynamicsInsufficientForModulation,
             input_basis: BlueBrainKuramotoInputBasisClass::InsufficientInputBasis,
+            execution_feedback_state,
             caveats,
             boundary_guard: boundary_guard(),
         };
@@ -697,6 +773,7 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
             Some(BlueBrainKuramotoModulationReason::NonCanonicalInternalOnlyPath),
         ),
     };
+    append_execution_feedback_caveats(&mut caveats, execution_feedback_state);
     append_kuramoto_guard_caveats(&mut caveats, modulation_state);
     let selection_feedback =
         selection_feedback_from_modulation_state(modulation_state, selection_hint);
@@ -734,6 +811,7 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         runtime_feedback,
         selection_feedback,
         input_basis,
+        execution_feedback_state,
         caveats,
         boundary_guard: boundary_guard(),
     }
@@ -810,6 +888,34 @@ pub fn kuramoto_modulation_reason_token(
         }
         Some(BlueBrainKuramotoModulationReason::NonCanonicalInternalOnlyPath) => {
             "non_canonical_internal_only_path"
+        }
+    }
+}
+
+pub fn dynamics_execution_feedback_state_token(
+    state: BlueBrainDynamicsExecutionFeedbackState,
+) -> &'static str {
+    match state {
+        BlueBrainDynamicsExecutionFeedbackState::ExecutionInformedDynamicsInput => {
+            "execution_informed_dynamics_input"
+        }
+        BlueBrainDynamicsExecutionFeedbackState::ReferenceInformedDynamicsInput => {
+            "reference_informed_dynamics_input"
+        }
+        BlueBrainDynamicsExecutionFeedbackState::CaveatedExecutionInformedDynamicsInput => {
+            "caveated_execution_informed_dynamics_input"
+        }
+        BlueBrainDynamicsExecutionFeedbackState::InsufficientDynamicsFeedbackBasis => {
+            "insufficient_dynamics_feedback_basis"
+        }
+        BlueBrainDynamicsExecutionFeedbackState::BlockedDynamicsFeedbackBasis => {
+            "blocked_dynamics_feedback_basis"
+        }
+        BlueBrainDynamicsExecutionFeedbackState::DiagnosticOnlyDynamicsFeedback => {
+            "diagnostic_only_dynamics_feedback"
+        }
+        BlueBrainDynamicsExecutionFeedbackState::NonCanonicalInternalOnlyFeedbackPath => {
+            "non_canonical_internal_only_feedback_path"
         }
     }
 }
@@ -895,6 +1001,38 @@ fn classify_kuramoto_input_group(group_ref: &str) -> BlueBrainKuramotoInputGroup
     }
 }
 
+fn classify_execution_feedback_state(
+    input: &BlueBrainKuramotoModulationInput,
+) -> BlueBrainDynamicsExecutionFeedbackState {
+    if input.non_canonical_internal_only_path {
+        return BlueBrainDynamicsExecutionFeedbackState::NonCanonicalInternalOnlyFeedbackPath;
+    }
+    if !input.blocked_input_refs.is_empty()
+        || !input
+            .blocked_or_unavailable_execution_result_refs
+            .is_empty()
+    {
+        return BlueBrainDynamicsExecutionFeedbackState::BlockedDynamicsFeedbackBasis;
+    }
+    if !input.failed_or_cancelled_execution_result_refs.is_empty()
+        || !input
+            .blocked_or_unavailable_execution_result_refs
+            .is_empty()
+    {
+        return BlueBrainDynamicsExecutionFeedbackState::CaveatedExecutionInformedDynamicsInput;
+    }
+    if !input.canonical_execution_result_refs.is_empty() {
+        return BlueBrainDynamicsExecutionFeedbackState::ExecutionInformedDynamicsInput;
+    }
+    if !input.selected_context_refs.is_empty() || !input.selected_evidence_refs.is_empty() {
+        return BlueBrainDynamicsExecutionFeedbackState::ReferenceInformedDynamicsInput;
+    }
+    if !input.diagnostic_only_feedback_refs.is_empty() {
+        return BlueBrainDynamicsExecutionFeedbackState::DiagnosticOnlyDynamicsFeedback;
+    }
+    BlueBrainDynamicsExecutionFeedbackState::InsufficientDynamicsFeedbackBasis
+}
+
 fn selection_feedback_from_modulation_state(
     modulation_state: BlueBrainKuramotoModulationState,
     selection_hint: Option<BlueBrainKuramotoSelectionHint>,
@@ -963,6 +1101,8 @@ fn boundary_guard() -> BlueBrainKuramotoBoundaryGuard {
         compute_invocation_allowed: false,
         safety_override_allowed: false,
         policy_decision_allowed: false,
+        direct_reexecute_allowed: false,
+        direct_retry_orchestration_allowed: false,
     }
 }
 
@@ -982,6 +1122,35 @@ fn append_kuramoto_guard_caveats(
     caveats.push("no_direct_memory_allowed".to_string());
     caveats.push("no_direct_compute_allowed".to_string());
     caveats.push("no_safety_override_allowed".to_string());
+}
+
+fn append_execution_feedback_caveats(
+    caveats: &mut Vec<String>,
+    execution_feedback_state: BlueBrainDynamicsExecutionFeedbackState,
+) {
+    match execution_feedback_state {
+        BlueBrainDynamicsExecutionFeedbackState::ExecutionInformedDynamicsInput => {
+            caveats.push("execution_informed_modulation_observed".to_string());
+        }
+        BlueBrainDynamicsExecutionFeedbackState::ReferenceInformedDynamicsInput => {
+            caveats.push("reference_informed_modulation_observed".to_string());
+        }
+        BlueBrainDynamicsExecutionFeedbackState::CaveatedExecutionInformedDynamicsInput => {
+            caveats.push("caveated_execution_feedback_basis".to_string());
+        }
+        BlueBrainDynamicsExecutionFeedbackState::InsufficientDynamicsFeedbackBasis => {
+            caveats.push("insufficient_dynamics_feedback_basis".to_string());
+        }
+        BlueBrainDynamicsExecutionFeedbackState::BlockedDynamicsFeedbackBasis => {
+            caveats.push("blocked_dynamics_feedback_basis".to_string());
+        }
+        BlueBrainDynamicsExecutionFeedbackState::DiagnosticOnlyDynamicsFeedback => {
+            caveats.push("diagnostic_only_dynamics_feedback".to_string());
+        }
+        BlueBrainDynamicsExecutionFeedbackState::NonCanonicalInternalOnlyFeedbackPath => {
+            caveats.push("non_canonical_internal_only_feedback_path".to_string());
+        }
+    }
 }
 
 fn hh_boundary_guard() -> BlueBrainHodgkinHuxleyBoundaryGuard {
@@ -1039,6 +1208,10 @@ mod tests {
             memory_caveats: vec![],
             unsupported_input_refs: vec![],
             blocked_input_refs: vec![],
+            canonical_execution_result_refs: vec![],
+            failed_or_cancelled_execution_result_refs: vec![],
+            blocked_or_unavailable_execution_result_refs: vec![],
+            diagnostic_only_feedback_refs: vec![],
             non_canonical_internal_only_path: false,
             phase_nodes: vec![
                 BlueBrainKuramotoPhaseNodeInput {
@@ -1233,6 +1406,8 @@ mod tests {
         assert!(!result.boundary_guard.compute_invocation_allowed);
         assert!(!result.boundary_guard.safety_override_allowed);
         assert!(!result.boundary_guard.policy_decision_allowed);
+        assert!(!result.boundary_guard.direct_reexecute_allowed);
+        assert!(!result.boundary_guard.direct_retry_orchestration_allowed);
         assert!(!result.boundary_guard.runtime_state_mutation_allowed);
         assert!(!result.boundary_guard.selection_mutation_allowed);
     }
@@ -1485,6 +1660,118 @@ mod tests {
         );
     }
 
+    #[test]
+    fn dynamics_execution_feedback_map_contains_canonical_states() {
+        let map = CANONICAL_BLUE_BRAIN_DYNAMICS_EXECUTION_FEEDBACK_MAP;
+        assert!(map.iter().any(|lane| {
+            lane.state == BlueBrainDynamicsExecutionFeedbackState::ExecutionInformedDynamicsInput
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.state == BlueBrainDynamicsExecutionFeedbackState::ReferenceInformedDynamicsInput
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.state
+                == BlueBrainDynamicsExecutionFeedbackState::CaveatedExecutionInformedDynamicsInput
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.state == BlueBrainDynamicsExecutionFeedbackState::InsufficientDynamicsFeedbackBasis
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.state == BlueBrainDynamicsExecutionFeedbackState::BlockedDynamicsFeedbackBasis
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.state == BlueBrainDynamicsExecutionFeedbackState::DiagnosticOnlyDynamicsFeedback
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.state
+                == BlueBrainDynamicsExecutionFeedbackState::NonCanonicalInternalOnlyFeedbackPath
+        }));
+    }
+
+    #[test]
+    fn execution_and_reference_feedback_basis_stay_distinguishable() {
+        let mut execution_informed = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        execution_informed
+            .canonical_execution_result_refs
+            .push("bb14:minimal_execution:h1:emit_canonical_signal:result:completed".to_string());
+        let execution_informed_result = evaluate_blue_brain_kuramoto_modulation(execution_informed);
+        assert_eq!(
+            execution_informed_result.execution_feedback_state,
+            BlueBrainDynamicsExecutionFeedbackState::ExecutionInformedDynamicsInput
+        );
+        assert!(execution_informed_result
+            .caveats
+            .iter()
+            .any(|item| item == "execution_informed_modulation_observed"));
+
+        let reference_informed = evaluate_blue_brain_kuramoto_modulation(base_input(
+            BlueBrainKuramotoScopeState::DiagnosticOnly,
+        ));
+        assert_eq!(
+            reference_informed.execution_feedback_state,
+            BlueBrainDynamicsExecutionFeedbackState::ReferenceInformedDynamicsInput
+        );
+        assert!(reference_informed
+            .caveats
+            .iter()
+            .any(|item| item == "reference_informed_modulation_observed"));
+    }
+
+    #[test]
+    fn failed_cancelled_blocked_unavailable_basis_remains_caveated_or_blocked() {
+        let mut failed = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        failed
+            .failed_or_cancelled_execution_result_refs
+            .push("bb14:minimal_execution:h1:emit_canonical_signal:result:failed".to_string());
+        let failed_result = evaluate_blue_brain_kuramoto_modulation(failed);
+        assert_eq!(
+            failed_result.execution_feedback_state,
+            BlueBrainDynamicsExecutionFeedbackState::CaveatedExecutionInformedDynamicsInput
+        );
+        assert!(failed_result
+            .caveats
+            .iter()
+            .any(|item| item == "caveated_execution_feedback_basis"));
+
+        let mut blocked = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        blocked.blocked_or_unavailable_execution_result_refs.push(
+            "bb14:minimal_execution:h1:emit_canonical_signal:result:ExecutionBlocked".to_string(),
+        );
+        let blocked_result = evaluate_blue_brain_kuramoto_modulation(blocked);
+        assert_eq!(
+            blocked_result.execution_feedback_state,
+            BlueBrainDynamicsExecutionFeedbackState::BlockedDynamicsFeedbackBasis
+        );
+        assert!(blocked_result
+            .caveats
+            .iter()
+            .any(|item| item == "blocked_dynamics_feedback_basis"));
+    }
+
+    #[test]
+    fn diagnostic_only_and_insufficient_feedback_basis_stay_explicit() {
+        let mut diagnostic_only = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        diagnostic_only.selected_context_refs.clear();
+        diagnostic_only.selected_evidence_refs.clear();
+        diagnostic_only
+            .diagnostic_only_feedback_refs
+            .push("diag:execution_feedback".to_string());
+        let diagnostic_result = evaluate_blue_brain_kuramoto_modulation(diagnostic_only);
+        assert_eq!(
+            diagnostic_result.execution_feedback_state,
+            BlueBrainDynamicsExecutionFeedbackState::DiagnosticOnlyDynamicsFeedback
+        );
+
+        let mut insufficient = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        insufficient.selected_context_refs.clear();
+        insufficient.selected_evidence_refs.clear();
+        let insufficient_result = evaluate_blue_brain_kuramoto_modulation(insufficient);
+        assert_eq!(
+            insufficient_result.execution_feedback_state,
+            BlueBrainDynamicsExecutionFeedbackState::InsufficientDynamicsFeedbackBasis
+        );
+    }
+
     fn base_hh_input(
         scope: BlueBrainHodgkinHuxleyScopeState,
     ) -> BlueBrainHodgkinHuxleyDiagnosticInput {
@@ -1622,5 +1909,25 @@ mod tests {
             result.selection_feedback,
             BlueBrainDynamicsSelectionFeedbackClass::DynamicsIgnoredForCurrentSelection
         );
+    }
+
+    #[test]
+    fn serie_bb16_prompt1_doc_stays_pinned_to_feedback_states_and_no_direct_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_bounded_dynamics_execution_feedback_line_serie_bb16_prompt1_v1.md"
+        );
+        assert!(doc.contains("execution_informed_dynamics_input"));
+        assert!(doc.contains("reference_informed_dynamics_input"));
+        assert!(doc.contains("caveated_execution_informed_dynamics_input"));
+        assert!(doc.contains("insufficient_dynamics_feedback_basis"));
+        assert!(doc.contains("blocked_dynamics_feedback_basis"));
+        assert!(doc.contains("diagnostic_only_dynamics_feedback"));
+        assert!(doc.contains("non_canonical_internal_only_feedback_path"));
+        assert!(doc.contains("kein direct re-execute"));
+        assert!(doc.contains("kein direct retry orchestration"));
+        assert!(doc.contains("kein direct action selection"));
+        assert!(doc.contains("kein direct memory commit"));
+        assert!(doc.contains("kein direct compute invocation"));
+        assert!(doc.contains("kein safety override"));
     }
 }
