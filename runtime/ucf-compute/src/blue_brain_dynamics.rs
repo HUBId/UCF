@@ -25,6 +25,7 @@ pub enum BlueBrainDynamicsExecutionFeedbackState {
     CaveatedExecutionInformedDynamicsInput,
     InsufficientDynamicsFeedbackBasis,
     BlockedDynamicsFeedbackBasis,
+    UnavailableDynamicsFeedbackBasis,
     DiagnosticOnlyDynamicsFeedback,
     NonCanonicalInternalOnlyFeedbackPath,
 }
@@ -37,7 +38,7 @@ pub struct BlueBrainDynamicsExecutionFeedbackLane {
 }
 
 pub const CANONICAL_BLUE_BRAIN_DYNAMICS_EXECUTION_FEEDBACK_MAP:
-    [BlueBrainDynamicsExecutionFeedbackLane; 7] = [
+    [BlueBrainDynamicsExecutionFeedbackLane; 8] = [
     BlueBrainDynamicsExecutionFeedbackLane {
         state: BlueBrainDynamicsExecutionFeedbackState::ExecutionInformedDynamicsInput,
         lane: "blue_brain_dynamics_execution_informed_input",
@@ -62,6 +63,11 @@ pub const CANONICAL_BLUE_BRAIN_DYNAMICS_EXECUTION_FEEDBACK_MAP:
         state: BlueBrainDynamicsExecutionFeedbackState::BlockedDynamicsFeedbackBasis,
         lane: "blue_brain_dynamics_feedback_basis_blocked",
         canonical_guard: "blocked basis stays bounded and cannot override safety or execution-integrity boundaries",
+    },
+    BlueBrainDynamicsExecutionFeedbackLane {
+        state: BlueBrainDynamicsExecutionFeedbackState::UnavailableDynamicsFeedbackBasis,
+        lane: "blue_brain_dynamics_feedback_basis_unavailable",
+        canonical_guard: "unavailable basis stays explicit, does not claim operational readiness, and cannot trigger direct execution authority",
     },
     BlueBrainDynamicsExecutionFeedbackLane {
         state: BlueBrainDynamicsExecutionFeedbackState::DiagnosticOnlyDynamicsFeedback,
@@ -373,7 +379,8 @@ pub struct BlueBrainKuramotoModulationInput {
     pub blocked_input_refs: Vec<String>,
     pub canonical_execution_result_refs: Vec<String>,
     pub failed_or_cancelled_execution_result_refs: Vec<String>,
-    pub blocked_or_unavailable_execution_result_refs: Vec<String>,
+    pub blocked_execution_result_refs: Vec<String>,
+    pub unavailable_execution_result_refs: Vec<String>,
     pub diagnostic_only_feedback_refs: Vec<String>,
     pub non_canonical_internal_only_path: bool,
 }
@@ -395,9 +402,10 @@ impl BlueBrainKuramotoModulationInput {
         self.failed_or_cancelled_execution_result_refs
             .sort_unstable();
         self.failed_or_cancelled_execution_result_refs.dedup();
-        self.blocked_or_unavailable_execution_result_refs
-            .sort_unstable();
-        self.blocked_or_unavailable_execution_result_refs.dedup();
+        self.blocked_execution_result_refs.sort_unstable();
+        self.blocked_execution_result_refs.dedup();
+        self.unavailable_execution_result_refs.sort_unstable();
+        self.unavailable_execution_result_refs.dedup();
         self.diagnostic_only_feedback_refs.sort_unstable();
         self.diagnostic_only_feedback_refs.dedup();
         self.phase_nodes
@@ -911,6 +919,9 @@ pub fn dynamics_execution_feedback_state_token(
         BlueBrainDynamicsExecutionFeedbackState::BlockedDynamicsFeedbackBasis => {
             "blocked_dynamics_feedback_basis"
         }
+        BlueBrainDynamicsExecutionFeedbackState::UnavailableDynamicsFeedbackBasis => {
+            "unavailable_dynamics_feedback_basis"
+        }
         BlueBrainDynamicsExecutionFeedbackState::DiagnosticOnlyDynamicsFeedback => {
             "diagnostic_only_dynamics_feedback"
         }
@@ -1007,18 +1018,13 @@ fn classify_execution_feedback_state(
     if input.non_canonical_internal_only_path {
         return BlueBrainDynamicsExecutionFeedbackState::NonCanonicalInternalOnlyFeedbackPath;
     }
-    if !input.blocked_input_refs.is_empty()
-        || !input
-            .blocked_or_unavailable_execution_result_refs
-            .is_empty()
-    {
+    if !input.blocked_input_refs.is_empty() || !input.blocked_execution_result_refs.is_empty() {
         return BlueBrainDynamicsExecutionFeedbackState::BlockedDynamicsFeedbackBasis;
     }
-    if !input.failed_or_cancelled_execution_result_refs.is_empty()
-        || !input
-            .blocked_or_unavailable_execution_result_refs
-            .is_empty()
-    {
+    if !input.unavailable_execution_result_refs.is_empty() {
+        return BlueBrainDynamicsExecutionFeedbackState::UnavailableDynamicsFeedbackBasis;
+    }
+    if !input.failed_or_cancelled_execution_result_refs.is_empty() {
         return BlueBrainDynamicsExecutionFeedbackState::CaveatedExecutionInformedDynamicsInput;
     }
     if !input.canonical_execution_result_refs.is_empty() {
@@ -1121,6 +1127,8 @@ fn append_kuramoto_guard_caveats(
     caveats.push("no_direct_action_allowed".to_string());
     caveats.push("no_direct_memory_allowed".to_string());
     caveats.push("no_direct_compute_allowed".to_string());
+    caveats.push("no_direct_reexecute_allowed".to_string());
+    caveats.push("no_direct_retry_orchestration_allowed".to_string());
     caveats.push("no_safety_override_allowed".to_string());
 }
 
@@ -1143,6 +1151,9 @@ fn append_execution_feedback_caveats(
         }
         BlueBrainDynamicsExecutionFeedbackState::BlockedDynamicsFeedbackBasis => {
             caveats.push("blocked_dynamics_feedback_basis".to_string());
+        }
+        BlueBrainDynamicsExecutionFeedbackState::UnavailableDynamicsFeedbackBasis => {
+            caveats.push("unavailable_dynamics_feedback_basis".to_string());
         }
         BlueBrainDynamicsExecutionFeedbackState::DiagnosticOnlyDynamicsFeedback => {
             caveats.push("diagnostic_only_dynamics_feedback".to_string());
@@ -1210,7 +1221,8 @@ mod tests {
             blocked_input_refs: vec![],
             canonical_execution_result_refs: vec![],
             failed_or_cancelled_execution_result_refs: vec![],
-            blocked_or_unavailable_execution_result_refs: vec![],
+            blocked_execution_result_refs: vec![],
+            unavailable_execution_result_refs: vec![],
             diagnostic_only_feedback_refs: vec![],
             non_canonical_internal_only_path: false,
             phase_nodes: vec![
@@ -1619,6 +1631,14 @@ mod tests {
         assert!(result
             .caveats
             .iter()
+            .any(|item| item == "no_direct_reexecute_allowed"));
+        assert!(result
+            .caveats
+            .iter()
+            .any(|item| item == "no_direct_retry_orchestration_allowed"));
+        assert!(result
+            .caveats
+            .iter()
             .any(|item| item == "no_safety_override_allowed"));
     }
 
@@ -1680,6 +1700,9 @@ mod tests {
             lane.state == BlueBrainDynamicsExecutionFeedbackState::BlockedDynamicsFeedbackBasis
         }));
         assert!(map.iter().any(|lane| {
+            lane.state == BlueBrainDynamicsExecutionFeedbackState::UnavailableDynamicsFeedbackBasis
+        }));
+        assert!(map.iter().any(|lane| {
             lane.state == BlueBrainDynamicsExecutionFeedbackState::DiagnosticOnlyDynamicsFeedback
         }));
         assert!(map.iter().any(|lane| {
@@ -1734,7 +1757,7 @@ mod tests {
             .any(|item| item == "caveated_execution_feedback_basis"));
 
         let mut blocked = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
-        blocked.blocked_or_unavailable_execution_result_refs.push(
+        blocked.blocked_execution_result_refs.push(
             "bb14:minimal_execution:h1:emit_canonical_signal:result:ExecutionBlocked".to_string(),
         );
         let blocked_result = evaluate_blue_brain_kuramoto_modulation(blocked);
@@ -1746,6 +1769,21 @@ mod tests {
             .caveats
             .iter()
             .any(|item| item == "blocked_dynamics_feedback_basis"));
+
+        let mut unavailable = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        unavailable.unavailable_execution_result_refs.push(
+            "bb14:minimal_execution:h1:emit_canonical_signal:result:ExecutionUnavailable"
+                .to_string(),
+        );
+        let unavailable_result = evaluate_blue_brain_kuramoto_modulation(unavailable);
+        assert_eq!(
+            unavailable_result.execution_feedback_state,
+            BlueBrainDynamicsExecutionFeedbackState::UnavailableDynamicsFeedbackBasis
+        );
+        assert!(unavailable_result
+            .caveats
+            .iter()
+            .any(|item| item == "unavailable_dynamics_feedback_basis"));
     }
 
     #[test]
@@ -1921,13 +1959,32 @@ mod tests {
         assert!(doc.contains("caveated_execution_informed_dynamics_input"));
         assert!(doc.contains("insufficient_dynamics_feedback_basis"));
         assert!(doc.contains("blocked_dynamics_feedback_basis"));
+        assert!(doc.contains("unavailable_dynamics_feedback_basis"));
         assert!(doc.contains("diagnostic_only_dynamics_feedback"));
         assert!(doc.contains("non_canonical_internal_only_feedback_path"));
         assert!(doc.contains("kein direct re-execute"));
         assert!(doc.contains("kein direct retry orchestration"));
+        assert!(doc.contains("kein direct re-execute trigger"));
         assert!(doc.contains("kein direct action selection"));
         assert!(doc.contains("kein direct memory commit"));
         assert!(doc.contains("kein direct compute invocation"));
         assert!(doc.contains("kein safety override"));
+    }
+
+    #[test]
+    fn serie_bb16_prompt2_doc_stays_pinned_to_hardened_execution_informed_diagnostics_line() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_execution_informed_dynamics_diagnostics_hardening_serie_bb16_prompt2_v1.md"
+        );
+        assert!(doc.contains("execution_informed_dynamics_input"));
+        assert!(doc.contains("reference_informed_dynamics_input"));
+        assert!(doc.contains("caveated_execution_informed_dynamics_input"));
+        assert!(doc.contains("insufficient_dynamics_feedback_basis"));
+        assert!(doc.contains("blocked_dynamics_feedback_basis"));
+        assert!(doc.contains("unavailable_dynamics_feedback_basis"));
+        assert!(doc.contains("diagnostic_only_dynamics_feedback"));
+        assert!(doc.contains("non_canonical_internal_only_feedback_path"));
+        assert!(doc.contains("no_direct_reexecute_allowed"));
+        assert!(doc.contains("no_direct_retry_orchestration_allowed"));
     }
 }

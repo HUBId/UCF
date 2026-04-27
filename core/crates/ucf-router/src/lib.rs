@@ -4715,7 +4715,8 @@ impl Router {
         }
         let mut canonical_execution_result_refs = Vec::new();
         let mut failed_or_cancelled_execution_result_refs = Vec::new();
-        let mut blocked_or_unavailable_execution_result_refs = Vec::new();
+        let mut blocked_execution_result_refs = Vec::new();
+        let mut unavailable_execution_result_refs = Vec::new();
         let mut diagnostic_only_feedback_refs = Vec::new();
         for evidence_ref in &evidence_refs {
             if evidence_ref.contains(":result:completed") {
@@ -4724,11 +4725,12 @@ impl Router {
                 || evidence_ref.contains(":result:cancelled")
             {
                 failed_or_cancelled_execution_result_refs.push(evidence_ref.clone());
-            } else if evidence_ref.contains(":result:ExecutionBlocked")
-                || evidence_ref.contains(":result:ExecutionUnavailable")
+            } else if evidence_ref.contains(":result:ExecutionBlocked") {
+                blocked_execution_result_refs.push(evidence_ref.clone());
+            } else if evidence_ref.contains(":result:ExecutionUnavailable")
                 || evidence_ref.contains(":result:ExecutionUnsupported")
             {
-                blocked_or_unavailable_execution_result_refs.push(evidence_ref.clone());
+                unavailable_execution_result_refs.push(evidence_ref.clone());
             } else if evidence_ref.starts_with("diag:") || evidence_ref.contains(":placeholder:") {
                 diagnostic_only_feedback_refs.push(evidence_ref.clone());
             }
@@ -4746,7 +4748,8 @@ impl Router {
             blocked_input_refs,
             canonical_execution_result_refs,
             failed_or_cancelled_execution_result_refs,
-            blocked_or_unavailable_execution_result_refs,
+            blocked_execution_result_refs,
+            unavailable_execution_result_refs,
             diagnostic_only_feedback_refs,
             non_canonical_internal_only_path: false,
         }
