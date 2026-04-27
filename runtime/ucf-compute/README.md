@@ -242,6 +242,16 @@ For BB14 Prompt 1 execution hardening / result-integrity consolidation on the mi
 and safety+allowed-action integrity binding without platform expansion), see
 `docs/blue_brain_execution_result_integrity_hardening_serie_bb14_prompt1_v1.md` and
 `runtime/ucf-compute/src/blue_brain_minimal_execution.rs`.
+For BB16 Prompt 1 bounded dynamics interaction with real execution feedback (strict advisory-only execution-informed basis with no-direct-* boundaries), see
+`docs/blue_brain_bounded_dynamics_execution_feedback_line_serie_bb16_prompt1_v1.md` and
+`runtime/ucf-compute/src/blue_brain_dynamics.rs`.
+For BB16 Prompt 2 execution-informed dynamics diagnostics hardening (caveated/insufficient/blocked feedback separation, unchanged advisory-only/no-direct-* semantics), see
+`docs/blue_brain_execution_informed_dynamics_diagnostics_hardening_serie_bb16_prompt2_v1.md` and
+`runtime/ucf-compute/src/blue_brain_dynamics.rs`.
+For BB16 Prompt 3 selection/runtime advisory coupling boundary hardening (canonical coupling-state map, explicit runtime-vs-selection advisory lanes, and explicit separation from execution/retry/proposal/memory authority), see
+`docs/blue_brain_selection_runtime_coupling_boundary_hardening_serie_bb16_prompt3_v1.md`,
+`runtime/ucf-compute/src/blue_brain_dynamics.rs`, `core/crates/ucf-router/src/lib.rs`, and
+`core/crates/ucf-workspace/src/lib.rs`.
 
 ## Capability model
 
