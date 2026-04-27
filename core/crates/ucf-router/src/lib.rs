@@ -29,12 +29,12 @@ use ucf_cde_scm::{
 };
 use ucf_commit::canonical_control_frame_len;
 use ucf_compute::{
-    dynamics_execution_feedback_state_token, evaluate_blue_brain_kuramoto_modulation,
-    kuramoto_modulation_diagnostic_class_token, kuramoto_modulation_reason_token,
-    kuramoto_modulation_state_token, BlueBrainKuramotoModulationInput,
-    BlueBrainKuramotoPhaseNodeInput, BlueBrainKuramotoRuntimeCaveatModulation,
-    BlueBrainKuramotoRuntimePosture, BlueBrainKuramotoScopeState,
-    BlueBrainKuramotoSelectionPosture,
+    dynamics_advisory_coupling_state_token, dynamics_execution_feedback_state_token,
+    evaluate_blue_brain_kuramoto_modulation, kuramoto_modulation_diagnostic_class_token,
+    kuramoto_modulation_reason_token, kuramoto_modulation_state_token,
+    BlueBrainKuramotoModulationInput, BlueBrainKuramotoPhaseNodeInput,
+    BlueBrainKuramotoRuntimeCaveatModulation, BlueBrainKuramotoRuntimePosture,
+    BlueBrainKuramotoScopeState, BlueBrainKuramotoSelectionPosture,
 };
 use ucf_consistency_engine::{
     ConsistencyAction, ConsistencyActionKind, ConsistencyEngine, ConsistencyInputs,
@@ -4645,6 +4645,12 @@ impl Router {
                 reason_tag: kuramoto_modulation_reason_token(kuramoto_result.modulation_reason),
                 execution_feedback_state: dynamics_execution_feedback_state_token(
                     kuramoto_result.execution_feedback_state,
+                ),
+                runtime_coupling_state: dynamics_advisory_coupling_state_token(
+                    kuramoto_result.runtime_coupling_state,
+                ),
+                selection_coupling_state: dynamics_advisory_coupling_state_token(
+                    kuramoto_result.selection_coupling_state,
                 ),
                 runtime_modulation: kuramoto_runtime_token(kuramoto_result.runtime_modulation),
                 coherence_permille: kuramoto_result.coherence_permille,

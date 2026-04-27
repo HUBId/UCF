@@ -557,6 +557,63 @@ pub enum BlueBrainDynamicsSelectionFeedbackClass {
     DynamicsIgnoredForCurrentSelection,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainDynamicsAdvisoryCouplingState {
+    RuntimeAdvisoryCoupling,
+    SelectionAdvisoryCoupling,
+    CaveatedAdvisoryCoupling,
+    InsufficientAdvisoryCoupling,
+    BlockedAdvisoryCoupling,
+    IgnoredAdvisoryCoupling,
+    NonCanonicalInternalOnlyCouplingPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainDynamicsAdvisoryCouplingLane {
+    pub coupling_state: BlueBrainDynamicsAdvisoryCouplingState,
+    pub lane: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+pub const CANONICAL_BLUE_BRAIN_DYNAMICS_ADVISORY_COUPLING_MAP:
+    [BlueBrainDynamicsAdvisoryCouplingLane; 7] = [
+    BlueBrainDynamicsAdvisoryCouplingLane {
+        coupling_state: BlueBrainDynamicsAdvisoryCouplingState::RuntimeAdvisoryCoupling,
+        lane: "blue_brain_dynamics_runtime_advisory_coupling",
+        canonical_guard: "runtime receives advisory dynamics caveat/modulation hints only and never direct execution authority",
+    },
+    BlueBrainDynamicsAdvisoryCouplingLane {
+        coupling_state: BlueBrainDynamicsAdvisoryCouplingState::SelectionAdvisoryCoupling,
+        lane: "blue_brain_dynamics_selection_advisory_coupling",
+        canonical_guard: "selection observes advisory dynamics hints only and never directly selects actions from dynamics",
+    },
+    BlueBrainDynamicsAdvisoryCouplingLane {
+        coupling_state: BlueBrainDynamicsAdvisoryCouplingState::CaveatedAdvisoryCoupling,
+        lane: "blue_brain_dynamics_caveated_advisory_coupling",
+        canonical_guard: "caveated coupling remains bounded advisory feedback and cannot escalate to retry/re-execution/memory mutation",
+    },
+    BlueBrainDynamicsAdvisoryCouplingLane {
+        coupling_state: BlueBrainDynamicsAdvisoryCouplingState::InsufficientAdvisoryCoupling,
+        lane: "blue_brain_dynamics_insufficient_advisory_coupling",
+        canonical_guard: "insufficient coupling basis stays explicit and cannot create proposals, retries, or compute invocation",
+    },
+    BlueBrainDynamicsAdvisoryCouplingLane {
+        coupling_state: BlueBrainDynamicsAdvisoryCouplingState::BlockedAdvisoryCoupling,
+        lane: "blue_brain_dynamics_blocked_advisory_coupling",
+        canonical_guard: "blocked coupling cannot override safety/eligibility boundaries or become execution requests",
+    },
+    BlueBrainDynamicsAdvisoryCouplingLane {
+        coupling_state: BlueBrainDynamicsAdvisoryCouplingState::IgnoredAdvisoryCoupling,
+        lane: "blue_brain_dynamics_ignored_advisory_coupling",
+        canonical_guard: "ignored coupling is observable diagnostics-only and has no execution/retry/memory side-effect",
+    },
+    BlueBrainDynamicsAdvisoryCouplingLane {
+        coupling_state: BlueBrainDynamicsAdvisoryCouplingState::NonCanonicalInternalOnlyCouplingPath,
+        lane: "blue_brain_dynamics_non_canonical_internal_only_coupling_path",
+        canonical_guard: "non-canonical/internal-only coupling paths remain excluded from canonical runtime/selection advisory lanes",
+    },
+];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlueBrainKuramotoModulationResult {
     pub dynamics_diagnostic_class: BlueBrainDynamicsDiagnosticClass,
@@ -569,6 +626,8 @@ pub struct BlueBrainKuramotoModulationResult {
     pub runtime_modulation: Option<BlueBrainKuramotoRuntimeCaveatModulation>,
     pub runtime_feedback: BlueBrainDynamicsRuntimeFeedbackClass,
     pub selection_feedback: BlueBrainDynamicsSelectionFeedbackClass,
+    pub runtime_coupling_state: BlueBrainDynamicsAdvisoryCouplingState,
+    pub selection_coupling_state: BlueBrainDynamicsAdvisoryCouplingState,
     pub input_basis: BlueBrainKuramotoInputBasisClass,
     pub execution_feedback_state: BlueBrainDynamicsExecutionFeedbackState,
     pub caveats: Vec<String>,
@@ -639,6 +698,10 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
                 BlueBrainDynamicsRuntimeFeedbackClass::DynamicsInsufficientForModulation,
             selection_feedback:
                 BlueBrainDynamicsSelectionFeedbackClass::DynamicsInsufficientForModulation,
+            runtime_coupling_state:
+                BlueBrainDynamicsAdvisoryCouplingState::InsufficientAdvisoryCoupling,
+            selection_coupling_state:
+                BlueBrainDynamicsAdvisoryCouplingState::InsufficientAdvisoryCoupling,
             input_basis: BlueBrainKuramotoInputBasisClass::InsufficientInputBasis,
             execution_feedback_state,
             caveats,
@@ -787,6 +850,10 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         selection_feedback_from_modulation_state(modulation_state, selection_hint);
     let runtime_feedback =
         runtime_feedback_from_modulation_state(modulation_state, runtime_modulation);
+    let runtime_coupling_state =
+        runtime_coupling_state_from_modulation_state(modulation_state, runtime_modulation);
+    let selection_coupling_state =
+        selection_coupling_state_from_modulation_state(modulation_state, selection_hint);
 
     BlueBrainKuramotoModulationResult {
         dynamics_diagnostic_class: if input.non_canonical_internal_only_path {
@@ -818,6 +885,8 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         runtime_modulation,
         runtime_feedback,
         selection_feedback,
+        runtime_coupling_state,
+        selection_coupling_state,
         input_basis,
         execution_feedback_state,
         caveats,
@@ -927,6 +996,34 @@ pub fn dynamics_execution_feedback_state_token(
         }
         BlueBrainDynamicsExecutionFeedbackState::NonCanonicalInternalOnlyFeedbackPath => {
             "non_canonical_internal_only_feedback_path"
+        }
+    }
+}
+
+pub fn dynamics_advisory_coupling_state_token(
+    state: BlueBrainDynamicsAdvisoryCouplingState,
+) -> &'static str {
+    match state {
+        BlueBrainDynamicsAdvisoryCouplingState::RuntimeAdvisoryCoupling => {
+            "runtime_advisory_coupling"
+        }
+        BlueBrainDynamicsAdvisoryCouplingState::SelectionAdvisoryCoupling => {
+            "selection_advisory_coupling"
+        }
+        BlueBrainDynamicsAdvisoryCouplingState::CaveatedAdvisoryCoupling => {
+            "caveated_advisory_coupling"
+        }
+        BlueBrainDynamicsAdvisoryCouplingState::InsufficientAdvisoryCoupling => {
+            "insufficient_advisory_coupling"
+        }
+        BlueBrainDynamicsAdvisoryCouplingState::BlockedAdvisoryCoupling => {
+            "blocked_advisory_coupling"
+        }
+        BlueBrainDynamicsAdvisoryCouplingState::IgnoredAdvisoryCoupling => {
+            "ignored_advisory_coupling"
+        }
+        BlueBrainDynamicsAdvisoryCouplingState::NonCanonicalInternalOnlyCouplingPath => {
+            "non_canonical_internal_only_coupling_path"
         }
     }
 }
@@ -1092,6 +1189,70 @@ fn runtime_feedback_from_modulation_state(
             Some(_) => BlueBrainDynamicsRuntimeFeedbackClass::DynamicsCaveatAttached,
             None => BlueBrainDynamicsRuntimeFeedbackClass::DynamicsIgnoredForCurrentTransition,
         },
+    }
+}
+
+fn selection_coupling_state_from_modulation_state(
+    modulation_state: BlueBrainKuramotoModulationState,
+    selection_hint: Option<BlueBrainKuramotoSelectionHint>,
+) -> BlueBrainDynamicsAdvisoryCouplingState {
+    match modulation_state {
+        BlueBrainKuramotoModulationState::Insufficient => {
+            BlueBrainDynamicsAdvisoryCouplingState::InsufficientAdvisoryCoupling
+        }
+        BlueBrainKuramotoModulationState::Blocked => {
+            BlueBrainDynamicsAdvisoryCouplingState::BlockedAdvisoryCoupling
+        }
+        BlueBrainKuramotoModulationState::Unavailable
+        | BlueBrainKuramotoModulationState::Ignored
+        | BlueBrainKuramotoModulationState::NoOp => {
+            BlueBrainDynamicsAdvisoryCouplingState::IgnoredAdvisoryCoupling
+        }
+        BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath => {
+            BlueBrainDynamicsAdvisoryCouplingState::NonCanonicalInternalOnlyCouplingPath
+        }
+        BlueBrainKuramotoModulationState::Caveated => {
+            BlueBrainDynamicsAdvisoryCouplingState::CaveatedAdvisoryCoupling
+        }
+        BlueBrainKuramotoModulationState::AppliedAdvisoryOnly => {
+            if selection_hint.is_some() {
+                BlueBrainDynamicsAdvisoryCouplingState::SelectionAdvisoryCoupling
+            } else {
+                BlueBrainDynamicsAdvisoryCouplingState::IgnoredAdvisoryCoupling
+            }
+        }
+    }
+}
+
+fn runtime_coupling_state_from_modulation_state(
+    modulation_state: BlueBrainKuramotoModulationState,
+    runtime_modulation: Option<BlueBrainKuramotoRuntimeCaveatModulation>,
+) -> BlueBrainDynamicsAdvisoryCouplingState {
+    match modulation_state {
+        BlueBrainKuramotoModulationState::Insufficient => {
+            BlueBrainDynamicsAdvisoryCouplingState::InsufficientAdvisoryCoupling
+        }
+        BlueBrainKuramotoModulationState::Blocked => {
+            BlueBrainDynamicsAdvisoryCouplingState::BlockedAdvisoryCoupling
+        }
+        BlueBrainKuramotoModulationState::Unavailable
+        | BlueBrainKuramotoModulationState::Ignored
+        | BlueBrainKuramotoModulationState::NoOp => {
+            BlueBrainDynamicsAdvisoryCouplingState::IgnoredAdvisoryCoupling
+        }
+        BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath => {
+            BlueBrainDynamicsAdvisoryCouplingState::NonCanonicalInternalOnlyCouplingPath
+        }
+        BlueBrainKuramotoModulationState::Caveated => {
+            BlueBrainDynamicsAdvisoryCouplingState::CaveatedAdvisoryCoupling
+        }
+        BlueBrainKuramotoModulationState::AppliedAdvisoryOnly => {
+            if runtime_modulation.is_some() {
+                BlueBrainDynamicsAdvisoryCouplingState::RuntimeAdvisoryCoupling
+            } else {
+                BlueBrainDynamicsAdvisoryCouplingState::IgnoredAdvisoryCoupling
+            }
+        }
     }
 }
 
@@ -1712,6 +1873,34 @@ mod tests {
     }
 
     #[test]
+    fn dynamics_advisory_coupling_map_contains_canonical_states() {
+        let map = CANONICAL_BLUE_BRAIN_DYNAMICS_ADVISORY_COUPLING_MAP;
+        assert!(map.iter().any(|lane| {
+            lane.coupling_state == BlueBrainDynamicsAdvisoryCouplingState::RuntimeAdvisoryCoupling
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.coupling_state == BlueBrainDynamicsAdvisoryCouplingState::SelectionAdvisoryCoupling
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.coupling_state == BlueBrainDynamicsAdvisoryCouplingState::CaveatedAdvisoryCoupling
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.coupling_state
+                == BlueBrainDynamicsAdvisoryCouplingState::InsufficientAdvisoryCoupling
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.coupling_state == BlueBrainDynamicsAdvisoryCouplingState::BlockedAdvisoryCoupling
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.coupling_state == BlueBrainDynamicsAdvisoryCouplingState::IgnoredAdvisoryCoupling
+        }));
+        assert!(map.iter().any(|lane| {
+            lane.coupling_state
+                == BlueBrainDynamicsAdvisoryCouplingState::NonCanonicalInternalOnlyCouplingPath
+        }));
+    }
+
+    #[test]
     fn execution_and_reference_feedback_basis_stay_distinguishable() {
         let mut execution_informed = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
         execution_informed
@@ -1738,6 +1927,76 @@ mod tests {
             .caveats
             .iter()
             .any(|item| item == "reference_informed_modulation_observed"));
+        assert_eq!(
+            reference_informed.selection_coupling_state,
+            BlueBrainDynamicsAdvisoryCouplingState::IgnoredAdvisoryCoupling
+        );
+        assert_eq!(
+            reference_informed.runtime_coupling_state,
+            BlueBrainDynamicsAdvisoryCouplingState::IgnoredAdvisoryCoupling
+        );
+    }
+
+    #[test]
+    fn runtime_and_selection_advisory_coupling_remain_distinguishable() {
+        let selection = evaluate_blue_brain_kuramoto_modulation(base_input(
+            BlueBrainKuramotoScopeState::SelectionModulating,
+        ));
+        assert_eq!(
+            selection.selection_coupling_state,
+            BlueBrainDynamicsAdvisoryCouplingState::SelectionAdvisoryCoupling
+        );
+        assert_eq!(
+            selection.runtime_coupling_state,
+            BlueBrainDynamicsAdvisoryCouplingState::IgnoredAdvisoryCoupling
+        );
+
+        let runtime = evaluate_blue_brain_kuramoto_modulation(base_input(
+            BlueBrainKuramotoScopeState::RuntimeCaveatModulating,
+        ));
+        assert_eq!(
+            runtime.runtime_coupling_state,
+            BlueBrainDynamicsAdvisoryCouplingState::RuntimeAdvisoryCoupling
+        );
+        assert_eq!(
+            runtime.selection_coupling_state,
+            BlueBrainDynamicsAdvisoryCouplingState::IgnoredAdvisoryCoupling
+        );
+    }
+
+    #[test]
+    fn caveated_insufficient_blocked_and_noncanonical_coupling_states_stay_explicit() {
+        let mut caveated = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        caveated.runtime_posture = BlueBrainKuramotoRuntimePosture::Caveated;
+        let caveated_result = evaluate_blue_brain_kuramoto_modulation(caveated);
+        assert_eq!(
+            caveated_result.runtime_coupling_state,
+            BlueBrainDynamicsAdvisoryCouplingState::CaveatedAdvisoryCoupling
+        );
+
+        let mut insufficient = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        insufficient.phase_nodes.truncate(1);
+        let insufficient_result = evaluate_blue_brain_kuramoto_modulation(insufficient);
+        assert_eq!(
+            insufficient_result.selection_coupling_state,
+            BlueBrainDynamicsAdvisoryCouplingState::InsufficientAdvisoryCoupling
+        );
+
+        let mut blocked = base_input(BlueBrainKuramotoScopeState::RuntimeCaveatModulating);
+        blocked.runtime_posture = BlueBrainKuramotoRuntimePosture::Blocked;
+        let blocked_result = evaluate_blue_brain_kuramoto_modulation(blocked);
+        assert_eq!(
+            blocked_result.runtime_coupling_state,
+            BlueBrainDynamicsAdvisoryCouplingState::BlockedAdvisoryCoupling
+        );
+
+        let mut non_canonical = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        non_canonical.non_canonical_internal_only_path = true;
+        let non_canonical_result = evaluate_blue_brain_kuramoto_modulation(non_canonical);
+        assert_eq!(
+            non_canonical_result.selection_coupling_state,
+            BlueBrainDynamicsAdvisoryCouplingState::NonCanonicalInternalOnlyCouplingPath
+        );
     }
 
     #[test]
@@ -1986,5 +2245,23 @@ mod tests {
         assert!(doc.contains("non_canonical_internal_only_feedback_path"));
         assert!(doc.contains("no_direct_reexecute_allowed"));
         assert!(doc.contains("no_direct_retry_orchestration_allowed"));
+    }
+
+    #[test]
+    fn serie_bb16_prompt3_doc_stays_pinned_to_selection_runtime_coupling_boundary() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_selection_runtime_coupling_boundary_hardening_serie_bb16_prompt3_v1.md"
+        );
+        assert!(doc.contains("runtime_advisory_coupling"));
+        assert!(doc.contains("selection_advisory_coupling"));
+        assert!(doc.contains("caveated_advisory_coupling"));
+        assert!(doc.contains("insufficient_advisory_coupling"));
+        assert!(doc.contains("blocked_advisory_coupling"));
+        assert!(doc.contains("ignored_advisory_coupling"));
+        assert!(doc.contains("non_canonical_internal_only_coupling_path"));
+        assert!(doc.contains("kein direct action selection"));
+        assert!(doc.contains("kein direct retry trigger"));
+        assert!(doc.contains("kein direct compute invocation"));
+        assert!(doc.contains("kein direct memory commit"));
     }
 }
