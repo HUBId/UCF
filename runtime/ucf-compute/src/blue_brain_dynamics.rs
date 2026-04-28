@@ -617,9 +617,11 @@ pub const CANONICAL_BLUE_BRAIN_DYNAMICS_ADVISORY_COUPLING_MAP:
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainRuntimeSelectionContractSignal {
     RuntimeToSelectionAdvisorySignal,
-    RuntimeToSelectionBlockedOrDeferralSignal,
+    RuntimeToSelectionDeferredSignal,
+    RuntimeToSelectionBlockedSignal,
     SelectionToRuntimeAdvisoryState,
     SelectionToRuntimeDeferredState,
+    SelectionToRuntimeBlockedState,
     CaveatedContractSignal,
     InsufficientContractBasis,
     NonCanonicalInternalOnlyContractPath,
@@ -639,6 +641,7 @@ pub enum BlueBrainRuntimeSelectionContractDiagnosticClass {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainRuntimeSelectionContractReason {
+    PriorityAdvisoryHintOnlyNoDirectSelectionAuthority,
     DeferredDueToBoundedPrioritySelectionState,
     BlockedDueToContractBoundaryOrReferenceWeakness,
     CaveatedDueToWeakOrPartialReferenceDynamicsExecutionBasis,
@@ -714,16 +717,21 @@ pub struct BlueBrainRuntimeSelectionContractLane {
 }
 
 pub const CANONICAL_BLUE_BRAIN_RUNTIME_SELECTION_CONTRACT_MAP:
-    [BlueBrainRuntimeSelectionContractLane; 7] = [
+    [BlueBrainRuntimeSelectionContractLane; 9] = [
     BlueBrainRuntimeSelectionContractLane {
         signal: BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionAdvisorySignal,
         lane: "runtime_to_selection_advisory_signal",
         canonical_guard: "runtime-to-selection contract signal is advisory-only and cannot directly trigger action/proposal execution",
     },
     BlueBrainRuntimeSelectionContractLane {
-        signal: BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedOrDeferralSignal,
-        lane: "runtime_to_selection_blocked_or_deferral_signal",
-        canonical_guard: "runtime-to-selection blocked/deferral signal is explicit and remains separate from failed execution semantics",
+        signal: BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionDeferredSignal,
+        lane: "runtime_to_selection_deferred_signal",
+        canonical_guard: "runtime-to-selection deferred signal is bounded deferral feedback and never implies blocked/failed execution authority",
+    },
+    BlueBrainRuntimeSelectionContractLane {
+        signal: BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedSignal,
+        lane: "runtime_to_selection_blocked_signal",
+        canonical_guard: "runtime-to-selection blocked signal is explicit contract boundary feedback and remains separate from failed execution semantics",
     },
     BlueBrainRuntimeSelectionContractLane {
         signal: BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeAdvisoryState,
@@ -734,6 +742,11 @@ pub const CANONICAL_BLUE_BRAIN_RUNTIME_SELECTION_CONTRACT_MAP:
         signal: BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState,
         lane: "selection_to_runtime_deferred_state",
         canonical_guard: "selection-to-runtime deferred state remains distinct from blocked and does not imply retry orchestration",
+    },
+    BlueBrainRuntimeSelectionContractLane {
+        signal: BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeBlockedState,
+        lane: "selection_to_runtime_blocked_state",
+        canonical_guard: "selection-to-runtime blocked state remains explicit contract/safety/reference boundary feedback and is not low-priority deferral",
     },
     BlueBrainRuntimeSelectionContractLane {
         signal: BlueBrainRuntimeSelectionContractSignal::CaveatedContractSignal,
@@ -749,6 +762,59 @@ pub const CANONICAL_BLUE_BRAIN_RUNTIME_SELECTION_CONTRACT_MAP:
         signal: BlueBrainRuntimeSelectionContractSignal::NonCanonicalInternalOnlyContractPath,
         lane: "non_canonical_internal_only_contract_path",
         canonical_guard: "non-canonical/internal-only contract paths remain excluded from canonical runtime/selection exchange",
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainPriorityDeferredBlockedBoundaryState {
+    PriorityAdvisoryHint,
+    DeferredContractState,
+    BlockedContractState,
+    CaveatedPriorityDeferredBlockedSignal,
+    InsufficientContractBasis,
+    NonCanonicalInternalOnlyCouplingPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainPriorityDeferredBlockedBoundaryLane {
+    pub boundary_state: BlueBrainPriorityDeferredBlockedBoundaryState,
+    pub lane: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+pub const CANONICAL_BLUE_BRAIN_PRIORITY_DEFERRED_BLOCKED_BOUNDARY_MAP:
+    [BlueBrainPriorityDeferredBlockedBoundaryLane; 6] = [
+    BlueBrainPriorityDeferredBlockedBoundaryLane {
+        boundary_state: BlueBrainPriorityDeferredBlockedBoundaryState::PriorityAdvisoryHint,
+        lane: "priority_advisory_hint",
+        canonical_guard: "priority remains advisory-only and cannot directly select proposals/actions or override deferred/blocked boundaries",
+    },
+    BlueBrainPriorityDeferredBlockedBoundaryLane {
+        boundary_state: BlueBrainPriorityDeferredBlockedBoundaryState::DeferredContractState,
+        lane: "deferred_contract_state",
+        canonical_guard: "deferred remains bounded postponement feedback and is not failed execution or blocked contract control",
+    },
+    BlueBrainPriorityDeferredBlockedBoundaryLane {
+        boundary_state: BlueBrainPriorityDeferredBlockedBoundaryState::BlockedContractState,
+        lane: "blocked_contract_state",
+        canonical_guard: "blocked remains explicit contract/safety/reference boundary state and is not low priority",
+    },
+    BlueBrainPriorityDeferredBlockedBoundaryLane {
+        boundary_state:
+            BlueBrainPriorityDeferredBlockedBoundaryState::CaveatedPriorityDeferredBlockedSignal,
+        lane: "caveated_priority_deferred_blocked_signal",
+        canonical_guard: "caveated priority/deferred/blocked signal remains bounded partial-basis transport without execution authority",
+    },
+    BlueBrainPriorityDeferredBlockedBoundaryLane {
+        boundary_state: BlueBrainPriorityDeferredBlockedBoundaryState::InsufficientContractBasis,
+        lane: "insufficient_contract_basis_boundary_state",
+        canonical_guard: "insufficient basis remains explicit missing-basis feedback and cannot be promoted to deferred/blocked control",
+    },
+    BlueBrainPriorityDeferredBlockedBoundaryLane {
+        boundary_state:
+            BlueBrainPriorityDeferredBlockedBoundaryState::NonCanonicalInternalOnlyCouplingPath,
+        lane: "non_canonical_internal_only_coupling_path_boundary_state",
+        canonical_guard: "non-canonical/internal-only coupling paths stay excluded from canonical runtime/selection boundary exchange",
     },
 ];
 
@@ -772,6 +838,8 @@ pub struct BlueBrainKuramotoModulationResult {
     pub selection_to_runtime_contract_diagnostic: BlueBrainRuntimeSelectionContractDiagnosticClass,
     pub runtime_to_selection_contract_reason: BlueBrainRuntimeSelectionContractReason,
     pub selection_to_runtime_contract_reason: BlueBrainRuntimeSelectionContractReason,
+    pub runtime_boundary_state: BlueBrainPriorityDeferredBlockedBoundaryState,
+    pub selection_boundary_state: BlueBrainPriorityDeferredBlockedBoundaryState,
     pub input_basis: BlueBrainKuramotoInputBasisClass,
     pub execution_feedback_state: BlueBrainDynamicsExecutionFeedbackState,
     pub caveats: Vec<String>,
@@ -858,6 +926,10 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
                 BlueBrainRuntimeSelectionContractReason::InsufficientDueToMissingBoundedContractBasis,
             selection_to_runtime_contract_reason:
                 BlueBrainRuntimeSelectionContractReason::InsufficientDueToMissingBoundedContractBasis,
+            runtime_boundary_state:
+                BlueBrainPriorityDeferredBlockedBoundaryState::InsufficientContractBasis,
+            selection_boundary_state:
+                BlueBrainPriorityDeferredBlockedBoundaryState::InsufficientContractBasis,
             input_basis: BlueBrainKuramotoInputBasisClass::InsufficientInputBasis,
             execution_feedback_state,
             caveats,
@@ -1026,6 +1098,14 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         selection_to_runtime_contract_signal,
         execution_feedback_state,
     );
+    let runtime_boundary_state = boundary_state_from_contract_signal_and_reason(
+        runtime_to_selection_contract_signal,
+        runtime_to_selection_contract_reason,
+    );
+    let selection_boundary_state = boundary_state_from_contract_signal_and_reason(
+        selection_to_runtime_contract_signal,
+        selection_to_runtime_contract_reason,
+    );
 
     BlueBrainKuramotoModulationResult {
         dynamics_diagnostic_class: if input.non_canonical_internal_only_path {
@@ -1065,6 +1145,8 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         selection_to_runtime_contract_diagnostic,
         runtime_to_selection_contract_reason,
         selection_to_runtime_contract_reason,
+        runtime_boundary_state,
+        selection_boundary_state,
         input_basis,
         execution_feedback_state,
         caveats,
@@ -1213,14 +1295,20 @@ pub fn runtime_selection_contract_signal_token(
         BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionAdvisorySignal => {
             "runtime_to_selection_advisory_signal"
         }
-        BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedOrDeferralSignal => {
-            "runtime_to_selection_blocked_or_deferral_signal"
+        BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionDeferredSignal => {
+            "runtime_to_selection_deferred_signal"
+        }
+        BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedSignal => {
+            "runtime_to_selection_blocked_signal"
         }
         BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeAdvisoryState => {
             "selection_to_runtime_advisory_state"
         }
         BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState => {
             "selection_to_runtime_deferred_state"
+        }
+        BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeBlockedState => {
+            "selection_to_runtime_blocked_state"
         }
         BlueBrainRuntimeSelectionContractSignal::CaveatedContractSignal => {
             "caveated_contract_signal"
@@ -1272,6 +1360,9 @@ pub fn runtime_selection_contract_reason_token(
         BlueBrainRuntimeSelectionContractReason::DeferredDueToBoundedPrioritySelectionState => {
             "deferred_due_to_bounded_priority_selection_state"
         }
+        BlueBrainRuntimeSelectionContractReason::PriorityAdvisoryHintOnlyNoDirectSelectionAuthority => {
+            "priority_advisory_hint_only_no_direct_selection_authority"
+        }
         BlueBrainRuntimeSelectionContractReason::BlockedDueToContractBoundaryOrReferenceWeakness => {
             "blocked_due_to_contract_boundary_or_reference_weakness"
         }
@@ -1286,6 +1377,31 @@ pub fn runtime_selection_contract_reason_token(
         }
         BlueBrainRuntimeSelectionContractReason::NonCanonicalInternalOnlyPathExcluded => {
             "non_canonical_internal_only_path_excluded"
+        }
+    }
+}
+
+pub fn priority_deferred_blocked_boundary_state_token(
+    state: BlueBrainPriorityDeferredBlockedBoundaryState,
+) -> &'static str {
+    match state {
+        BlueBrainPriorityDeferredBlockedBoundaryState::PriorityAdvisoryHint => {
+            "priority_advisory_hint"
+        }
+        BlueBrainPriorityDeferredBlockedBoundaryState::DeferredContractState => {
+            "deferred_contract_state"
+        }
+        BlueBrainPriorityDeferredBlockedBoundaryState::BlockedContractState => {
+            "blocked_contract_state"
+        }
+        BlueBrainPriorityDeferredBlockedBoundaryState::CaveatedPriorityDeferredBlockedSignal => {
+            "caveated_priority_deferred_blocked_signal"
+        }
+        BlueBrainPriorityDeferredBlockedBoundaryState::InsufficientContractBasis => {
+            "insufficient_contract_basis_boundary_state"
+        }
+        BlueBrainPriorityDeferredBlockedBoundaryState::NonCanonicalInternalOnlyCouplingPath => {
+            "non_canonical_internal_only_coupling_path_boundary_state"
         }
     }
 }
@@ -1498,18 +1614,18 @@ fn runtime_to_selection_contract_signal_from_state(
             BlueBrainRuntimeSelectionContractSignal::InsufficientContractBasis
         }
         BlueBrainKuramotoModulationState::Blocked => {
-            BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedOrDeferralSignal
-        }
-        BlueBrainKuramotoModulationState::Caveated
-        | BlueBrainKuramotoModulationState::Unavailable => {
-            BlueBrainRuntimeSelectionContractSignal::CaveatedContractSignal
+            BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedSignal
         }
         _ if matches!(
             selection_hint,
             Some(BlueBrainKuramotoSelectionHint::IncreaseDeferralConfidence)
         ) =>
         {
-            BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedOrDeferralSignal
+            BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionDeferredSignal
+        }
+        BlueBrainKuramotoModulationState::Caveated
+        | BlueBrainKuramotoModulationState::Unavailable => {
+            BlueBrainRuntimeSelectionContractSignal::CaveatedContractSignal
         }
         _ => BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionAdvisorySignal,
     }
@@ -1519,7 +1635,10 @@ fn runtime_to_selection_contract_diagnostic_from_signal(
     signal: BlueBrainRuntimeSelectionContractSignal,
 ) -> BlueBrainRuntimeSelectionContractDiagnosticClass {
     match signal {
-        BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedOrDeferralSignal => {
+        BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionDeferredSignal => {
+            BlueBrainRuntimeSelectionContractDiagnosticClass::DeferredContractDiagnostic
+        }
+        BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedSignal => {
             BlueBrainRuntimeSelectionContractDiagnosticClass::BlockedContractDiagnostic
         }
         BlueBrainRuntimeSelectionContractSignal::CaveatedContractSignal => {
@@ -1533,7 +1652,8 @@ fn runtime_to_selection_contract_diagnostic_from_signal(
         }
         BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionAdvisorySignal
         | BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeAdvisoryState
-        | BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState => {
+        | BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState
+        | BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeBlockedState => {
             BlueBrainRuntimeSelectionContractDiagnosticClass::RuntimeToSelectionDiagnostic
         }
     }
@@ -1546,6 +1666,9 @@ fn selection_to_runtime_contract_diagnostic_from_signal(
         BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState => {
             BlueBrainRuntimeSelectionContractDiagnosticClass::DeferredContractDiagnostic
         }
+        BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeBlockedState => {
+            BlueBrainRuntimeSelectionContractDiagnosticClass::BlockedContractDiagnostic
+        }
         BlueBrainRuntimeSelectionContractSignal::CaveatedContractSignal => {
             BlueBrainRuntimeSelectionContractDiagnosticClass::CaveatedContractDiagnostic
         }
@@ -1556,7 +1679,8 @@ fn selection_to_runtime_contract_diagnostic_from_signal(
             BlueBrainRuntimeSelectionContractDiagnosticClass::NonCanonicalInternalOnlyContractDiagnostic
         }
         BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionAdvisorySignal
-        | BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedOrDeferralSignal
+        | BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionDeferredSignal
+        | BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedSignal
         | BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeAdvisoryState => {
             BlueBrainRuntimeSelectionContractDiagnosticClass::SelectionToRuntimeDiagnostic
         }
@@ -1568,7 +1692,10 @@ fn runtime_to_selection_contract_reason_from_signal(
     execution_feedback_state: BlueBrainDynamicsExecutionFeedbackState,
 ) -> BlueBrainRuntimeSelectionContractReason {
     match signal {
-        BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedOrDeferralSignal => {
+        BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionDeferredSignal => {
+            BlueBrainRuntimeSelectionContractReason::DeferredDueToBoundedPrioritySelectionState
+        }
+        BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedSignal => {
             BlueBrainRuntimeSelectionContractReason::BlockedDueToContractBoundaryOrReferenceWeakness
         }
         BlueBrainRuntimeSelectionContractSignal::CaveatedContractSignal => {
@@ -1582,13 +1709,14 @@ fn runtime_to_selection_contract_reason_from_signal(
         }
         BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionAdvisorySignal
         | BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeAdvisoryState
-        | BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState => {
+        | BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState
+        | BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeBlockedState => {
             if matches!(
                 execution_feedback_state,
                 BlueBrainDynamicsExecutionFeedbackState::ReferenceInformedDynamicsInput
                     | BlueBrainDynamicsExecutionFeedbackState::ExecutionInformedDynamicsInput
             ) {
-                BlueBrainRuntimeSelectionContractReason::AdvisoryOnlyNoDirectActionAuthority
+                BlueBrainRuntimeSelectionContractReason::PriorityAdvisoryHintOnlyNoDirectSelectionAuthority
             } else {
                 BlueBrainRuntimeSelectionContractReason::BlockedDueToContractBoundaryOrReferenceWeakness
             }
@@ -1604,6 +1732,9 @@ fn selection_to_runtime_contract_reason_from_signal(
         BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState => {
             BlueBrainRuntimeSelectionContractReason::DeferredDueToBoundedPrioritySelectionState
         }
+        BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeBlockedState => {
+            BlueBrainRuntimeSelectionContractReason::BlockedDueToContractBoundaryOrReferenceWeakness
+        }
         BlueBrainRuntimeSelectionContractSignal::CaveatedContractSignal => {
             BlueBrainRuntimeSelectionContractReason::CaveatedDueToWeakOrPartialReferenceDynamicsExecutionBasis
         }
@@ -1614,7 +1745,8 @@ fn selection_to_runtime_contract_reason_from_signal(
             BlueBrainRuntimeSelectionContractReason::NonCanonicalInternalOnlyPathExcluded
         }
         BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionAdvisorySignal
-        | BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedOrDeferralSignal
+        | BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionDeferredSignal
+        | BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedSignal
         | BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeAdvisoryState => {
             if matches!(
                 execution_feedback_state,
@@ -1642,7 +1774,7 @@ fn selection_to_runtime_contract_signal_from_state(
         }
         BlueBrainKuramotoModulationState::Blocked
         | BlueBrainKuramotoModulationState::Unavailable => {
-            BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState
+            BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeBlockedState
         }
         BlueBrainKuramotoModulationState::Caveated => {
             BlueBrainRuntimeSelectionContractSignal::CaveatedContractSignal
@@ -1653,6 +1785,43 @@ fn selection_to_runtime_contract_signal_from_state(
             BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState
         }
         _ => BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeAdvisoryState,
+    }
+}
+
+fn boundary_state_from_contract_signal_and_reason(
+    signal: BlueBrainRuntimeSelectionContractSignal,
+    reason: BlueBrainRuntimeSelectionContractReason,
+) -> BlueBrainPriorityDeferredBlockedBoundaryState {
+    match signal {
+        BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionDeferredSignal
+        | BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState => {
+            BlueBrainPriorityDeferredBlockedBoundaryState::DeferredContractState
+        }
+        BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedSignal
+        | BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeBlockedState => {
+            BlueBrainPriorityDeferredBlockedBoundaryState::BlockedContractState
+        }
+        BlueBrainRuntimeSelectionContractSignal::CaveatedContractSignal => {
+            BlueBrainPriorityDeferredBlockedBoundaryState::CaveatedPriorityDeferredBlockedSignal
+        }
+        BlueBrainRuntimeSelectionContractSignal::InsufficientContractBasis => {
+            BlueBrainPriorityDeferredBlockedBoundaryState::InsufficientContractBasis
+        }
+        BlueBrainRuntimeSelectionContractSignal::NonCanonicalInternalOnlyContractPath => {
+            BlueBrainPriorityDeferredBlockedBoundaryState::NonCanonicalInternalOnlyCouplingPath
+        }
+        BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionAdvisorySignal
+        | BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeAdvisoryState => {
+            if matches!(
+                reason,
+                BlueBrainRuntimeSelectionContractReason::PriorityAdvisoryHintOnlyNoDirectSelectionAuthority
+                    | BlueBrainRuntimeSelectionContractReason::AdvisoryOnlyNoDirectActionAuthority
+            ) {
+                BlueBrainPriorityDeferredBlockedBoundaryState::PriorityAdvisoryHint
+            } else {
+                BlueBrainPriorityDeferredBlockedBoundaryState::CaveatedPriorityDeferredBlockedSignal
+            }
+        }
     }
 }
 
@@ -2458,11 +2627,15 @@ mod tests {
         );
         assert_eq!(
             selection_lane.runtime_to_selection_contract_reason,
-            BlueBrainRuntimeSelectionContractReason::AdvisoryOnlyNoDirectActionAuthority
+            BlueBrainRuntimeSelectionContractReason::PriorityAdvisoryHintOnlyNoDirectSelectionAuthority
         );
         assert_eq!(
             selection_lane.selection_to_runtime_contract_reason,
             BlueBrainRuntimeSelectionContractReason::AdvisoryOnlyNoDirectActionAuthority
+        );
+        assert_eq!(
+            selection_lane.runtime_boundary_state,
+            BlueBrainPriorityDeferredBlockedBoundaryState::PriorityAdvisoryHint
         );
 
         let mut blocked = base_input(BlueBrainKuramotoScopeState::RuntimeCaveatModulating);
@@ -2470,11 +2643,11 @@ mod tests {
         let blocked_result = evaluate_blue_brain_kuramoto_modulation(blocked);
         assert_eq!(
             blocked_result.runtime_to_selection_contract_signal,
-            BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedOrDeferralSignal
+            BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedSignal
         );
         assert_eq!(
             blocked_result.selection_to_runtime_contract_signal,
-            BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState
+            BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeBlockedState
         );
         assert_eq!(
             blocked_result.runtime_to_selection_contract_diagnostic,
@@ -2482,7 +2655,7 @@ mod tests {
         );
         assert_eq!(
             blocked_result.selection_to_runtime_contract_diagnostic,
-            BlueBrainRuntimeSelectionContractDiagnosticClass::DeferredContractDiagnostic
+            BlueBrainRuntimeSelectionContractDiagnosticClass::BlockedContractDiagnostic
         );
         assert_eq!(
             blocked_result.runtime_to_selection_contract_reason,
@@ -2490,7 +2663,11 @@ mod tests {
         );
         assert_eq!(
             blocked_result.selection_to_runtime_contract_reason,
-            BlueBrainRuntimeSelectionContractReason::DeferredDueToBoundedPrioritySelectionState
+            BlueBrainRuntimeSelectionContractReason::BlockedDueToContractBoundaryOrReferenceWeakness
+        );
+        assert_eq!(
+            blocked_result.selection_boundary_state,
+            BlueBrainPriorityDeferredBlockedBoundaryState::BlockedContractState
         );
 
         let mut insufficient = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
@@ -2511,6 +2688,27 @@ mod tests {
         assert_eq!(
             insufficient_result.selection_to_runtime_contract_diagnostic,
             BlueBrainRuntimeSelectionContractDiagnosticClass::InsufficientContractDiagnostic
+        );
+        assert_eq!(
+            insufficient_result.selection_boundary_state,
+            BlueBrainPriorityDeferredBlockedBoundaryState::InsufficientContractBasis
+        );
+
+        let mut deferred = base_input(BlueBrainKuramotoScopeState::SelectionModulating);
+        deferred.phase_nodes[0].phase_permille = 0;
+        deferred.phase_nodes[1].phase_permille = 500;
+        let deferred_result = evaluate_blue_brain_kuramoto_modulation(deferred);
+        assert_eq!(
+            deferred_result.runtime_to_selection_contract_signal,
+            BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionDeferredSignal
+        );
+        assert_eq!(
+            deferred_result.runtime_to_selection_contract_diagnostic,
+            BlueBrainRuntimeSelectionContractDiagnosticClass::DeferredContractDiagnostic
+        );
+        assert_eq!(
+            deferred_result.runtime_boundary_state,
+            BlueBrainPriorityDeferredBlockedBoundaryState::DeferredContractState
         );
     }
 
@@ -2728,9 +2926,21 @@ mod tests {
         );
         assert_eq!(
             runtime_selection_contract_signal_token(
-                BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState
+                BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionDeferredSignal
             ),
-            "selection_to_runtime_deferred_state"
+            "runtime_to_selection_deferred_signal"
+        );
+        assert_eq!(
+            runtime_selection_contract_signal_token(
+                BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedSignal
+            ),
+            "runtime_to_selection_blocked_signal"
+        );
+        assert_eq!(
+            runtime_selection_contract_signal_token(
+                BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeBlockedState
+            ),
+            "selection_to_runtime_blocked_state"
         );
         assert_eq!(
             runtime_selection_contract_signal_token(
@@ -2778,9 +2988,44 @@ mod tests {
         );
         assert_eq!(
             runtime_selection_contract_reason_token(
-                BlueBrainRuntimeSelectionContractReason::AdvisoryOnlyNoDirectActionAuthority
+                BlueBrainRuntimeSelectionContractReason::PriorityAdvisoryHintOnlyNoDirectSelectionAuthority
             ),
-            "advisory_only_no_direct_action_authority"
+            "priority_advisory_hint_only_no_direct_selection_authority"
+        );
+    }
+
+    #[test]
+    fn priority_deferred_blocked_boundary_map_is_canonical_and_distinguishable() {
+        let mut lanes: Vec<&str> = CANONICAL_BLUE_BRAIN_PRIORITY_DEFERRED_BLOCKED_BOUNDARY_MAP
+            .iter()
+            .map(|lane| lane.lane)
+            .collect();
+        lanes.sort_unstable();
+        lanes.dedup();
+        assert_eq!(
+            lanes.len(),
+            CANONICAL_BLUE_BRAIN_PRIORITY_DEFERRED_BLOCKED_BOUNDARY_MAP.len()
+        );
+        assert!(CANONICAL_BLUE_BRAIN_PRIORITY_DEFERRED_BLOCKED_BOUNDARY_MAP
+            .iter()
+            .all(|lane| !lane.canonical_guard.trim().is_empty()));
+        assert_eq!(
+            priority_deferred_blocked_boundary_state_token(
+                BlueBrainPriorityDeferredBlockedBoundaryState::PriorityAdvisoryHint
+            ),
+            "priority_advisory_hint"
+        );
+        assert_eq!(
+            priority_deferred_blocked_boundary_state_token(
+                BlueBrainPriorityDeferredBlockedBoundaryState::DeferredContractState
+            ),
+            "deferred_contract_state"
+        );
+        assert_eq!(
+            priority_deferred_blocked_boundary_state_token(
+                BlueBrainPriorityDeferredBlockedBoundaryState::BlockedContractState
+            ),
+            "blocked_contract_state"
         );
     }
     #[test]
@@ -2941,5 +3186,26 @@ mod tests {
         assert!(doc.contains("no_direct_retry_orchestration"));
         assert!(doc.contains("no_direct_compute_invocation"));
         assert!(doc.contains("no_implicit_memory_persistence"));
+    }
+
+    #[test]
+    fn serie_bb19_prompt3_doc_stays_pinned_to_deferred_blocked_priority_boundary_cleanup() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_runtime_selection_deferred_blocked_priority_boundary_cleanup_serie_bb19_prompt3_v1.md"
+        );
+        assert!(doc.contains("priority_advisory_hint"));
+        assert!(doc.contains("deferred_contract_state"));
+        assert!(doc.contains("blocked_contract_state"));
+        assert!(doc.contains("caveated_priority_deferred_blocked_signal"));
+        assert!(doc.contains("insufficient_contract_basis_boundary_state"));
+        assert!(doc.contains("non_canonical_internal_only_coupling_path_boundary_state"));
+        assert!(doc.contains("runtime_to_selection_deferred_signal"));
+        assert!(doc.contains("runtime_to_selection_blocked_signal"));
+        assert!(doc.contains("selection_to_runtime_blocked_state"));
+        assert!(doc.contains("priority_advisory_hint_only_no_direct_selection_authority"));
+        assert!(doc.contains("kein direct action execution"));
+        assert!(doc.contains("kein direct retry orchestration"));
+        assert!(doc.contains("kein direct compute invocation"));
+        assert!(doc.contains("keine implizite memory persistenz"));
     }
 }
