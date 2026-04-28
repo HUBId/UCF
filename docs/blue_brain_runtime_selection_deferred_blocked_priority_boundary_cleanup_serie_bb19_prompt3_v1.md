@@ -46,3 +46,8 @@ Explizite Contract-Signale:
 ## Ergebnis
 
 Die Runtime/Selection-Kopplung hat jetzt eine explizite, kanonische Boundary zwischen priority advisory hint, deferred und blocked. Dadurch bleibt der Abschluss-Sweep in BB19 auf einer bereinigten Contract-Grenze aufsetzbar, ohne zweite operative Contract-Wirklichkeit.
+
+## BB20 Anschluss
+
+Diese BB19-Contract-Boundary bleibt in BB20 unverändert wirksam und wird dort nur als repo-weite Readiness-Klasse konsolidiert (`usable with caveats`).
+
