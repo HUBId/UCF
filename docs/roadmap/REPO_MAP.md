@@ -1,20 +1,34 @@
-# Repo Map (AI Stack Modules)
+# Repo Map (Operational Modules)
 
-## Module → crate path(s)
-- **ONN** → `core/crates/ucf-onn`
-- **SNN (spike bus)** → `core/crates/ucf-spikebus`
-- **SSM** → `core/crates/ucf-ssm`
-- **JEPA** → `core/crates/ucf-jepa`
-- **TCF** → `core/crates/ucf-tcf`
-- **NSR** → `core/crates/ucf-nsr`
-- **CDE** → `core/crates/ucf-cde`
-- **NCDE** → `core/crates/ucf-ncde`
-- **SLE** → `core/crates/ucf-sle`
-- **IIT** → `core/crates/ucf-iit`
-- **Workspace integration** → `core/crates/ucf-workspace`
-- **Archives** → `domains/archive/...`
+Zweck: schneller, repo-treuer Einstieg in die **aktuell operativen** Linien ohne zweite Wahrheitsquelle.
 
-## Future folders (placeholders)
-- **LFM/RLM ModelHost + adapters** → `domains/ai/`
-- **BlueBrain bridge** → `domains/bluebrain/`
-- **OpenEvolve/RSA** → `domains/evolve/`
+## Canonical operational map
+
+- **BlueBrain operational sweep map (BB20 P1):** `docs/blue_brain_bb20_production_readiness_sweep_serie_bb20_prompt1_v1.md`
+- **Cross-line state semantics (BB20 P2):** `docs/blue_brain_bb20_cross_line_terminology_state_harmonization_serie_bb20_prompt2_v1.md`
+- **Docs operational index:** `docs/README.md`
+
+## Runtime / compute core
+
+- **Canonical compute contracts + invariants:**
+  - `runtime/ucf-compute/src/contracts.rs`
+  - `runtime/ucf-compute/src/reference_map.rs`
+- **Final compute reference line:** `docs/final_reference_line_serie_j_v1.md`
+
+## Policy / scope authority
+
+- `policies/packs/base_v1/`
+- `policies/packs/overlays/{test,dev,prod}/`
+- `policies/manifest.toml`
+- `docs/supported_scope_execution_v13.md`
+
+## Boundary markers
+
+- `advisory-only` / `bounded` Linien bleiben ohne direkte Ausführungsautorität.
+- `candidate-only`, `test-only`, `deferred`, `non-canonical` markieren nicht-operative oder nicht-hochgestufte Pfade.
+- `no-direct-*` Guard Rails bleiben verpflichtend.
+
+Primäre Referenzen:
+- `docs/blue_brain_execution_guard_rails_production_facing_serie_bb18_prompt3_v1.md`
+- `docs/blue_brain_bb16_readiness_sweep_bounded_dynamics_execution_line_serie_bb16_prompt4_v1.md`
+- `docs/blue_brain_runtime_selection_contract_hardening_serie_bb19_prompt1_v1.md`

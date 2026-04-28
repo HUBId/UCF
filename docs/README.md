@@ -1,40 +1,53 @@
-# Chip-2 Dokumentation
+# UCF Operational Documentation Index (BB20 Cleanup)
 
-## Architektur
-- [Chip-2 Überblick](architecture/chip2_overview.md)
-- [Interfaces](architecture/interfaces.md)
-- [Microcircuit-Ausbaupfad](architecture/microcircuit_path.md)
-- [Teststrategie](architecture/testing_strategy.md)
+Dieses README ist die **kanonische Einstiegsfläche** für operative Doku-Pfade im aktuellen Repo-Stand.
 
-## Module
-- [DBM 13 Hypothalamus](modules/dbm_13_hypothalamus.md)
-- [DBM 12 Insula](modules/dbm_12_insula.md)
-- [DBM 0 Substantia Nigra](modules/dbm_0_sn.md)
-- [DBM 7 LC](modules/dbm_7_lc.md)
-- [DBM 8 Serotonin](modules/dbm_8_serotonin.md)
-- [DBM 6 Dopamin/NAcc](modules/dbm_6_dopamin_nacc.md)
-- [DBM 9 Amygdala](modules/dbm_9_amygdala.md)
-- [DBM PAG](modules/dbm_pag.md)
-- [DBM STN](modules/dbm_stn.md)
-- [DBM PMRF](modules/dbm_pmrf.md)
-- [DBM SC](modules/dbm_sc.md)
-- [DBM PPRF](modules/dbm_pprf.md)
-- [DBM 18 Cerebellum](modules/dbm_18_cerebellum.md)
-- [DBM HPA](modules/dbm_hpa.md)
+## 1) Canonical operational entrypoints
 
-## Templates
-- [Modul-Template](templates/module_template.md)
-- [Golden-Stream-Testtemplate](templates/test_template.md)
-- [Konfigurations-Template](templates/config_template.md)
+- **Operational readiness map (BB20 P1):** `docs/blue_brain_bb20_production_readiness_sweep_serie_bb20_prompt1_v1.md`
+- **Terminology/state semantics harmonization (BB20 P2):** `docs/blue_brain_bb20_cross_line_terminology_state_harmonization_serie_bb20_prompt2_v1.md`
+- **BlueBrain/Runtime/Selection hardening line (BB19):**
+  - `docs/blue_brain_runtime_selection_contract_hardening_serie_bb19_prompt1_v1.md`
+  - `docs/blue_brain_runtime_selection_diagnostics_hardening_serie_bb19_prompt2_v1.md`
+- **Execution guard rails (BB18):** `docs/blue_brain_execution_guard_rails_production_facing_serie_bb18_prompt3_v1.md`
+- **Real compute final reference line:**
+  - `docs/final_reference_line_serie_j_v1.md`
+  - `docs/final_production_readiness_evidence_pack_serie_j_v1.md`
 
-## Roadmaps & Runbooks
-- [v1.1 Plan: Real Models & Optional GPU Lane](v1_1_plan.md)
-- [Weights Incident Response](runbooks/weights_incident_response.md)
-- [Models Lifecycle Runbook v1](runbooks/models_v1.md)
-- [Shadow Runbook v1](runbooks/shadow_v1.md)
-- [Drift + Alerts Runbook v1](runbooks/drift_alerts_v1.md)
+## 2) Status classes and where to verify them
 
-## Repository Hygiene
-- [Branch Policy](branch_policy.md)
-- [Contributing Workflow](contributing_workflow.md)
-- [Codex Instructions (AGENTS.md)](../AGENTS.md)
+- **stable / production-usable:** anhand der BB18/BB19 Linien + Serie-J Final-Referenzlinie.
+- **advisory-only / bounded:** primär in BB16/BB19 Vertrags- und Diagnostics-Dokus.
+- **candidate-only / test-only / deferred / non-canonical:** explizit in den jeweiligen Serien-Dokus markiert; kein direkter Produktionsanspruch.
+
+Referenzpunkt für die technische Scope-Grenze:
+- `docs/supported_scope_execution_v13.md`
+
+## 3) Guard rails and boundaries (must stay visible)
+
+- Keine implizite Scope-Erweiterung außerhalb der unterstützten Scope-Artefakte.
+- `no-direct-*` Grenzen (kein direkter Action/Compute/Retry/Policy/Memory-Commit Pfad aus advisory-only Linien).
+- Non-canonical/internal-only Pfade haben **keine** direkte operative Autorität.
+
+Primäre Guard-/Boundary-Dokumente:
+- `docs/blue_brain_execution_guard_rails_production_facing_serie_bb18_prompt3_v1.md`
+- `docs/blue_brain_bb16_readiness_sweep_bounded_dynamics_execution_line_serie_bb16_prompt4_v1.md`
+- `docs/supported_scope_execution_v13.md`
+
+## 4) Series closure docs (operationally relevant)
+
+Nur operativ relevante Abschlusslinien (BB8–BB19) als Referenzfläche:
+- `docs/blue_brain_memory_diagnostics_runtime_feedback_serie_bb8_prompt3_v1.md`
+- `docs/blue_brain_kuramoto_minimal_modulation_path_serie_bb10_prompt2_v1.md`
+- `docs/blue_brain_kuramoto_input_groups_parametrization_hardening_serie_bb12_prompt3_v1.md`
+- `docs/blue_brain_combined_retrieval_diagnostics_stale_invalidated_failed_feedback_serie_bb15_prompt2_v1.md`
+- `docs/blue_brain_bb16_readiness_sweep_bounded_dynamics_execution_line_serie_bb16_prompt4_v1.md`
+- `docs/blue_brain_bb18_readiness_sweep_production_hardening_closure_serie_bb18_prompt4_v1.md`
+- `docs/blue_brain_runtime_selection_contract_hardening_serie_bb19_prompt1_v1.md`
+- `docs/blue_brain_runtime_selection_diagnostics_hardening_serie_bb19_prompt2_v1.md`
+
+## 5) Deprecated index intent (cleanup)
+
+Die frühere `Chip-2` Architektur-/Modul-Indexstruktur in dieser Datei war für den aktuellen operativen UCF-Stand nicht mehr maßgeblich und wurde als primärer Einstieg entfernt.
+
+Wenn einzelne ältere Dateien weiterhin gebraucht werden, müssen sie gegen die oben genannten kanonischen operativen Referenzpfade validiert werden.
