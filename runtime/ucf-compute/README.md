@@ -258,6 +258,11 @@ case-robust execution result reference classification, and unchanged no-direct-*
 see `docs/blue_brain_execution_production_hardening_narrow_pass_serie_bb18_prompt1_v1.md`,
 `runtime/ucf-compute/src/blue_brain_minimal_execution.rs`, and
 `runtime/ucf-compute/src/canonical_reference.rs`.
+For BB18 Prompt 2 execution edge-case semantics and terminal-state integrity hardening
+(canonical edge-case map, duplicate/conflicting terminalization detection,
+incomplete/partial path rejection, and unchanged no-direct-* / narrow execution authority),
+see `docs/blue_brain_execution_edge_case_terminal_state_hardening_serie_bb18_prompt2_v1.md`
+and `runtime/ucf-compute/src/blue_brain_minimal_execution.rs`.
 
 ## Capability model
 
