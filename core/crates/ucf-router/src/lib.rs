@@ -33,7 +33,8 @@ use ucf_compute::{
     classify_blue_brain_reference_path, dynamics_advisory_coupling_state_token,
     dynamics_execution_feedback_state_token, evaluate_blue_brain_kuramoto_modulation,
     kuramoto_modulation_diagnostic_class_token, kuramoto_modulation_reason_token,
-    kuramoto_modulation_state_token, runtime_selection_contract_signal_token,
+    kuramoto_modulation_state_token, runtime_selection_contract_diagnostic_class_token,
+    runtime_selection_contract_reason_token, runtime_selection_contract_signal_token,
     BlueBrainCanonicalReferenceKind, BlueBrainExecutionReferenceOutcome,
     BlueBrainKuramotoModulationInput, BlueBrainKuramotoPhaseNodeInput,
     BlueBrainKuramotoRuntimeCaveatModulation, BlueBrainKuramotoRuntimePosture,
@@ -4661,6 +4662,20 @@ impl Router {
                 ),
                 selection_to_runtime_contract_signal: runtime_selection_contract_signal_token(
                     kuramoto_result.selection_to_runtime_contract_signal,
+                ),
+                runtime_to_selection_contract_diagnostic:
+                    runtime_selection_contract_diagnostic_class_token(
+                        kuramoto_result.runtime_to_selection_contract_diagnostic,
+                    ),
+                selection_to_runtime_contract_diagnostic:
+                    runtime_selection_contract_diagnostic_class_token(
+                        kuramoto_result.selection_to_runtime_contract_diagnostic,
+                    ),
+                runtime_to_selection_contract_reason: runtime_selection_contract_reason_token(
+                    kuramoto_result.runtime_to_selection_contract_reason,
+                ),
+                selection_to_runtime_contract_reason: runtime_selection_contract_reason_token(
+                    kuramoto_result.selection_to_runtime_contract_reason,
                 ),
                 runtime_modulation: kuramoto_runtime_token(kuramoto_result.runtime_modulation),
                 coherence_permille: kuramoto_result.coherence_permille,

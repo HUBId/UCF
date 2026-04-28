@@ -61,6 +61,10 @@ pub struct BrainKuramotoHint {
     pub selection_coupling_state: &'static str,
     pub runtime_to_selection_contract_signal: &'static str,
     pub selection_to_runtime_contract_signal: &'static str,
+    pub runtime_to_selection_contract_diagnostic: &'static str,
+    pub selection_to_runtime_contract_diagnostic: &'static str,
+    pub runtime_to_selection_contract_reason: &'static str,
+    pub selection_to_runtime_contract_reason: &'static str,
     pub runtime_modulation: &'static str,
     pub coherence_permille: u16,
     pub caveat_tag: &'static str,
@@ -408,13 +412,17 @@ impl WorkspaceSignal {
             format!("BRAIN_NEUROMOD_HINT={delta_commit} DA={dopamine} SE={serotonin} NE={norepi} CO={cortisol}");
         if let Some(hint) = kuramoto_hint {
             summary.push_str(&format!(
-                " KURAMOTO_STATE={} KURAMOTO_RUNTIME={} KURAMOTO_RUNTIME_COUPLING={} KURAMOTO_SELECTION_COUPLING={} KURAMOTO_RT_TO_SEL_CONTRACT={} KURAMOTO_SEL_TO_RT_CONTRACT={} KURAMOTO_COHERENCE={} KURAMOTO_CAVEAT={} KURAMOTO_DIAGNOSTIC={} KURAMOTO_REASON={} KURAMOTO_EXEC_FEEDBACK={}",
+                " KURAMOTO_STATE={} KURAMOTO_RUNTIME={} KURAMOTO_RUNTIME_COUPLING={} KURAMOTO_SELECTION_COUPLING={} KURAMOTO_RT_TO_SEL_CONTRACT={} KURAMOTO_SEL_TO_RT_CONTRACT={} KURAMOTO_RT_TO_SEL_DIAG={} KURAMOTO_SEL_TO_RT_DIAG={} KURAMOTO_RT_TO_SEL_REASON={} KURAMOTO_SEL_TO_RT_REASON={} KURAMOTO_COHERENCE={} KURAMOTO_CAVEAT={} KURAMOTO_DIAGNOSTIC={} KURAMOTO_REASON={} KURAMOTO_EXEC_FEEDBACK={}",
                 hint.modulation_state,
                 hint.runtime_modulation,
                 hint.runtime_coupling_state,
                 hint.selection_coupling_state,
                 hint.runtime_to_selection_contract_signal,
                 hint.selection_to_runtime_contract_signal,
+                hint.runtime_to_selection_contract_diagnostic,
+                hint.selection_to_runtime_contract_diagnostic,
+                hint.runtime_to_selection_contract_reason,
+                hint.selection_to_runtime_contract_reason,
                 hint.coherence_permille,
                 hint.caveat_tag,
                 hint.diagnostic_class,
@@ -2548,6 +2556,12 @@ mod tests {
                 selection_coupling_state: "caveated_advisory_coupling",
                 runtime_to_selection_contract_signal: "caveated_contract_signal",
                 selection_to_runtime_contract_signal: "selection_to_runtime_deferred_state",
+                runtime_to_selection_contract_diagnostic: "caveated_contract_diagnostic",
+                selection_to_runtime_contract_diagnostic: "deferred_contract_diagnostic",
+                runtime_to_selection_contract_reason:
+                    "caveated_due_to_weak_or_partial_reference_dynamics_execution_basis",
+                selection_to_runtime_contract_reason:
+                    "deferred_due_to_bounded_priority_selection_state",
                 runtime_modulation: "attach_dynamics_caveat",
                 coherence_permille: 640,
                 caveat_tag: "runtime_caveat_posture_present",
@@ -2577,6 +2591,18 @@ mod tests {
         assert!(signal
             .summary
             .contains("KURAMOTO_SEL_TO_RT_CONTRACT=selection_to_runtime_deferred_state"));
+        assert!(signal
+            .summary
+            .contains("KURAMOTO_RT_TO_SEL_DIAG=caveated_contract_diagnostic"));
+        assert!(signal
+            .summary
+            .contains("KURAMOTO_SEL_TO_RT_DIAG=deferred_contract_diagnostic"));
+        assert!(signal.summary.contains(
+            "KURAMOTO_RT_TO_SEL_REASON=caveated_due_to_weak_or_partial_reference_dynamics_execution_basis"
+        ));
+        assert!(signal.summary.contains(
+            "KURAMOTO_SEL_TO_RT_REASON=deferred_due_to_bounded_priority_selection_state"
+        ));
         assert!(signal.summary.contains("KURAMOTO_COHERENCE=640"));
         assert!(signal
             .summary

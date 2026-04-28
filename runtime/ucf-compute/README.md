@@ -258,6 +258,13 @@ non-canonical/internal-only exclusion, and unchanged no-direct-* boundaries), se
 `docs/blue_brain_runtime_selection_contract_hardening_serie_bb19_prompt1_v1.md`,
 `runtime/ucf-compute/src/blue_brain_dynamics.rs`, `core/crates/ucf-router/src/lib.rs`, and
 `core/crates/ucf-workspace/src/lib.rs`.
+For BB19 Prompt 2 runtime/selection diagnostics and contract-feedback hardening
+(canonical runtime↔selection diagnostics map, compact deterministic deferred/blocked/caveated/
+insufficient/advisory/internal-only reason tokens, bounded dynamics/execution/reference influence,
+and unchanged no-direct-* boundaries), see
+`docs/blue_brain_runtime_selection_diagnostics_hardening_serie_bb19_prompt2_v1.md`,
+`runtime/ucf-compute/src/blue_brain_dynamics.rs`, `core/crates/ucf-router/src/lib.rs`, and
+`core/crates/ucf-workspace/src/lib.rs`.
 For BB18 Prompt 1 execution production-hardening narrow pass over the minimal real execution line
 (narrow hardening path map, guard-sensitive requested/started transition tightening,
 case-robust execution result reference classification, and unchanged no-direct-* / scope boundaries),
