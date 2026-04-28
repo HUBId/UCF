@@ -408,8 +408,11 @@ mod tests {
     #[test]
     fn reference_consumption_layers_enforce_expected_canonical_reference_kinds() {
         let context = classify_blue_brain_reference_path("bb3:context:turn:42");
+        let memory = classify_blue_brain_reference_path("bb8:memory_record:mem-42");
         let execution = classify_blue_brain_reference_path("bb14:execution:h7:result:completed");
         let combined = classify_blue_brain_reference_path("bb15:combined:candidate-1");
+        let diagnostic = classify_blue_brain_reference_path("diag:runtime:tick:8");
+        let reference_only = classify_blue_brain_reference_path("aux:reference:hint");
 
         let runtime_context = canonical_reference_consumption_decision(
             BlueBrainReferenceConsumptionLayer::Runtime,
@@ -436,5 +439,68 @@ mod tests {
             &context,
         );
         assert!(!execution_context.allowed);
+
+        let runtime_memory = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Runtime,
+            &memory,
+        );
+        assert!(!runtime_memory.allowed);
+
+        let selection_diagnostic = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Selection,
+            &diagnostic,
+        );
+        assert!(!selection_diagnostic.allowed);
+
+        let selection_reference_only = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Selection,
+            &reference_only,
+        );
+        assert!(selection_reference_only.allowed);
+        assert!(selection_reference_only.candidate_only);
+    }
+
+    #[test]
+    fn validity_states_remain_distinct_across_canonical_and_non_canonical_lanes() {
+        let current = classify_blue_brain_reference_path("bb3:context:turn:99");
+        assert_eq!(current.validity, BlueBrainReferenceValidity::Current);
+
+        let caveated =
+            classify_blue_brain_reference_path("bb14:execution:h9:result:failed:with_caveat");
+        assert_eq!(caveated.validity, BlueBrainReferenceValidity::Caveated);
+
+        let stale = classify_blue_brain_reference_path("bb8:memory_record:mem-3:stale");
+        assert_eq!(stale.validity, BlueBrainReferenceValidity::Stale);
+
+        let invalidated = classify_blue_brain_reference_path("bb8:memory_record:mem-4:invalidated");
+        assert_eq!(
+            invalidated.validity,
+            BlueBrainReferenceValidity::Invalidated
+        );
+
+        let blocked =
+            classify_blue_brain_reference_path("bb8:memory_record:mem-5:maintenance_blocked");
+        assert_eq!(blocked.validity, BlueBrainReferenceValidity::Blocked);
+
+        let insufficient = classify_blue_brain_reference_path(
+            "bb14:execution:h10:result:ExecutionUnavailable:insufficient",
+        );
+        assert_eq!(
+            insufficient.validity,
+            BlueBrainReferenceValidity::Insufficient
+        );
+
+        let reference_only = classify_blue_brain_reference_path("diag:runtime:insufficient_basis");
+        assert_eq!(
+            reference_only.validity,
+            BlueBrainReferenceValidity::ReferenceOnly
+        );
+
+        let non_canonical =
+            classify_blue_brain_reference_path("bb3:context:turn:100:non_canonical_internal_only");
+        assert_eq!(
+            non_canonical.validity,
+            BlueBrainReferenceValidity::NonCanonicalInternalOnlyPath
+        );
     }
 }
