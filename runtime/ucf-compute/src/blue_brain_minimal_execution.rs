@@ -143,6 +143,18 @@ pub enum BlueBrainExecutionProductionHardeningPathClass {
     NonCanonicalInternalOnlyExecutionPath,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BlueBrainExecutionEdgeCaseClass {
+    BlockedBeforeStartEdgeCase,
+    CancelledAfterStartEdgeCase,
+    FailureAfterStartEdgeCase,
+    PartialExecutionPath,
+    IncompleteResultPath,
+    ConflictingTerminalStateAttempt,
+    DuplicateTerminalizationAttempt,
+    NonCanonicalInternalOnlyEdgePath,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainMinimalCapabilityScopeClass {
     AllowedCanonicalAction,
@@ -554,7 +566,19 @@ pub fn blue_brain_execution_result_integrity(
         _ => report.executed_action_result.is_none(),
     };
 
-    if !boundary_matches || !lifecycle_matches || !result_matches {
+    let edge_cases = blue_brain_execution_edge_case_map(report);
+    let has_disallowed_edge_case = edge_cases.iter().any(|edge| {
+        matches!(
+            edge,
+            BlueBrainExecutionEdgeCaseClass::CancelledAfterStartEdgeCase
+                | BlueBrainExecutionEdgeCaseClass::PartialExecutionPath
+                | BlueBrainExecutionEdgeCaseClass::IncompleteResultPath
+                | BlueBrainExecutionEdgeCaseClass::ConflictingTerminalStateAttempt
+                | BlueBrainExecutionEdgeCaseClass::DuplicateTerminalizationAttempt
+        )
+    });
+
+    if !boundary_matches || !lifecycle_matches || !result_matches || has_disallowed_edge_case {
         return BlueBrainExecutionResultIntegrity {
             class: Integrity::IntegrityMismatch,
             transition: Transition::InvalidTransition,
@@ -572,6 +596,154 @@ pub fn blue_brain_execution_result_integrity(
         ),
         canonical: !matches!(class, Integrity::NonCanonicalInternalOnlyResultPath),
     }
+}
+
+pub fn blue_brain_execution_edge_case_map(
+    report: &BlueBrainMinimalExecutionReport,
+) -> Vec<BlueBrainExecutionEdgeCaseClass> {
+    use BlueBrainExecutionEdgeCaseClass as EdgeCase;
+    use BlueBrainMinimalExecutionState as State;
+
+    let mut edge_cases = Vec::new();
+    let terminal_reference_count =
+        usize::from(report.references.execution_result_reference.is_some())
+            + usize::from(report.references.failure_result_reference.is_some())
+            + usize::from(report.references.cancellation_result_reference.is_some())
+            + usize::from(report.references.blocked_or_unavailable_reference.is_some())
+            + usize::from(
+                report
+                    .references
+                    .non_canonical_internal_only_reference_path
+                    .is_some(),
+            );
+
+    let is_terminal = matches!(
+        report.state,
+        State::ExecutionCompleted
+            | State::ExecutionFailed
+            | State::ExecutionCancelled
+            | State::ExecutionBlocked
+            | State::ExecutionUnavailable
+            | State::ExecutionUnsupported
+            | State::NonCanonicalInternalOnlyPath
+    );
+
+    let has_conflicting_terminal_reference = match report.state {
+        State::ExecutionCompleted => {
+            report.references.failure_result_reference.is_some()
+                || report.references.cancellation_result_reference.is_some()
+                || report.references.blocked_or_unavailable_reference.is_some()
+                || report
+                    .references
+                    .non_canonical_internal_only_reference_path
+                    .is_some()
+        }
+        State::ExecutionFailed => {
+            report.references.execution_result_reference.is_some()
+                || report.references.cancellation_result_reference.is_some()
+                || report.references.blocked_or_unavailable_reference.is_some()
+        }
+        State::ExecutionCancelled => {
+            report.references.execution_result_reference.is_some()
+                || report.references.failure_result_reference.is_some()
+                || report.references.blocked_or_unavailable_reference.is_some()
+        }
+        State::ExecutionBlocked | State::ExecutionUnavailable | State::ExecutionUnsupported => {
+            report.references.execution_result_reference.is_some()
+                || report.references.failure_result_reference.is_some()
+                || report.references.cancellation_result_reference.is_some()
+        }
+        State::NonCanonicalInternalOnlyPath => {
+            report.references.execution_result_reference.is_some()
+                || report.references.failure_result_reference.is_some()
+                || report.references.cancellation_result_reference.is_some()
+                || report.references.blocked_or_unavailable_reference.is_some()
+        }
+        State::ExecutionEligibleButNotExecuted
+        | State::ExecutionRequested
+        | State::ExecutionStarted => terminal_reference_count > 0,
+    };
+
+    if has_conflicting_terminal_reference {
+        edge_cases.push(EdgeCase::ConflictingTerminalStateAttempt);
+    }
+
+    if terminal_reference_count > 1 {
+        edge_cases.push(EdgeCase::DuplicateTerminalizationAttempt);
+    }
+
+    if report.state == State::ExecutionBlocked && !report.execution_started {
+        edge_cases.push(EdgeCase::BlockedBeforeStartEdgeCase);
+    }
+    if report.state == State::ExecutionCancelled && report.execution_started {
+        edge_cases.push(EdgeCase::CancelledAfterStartEdgeCase);
+    }
+    if report.state == State::ExecutionFailed && report.execution_started {
+        edge_cases.push(EdgeCase::FailureAfterStartEdgeCase);
+    }
+
+    let partial_execution_path = match report.state {
+        State::ExecutionRequested => report.execution_started || report.execution_completed,
+        State::ExecutionStarted => !report.execution_requested || report.execution_completed,
+        State::ExecutionCompleted => !report.execution_started || !report.execution_completed,
+        State::ExecutionFailed => !report.execution_started,
+        State::ExecutionCancelled => {
+            report.execution_started || report.execution_completed || report.execution_failed
+        }
+        State::ExecutionBlocked
+        | State::ExecutionUnavailable
+        | State::ExecutionUnsupported
+        | State::ExecutionEligibleButNotExecuted
+        | State::NonCanonicalInternalOnlyPath => {
+            report.execution_started || report.execution_completed || report.execution_failed
+        }
+    };
+    if partial_execution_path {
+        edge_cases.push(EdgeCase::PartialExecutionPath);
+    }
+
+    let incomplete_result_path = match report.state {
+        State::ExecutionCompleted => {
+            report.executed_action_result.is_none()
+                || report.references.execution_result_reference.is_none()
+        }
+        State::ExecutionFailed => report.references.failure_result_reference.is_none(),
+        State::ExecutionCancelled => report.references.cancellation_result_reference.is_none(),
+        State::ExecutionBlocked | State::ExecutionUnavailable | State::ExecutionUnsupported => {
+            report.references.blocked_or_unavailable_reference.is_none()
+        }
+        State::ExecutionEligibleButNotExecuted => report.references.placeholder_reference.is_none(),
+        State::ExecutionRequested | State::ExecutionStarted => {
+            report.executed_action_result.is_some()
+                || report.references.execution_result_reference.is_some()
+                || report.references.failure_result_reference.is_some()
+                || report.references.cancellation_result_reference.is_some()
+        }
+        State::NonCanonicalInternalOnlyPath => report
+            .references
+            .non_canonical_internal_only_reference_path
+            .is_none(),
+    };
+    if incomplete_result_path {
+        edge_cases.push(EdgeCase::IncompleteResultPath);
+    }
+
+    if matches!(report.state, State::NonCanonicalInternalOnlyPath)
+        || report
+            .references
+            .non_canonical_internal_only_reference_path
+            .is_some()
+    {
+        edge_cases.push(EdgeCase::NonCanonicalInternalOnlyEdgePath);
+    }
+
+    if is_terminal && report.state != State::ExecutionCancelled && !report.execution_requested {
+        edge_cases.push(EdgeCase::PartialExecutionPath);
+    }
+
+    edge_cases.sort_unstable();
+    edge_cases.dedup();
+    edge_cases
 }
 
 pub fn blue_brain_execution_feedback_backbind(
@@ -1152,9 +1324,10 @@ fn empty_reference_map(
 #[cfg(test)]
 mod tests {
     use super::{
-        blue_brain_execution_feedback_backbind, blue_brain_execution_production_hardening_path,
-        blue_brain_execution_result_integrity, blue_brain_minimal_capability_scope,
-        execute_blue_brain_minimal_action, BlueBrainExecutionFailurePathClass,
+        blue_brain_execution_edge_case_map, blue_brain_execution_feedback_backbind,
+        blue_brain_execution_production_hardening_path, blue_brain_execution_result_integrity,
+        blue_brain_minimal_capability_scope, execute_blue_brain_minimal_action,
+        BlueBrainExecutionEdgeCaseClass, BlueBrainExecutionFailurePathClass,
         BlueBrainExecutionFeedbackClass, BlueBrainExecutionProductionHardeningPathClass,
         BlueBrainExecutionReferenceClass, BlueBrainExecutionResultIntegrityClass,
         BlueBrainExecutionRetryDisposition, BlueBrainExecutionTransitionClass,
@@ -1816,6 +1989,76 @@ mod tests {
         started.execution_requested = false;
         assert_eq!(
             blue_brain_execution_result_integrity(&started).class,
+            BlueBrainExecutionResultIntegrityClass::IntegrityMismatch
+        );
+    }
+
+    #[test]
+    fn edge_case_map_captures_duplicate_and_conflicting_terminalization() {
+        let mut request = base_request();
+        request.execution_requested = true;
+        let mut report = execute_blue_brain_minimal_action(&request);
+        report.references.failure_result_reference =
+            report.references.execution_result_reference.clone();
+        let edge_cases = blue_brain_execution_edge_case_map(&report);
+        assert!(
+            edge_cases.contains(&BlueBrainExecutionEdgeCaseClass::ConflictingTerminalStateAttempt)
+        );
+        assert!(
+            edge_cases.contains(&BlueBrainExecutionEdgeCaseClass::DuplicateTerminalizationAttempt)
+        );
+    }
+
+    #[test]
+    fn integrity_rejects_cancelled_after_start_and_partial_paths() {
+        let mut request = base_request();
+        request.execution_requested = true;
+        request.cancelled = true;
+        let mut report = execute_blue_brain_minimal_action(&request);
+        report.execution_started = true;
+        let edge_cases = blue_brain_execution_edge_case_map(&report);
+        assert!(edge_cases.contains(&BlueBrainExecutionEdgeCaseClass::CancelledAfterStartEdgeCase));
+        assert!(edge_cases.contains(&BlueBrainExecutionEdgeCaseClass::PartialExecutionPath));
+        assert_eq!(
+            blue_brain_execution_result_integrity(&report).class,
+            BlueBrainExecutionResultIntegrityClass::IntegrityMismatch
+        );
+    }
+
+    #[test]
+    fn edge_case_map_marks_blocked_before_start_and_failure_after_start_without_merging() {
+        let mut blocked_request = base_request();
+        blocked_request.handoff_class = BlueBrainFutureActionHandoffClass::HandoffBlocked;
+        let blocked = execute_blue_brain_minimal_action(&blocked_request);
+        let blocked_edges = blue_brain_execution_edge_case_map(&blocked);
+        assert!(
+            blocked_edges.contains(&BlueBrainExecutionEdgeCaseClass::BlockedBeforeStartEdgeCase)
+        );
+        assert!(
+            !blocked_edges.contains(&BlueBrainExecutionEdgeCaseClass::FailureAfterStartEdgeCase)
+        );
+
+        let mut failed_request = base_request();
+        failed_request.execution_requested = true;
+        failed_request.force_execution_failure = true;
+        let failed = execute_blue_brain_minimal_action(&failed_request);
+        let failed_edges = blue_brain_execution_edge_case_map(&failed);
+        assert!(failed_edges.contains(&BlueBrainExecutionEdgeCaseClass::FailureAfterStartEdgeCase));
+        assert!(
+            !failed_edges.contains(&BlueBrainExecutionEdgeCaseClass::BlockedBeforeStartEdgeCase)
+        );
+    }
+
+    #[test]
+    fn edge_case_map_flags_incomplete_result_path_without_second_result_language() {
+        let mut request = base_request();
+        request.execution_requested = true;
+        let mut report = execute_blue_brain_minimal_action(&request);
+        report.references.execution_result_reference = None;
+        let edge_cases = blue_brain_execution_edge_case_map(&report);
+        assert!(edge_cases.contains(&BlueBrainExecutionEdgeCaseClass::IncompleteResultPath));
+        assert_eq!(
+            blue_brain_execution_result_integrity(&report).class,
             BlueBrainExecutionResultIntegrityClass::IntegrityMismatch
         );
     }
