@@ -4747,6 +4747,7 @@ impl Router {
         let mut canonical_execution_result_refs = Vec::new();
         let mut failed_or_cancelled_execution_result_refs = Vec::new();
         let mut blocked_execution_result_refs = Vec::new();
+        let mut insufficient_execution_result_refs = Vec::new();
         let mut unavailable_execution_result_refs = Vec::new();
         let mut diagnostic_only_feedback_refs = Vec::new();
         let mut saw_non_canonical_internal_only_path = false;
@@ -4779,9 +4780,9 @@ impl Router {
                             BlueBrainExecutionReferenceOutcome::Unavailable
                             | BlueBrainExecutionReferenceOutcome::Unsupported,
                             _,
-                        )
-                        | (_, BlueBrainReferenceValidity::Insufficient) => {
-                            unavailable_execution_result_refs.push(evidence_ref.clone())
+                        ) => unavailable_execution_result_refs.push(evidence_ref.clone()),
+                        (_, BlueBrainReferenceValidity::Insufficient) => {
+                            insufficient_execution_result_refs.push(evidence_ref.clone())
                         }
                         (
                             BlueBrainExecutionReferenceOutcome::PlaceholderOnly
@@ -4821,6 +4822,7 @@ impl Router {
             canonical_execution_result_refs,
             failed_or_cancelled_execution_result_refs,
             blocked_execution_result_refs,
+            insufficient_execution_result_refs,
             unavailable_execution_result_refs,
             diagnostic_only_feedback_refs,
             non_canonical_internal_only_path: saw_non_canonical_internal_only_path,
@@ -7916,13 +7918,14 @@ mod tests {
         assert_eq!(input.canonical_execution_result_refs.len(), 1);
         assert_eq!(input.failed_or_cancelled_execution_result_refs.len(), 2);
         assert_eq!(input.blocked_execution_result_refs.len(), 1);
-        assert_eq!(input.unavailable_execution_result_refs.len(), 2);
+        assert_eq!(input.insufficient_execution_result_refs.len(), 1);
+        assert_eq!(input.unavailable_execution_result_refs.len(), 1);
         assert!(input
             .diagnostic_only_feedback_refs
             .iter()
             .any(|entry| entry == "diag:runtime:status"));
         assert!(input
-            .unavailable_execution_result_refs
+            .insufficient_execution_result_refs
             .iter()
             .any(|entry| entry == "bb14:execution:h6:placeholder:pending"));
         assert!(input

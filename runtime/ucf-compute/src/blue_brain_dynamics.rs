@@ -380,6 +380,7 @@ pub struct BlueBrainKuramotoModulationInput {
     pub canonical_execution_result_refs: Vec<String>,
     pub failed_or_cancelled_execution_result_refs: Vec<String>,
     pub blocked_execution_result_refs: Vec<String>,
+    pub insufficient_execution_result_refs: Vec<String>,
     pub unavailable_execution_result_refs: Vec<String>,
     pub diagnostic_only_feedback_refs: Vec<String>,
     pub non_canonical_internal_only_path: bool,
@@ -404,6 +405,8 @@ impl BlueBrainKuramotoModulationInput {
         self.failed_or_cancelled_execution_result_refs.dedup();
         self.blocked_execution_result_refs.sort_unstable();
         self.blocked_execution_result_refs.dedup();
+        self.insufficient_execution_result_refs.sort_unstable();
+        self.insufficient_execution_result_refs.dedup();
         self.unavailable_execution_result_refs.sort_unstable();
         self.unavailable_execution_result_refs.dedup();
         self.diagnostic_only_feedback_refs.sort_unstable();
@@ -1496,6 +1499,9 @@ fn classify_execution_feedback_state(
     if !input.blocked_input_refs.is_empty() || !input.blocked_execution_result_refs.is_empty() {
         return BlueBrainDynamicsExecutionFeedbackState::BlockedDynamicsFeedbackBasis;
     }
+    if !input.insufficient_execution_result_refs.is_empty() {
+        return BlueBrainDynamicsExecutionFeedbackState::InsufficientDynamicsFeedbackBasis;
+    }
     if !input.unavailable_execution_result_refs.is_empty() {
         return BlueBrainDynamicsExecutionFeedbackState::UnavailableDynamicsFeedbackBasis;
     }
@@ -1984,6 +1990,7 @@ mod tests {
             canonical_execution_result_refs: vec![],
             failed_or_cancelled_execution_result_refs: vec![],
             blocked_execution_result_refs: vec![],
+            insufficient_execution_result_refs: vec![],
             unavailable_execution_result_refs: vec![],
             diagnostic_only_feedback_refs: vec![],
             non_canonical_internal_only_path: false,
