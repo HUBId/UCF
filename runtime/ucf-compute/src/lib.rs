@@ -150,10 +150,11 @@ pub use blue_brain_memory::{
     CANONICAL_BLUE_BRAIN_MEMORY_DIAGNOSTICS_MAP,
 };
 pub use blue_brain_minimal_execution::{
-    blue_brain_execution_feedback_backbind, blue_brain_execution_result_integrity,
-    blue_brain_minimal_capability_scope, execute_blue_brain_minimal_action,
-    BlueBrainExecutionFailurePathClass, BlueBrainExecutionFailureReasonClass,
-    BlueBrainExecutionFeedbackBackbind, BlueBrainExecutionFeedbackClass,
+    blue_brain_execution_feedback_backbind, blue_brain_execution_guard_rail_map,
+    blue_brain_execution_result_integrity, blue_brain_minimal_capability_scope,
+    execute_blue_brain_minimal_action, BlueBrainExecutionFailurePathClass,
+    BlueBrainExecutionFailureReasonClass, BlueBrainExecutionFeedbackBackbind,
+    BlueBrainExecutionFeedbackClass, BlueBrainExecutionGuardRailClass,
     BlueBrainExecutionMemoryFeedback, BlueBrainExecutionOutcomeClass, BlueBrainExecutionReference,
     BlueBrainExecutionReferenceClass, BlueBrainExecutionReferenceMap,
     BlueBrainExecutionResultIntegrity, BlueBrainExecutionResultIntegrityClass,

@@ -144,6 +144,15 @@ pub enum BlueBrainExecutionProductionHardeningPathClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BlueBrainExecutionGuardRailClass {
+    CanonicalProductionGuardRail,
+    ScopeGuardRail,
+    NoDirectGuardRail,
+    TerminalStateGuardRail,
+    NonCanonicalInternalOnlyPathExcluded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BlueBrainExecutionEdgeCaseClass {
     BlockedBeforeStartEdgeCase,
     CancelledAfterStartEdgeCase,
@@ -393,6 +402,43 @@ pub struct BlueBrainExecutionResultIntegrity {
     pub transition: BlueBrainExecutionTransitionClass,
     pub is_terminal: bool,
     pub canonical: bool,
+}
+
+pub fn blue_brain_execution_guard_rail_map(
+    report: &BlueBrainMinimalExecutionReport,
+) -> Vec<BlueBrainExecutionGuardRailClass> {
+    use BlueBrainExecutionGuardRailClass as GuardRail;
+
+    let mut rails = vec![GuardRail::ScopeGuardRail, GuardRail::NoDirectGuardRail];
+    let integrity = blue_brain_execution_result_integrity(report);
+
+    if matches!(
+        blue_brain_execution_production_hardening_path(report),
+        BlueBrainExecutionProductionHardeningPathClass::HardenedCanonicalExecutionPath
+            | BlueBrainExecutionProductionHardeningPathClass::HardenedReferenceOrResultPath
+            | BlueBrainExecutionProductionHardeningPathClass::GuardSensitivePath
+    ) {
+        rails.push(GuardRail::CanonicalProductionGuardRail);
+    }
+
+    if integrity.is_terminal
+        || integrity.transition == BlueBrainExecutionTransitionClass::EnteredExecution
+    {
+        rails.push(GuardRail::TerminalStateGuardRail);
+    }
+
+    if report.state == BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath
+        || report
+            .references
+            .non_canonical_internal_only_reference_path
+            .is_some()
+    {
+        rails.push(GuardRail::NonCanonicalInternalOnlyPathExcluded);
+    }
+
+    rails.sort_unstable();
+    rails.dedup();
+    rails
 }
 
 pub fn blue_brain_execution_production_hardening_path(
@@ -1325,10 +1371,11 @@ fn empty_reference_map(
 mod tests {
     use super::{
         blue_brain_execution_edge_case_map, blue_brain_execution_feedback_backbind,
-        blue_brain_execution_production_hardening_path, blue_brain_execution_result_integrity,
-        blue_brain_minimal_capability_scope, execute_blue_brain_minimal_action,
-        BlueBrainExecutionEdgeCaseClass, BlueBrainExecutionFailurePathClass,
-        BlueBrainExecutionFeedbackClass, BlueBrainExecutionProductionHardeningPathClass,
+        blue_brain_execution_guard_rail_map, blue_brain_execution_production_hardening_path,
+        blue_brain_execution_result_integrity, blue_brain_minimal_capability_scope,
+        execute_blue_brain_minimal_action, BlueBrainExecutionEdgeCaseClass,
+        BlueBrainExecutionFailurePathClass, BlueBrainExecutionFeedbackClass,
+        BlueBrainExecutionGuardRailClass, BlueBrainExecutionProductionHardeningPathClass,
         BlueBrainExecutionReferenceClass, BlueBrainExecutionResultIntegrityClass,
         BlueBrainExecutionRetryDisposition, BlueBrainExecutionTransitionClass,
         BlueBrainMinimalCapabilityScopeClass, BlueBrainMinimalExecutionAction,
@@ -2061,5 +2108,63 @@ mod tests {
             blue_brain_execution_result_integrity(&report).class,
             BlueBrainExecutionResultIntegrityClass::IntegrityMismatch
         );
+    }
+
+    #[test]
+    fn guard_rail_map_is_explicit_for_canonical_and_non_canonical_paths() {
+        let placeholder = execute_blue_brain_minimal_action(&base_request());
+        let placeholder_guard_rails = blue_brain_execution_guard_rail_map(&placeholder);
+        assert!(placeholder_guard_rails.contains(&BlueBrainExecutionGuardRailClass::ScopeGuardRail));
+        assert!(
+            placeholder_guard_rails.contains(&BlueBrainExecutionGuardRailClass::NoDirectGuardRail)
+        );
+        assert!(placeholder_guard_rails
+            .contains(&BlueBrainExecutionGuardRailClass::CanonicalProductionGuardRail));
+        assert!(!placeholder_guard_rails
+            .contains(&BlueBrainExecutionGuardRailClass::NonCanonicalInternalOnlyPathExcluded));
+
+        let mut non_canonical_request = base_request();
+        non_canonical_request.execution_requested = true;
+        non_canonical_request.internal_only_path = true;
+        let non_canonical = execute_blue_brain_minimal_action(&non_canonical_request);
+        let non_canonical_guard_rails = blue_brain_execution_guard_rail_map(&non_canonical);
+        assert!(non_canonical_guard_rails
+            .contains(&BlueBrainExecutionGuardRailClass::NonCanonicalInternalOnlyPathExcluded));
+        assert!(non_canonical_guard_rails
+            .contains(&BlueBrainExecutionGuardRailClass::TerminalStateGuardRail));
+    }
+
+    #[test]
+    fn failed_path_exposes_retry_classification_without_retry_orchestration_side_effects() {
+        let mut request = base_request();
+        request.execution_requested = true;
+        request.force_execution_failure = true;
+        let report = execute_blue_brain_minimal_action(&request);
+        let feedback = blue_brain_execution_feedback_backbind(&report);
+
+        assert_eq!(
+            report.retry_disposition,
+            BlueBrainExecutionRetryDisposition::RetryableFailure
+        );
+        assert!(!feedback.selection.automatic_next_proposal_generation);
+        assert!(!feedback.memory.automatic_memory_commit_performed);
+    }
+
+    #[test]
+    fn serie_bb18_prompt3_doc_stays_pinned_to_guard_rail_map_and_exclusions() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_execution_guard_rails_production_facing_serie_bb18_prompt3_v1.md"
+        );
+        assert!(doc.contains("canonical production guard rail"));
+        assert!(doc.contains("scope guard rail"));
+        assert!(doc.contains("no-direct-* guard rail"));
+        assert!(doc.contains("terminal-state guard rail"));
+        assert!(doc.contains("non-canonical/internal-only execution path exclusion"));
+        assert!(doc.contains("emit_canonical_signal"));
+        assert!(doc.contains("allowed canonical action"));
+        assert!(doc.contains("Allowed canonical tool call remains deferred"));
+        assert!(doc.contains("No Retry-/Queue-Orchestrierung"));
+        assert!(doc.contains("No automatische Memory-Persistenz"));
+        assert!(doc.contains("No implizite Folge-Execution"));
     }
 }
