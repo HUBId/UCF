@@ -614,6 +614,63 @@ pub const CANONICAL_BLUE_BRAIN_DYNAMICS_ADVISORY_COUPLING_MAP:
     },
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainRuntimeSelectionContractSignal {
+    RuntimeToSelectionAdvisorySignal,
+    RuntimeToSelectionBlockedOrDeferralSignal,
+    SelectionToRuntimeAdvisoryState,
+    SelectionToRuntimeDeferredState,
+    CaveatedContractSignal,
+    InsufficientContractBasis,
+    NonCanonicalInternalOnlyContractPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainRuntimeSelectionContractLane {
+    pub signal: BlueBrainRuntimeSelectionContractSignal,
+    pub lane: &'static str,
+    pub canonical_guard: &'static str,
+}
+
+pub const CANONICAL_BLUE_BRAIN_RUNTIME_SELECTION_CONTRACT_MAP:
+    [BlueBrainRuntimeSelectionContractLane; 7] = [
+    BlueBrainRuntimeSelectionContractLane {
+        signal: BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionAdvisorySignal,
+        lane: "runtime_to_selection_advisory_signal",
+        canonical_guard: "runtime-to-selection contract signal is advisory-only and cannot directly trigger action/proposal execution",
+    },
+    BlueBrainRuntimeSelectionContractLane {
+        signal: BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedOrDeferralSignal,
+        lane: "runtime_to_selection_blocked_or_deferral_signal",
+        canonical_guard: "runtime-to-selection blocked/deferral signal is explicit and remains separate from failed execution semantics",
+    },
+    BlueBrainRuntimeSelectionContractLane {
+        signal: BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeAdvisoryState,
+        lane: "selection_to_runtime_advisory_state",
+        canonical_guard: "selection-to-runtime advisory state cannot directly steer compute execution or planner authority",
+    },
+    BlueBrainRuntimeSelectionContractLane {
+        signal: BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState,
+        lane: "selection_to_runtime_deferred_state",
+        canonical_guard: "selection-to-runtime deferred state remains distinct from blocked and does not imply retry orchestration",
+    },
+    BlueBrainRuntimeSelectionContractLane {
+        signal: BlueBrainRuntimeSelectionContractSignal::CaveatedContractSignal,
+        lane: "caveated_contract_signal",
+        canonical_guard: "caveated contract state remains caveat transport and cannot become strong execution authority",
+    },
+    BlueBrainRuntimeSelectionContractLane {
+        signal: BlueBrainRuntimeSelectionContractSignal::InsufficientContractBasis,
+        lane: "insufficient_contract_basis",
+        canonical_guard: "insufficient contract basis remains explicit and is never promoted to blocked/execution control",
+    },
+    BlueBrainRuntimeSelectionContractLane {
+        signal: BlueBrainRuntimeSelectionContractSignal::NonCanonicalInternalOnlyContractPath,
+        lane: "non_canonical_internal_only_contract_path",
+        canonical_guard: "non-canonical/internal-only contract paths remain excluded from canonical runtime/selection exchange",
+    },
+];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlueBrainKuramotoModulationResult {
     pub dynamics_diagnostic_class: BlueBrainDynamicsDiagnosticClass,
@@ -628,6 +685,8 @@ pub struct BlueBrainKuramotoModulationResult {
     pub selection_feedback: BlueBrainDynamicsSelectionFeedbackClass,
     pub runtime_coupling_state: BlueBrainDynamicsAdvisoryCouplingState,
     pub selection_coupling_state: BlueBrainDynamicsAdvisoryCouplingState,
+    pub runtime_to_selection_contract_signal: BlueBrainRuntimeSelectionContractSignal,
+    pub selection_to_runtime_contract_signal: BlueBrainRuntimeSelectionContractSignal,
     pub input_basis: BlueBrainKuramotoInputBasisClass,
     pub execution_feedback_state: BlueBrainDynamicsExecutionFeedbackState,
     pub caveats: Vec<String>,
@@ -702,6 +761,10 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
                 BlueBrainDynamicsAdvisoryCouplingState::InsufficientAdvisoryCoupling,
             selection_coupling_state:
                 BlueBrainDynamicsAdvisoryCouplingState::InsufficientAdvisoryCoupling,
+            runtime_to_selection_contract_signal:
+                BlueBrainRuntimeSelectionContractSignal::InsufficientContractBasis,
+            selection_to_runtime_contract_signal:
+                BlueBrainRuntimeSelectionContractSignal::InsufficientContractBasis,
             input_basis: BlueBrainKuramotoInputBasisClass::InsufficientInputBasis,
             execution_feedback_state,
             caveats,
@@ -854,6 +917,10 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         runtime_coupling_state_from_modulation_state(modulation_state, runtime_modulation);
     let selection_coupling_state =
         selection_coupling_state_from_modulation_state(modulation_state, selection_hint);
+    let runtime_to_selection_contract_signal =
+        runtime_to_selection_contract_signal_from_state(modulation_state, selection_hint);
+    let selection_to_runtime_contract_signal =
+        selection_to_runtime_contract_signal_from_state(modulation_state, runtime_modulation);
 
     BlueBrainKuramotoModulationResult {
         dynamics_diagnostic_class: if input.non_canonical_internal_only_path {
@@ -887,6 +954,8 @@ pub fn evaluate_blue_brain_kuramoto_modulation(
         selection_feedback,
         runtime_coupling_state,
         selection_coupling_state,
+        runtime_to_selection_contract_signal,
+        selection_to_runtime_contract_signal,
         input_basis,
         execution_feedback_state,
         caveats,
@@ -1024,6 +1093,34 @@ pub fn dynamics_advisory_coupling_state_token(
         }
         BlueBrainDynamicsAdvisoryCouplingState::NonCanonicalInternalOnlyCouplingPath => {
             "non_canonical_internal_only_coupling_path"
+        }
+    }
+}
+
+pub fn runtime_selection_contract_signal_token(
+    signal: BlueBrainRuntimeSelectionContractSignal,
+) -> &'static str {
+    match signal {
+        BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionAdvisorySignal => {
+            "runtime_to_selection_advisory_signal"
+        }
+        BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedOrDeferralSignal => {
+            "runtime_to_selection_blocked_or_deferral_signal"
+        }
+        BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeAdvisoryState => {
+            "selection_to_runtime_advisory_state"
+        }
+        BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState => {
+            "selection_to_runtime_deferred_state"
+        }
+        BlueBrainRuntimeSelectionContractSignal::CaveatedContractSignal => {
+            "caveated_contract_signal"
+        }
+        BlueBrainRuntimeSelectionContractSignal::InsufficientContractBasis => {
+            "insufficient_contract_basis"
+        }
+        BlueBrainRuntimeSelectionContractSignal::NonCanonicalInternalOnlyContractPath => {
+            "non_canonical_internal_only_contract_path"
         }
     }
 }
@@ -1221,6 +1318,62 @@ fn selection_coupling_state_from_modulation_state(
                 BlueBrainDynamicsAdvisoryCouplingState::IgnoredAdvisoryCoupling
             }
         }
+    }
+}
+
+fn runtime_to_selection_contract_signal_from_state(
+    modulation_state: BlueBrainKuramotoModulationState,
+    selection_hint: Option<BlueBrainKuramotoSelectionHint>,
+) -> BlueBrainRuntimeSelectionContractSignal {
+    match modulation_state {
+        BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath => {
+            BlueBrainRuntimeSelectionContractSignal::NonCanonicalInternalOnlyContractPath
+        }
+        BlueBrainKuramotoModulationState::Insufficient => {
+            BlueBrainRuntimeSelectionContractSignal::InsufficientContractBasis
+        }
+        BlueBrainKuramotoModulationState::Blocked => {
+            BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedOrDeferralSignal
+        }
+        BlueBrainKuramotoModulationState::Caveated
+        | BlueBrainKuramotoModulationState::Unavailable => {
+            BlueBrainRuntimeSelectionContractSignal::CaveatedContractSignal
+        }
+        _ if matches!(
+            selection_hint,
+            Some(BlueBrainKuramotoSelectionHint::IncreaseDeferralConfidence)
+        ) =>
+        {
+            BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedOrDeferralSignal
+        }
+        _ => BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionAdvisorySignal,
+    }
+}
+
+fn selection_to_runtime_contract_signal_from_state(
+    modulation_state: BlueBrainKuramotoModulationState,
+    runtime_modulation: Option<BlueBrainKuramotoRuntimeCaveatModulation>,
+) -> BlueBrainRuntimeSelectionContractSignal {
+    match modulation_state {
+        BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath => {
+            BlueBrainRuntimeSelectionContractSignal::NonCanonicalInternalOnlyContractPath
+        }
+        BlueBrainKuramotoModulationState::Insufficient => {
+            BlueBrainRuntimeSelectionContractSignal::InsufficientContractBasis
+        }
+        BlueBrainKuramotoModulationState::Blocked
+        | BlueBrainKuramotoModulationState::Unavailable => {
+            BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState
+        }
+        BlueBrainKuramotoModulationState::Caveated => {
+            BlueBrainRuntimeSelectionContractSignal::CaveatedContractSignal
+        }
+        _ if runtime_modulation
+            == Some(BlueBrainKuramotoRuntimeCaveatModulation::EscalateRuntimeCaveat) =>
+        {
+            BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState
+        }
+        _ => BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeAdvisoryState,
     }
 }
 
@@ -1997,6 +2150,49 @@ mod tests {
             non_canonical_result.selection_coupling_state,
             BlueBrainDynamicsAdvisoryCouplingState::NonCanonicalInternalOnlyCouplingPath
         );
+        assert_eq!(
+            non_canonical_result.runtime_to_selection_contract_signal,
+            BlueBrainRuntimeSelectionContractSignal::NonCanonicalInternalOnlyContractPath
+        );
+    }
+
+    #[test]
+    fn runtime_selection_contract_signals_stay_directional_and_distinct() {
+        let selection_lane = evaluate_blue_brain_kuramoto_modulation(base_input(
+            BlueBrainKuramotoScopeState::SelectionModulating,
+        ));
+        assert_eq!(
+            selection_lane.runtime_to_selection_contract_signal,
+            BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionAdvisorySignal
+        );
+        assert_eq!(
+            selection_lane.selection_to_runtime_contract_signal,
+            BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeAdvisoryState
+        );
+
+        let mut blocked = base_input(BlueBrainKuramotoScopeState::RuntimeCaveatModulating);
+        blocked.runtime_posture = BlueBrainKuramotoRuntimePosture::Blocked;
+        let blocked_result = evaluate_blue_brain_kuramoto_modulation(blocked);
+        assert_eq!(
+            blocked_result.runtime_to_selection_contract_signal,
+            BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionBlockedOrDeferralSignal
+        );
+        assert_eq!(
+            blocked_result.selection_to_runtime_contract_signal,
+            BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState
+        );
+
+        let mut insufficient = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        insufficient.phase_nodes.truncate(1);
+        let insufficient_result = evaluate_blue_brain_kuramoto_modulation(insufficient);
+        assert_eq!(
+            insufficient_result.runtime_to_selection_contract_signal,
+            BlueBrainRuntimeSelectionContractSignal::InsufficientContractBasis
+        );
+        assert_eq!(
+            insufficient_result.selection_to_runtime_contract_signal,
+            BlueBrainRuntimeSelectionContractSignal::InsufficientContractBasis
+        );
     }
 
     #[test]
@@ -2189,6 +2385,41 @@ mod tests {
             .iter()
             .all(|lane| !lane.canonical_guard.trim().is_empty()));
     }
+
+    #[test]
+    fn runtime_selection_contract_map_covers_canonical_signals_and_tokens() {
+        let mut lanes: Vec<&str> = CANONICAL_BLUE_BRAIN_RUNTIME_SELECTION_CONTRACT_MAP
+            .iter()
+            .map(|lane| lane.lane)
+            .collect();
+        lanes.sort_unstable();
+        lanes.dedup();
+        assert_eq!(
+            lanes.len(),
+            CANONICAL_BLUE_BRAIN_RUNTIME_SELECTION_CONTRACT_MAP.len()
+        );
+        assert!(CANONICAL_BLUE_BRAIN_RUNTIME_SELECTION_CONTRACT_MAP
+            .iter()
+            .all(|lane| !lane.canonical_guard.trim().is_empty()));
+        assert_eq!(
+            runtime_selection_contract_signal_token(
+                BlueBrainRuntimeSelectionContractSignal::RuntimeToSelectionAdvisorySignal
+            ),
+            "runtime_to_selection_advisory_signal"
+        );
+        assert_eq!(
+            runtime_selection_contract_signal_token(
+                BlueBrainRuntimeSelectionContractSignal::SelectionToRuntimeDeferredState
+            ),
+            "selection_to_runtime_deferred_state"
+        );
+        assert_eq!(
+            runtime_selection_contract_signal_token(
+                BlueBrainRuntimeSelectionContractSignal::CaveatedContractSignal
+            ),
+            "caveated_contract_signal"
+        );
+    }
     #[test]
     fn hh_internal_only_scope_is_marked_non_canonical() {
         let result = evaluate_blue_brain_hodgkin_huxley_diagnostic(base_hh_input(
@@ -2301,5 +2532,27 @@ mod tests {
         assert!(doc.contains("keine Safety-Override-Semantik"));
         assert!(doc.contains("maintenance-only"));
         assert!(doc.contains("Priorität 1: BB17 context/memory/reference hardening follow-up"));
+    }
+
+    #[test]
+    fn serie_bb19_prompt1_doc_stays_pinned_to_runtime_selection_contract_hardening() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_runtime_selection_contract_hardening_serie_bb19_prompt1_v1.md"
+        );
+        assert!(doc.contains("runtime_to_selection_advisory_signal"));
+        assert!(doc.contains("runtime_to_selection_blocked_or_deferral_signal"));
+        assert!(doc.contains("selection_to_runtime_advisory_state"));
+        assert!(doc.contains("selection_to_runtime_deferred_state"));
+        assert!(doc.contains("caveated_contract_signal"));
+        assert!(doc.contains("insufficient_contract_basis"));
+        assert!(doc.contains("non_canonical_internal_only_contract_path"));
+        assert!(doc.contains("deferred ist nicht blocked"));
+        assert!(doc.contains("blocked ist nicht failed execution"));
+        assert!(doc.contains("insufficient ist nicht blocked"));
+        assert!(doc.contains("advisory-only bleibt advisory-only"));
+        assert!(doc.contains("keine direkte Action-Execution"));
+        assert!(doc.contains("keine direkte Retry-Orchestrierung"));
+        assert!(doc.contains("keine automatische Compute-Invocation"));
+        assert!(doc.contains("keine automatische Memory-Persistenz"));
     }
 }

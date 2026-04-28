@@ -59,6 +59,8 @@ pub struct BrainKuramotoHint {
     pub execution_feedback_state: &'static str,
     pub runtime_coupling_state: &'static str,
     pub selection_coupling_state: &'static str,
+    pub runtime_to_selection_contract_signal: &'static str,
+    pub selection_to_runtime_contract_signal: &'static str,
     pub runtime_modulation: &'static str,
     pub coherence_permille: u16,
     pub caveat_tag: &'static str,
@@ -406,11 +408,13 @@ impl WorkspaceSignal {
             format!("BRAIN_NEUROMOD_HINT={delta_commit} DA={dopamine} SE={serotonin} NE={norepi} CO={cortisol}");
         if let Some(hint) = kuramoto_hint {
             summary.push_str(&format!(
-                " KURAMOTO_STATE={} KURAMOTO_RUNTIME={} KURAMOTO_RUNTIME_COUPLING={} KURAMOTO_SELECTION_COUPLING={} KURAMOTO_COHERENCE={} KURAMOTO_CAVEAT={} KURAMOTO_DIAGNOSTIC={} KURAMOTO_REASON={} KURAMOTO_EXEC_FEEDBACK={}",
+                " KURAMOTO_STATE={} KURAMOTO_RUNTIME={} KURAMOTO_RUNTIME_COUPLING={} KURAMOTO_SELECTION_COUPLING={} KURAMOTO_RT_TO_SEL_CONTRACT={} KURAMOTO_SEL_TO_RT_CONTRACT={} KURAMOTO_COHERENCE={} KURAMOTO_CAVEAT={} KURAMOTO_DIAGNOSTIC={} KURAMOTO_REASON={} KURAMOTO_EXEC_FEEDBACK={}",
                 hint.modulation_state,
                 hint.runtime_modulation,
                 hint.runtime_coupling_state,
                 hint.selection_coupling_state,
+                hint.runtime_to_selection_contract_signal,
+                hint.selection_to_runtime_contract_signal,
                 hint.coherence_permille,
                 hint.caveat_tag,
                 hint.diagnostic_class,
@@ -2542,6 +2546,8 @@ mod tests {
                 execution_feedback_state: "caveated_execution_informed_dynamics_input",
                 runtime_coupling_state: "caveated_advisory_coupling",
                 selection_coupling_state: "caveated_advisory_coupling",
+                runtime_to_selection_contract_signal: "caveated_contract_signal",
+                selection_to_runtime_contract_signal: "selection_to_runtime_deferred_state",
                 runtime_modulation: "attach_dynamics_caveat",
                 coherence_permille: 640,
                 caveat_tag: "runtime_caveat_posture_present",
@@ -2565,6 +2571,12 @@ mod tests {
         assert!(signal
             .summary
             .contains("KURAMOTO_SELECTION_COUPLING=caveated_advisory_coupling"));
+        assert!(signal
+            .summary
+            .contains("KURAMOTO_RT_TO_SEL_CONTRACT=caveated_contract_signal"));
+        assert!(signal
+            .summary
+            .contains("KURAMOTO_SEL_TO_RT_CONTRACT=selection_to_runtime_deferred_state"));
         assert!(signal.summary.contains("KURAMOTO_COHERENCE=640"));
         assert!(signal
             .summary
