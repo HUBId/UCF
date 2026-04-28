@@ -80,6 +80,33 @@ fn docs_lint_fails_on_snapshot_mismatch() {
 }
 
 #[test]
+fn docs_lint_reports_fail_instead_of_error_when_required_doc_is_missing() {
+    let dir = tempdir().expect("tempdir");
+    let missing_module_map = dir.path().join("module_map_missing.md");
+
+    let report = docs_lint(&DocsLintArgs {
+        repo_root: repo_root(),
+        policy_pack: repo_path("policies/packs/base_v1"),
+        overlay_pack: Some(repo_path("policies/packs/overlays/test")),
+        spec_snapshot: repo_path("docs/spec_snapshot.md"),
+        prompt_index: repo_path("docs/prompt_series_index.md"),
+        module_map: missing_module_map,
+        deploy_doc: repo_path("docs/deploy_portable.md"),
+        artifact_schema_snapshot_dir: repo_path("docs/artifact_schema_snapshots"),
+        mode: DocsLintMode::Strict,
+    })
+    .expect("docs lint should run");
+
+    let module_map = report
+        .checks
+        .iter()
+        .find(|c| c.name == "module_map")
+        .expect("module map check exists");
+    assert_eq!(module_map.status, DocsLintStatus::Fail);
+    assert!(module_map.detail.contains("check could not run"));
+}
+
+#[test]
 fn docs_lint_fails_on_hardware_terms_in_core_docs() {
     let dir = tempdir().expect("tempdir");
     let bad_prompt_index = dir.path().join("prompt_series_index.md");

@@ -57,31 +57,37 @@ pub struct DocsLintReport {
 
 pub fn docs_lint(args: &DocsLintArgs) -> Result<DocsLintReport, OpsError> {
     let checks = vec![
-        spec_snapshot_check(args)?,
-        policy_pack_check(args)?,
-        prompt_index_check(args)?,
-        module_map_check(args)?,
-        hardware_neutral_docs_check(args)?,
-        v3_docs_consistency_check(args)?,
-        v4_docs_consistency_check(args)?,
-        v5_docs_consistency_check(args)?,
-        v6_docs_consistency_check(args)?,
-        v7_docs_consistency_check(args)?,
-        v8_docs_consistency_check(args)?,
-        v9_docs_consistency_check(args)?,
-        v10_docs_consistency_check(args)?,
-        v11_docs_consistency_check(args)?,
-        v12_docs_consistency_check(args)?,
-        v13_docs_consistency_check(args)?,
-        v14_docs_consistency_check(args)?,
-        v15_docs_consistency_check(args)?,
-        v16_docs_consistency_check(args)?,
-        v17_docs_consistency_check(args)?,
-        v18_docs_consistency_check(args)?,
-        v19_docs_consistency_check(args)?,
-        v20_docs_consistency_check(args)?,
-        remediation_registry_doc_check(args)?,
-        artifact_schema_snapshot_check(args)?,
+        run_docs_check("spec_snapshot", || spec_snapshot_check(args)),
+        run_docs_check("policy_packs", || policy_pack_check(args)),
+        run_docs_check("prompt_series_index", || prompt_index_check(args)),
+        run_docs_check("module_map", || module_map_check(args)),
+        run_docs_check("hardware_neutral_docs", || {
+            hardware_neutral_docs_check(args)
+        }),
+        run_docs_check("v3_docs_consistency", || v3_docs_consistency_check(args)),
+        run_docs_check("v4_docs_consistency", || v4_docs_consistency_check(args)),
+        run_docs_check("v5_docs_consistency", || v5_docs_consistency_check(args)),
+        run_docs_check("v6_docs_consistency", || v6_docs_consistency_check(args)),
+        run_docs_check("v7_docs_consistency", || v7_docs_consistency_check(args)),
+        run_docs_check("v8_docs_consistency", || v8_docs_consistency_check(args)),
+        run_docs_check("v9_docs_consistency", || v9_docs_consistency_check(args)),
+        run_docs_check("v10_docs_consistency", || v10_docs_consistency_check(args)),
+        run_docs_check("v11_docs_consistency", || v11_docs_consistency_check(args)),
+        run_docs_check("v12_docs_consistency", || v12_docs_consistency_check(args)),
+        run_docs_check("v13_docs_consistency", || v13_docs_consistency_check(args)),
+        run_docs_check("v14_docs_consistency", || v14_docs_consistency_check(args)),
+        run_docs_check("v15_docs_consistency", || v15_docs_consistency_check(args)),
+        run_docs_check("v16_docs_consistency", || v16_docs_consistency_check(args)),
+        run_docs_check("v17_docs_consistency", || v17_docs_consistency_check(args)),
+        run_docs_check("v18_docs_consistency", || v18_docs_consistency_check(args)),
+        run_docs_check("v19_docs_consistency", || v19_docs_consistency_check(args)),
+        run_docs_check("v20_docs_consistency", || v20_docs_consistency_check(args)),
+        run_docs_check("remediation_registry_doc", || {
+            remediation_registry_doc_check(args)
+        }),
+        run_docs_check("artifact_schema_snapshots", || {
+            artifact_schema_snapshot_check(args)
+        }),
     ];
     let ok = checks.iter().all(|c| c.status != DocsLintStatus::Fail);
     Ok(DocsLintReport {
@@ -89,6 +95,24 @@ pub fn docs_lint(args: &DocsLintArgs) -> Result<DocsLintReport, OpsError> {
         mode: args.mode,
         checks,
     })
+}
+
+fn run_docs_check<F>(name: &'static str, check: F) -> DocsLintCheck
+where
+    F: FnOnce() -> Result<DocsLintCheck, OpsError>,
+{
+    match check() {
+        Ok(check) => check,
+        Err(err) => DocsLintCheck {
+            name: name.to_string(),
+            status: DocsLintStatus::Fail,
+            detail: format!("check could not run: {err}"),
+            remediation: Some(
+                "verify required docs/paths exist and rerun `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`"
+                    .to_string(),
+            ),
+        },
+    }
 }
 
 fn spec_snapshot_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsError> {
