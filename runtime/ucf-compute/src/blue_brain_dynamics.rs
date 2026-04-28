@@ -3208,4 +3208,46 @@ mod tests {
         assert!(doc.contains("kein direct compute invocation"));
         assert!(doc.contains("keine implizite memory persistenz"));
     }
+
+    #[test]
+    fn serie_bb19_prompt4_doc_stays_pinned_to_readiness_sweep_contract_line() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_bb19_readiness_sweep_runtime_selection_contract_line_serie_bb19_prompt4_v1.md"
+        );
+        assert!(doc.contains("stable runtime/selection contract line"));
+        assert!(doc.contains("usable with caveats"));
+        assert!(doc.contains("advisory-only"));
+        assert!(doc.contains("blocked/insufficient/deferred"));
+        assert!(doc.contains("non-canonical/internal-only"));
+
+        assert!(doc.contains("runtime_to_selection_advisory_signal"));
+        assert!(doc.contains("runtime_to_selection_deferred_signal"));
+        assert!(doc.contains("runtime_to_selection_blocked_signal"));
+        assert!(doc.contains("selection_to_runtime_advisory_state"));
+        assert!(doc.contains("selection_to_runtime_deferred_state"));
+        assert!(doc.contains("selection_to_runtime_blocked_state"));
+        assert!(doc.contains("runtime_to_selection_contract_diagnostic"));
+        assert!(doc.contains("selection_to_runtime_contract_diagnostic"));
+        assert!(doc.contains("deferred_contract_diagnostic"));
+        assert!(doc.contains("blocked_contract_diagnostic"));
+        assert!(doc.contains("caveated_contract_diagnostic"));
+        assert!(doc.contains("insufficient_contract_diagnostic"));
+        assert!(doc.contains("advisory_only_contract_diagnostic"));
+        assert!(doc.contains("non_canonical_internal_only_contract_diagnostic"));
+        assert!(doc.contains("priority_advisory_hint"));
+        assert!(doc.contains("deferred_contract_state"));
+        assert!(doc.contains("blocked_contract_state"));
+
+        assert!(doc.contains("deferred` bleibt bounded Aufschub und ist **nicht** `blocked"));
+        assert!(doc.contains(
+            "priority_advisory_hint` bleibt Hinweis-Semantik und wird **nicht** zur direkten Selection-Entscheidungsautorität"
+        ));
+        assert!(doc.contains("keine direkte Action-Execution"));
+        assert!(doc.contains("keine direkte Retry-Orchestrierung"));
+        assert!(doc.contains("keine automatische Compute-Invocation"));
+        assert!(doc.contains("keine automatische Memory-Persistenz"));
+        assert!(doc.contains("keine neue allowed-actions-Erweiterung"));
+        assert!(doc.contains("maintenance-only Core"));
+        assert!(doc.contains("Priorität 1: BB20 execution/reference interaction hardening."));
+    }
 }
