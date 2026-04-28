@@ -121,6 +121,8 @@ Diese Datei ist die schmale technische Referenz für:
 
 **Priorität 1: gezielter Cross-line cleanup pass für Runtime/Selection ↔ Retrieval/Reference Terminologiebindung.**
 
+Statusupdate (BB20 Prompt 2): umgesetzt in `docs/blue_brain_bb20_cross_line_terminology_state_harmonization_serie_bb20_prompt2_v1.md`.
+
 Technische Begründung (kurz):
 - Die stärksten Restfriktionen liegen nicht in fehlender Kernfunktion, sondern in semantischer Drift zwischen `usable with caveats` Contract-Signalen und bounded retrieval/reference Diagnostik.
 - Ein schmaler Cleanup-Pass liefert den höchsten Hebel für Produktionsnähe ohne Scope-Ausweitung.
