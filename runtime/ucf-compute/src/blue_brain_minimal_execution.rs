@@ -133,6 +133,17 @@ pub enum BlueBrainExecutionTransitionClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainExecutionProductionHardeningPathClass {
+    HardenedCanonicalExecutionPath,
+    HardenedFailurePath,
+    HardenedBlockedOrUnavailablePath,
+    HardenedCancellationPath,
+    HardenedReferenceOrResultPath,
+    GuardSensitivePath,
+    NonCanonicalInternalOnlyExecutionPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainMinimalCapabilityScopeClass {
     AllowedCanonicalAction,
     AllowedCanonicalToolCall,
@@ -372,6 +383,54 @@ pub struct BlueBrainExecutionResultIntegrity {
     pub canonical: bool,
 }
 
+pub fn blue_brain_execution_production_hardening_path(
+    report: &BlueBrainMinimalExecutionReport,
+) -> BlueBrainExecutionProductionHardeningPathClass {
+    use BlueBrainExecutionProductionHardeningPathClass as HardeningPath;
+
+    if matches!(
+        report.state,
+        BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath
+    ) {
+        return HardeningPath::NonCanonicalInternalOnlyExecutionPath;
+    }
+
+    if matches!(
+        report.state,
+        BlueBrainMinimalExecutionState::ExecutionBlocked
+            | BlueBrainMinimalExecutionState::ExecutionUnavailable
+            | BlueBrainMinimalExecutionState::ExecutionUnsupported
+    ) {
+        return HardeningPath::HardenedBlockedOrUnavailablePath;
+    }
+
+    if report.state == BlueBrainMinimalExecutionState::ExecutionCancelled {
+        return HardeningPath::HardenedCancellationPath;
+    }
+
+    if report.state == BlueBrainMinimalExecutionState::ExecutionFailed {
+        return HardeningPath::HardenedFailurePath;
+    }
+
+    if report.references.execution_result_reference.is_some()
+        || report.references.failure_result_reference.is_some()
+        || report.references.cancellation_result_reference.is_some()
+    {
+        return HardeningPath::HardenedReferenceOrResultPath;
+    }
+
+    if matches!(
+        report.state,
+        BlueBrainMinimalExecutionState::ExecutionEligibleButNotExecuted
+            | BlueBrainMinimalExecutionState::ExecutionRequested
+            | BlueBrainMinimalExecutionState::ExecutionStarted
+    ) {
+        return HardeningPath::GuardSensitivePath;
+    }
+
+    HardeningPath::HardenedCanonicalExecutionPath
+}
+
 pub fn blue_brain_execution_result_integrity(
     report: &BlueBrainMinimalExecutionReport,
 ) -> BlueBrainExecutionResultIntegrity {
@@ -428,6 +487,12 @@ pub fn blue_brain_execution_result_integrity(
             BlueBrainMinimalExecutionState::ExecutionEligibleButNotExecuted,
             BlueBrainMinimalExecutionResultBoundary::PlaceholderOnly,
         ) | (
+            BlueBrainMinimalExecutionState::ExecutionRequested,
+            BlueBrainMinimalExecutionResultBoundary::ExecutionRequested,
+        ) | (
+            BlueBrainMinimalExecutionState::ExecutionStarted,
+            BlueBrainMinimalExecutionResultBoundary::ExecutionRequested,
+        ) | (
             BlueBrainMinimalExecutionState::ExecutionCompleted,
             BlueBrainMinimalExecutionResultBoundary::ActualExecutionResult,
         ) | (
@@ -468,8 +533,18 @@ pub fn blue_brain_execution_result_integrity(
         | BlueBrainMinimalExecutionState::NonCanonicalInternalOnlyPath => {
             !report.execution_started && !report.execution_completed && !report.execution_failed
         }
-        BlueBrainMinimalExecutionState::ExecutionRequested
-        | BlueBrainMinimalExecutionState::ExecutionStarted => true,
+        BlueBrainMinimalExecutionState::ExecutionRequested => {
+            report.execution_requested
+                && !report.execution_started
+                && !report.execution_completed
+                && !report.execution_failed
+        }
+        BlueBrainMinimalExecutionState::ExecutionStarted => {
+            report.execution_requested
+                && report.execution_started
+                && !report.execution_completed
+                && !report.execution_failed
+        }
     };
 
     let result_matches = match report.state {
@@ -1077,9 +1152,10 @@ fn empty_reference_map(
 #[cfg(test)]
 mod tests {
     use super::{
-        blue_brain_execution_feedback_backbind, blue_brain_execution_result_integrity,
-        blue_brain_minimal_capability_scope, execute_blue_brain_minimal_action,
-        BlueBrainExecutionFailurePathClass, BlueBrainExecutionFeedbackClass,
+        blue_brain_execution_feedback_backbind, blue_brain_execution_production_hardening_path,
+        blue_brain_execution_result_integrity, blue_brain_minimal_capability_scope,
+        execute_blue_brain_minimal_action, BlueBrainExecutionFailurePathClass,
+        BlueBrainExecutionFeedbackClass, BlueBrainExecutionProductionHardeningPathClass,
         BlueBrainExecutionReferenceClass, BlueBrainExecutionResultIntegrityClass,
         BlueBrainExecutionRetryDisposition, BlueBrainExecutionTransitionClass,
         BlueBrainMinimalCapabilityScopeClass, BlueBrainMinimalExecutionAction,
@@ -1662,5 +1738,85 @@ mod tests {
                     == BlueBrainExecutionReferenceClass::NonCanonicalInternalOnlyReferencePath
                     && !reference.canonical
             }));
+    }
+
+    #[test]
+    fn production_hardening_path_map_stays_narrow_and_distinct() {
+        let placeholder = execute_blue_brain_minimal_action(&base_request());
+        assert_eq!(
+            blue_brain_execution_production_hardening_path(&placeholder),
+            BlueBrainExecutionProductionHardeningPathClass::GuardSensitivePath
+        );
+
+        let mut completed_request = base_request();
+        completed_request.execution_requested = true;
+        let completed = execute_blue_brain_minimal_action(&completed_request);
+        assert_eq!(
+            blue_brain_execution_production_hardening_path(&completed),
+            BlueBrainExecutionProductionHardeningPathClass::HardenedReferenceOrResultPath
+        );
+
+        let mut failed_request = completed_request.clone();
+        failed_request.force_execution_failure = true;
+        let failed = execute_blue_brain_minimal_action(&failed_request);
+        assert_eq!(
+            blue_brain_execution_production_hardening_path(&failed),
+            BlueBrainExecutionProductionHardeningPathClass::HardenedFailurePath
+        );
+
+        let mut blocked_request = base_request();
+        blocked_request.handoff_class = BlueBrainFutureActionHandoffClass::HandoffBlocked;
+        let blocked = execute_blue_brain_minimal_action(&blocked_request);
+        assert_eq!(
+            blue_brain_execution_production_hardening_path(&blocked),
+            BlueBrainExecutionProductionHardeningPathClass::HardenedBlockedOrUnavailablePath
+        );
+
+        let mut cancelled_request = completed_request.clone();
+        cancelled_request.cancelled = true;
+        let cancelled = execute_blue_brain_minimal_action(&cancelled_request);
+        assert_eq!(
+            blue_brain_execution_production_hardening_path(&cancelled),
+            BlueBrainExecutionProductionHardeningPathClass::HardenedCancellationPath
+        );
+    }
+
+    #[test]
+    fn integrity_rejects_requested_or_started_state_drift() {
+        let mut requested = execute_blue_brain_minimal_action(&base_request());
+        requested.state = BlueBrainMinimalExecutionState::ExecutionRequested;
+        requested.result_boundary = BlueBrainMinimalExecutionResultBoundary::ExecutionRequested;
+        requested.execution_requested = true;
+        requested.execution_started = false;
+        requested.execution_completed = false;
+        requested.execution_failed = false;
+        assert_ne!(
+            blue_brain_execution_result_integrity(&requested).class,
+            BlueBrainExecutionResultIntegrityClass::IntegrityMismatch
+        );
+
+        requested.execution_started = true;
+        assert_eq!(
+            blue_brain_execution_result_integrity(&requested).class,
+            BlueBrainExecutionResultIntegrityClass::IntegrityMismatch
+        );
+
+        let mut started = execute_blue_brain_minimal_action(&base_request());
+        started.state = BlueBrainMinimalExecutionState::ExecutionStarted;
+        started.result_boundary = BlueBrainMinimalExecutionResultBoundary::ExecutionRequested;
+        started.execution_requested = true;
+        started.execution_started = true;
+        started.execution_completed = false;
+        started.execution_failed = false;
+        assert_ne!(
+            blue_brain_execution_result_integrity(&started).class,
+            BlueBrainExecutionResultIntegrityClass::IntegrityMismatch
+        );
+
+        started.execution_requested = false;
+        assert_eq!(
+            blue_brain_execution_result_integrity(&started).class,
+            BlueBrainExecutionResultIntegrityClass::IntegrityMismatch
+        );
     }
 }
