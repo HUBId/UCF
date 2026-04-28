@@ -2167,4 +2167,24 @@ mod tests {
         assert!(doc.contains("No automatische Memory-Persistenz"));
         assert!(doc.contains("No implizite Folge-Execution"));
     }
+
+    #[test]
+    fn serie_bb18_prompt4_closure_doc_stays_pinned_to_canonical_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_bb18_readiness_sweep_production_hardening_closure_serie_bb18_prompt4_v1.md"
+        );
+        assert!(doc.contains("BB18-Abschlussmatrix"));
+        assert!(doc.contains("stable production-hardening line"));
+        assert!(doc.contains("usable with caveats"));
+        assert!(doc.contains("blocked/unavailable"));
+        assert!(doc.contains("test-only/deferred"));
+        assert!(doc.contains("non-canonical/internal-only"));
+        assert!(doc.contains("DuplicateTerminalizationAttempt"));
+        assert!(doc.contains("Scope-Nichtausweitung"));
+        assert!(doc.contains("keine Retry-/Queue-Orchestrierung"));
+        assert!(doc.contains("Keine automatische Memory-Persistenz"));
+        assert!(doc.contains("Keine Compute-Core-Ausweitung"));
+        assert!(doc.contains("maintenance-only"));
+        assert!(doc.contains("Priorität 1: BB19 runtime/selection contract hardening pass."));
+    }
 }
