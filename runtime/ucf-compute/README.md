@@ -252,6 +252,12 @@ For BB16 Prompt 3 selection/runtime advisory coupling boundary hardening (canoni
 `docs/blue_brain_selection_runtime_coupling_boundary_hardening_serie_bb16_prompt3_v1.md`,
 `runtime/ucf-compute/src/blue_brain_dynamics.rs`, `core/crates/ucf-router/src/lib.rs`, and
 `core/crates/ucf-workspace/src/lib.rs`.
+For BB18 Prompt 1 execution production-hardening narrow pass over the minimal real execution line
+(narrow hardening path map, guard-sensitive requested/started transition tightening,
+case-robust execution result reference classification, and unchanged no-direct-* / scope boundaries),
+see `docs/blue_brain_execution_production_hardening_narrow_pass_serie_bb18_prompt1_v1.md`,
+`runtime/ucf-compute/src/blue_brain_minimal_execution.rs`, and
+`runtime/ucf-compute/src/canonical_reference.rs`.
 
 ## Capability model
 

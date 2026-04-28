@@ -140,18 +140,18 @@ pub fn classify_blue_brain_reference_path(path: &str) -> BlueBrainCanonicalRefer
 
     let kind = if non_canonical {
         BlueBrainCanonicalReferenceKind::NonCanonicalInternalOnlyPath
-    } else if path.starts_with("diag:") {
+    } else if lowered.starts_with("diag:") {
         BlueBrainCanonicalReferenceKind::DiagnosticReference
-    } else if path.starts_with("bb15:combined:") {
+    } else if lowered.starts_with("bb15:combined:") {
         BlueBrainCanonicalReferenceKind::CombinedBoundedReference
-    } else if path.starts_with("bb8:memory_record:") {
+    } else if lowered.starts_with("bb8:memory_record:") {
         BlueBrainCanonicalReferenceKind::MemoryRecordReference
-    } else if path.starts_with("bb14:execution:") || path.contains(":result:") {
+    } else if lowered.starts_with("bb14:execution:") || lowered.contains(":result:") {
         BlueBrainCanonicalReferenceKind::ExecutionResultReference
-    } else if path.starts_with("bb3:context:")
-        || path.starts_with("ctx:")
-        || path.starts_with("lens_feature:")
-        || path.starts_with("workspace_signal:")
+    } else if lowered.starts_with("bb3:context:")
+        || lowered.starts_with("ctx:")
+        || lowered.starts_with("lens_feature:")
+        || lowered.starts_with("workspace_signal:")
     {
         BlueBrainCanonicalReferenceKind::ContextReference
     } else {
@@ -163,19 +163,19 @@ pub fn classify_blue_brain_reference_path(path: &str) -> BlueBrainCanonicalRefer
         BlueBrainCanonicalReferenceKind::ExecutionResultReference
     ) {
         BlueBrainExecutionReferenceOutcome::NotExecutionResult
-    } else if path.contains(":result:completed") {
+    } else if lowered.contains(":result:completed") {
         BlueBrainExecutionReferenceOutcome::Successful
-    } else if path.contains(":result:failed") {
+    } else if lowered.contains(":result:failed") {
         BlueBrainExecutionReferenceOutcome::Failed
-    } else if path.contains(":result:cancelled") {
+    } else if lowered.contains(":result:cancelled") {
         BlueBrainExecutionReferenceOutcome::Cancelled
-    } else if path.contains(":result:ExecutionBlocked") {
+    } else if lowered.contains(":result:executionblocked") {
         BlueBrainExecutionReferenceOutcome::Blocked
-    } else if path.contains(":result:ExecutionUnavailable") {
+    } else if lowered.contains(":result:executionunavailable") {
         BlueBrainExecutionReferenceOutcome::Unavailable
-    } else if path.contains(":result:ExecutionUnsupported") {
+    } else if lowered.contains(":result:executionunsupported") {
         BlueBrainExecutionReferenceOutcome::Unsupported
-    } else if path.contains(":placeholder:") {
+    } else if lowered.contains(":placeholder:") {
         BlueBrainExecutionReferenceOutcome::PlaceholderOnly
     } else {
         BlueBrainExecutionReferenceOutcome::NotExecutionResult
@@ -501,6 +501,30 @@ mod tests {
         assert_eq!(
             non_canonical.validity,
             BlueBrainReferenceValidity::NonCanonicalInternalOnlyPath
+        );
+    }
+
+    #[test]
+    fn execution_reference_classification_is_case_insensitive_for_status_tokens() {
+        let blocked =
+            classify_blue_brain_reference_path("bb14:execution:h2:result:executionblocked");
+        assert_eq!(
+            blocked.execution_outcome,
+            BlueBrainExecutionReferenceOutcome::Blocked
+        );
+
+        let unavailable =
+            classify_blue_brain_reference_path("BB14:EXECUTION:H2:RESULT:ExecutionUnavailable");
+        assert_eq!(
+            unavailable.execution_outcome,
+            BlueBrainExecutionReferenceOutcome::Unavailable
+        );
+
+        let unsupported =
+            classify_blue_brain_reference_path("bb14:execution:h2:result:EXECUTIONUNSUPPORTED");
+        assert_eq!(
+            unsupported.execution_outcome,
+            BlueBrainExecutionReferenceOutcome::Unsupported
         );
     }
 }
