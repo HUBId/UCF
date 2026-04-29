@@ -768,6 +768,27 @@ mod tests {
     }
 
     #[test]
+    fn bb22_prompt3_doc_pins_remaining_internal_transition_cleanup_map_and_boundaries() {
+        let doc = std::fs::read_to_string(
+            "../../docs/blue_brain_bb22_remaining_internal_only_transition_doc_cleanup_serie_bb22_prompt3_v1.md",
+        )
+        .expect("BB22 prompt3 cleanup doc must exist");
+        assert!(doc.contains("canonical_operational_transition"));
+        assert!(doc.contains("internal_only_transition"));
+        assert!(doc.contains("test_only_transition"));
+        assert!(doc.contains("deprecated_legacy_transition"));
+        assert!(doc.contains("non_canonical_internal_only_doc_claim"));
+        assert!(doc.contains("NonCanonicalInternalOnlyPath"));
+        assert!(doc.contains("allowed=false"));
+        assert!(doc.contains("no-direct-action"));
+        assert!(doc.contains("no-direct-retry"));
+        assert!(doc.contains("no-direct-memory"));
+        assert!(doc.contains("no-direct-compute"));
+        assert!(doc.contains("no-direct-policy/planner/agent"));
+        assert!(doc.contains("advisory-only bleibt advisory-only"));
+    }
+
+    #[test]
     fn cross_line_signal_classification_keeps_strong_bounded_weak_and_blocked_distinct() {
         let strong_ref = classify_blue_brain_reference_path("bb14:execution:h2:result:completed");
         let strong_decision = canonical_reference_consumption_decision(
