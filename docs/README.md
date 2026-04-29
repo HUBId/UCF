@@ -14,6 +14,7 @@ Dieses README ist die **kanonische Einstiegsfläche** für operative Doku-Pfade 
 - **Final BB20 readiness sweep + next-priority lock (BB20 P4):** `docs/blue_brain_bb20_final_readiness_sweep_next_priority_lock_serie_bb20_prompt4_v1.md`
 - **BB23 freeze/maintenance baseline:** `docs/blue_brain_bb23_freeze_maintenance_baseline_serie_bb23_prompt1_v1.md`
 - **BB23 maintenance guard rails / allowed-change envelope:** `docs/blue_brain_bb23_maintenance_guard_rails_allowed_change_envelope_serie_bb23_prompt2_v1.md`
+- **BB23 final freeze/readiness statement (maintenance transition):** `docs/blue_brain_bb23_final_freeze_readiness_statement_serie_bb23_prompt3_v1.md`
 - **BlueBrain/Runtime/Selection hardening line (BB19):**
   - `docs/blue_brain_runtime_selection_contract_hardening_serie_bb19_prompt1_v1.md`
   - `docs/blue_brain_runtime_selection_diagnostics_hardening_serie_bb19_prompt2_v1.md`
@@ -24,13 +25,16 @@ Dieses README ist die **kanonische Einstiegsfläche** für operative Doku-Pfade 
 
 ## 2) Status classes and where to verify them
 
-- **stable / production-usable:** anhand der BB18/BB19 Linien + Serie-J Final-Referenzlinie.
-- **advisory-only / bounded:** primär in BB16/BB19 Vertrags- und Diagnostics-Dokus.
-- **candidate-only / test-only / deferred / non-canonical:** explizit in den jeweiligen Serien-Dokus markiert; kein direkter Produktionsanspruch.
+- **frozen stable baseline:** BB19/BB21/BB22, verbindlich über BB23 Prompt 1–3.
+- **maintenance-only stable:** BB3/BB8/BB13/BB14/BB17/BB18 ohne Capability-Ausweitung.
+- **advisory-only / bounded:** BB10/BB11/BB16 bleiben advisory-only.
+- **usable-with-caveats (frozen semantics):** BB6/BB7/BB9/BB15 candidate/caveat slices ohne Promotion.
+- **deferred / test-only / non-canonical:** nicht Teil der operativen Baseline, keine implizite Reaktivierung.
 
 Referenzpunkte für die technische Scope-Grenze:
 - `docs/supported_scope_execution_v13.md`
 - `docs/blue_brain_bb23_maintenance_guard_rails_allowed_change_envelope_serie_bb23_prompt2_v1.md`
+- `docs/blue_brain_bb23_final_freeze_readiness_statement_serie_bb23_prompt3_v1.md`
 
 ## 3) Guard rails and boundaries (must stay visible)
 

@@ -48,23 +48,21 @@ Bewusst akzeptierte Caveats:
 
 Folgearbeit ist damit **nicht mehr Kernkonvergenz**, sondern Folgeintegration oder spätere Spezialisierung auf dem stabilen Kern.
 
-## 4) Nächste Serien/Abschlussoptionen nach Serie J (Top-Hebel)
+## 4) Einordnung nach BB23-Freeze
 
-1. **Serie K — UCF compute-facing integration into broader system surfaces**
-   - Höchster Hebel: den nun stabilen Compute-Kern ohne Duplikation in Status/Ops/Consumer-Flächen integrieren.
-2. **Serie L — narrow exit review / final hardening wrap-up**
-   - Begrenzte Endhärtung/Exit-Review nach Integrationsnachweis.
-3. **Serie M — targeted domain integration after compute-core completion**
-   - Gezielt domänenspezifische Integration erst nach stabiler Compute-facing Anbindung.
+Mit BB23 ist die technische Einordnung für den Real-Compute-Stack ebenfalls auf **maintenance-only** gestellt:
+- keine neue Compute-Core-Arbeit als Default,
+- Folgearbeit nur als Bugfix/Cleanup/enge Hardening-Pässe,
+- Scope-Ausweitung nur per expliziter Re-Scope-Entscheidung außerhalb des BB23-Freeze-Rahmens.
 
 ## 5) Exakt priorisierte nächste Richtung
 
-**Priorität jetzt: Serie K — compute-facing integration into broader system surfaces.**
+**Priorität jetzt: Maintenance/Bugfix/Cleanup ohne neue Serienlogik.**
 
 Kurzbegründung:
-- Höchster technischer Hebel direkt nach J, weil die stabile Produktionslinie jetzt in angrenzenden Flächen wirksam gemacht werden muss.
-- Serie L ist sinnvoll erst nach sichtbarer Integrationswirkung.
-- Serie M ist spezialisierend und daher nachrangig gegenüber breiter Kernintegration.
+- Die tragfähige Produktionslinie ist vorhanden und eingefroren.
+- Zusätzliche Serien als Default würden primär Re-Labeling statt technischem Kernhebel erzeugen.
+- Offene deferred/non-canonical Pfade bleiben bewusst außerhalb der aktiven Baseline.
 
 ## 6) Minimale Konsistenzchecks für diese Abschlussaussage
 
