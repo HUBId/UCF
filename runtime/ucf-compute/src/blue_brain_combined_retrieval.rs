@@ -250,7 +250,13 @@ pub fn blue_brain_build_combined_retrieval_basis(
             BlueBrainReferenceConsumptionLayer::Selection,
             &classified,
         );
-        if !consumption.allowed {
+        let candidate_selection_boundary_mismatch = !matches!(
+            classified.kind,
+            BlueBrainCanonicalReferenceKind::ContextReference
+                | BlueBrainCanonicalReferenceKind::CombinedBoundedReference
+                | BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
+        );
+        if !consumption.allowed || candidate_selection_boundary_mismatch {
             caveats.push("candidate reference uses non-canonical selection path".to_string());
         }
         if matches!(
@@ -267,7 +273,13 @@ pub fn blue_brain_build_combined_retrieval_basis(
             BlueBrainReferenceConsumptionLayer::Selection,
             &classified,
         );
-        if !consumption.allowed {
+        let proposal_selection_boundary_mismatch = !matches!(
+            classified.kind,
+            BlueBrainCanonicalReferenceKind::ContextReference
+                | BlueBrainCanonicalReferenceKind::CombinedBoundedReference
+                | BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
+        );
+        if !consumption.allowed || proposal_selection_boundary_mismatch {
             caveats.push("proposal reference uses non-canonical selection path".to_string());
         }
         if matches!(
