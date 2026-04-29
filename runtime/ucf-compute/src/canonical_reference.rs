@@ -695,4 +695,28 @@ mod tests {
         assert!(doc.contains("BB19 runtime/selection contract line"));
         assert!(doc.contains("Priorität 1: BB22 narrow cross-line stabilization pass."));
     }
+
+    #[test]
+    fn bb22_prompt1_doc_pins_cross_line_stabilization_classes_and_boundaries() {
+        let doc = std::fs::read_to_string(
+            "../../docs/blue_brain_bb22_narrow_cross_line_stabilization_pass_serie_bb22_prompt1_v1.md",
+        )
+        .expect("BB22 prompt1 stabilization doc must exist");
+        assert!(doc.contains("stable cross-line path"));
+        assert!(doc.contains("cross-line usable with caveats"));
+        assert!(doc.contains("advisory-only bounded path"));
+        assert!(doc.contains("weak/reference-only path"));
+        assert!(doc.contains("blocked/insufficient path"));
+        assert!(doc.contains("non-canonical/internal-only path"));
+        assert!(doc.contains("Runtime ↔ Selection"));
+        assert!(doc.contains("Execution → Reference → Consumption"));
+        assert!(doc.contains("bounded advisory-only Dynamics → Runtime/Selection"));
+        assert!(doc.contains("keine direkte Folge-Execution"));
+        assert!(doc.contains("keine Retry-Orchestrierung"));
+        assert!(doc.contains("keine Compute Invocation außerhalb kanonischer Pfade"));
+        assert!(doc.contains("keine implizite Memory-Persistenz"));
+        assert!(doc.contains("keine Planner-/Policy-/Agentenlogik-Erweiterung"));
+        assert!(doc.contains("keine Neurodynamik-Autoritätserweiterung"));
+        assert!(doc.contains("Priorität 1: finaler repo-weiter Abschluss-/Freeze-Pass"));
+    }
 }
