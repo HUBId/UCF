@@ -6214,6 +6214,30 @@ fn kuramoto_caveat_tag(caveats: &[String]) -> &'static str {
     if caveats.iter().any(|c| c == "no_direct_compute_allowed") {
         return "no_direct_compute_allowed";
     }
+    if caveats
+        .iter()
+        .any(|c| c == "no_direct_retry_orchestration_allowed")
+    {
+        return "no_direct_retry_orchestration_allowed";
+    }
+    if caveats
+        .iter()
+        .any(|c| c == "no_direct_policy_effect_allowed")
+    {
+        return "no_direct_policy_effect_allowed";
+    }
+    if caveats
+        .iter()
+        .any(|c| c == "no_direct_planner_effect_allowed")
+    {
+        return "no_direct_planner_effect_allowed";
+    }
+    if caveats
+        .iter()
+        .any(|c| c == "no_direct_agent_effect_allowed")
+    {
+        return "no_direct_agent_effect_allowed";
+    }
     if caveats.iter().any(|c| c == "no_safety_override_allowed") {
         return "no_safety_override_allowed";
     }

@@ -78,6 +78,16 @@ pub enum BlueBrainExecutionReferenceInteractionClass {
     NonCanonicalInternalOnlyTransitionPath,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCrossLineSignalClass {
+    StrongOperationalSignal,
+    BoundedAdvisoryOnlySignal,
+    WeakReferenceOnlySignal,
+    CaveatedSignal,
+    BlockedInsufficientSignal,
+    NonCanonicalInternalOnlySignalPath,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlueBrainCanonicalReference {
     pub raw: String,
@@ -359,6 +369,43 @@ pub fn canonical_reference_consumption_decision(
         candidate_only,
         strength,
     }
+}
+
+pub fn classify_cross_line_signal_class(
+    decision: &BlueBrainReferenceConsumptionDecision,
+    classified: &BlueBrainCanonicalReference,
+) -> BlueBrainCrossLineSignalClass {
+    if matches!(
+        classified.kind,
+        BlueBrainCanonicalReferenceKind::NonCanonicalInternalOnlyPath
+    ) {
+        return BlueBrainCrossLineSignalClass::NonCanonicalInternalOnlySignalPath;
+    }
+
+    if matches!(
+        classified.validity,
+        BlueBrainReferenceValidity::Blocked | BlueBrainReferenceValidity::Insufficient
+    ) {
+        return BlueBrainCrossLineSignalClass::BlockedInsufficientSignal;
+    }
+
+    if matches!(classified.validity, BlueBrainReferenceValidity::Caveated) {
+        return BlueBrainCrossLineSignalClass::CaveatedSignal;
+    }
+
+    if matches!(
+        decision.strength,
+        BlueBrainCanonicalConsumptionStrength::WeakReferenceConsumption
+            | BlueBrainCanonicalConsumptionStrength::ReferenceOnlyConsumption
+    ) {
+        return BlueBrainCrossLineSignalClass::WeakReferenceOnlySignal;
+    }
+
+    if decision.advisory_only || decision.candidate_only {
+        return BlueBrainCrossLineSignalClass::BoundedAdvisoryOnlySignal;
+    }
+
+    BlueBrainCrossLineSignalClass::StrongOperationalSignal
 }
 
 #[cfg(test)]
@@ -718,5 +765,67 @@ mod tests {
         assert!(doc.contains("keine Planner-/Policy-/Agentenlogik-Erweiterung"));
         assert!(doc.contains("keine Neurodynamik-Autoritätserweiterung"));
         assert!(doc.contains("Priorität 1: finaler repo-weiter Abschluss-/Freeze-Pass"));
+    }
+
+    #[test]
+    fn cross_line_signal_classification_keeps_strong_bounded_weak_and_blocked_distinct() {
+        let strong_ref = classify_blue_brain_reference_path("bb14:execution:h2:result:completed");
+        let strong_decision = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Execution,
+            &strong_ref,
+        );
+        assert_eq!(
+            classify_cross_line_signal_class(&strong_decision, &strong_ref),
+            BlueBrainCrossLineSignalClass::StrongOperationalSignal
+        );
+
+        let bounded_ref = classify_blue_brain_reference_path("bb15:combined:result:current");
+        let bounded_decision = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Runtime,
+            &bounded_ref,
+        );
+        assert_eq!(
+            classify_cross_line_signal_class(&bounded_decision, &bounded_ref),
+            BlueBrainCrossLineSignalClass::BoundedAdvisoryOnlySignal
+        );
+
+        let weak_ref = classify_blue_brain_reference_path("diag:execution:summary");
+        let weak_decision = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Runtime,
+            &weak_ref,
+        );
+        assert_eq!(
+            classify_cross_line_signal_class(&weak_decision, &weak_ref),
+            BlueBrainCrossLineSignalClass::WeakReferenceOnlySignal
+        );
+
+        let blocked_ref =
+            classify_blue_brain_reference_path("bb14:execution:h2:result:executionblocked");
+        let blocked_decision = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Selection,
+            &blocked_ref,
+        );
+        assert_eq!(
+            classify_cross_line_signal_class(&blocked_decision, &blocked_ref),
+            BlueBrainCrossLineSignalClass::BlockedInsufficientSignal
+        );
+    }
+    #[test]
+    fn bb22_prompt2_doc_pins_canonical_signal_classes_and_no_direct_guard_meanings() {
+        let doc = std::fs::read_to_string(
+            "../../docs/blue_brain_bb22_cross_line_guard_signal_consistency_serie_bb22_prompt2_v1.md",
+        )
+        .expect("BB22 prompt2 guard/signal doc must exist");
+        assert!(doc.contains("strong operational signal"));
+        assert!(doc.contains("bounded advisory-only signal"));
+        assert!(doc.contains("weak/reference-only signal"));
+        assert!(doc.contains("caveated signal"));
+        assert!(doc.contains("blocked/insufficient signal"));
+        assert!(doc.contains("non-canonical/internal-only signal path"));
+        assert!(doc.contains("kein direct action trigger"));
+        assert!(doc.contains("kein direct retry trigger"));
+        assert!(doc.contains("kein direct memory effect"));
+        assert!(doc.contains("kein direct compute effect"));
+        assert!(doc.contains("kein direct policy/planner/agent effect"));
     }
 }

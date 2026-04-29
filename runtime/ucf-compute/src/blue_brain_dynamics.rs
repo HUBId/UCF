@@ -1909,6 +1909,9 @@ fn append_kuramoto_guard_caveats(
     caveats.push("no_direct_compute_allowed".to_string());
     caveats.push("no_direct_reexecute_allowed".to_string());
     caveats.push("no_direct_retry_orchestration_allowed".to_string());
+    caveats.push("no_direct_policy_effect_allowed".to_string());
+    caveats.push("no_direct_planner_effect_allowed".to_string());
+    caveats.push("no_direct_agent_effect_allowed".to_string());
     caveats.push("no_safety_override_allowed".to_string());
 }
 
@@ -2419,6 +2422,18 @@ mod tests {
             .caveats
             .iter()
             .any(|item| item == "no_direct_retry_orchestration_allowed"));
+        assert!(result
+            .caveats
+            .iter()
+            .any(|item| item == "no_direct_policy_effect_allowed"));
+        assert!(result
+            .caveats
+            .iter()
+            .any(|item| item == "no_direct_planner_effect_allowed"));
+        assert!(result
+            .caveats
+            .iter()
+            .any(|item| item == "no_direct_agent_effect_allowed"));
         assert!(result
             .caveats
             .iter()
