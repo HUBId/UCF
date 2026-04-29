@@ -673,4 +673,26 @@ mod tests {
         );
         assert!(!execution.allowed);
     }
+
+    #[test]
+    fn bb21_prompt4_doc_stays_pinned_to_canonical_boundaries_and_no_direct_guards() {
+        let doc = std::fs::read_to_string(
+            "../../docs/blue_brain_bb21_readiness_sweep_execution_reference_interaction_closure_serie_bb21_prompt4_v1.md",
+        )
+        .expect("BB21 prompt4 closure doc must exist");
+        assert!(doc.contains("stable execution/reference interaction line"));
+        assert!(doc.contains("StrongReferenceConsumption"));
+        assert!(doc.contains("WeakReferenceConsumption"));
+        assert!(doc.contains("ReferenceOnlyConsumption"));
+        assert!(doc.contains("NonCanonicalInternalOnlyPath"));
+        assert!(doc.contains("keine direkte Folge-Execution"));
+        assert!(doc.contains("keine Retry-Orchestrierung"));
+        assert!(doc.contains("keine automatische Memory-Persistenz"));
+        assert!(doc.contains("keine Compute-Core-Ausweitung"));
+        assert!(doc.contains("BB14 execution-integrity line"));
+        assert!(doc.contains("BB15 bounded retrieval/reference line"));
+        assert!(doc.contains("BB17 context/memory/reference hardening line"));
+        assert!(doc.contains("BB19 runtime/selection contract line"));
+        assert!(doc.contains("Priorität 1: BB22 narrow cross-line stabilization pass."));
+    }
 }
