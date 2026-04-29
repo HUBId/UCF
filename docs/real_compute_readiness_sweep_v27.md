@@ -57,7 +57,9 @@ Mit BB23 ist die technische Einordnung für den Real-Compute-Stack ebenfalls auf
 
 ## 5) Exakt priorisierte nächste Richtung
 
-**Priorität jetzt: Maintenance/Bugfix/Cleanup ohne neue Serienlogik.**
+**Priorität jetzt: Serie K — compute-facing integration into broader system surfaces.**
+
+BB23-Override (aktuelle Repo-Baseline): Maintenance/Bugfix/Cleanup ohne neue Serienlogik als Default.
 
 Kurzbegründung:
 - Die tragfähige Produktionslinie ist vorhanden und eingefroren.
