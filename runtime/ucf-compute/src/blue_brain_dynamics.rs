@@ -3299,4 +3299,23 @@ mod tests {
         assert!(doc.contains("maintenance-only Core"));
         assert!(doc.contains("Priorität 1: BB20 execution/reference interaction hardening."));
     }
+
+    #[test]
+    fn serie_bb24_prompt2_doc_pins_region_integration_modes_to_existing_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_region_integration_modes_serie_bb24_prompt2_v1.md"
+        );
+        assert!(doc.contains("abstract_functional_integration"));
+        assert!(doc.contains("bounded_advisory_only_modulation_integration"));
+        assert!(doc.contains("simulation_only_diagnostic_only_integration"));
+        assert!(doc.contains("deferred_not_suitable_now"));
+        assert!(doc.contains("non_canonical_internal_only_region_path"));
+        assert!(doc.contains("keine direkte Execution-Autorität"));
+        assert!(doc.contains("keine implizite Memory-Persistenz"));
+        assert!(doc.contains("keine direkte produktive Hodgkin-Huxley-Integration"));
+        assert!(doc.contains("BB4 + BB19 Runtime/Selection Contract"));
+        assert!(doc.contains("BB8 + BB17 Context/Memory/Reference"));
+        assert!(doc.contains("BB13/BB14 + BB21 Execution/Reference Interaction"));
+        assert!(doc.contains("BB12 (+ BB16 hardening)"));
+    }
 }
