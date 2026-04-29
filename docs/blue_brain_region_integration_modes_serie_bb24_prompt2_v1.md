@@ -122,6 +122,9 @@ Für **alle** Regionenklassen verbindlich:
 Damit ist die spätere Wahl Kuramoto vs Hodgkin-Huxley **regionsbezogen vorbereitbar**, ohne
 jetzt eine produktive HH-Integration auszulösen.
 
+Die konkrete kanonische Entscheidung pro Regionenklasse wird in
+`blue_brain_region_model_decision_serie_bb24_prompt3_v1.md` festgezogen.
+
 ## 10) Out-of-scope (harte Grenze bleibt)
 
 - kein vollständiger Blue-Brain-Nachbau,
