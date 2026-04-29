@@ -10,6 +10,7 @@ Dieses README ist die **kanonische Einstiegsfläche** für operative Doku-Pfade 
   - `docs/blue_brain_bb22_narrow_cross_line_stabilization_pass_serie_bb22_prompt1_v1.md`
   - `docs/blue_brain_bb22_cross_line_guard_signal_consistency_serie_bb22_prompt2_v1.md`
   - `docs/blue_brain_bb22_remaining_internal_only_transition_doc_cleanup_serie_bb22_prompt3_v1.md`
+  - `docs/blue_brain_bb22_readiness_sweep_final_cross_line_stabilization_serie_bb22_prompt4_v1.md`
 - **Final BB20 readiness sweep + next-priority lock (BB20 P4):** `docs/blue_brain_bb20_final_readiness_sweep_next_priority_lock_serie_bb20_prompt4_v1.md`
 - **BlueBrain/Runtime/Selection hardening line (BB19):**
   - `docs/blue_brain_runtime_selection_contract_hardening_serie_bb19_prompt1_v1.md`

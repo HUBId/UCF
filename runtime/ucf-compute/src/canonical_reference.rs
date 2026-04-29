@@ -831,6 +831,30 @@ mod tests {
             BlueBrainCrossLineSignalClass::BlockedInsufficientSignal
         );
     }
+
+    #[test]
+    fn bb22_prompt4_doc_pins_final_cross_line_readiness_map_and_freeze_decision() {
+        let doc = std::fs::read_to_string(
+            "../../docs/blue_brain_bb22_readiness_sweep_final_cross_line_stabilization_serie_bb22_prompt4_v1.md",
+        )
+        .expect("BB22 prompt4 final readiness doc must exist");
+        assert!(doc.contains("stable operational cross-line"));
+        assert!(doc.contains("usable with caveats"));
+        assert!(doc.contains("advisory-only"));
+        assert!(doc.contains("weak/reference-only"));
+        assert!(doc.contains("blocked/insufficient"));
+        assert!(doc.contains("test-only/deferred"));
+        assert!(doc.contains("non-canonical/internal-only"));
+        assert!(doc.contains("no-direct-action"));
+        assert!(doc.contains("no-direct-retry"));
+        assert!(doc.contains("no-direct-memory"));
+        assert!(doc.contains("no-direct-compute"));
+        assert!(doc.contains("no-direct-policy-planner-agent"));
+        assert!(doc.contains("Freeze/Maintenance ist sinnvoller als eine weitere Serie"));
+        assert!(doc.contains("Keine Compute-Core-Ausweitung"));
+        assert!(doc.contains("Keine Planner-/Agentenplattform"));
+    }
+
     #[test]
     fn bb22_prompt2_doc_pins_canonical_signal_classes_and_no_direct_guard_meanings() {
         let doc = std::fs::read_to_string(
