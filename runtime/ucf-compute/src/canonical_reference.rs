@@ -29,11 +29,19 @@ pub enum BlueBrainReferenceConsumptionPath {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCanonicalConsumptionStrength {
+    StrongReferenceConsumption,
+    WeakReferenceConsumption,
+    ReferenceOnlyConsumption,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlueBrainReferenceConsumptionDecision {
     pub path: BlueBrainReferenceConsumptionPath,
     pub allowed: bool,
     pub advisory_only: bool,
     pub candidate_only: bool,
+    pub strength: BlueBrainCanonicalConsumptionStrength,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -256,6 +264,7 @@ pub fn canonical_reference_consumption_decision(
             allowed: false,
             advisory_only: true,
             candidate_only: true,
+            strength: BlueBrainCanonicalConsumptionStrength::ReferenceOnlyConsumption,
         };
     }
 
@@ -265,27 +274,35 @@ pub fn canonical_reference_consumption_decision(
         BlueBrainExecutionReferenceInteractionClass::FailedCancelledBlockedOrUnavailableReferenceBasis
             | BlueBrainExecutionReferenceInteractionClass::CaveatedReferenceConsumption
     );
+    let canonical_cross_line_kind = matches!(
+        classified.kind,
+        BlueBrainCanonicalReferenceKind::ContextReference
+            | BlueBrainCanonicalReferenceKind::MemoryRecordReference
+            | BlueBrainCanonicalReferenceKind::ExecutionResultReference
+            | BlueBrainCanonicalReferenceKind::CombinedBoundedReference
+            | BlueBrainCanonicalReferenceKind::DiagnosticReference
+            | BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
+    );
+
+    let reference_only_kind = matches!(
+        classified.kind,
+        BlueBrainCanonicalReferenceKind::DiagnosticReference
+            | BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
+    ) || matches!(
+        classified.validity,
+        BlueBrainReferenceValidity::ReferenceOnly
+    );
+
     let (path, allowed, advisory_only, candidate_only) = match layer {
         BlueBrainReferenceConsumptionLayer::Runtime => (
             BlueBrainReferenceConsumptionPath::RuntimeCanonicalReferenceConsumption,
-            matches!(
-                classified.kind,
-                BlueBrainCanonicalReferenceKind::ExecutionResultReference
-                    | BlueBrainCanonicalReferenceKind::DiagnosticReference
-                    | BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
-            ),
+            canonical_cross_line_kind,
             true,
             false,
         ),
         BlueBrainReferenceConsumptionLayer::Selection => (
             BlueBrainReferenceConsumptionPath::SelectionCanonicalReferenceConsumption,
-            matches!(
-                classified.kind,
-                BlueBrainCanonicalReferenceKind::ContextReference
-                    | BlueBrainCanonicalReferenceKind::MemoryRecordReference
-                    | BlueBrainCanonicalReferenceKind::CombinedBoundedReference
-                    | BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
-            ),
+            canonical_cross_line_kind,
             true,
             true,
         ),
@@ -311,26 +328,36 @@ pub fn canonical_reference_consumption_decision(
         ),
         BlueBrainReferenceConsumptionLayer::Retrieval => (
             BlueBrainReferenceConsumptionPath::RetrievalCanonicalReferenceConsumption,
-            matches!(
-                classified.kind,
-                BlueBrainCanonicalReferenceKind::ContextReference
-                    | BlueBrainCanonicalReferenceKind::MemoryRecordReference
-                    | BlueBrainCanonicalReferenceKind::ExecutionResultReference
-                    | BlueBrainCanonicalReferenceKind::CombinedBoundedReference
-                    | BlueBrainCanonicalReferenceKind::DiagnosticReference
-                    | BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
-            ),
+            canonical_cross_line_kind,
             true,
             true,
         ),
     };
 
-    let candidate_only = candidate_only || weak_execution_basis;
+    let candidate_only = candidate_only || weak_execution_basis || reference_only_kind;
+    let strength = if reference_only_kind {
+        BlueBrainCanonicalConsumptionStrength::ReferenceOnlyConsumption
+    } else if weak_execution_basis
+        || matches!(
+            classified.validity,
+            BlueBrainReferenceValidity::Caveated
+                | BlueBrainReferenceValidity::Stale
+                | BlueBrainReferenceValidity::Invalidated
+                | BlueBrainReferenceValidity::Blocked
+                | BlueBrainReferenceValidity::Insufficient
+        )
+    {
+        BlueBrainCanonicalConsumptionStrength::WeakReferenceConsumption
+    } else {
+        BlueBrainCanonicalConsumptionStrength::StrongReferenceConsumption
+    };
+
     BlueBrainReferenceConsumptionDecision {
         path,
         allowed,
         advisory_only,
         candidate_only,
+        strength,
     }
 }
 
@@ -456,6 +483,10 @@ mod tests {
                 BlueBrainReferenceConsumptionPath::NonCanonicalInternalOnlyReferenceConsumptionPath
             );
             assert!(!decision.allowed);
+            assert_eq!(
+                decision.strength,
+                BlueBrainCanonicalConsumptionStrength::ReferenceOnlyConsumption
+            );
         }
     }
 
@@ -472,7 +503,11 @@ mod tests {
             BlueBrainReferenceConsumptionLayer::Runtime,
             &context,
         );
-        assert!(!runtime_context.allowed);
+        assert!(runtime_context.allowed);
+        assert_eq!(
+            runtime_context.strength,
+            BlueBrainCanonicalConsumptionStrength::StrongReferenceConsumption
+        );
 
         let runtime_execution = canonical_reference_consumption_decision(
             BlueBrainReferenceConsumptionLayer::Runtime,
@@ -480,6 +515,10 @@ mod tests {
         );
         assert!(runtime_execution.allowed);
         assert!(runtime_execution.advisory_only);
+        assert_eq!(
+            runtime_execution.strength,
+            BlueBrainCanonicalConsumptionStrength::StrongReferenceConsumption
+        );
 
         let selection_combined = canonical_reference_consumption_decision(
             BlueBrainReferenceConsumptionLayer::Selection,
@@ -498,13 +537,21 @@ mod tests {
             BlueBrainReferenceConsumptionLayer::Runtime,
             &memory,
         );
-        assert!(!runtime_memory.allowed);
+        assert!(runtime_memory.allowed);
+        assert_eq!(
+            runtime_memory.strength,
+            BlueBrainCanonicalConsumptionStrength::StrongReferenceConsumption
+        );
 
         let selection_diagnostic = canonical_reference_consumption_decision(
             BlueBrainReferenceConsumptionLayer::Selection,
             &diagnostic,
         );
-        assert!(!selection_diagnostic.allowed);
+        assert!(selection_diagnostic.allowed);
+        assert_eq!(
+            selection_diagnostic.strength,
+            BlueBrainCanonicalConsumptionStrength::ReferenceOnlyConsumption
+        );
 
         let selection_reference_only = canonical_reference_consumption_decision(
             BlueBrainReferenceConsumptionLayer::Selection,
@@ -512,6 +559,10 @@ mod tests {
         );
         assert!(selection_reference_only.allowed);
         assert!(selection_reference_only.candidate_only);
+        assert_eq!(
+            selection_reference_only.strength,
+            BlueBrainCanonicalConsumptionStrength::ReferenceOnlyConsumption
+        );
     }
 
     #[test]
@@ -611,6 +662,10 @@ mod tests {
         assert!(runtime.allowed);
         assert!(runtime.advisory_only);
         assert!(runtime.candidate_only);
+        assert_eq!(
+            runtime.strength,
+            BlueBrainCanonicalConsumptionStrength::WeakReferenceConsumption
+        );
 
         let execution = canonical_reference_consumption_decision(
             BlueBrainReferenceConsumptionLayer::Execution,
