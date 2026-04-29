@@ -60,6 +60,16 @@ pub enum BlueBrainExecutionReferenceOutcome {
     NotExecutionResult,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainExecutionReferenceInteractionClass {
+    ExecutionResultOnly,
+    CanonicalResultReference,
+    BoundedReferenceConsumption,
+    FailedCancelledBlockedOrUnavailableReferenceBasis,
+    CaveatedReferenceConsumption,
+    NonCanonicalInternalOnlyTransitionPath,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlueBrainCanonicalReference {
     pub raw: String,
@@ -67,6 +77,43 @@ pub struct BlueBrainCanonicalReference {
     pub validity: BlueBrainReferenceValidity,
     pub execution_outcome: BlueBrainExecutionReferenceOutcome,
     pub canonical: bool,
+}
+
+pub fn execution_reference_interaction_class(
+    classified: &BlueBrainCanonicalReference,
+) -> BlueBrainExecutionReferenceInteractionClass {
+    if matches!(
+        classified.kind,
+        BlueBrainCanonicalReferenceKind::NonCanonicalInternalOnlyPath
+    ) {
+        return BlueBrainExecutionReferenceInteractionClass::NonCanonicalInternalOnlyTransitionPath;
+    }
+    if !matches!(
+        classified.kind,
+        BlueBrainCanonicalReferenceKind::ExecutionResultReference
+    ) {
+        return BlueBrainExecutionReferenceInteractionClass::ExecutionResultOnly;
+    }
+    if matches!(
+        classified.execution_outcome,
+        BlueBrainExecutionReferenceOutcome::Successful
+    ) && matches!(classified.validity, BlueBrainReferenceValidity::Current)
+    {
+        return BlueBrainExecutionReferenceInteractionClass::CanonicalResultReference;
+    }
+    if matches!(
+        classified.execution_outcome,
+        BlueBrainExecutionReferenceOutcome::Failed
+            | BlueBrainExecutionReferenceOutcome::Cancelled
+            | BlueBrainExecutionReferenceOutcome::Blocked
+            | BlueBrainExecutionReferenceOutcome::Unavailable
+            | BlueBrainExecutionReferenceOutcome::Unsupported
+            | BlueBrainExecutionReferenceOutcome::PlaceholderOnly
+            | BlueBrainExecutionReferenceOutcome::NotExecutionResult
+    ) {
+        return BlueBrainExecutionReferenceInteractionClass::FailedCancelledBlockedOrUnavailableReferenceBasis;
+    }
+    BlueBrainExecutionReferenceInteractionClass::CaveatedReferenceConsumption
 }
 
 pub fn canonical_reference_validity_state(
@@ -212,6 +259,12 @@ pub fn canonical_reference_consumption_decision(
         };
     }
 
+    let interaction_class = execution_reference_interaction_class(classified);
+    let weak_execution_basis = matches!(
+        interaction_class,
+        BlueBrainExecutionReferenceInteractionClass::FailedCancelledBlockedOrUnavailableReferenceBasis
+            | BlueBrainExecutionReferenceInteractionClass::CaveatedReferenceConsumption
+    );
     let (path, allowed, advisory_only, candidate_only) = match layer {
         BlueBrainReferenceConsumptionLayer::Runtime => (
             BlueBrainReferenceConsumptionPath::RuntimeCanonicalReferenceConsumption,
@@ -250,8 +303,8 @@ pub fn canonical_reference_consumption_decision(
         BlueBrainReferenceConsumptionLayer::Execution => (
             BlueBrainReferenceConsumptionPath::ExecutionCanonicalReferenceConsumption,
             matches!(
-                classified.kind,
-                BlueBrainCanonicalReferenceKind::ExecutionResultReference
+                interaction_class,
+                BlueBrainExecutionReferenceInteractionClass::CanonicalResultReference
             ),
             false,
             false,
@@ -272,6 +325,7 @@ pub fn canonical_reference_consumption_decision(
         ),
     };
 
+    let candidate_only = candidate_only || weak_execution_basis;
     BlueBrainReferenceConsumptionDecision {
         path,
         allowed,
@@ -526,5 +580,42 @@ mod tests {
             unsupported.execution_outcome,
             BlueBrainExecutionReferenceOutcome::Unsupported
         );
+    }
+
+    #[test]
+    fn interaction_classes_keep_result_reference_and_consumption_boundaries_explicit() {
+        let completed = classify_blue_brain_reference_path("bb14:execution:h1:result:completed");
+        assert_eq!(
+            execution_reference_interaction_class(&completed),
+            BlueBrainExecutionReferenceInteractionClass::CanonicalResultReference
+        );
+        let failed = classify_blue_brain_reference_path("bb14:execution:h2:result:failed");
+        assert_eq!(
+            execution_reference_interaction_class(&failed),
+            BlueBrainExecutionReferenceInteractionClass::FailedCancelledBlockedOrUnavailableReferenceBasis
+        );
+        let placeholder = classify_blue_brain_reference_path("bb14:execution:h2:placeholder:slot");
+        assert_eq!(
+            execution_reference_interaction_class(&placeholder),
+            BlueBrainExecutionReferenceInteractionClass::FailedCancelledBlockedOrUnavailableReferenceBasis
+        );
+    }
+
+    #[test]
+    fn weak_execution_basis_stays_candidate_only_and_cannot_drive_execution_layer() {
+        let failed = classify_blue_brain_reference_path("bb14:execution:h2:result:failed");
+        let runtime = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Runtime,
+            &failed,
+        );
+        assert!(runtime.allowed);
+        assert!(runtime.advisory_only);
+        assert!(runtime.candidate_only);
+
+        let execution = canonical_reference_consumption_decision(
+            BlueBrainReferenceConsumptionLayer::Execution,
+            &failed,
+        );
+        assert!(!execution.allowed);
     }
 }
