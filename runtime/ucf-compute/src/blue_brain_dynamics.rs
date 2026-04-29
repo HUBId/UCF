@@ -22,7 +22,8 @@ pub struct BlueBrainDynamicsDiagnosticLane {
 pub enum BlueBrainDynamicsExecutionFeedbackState {
     ExecutionInformedDynamicsInput,
     ReferenceInformedDynamicsInput,
-    CaveatedExecutionInformedDynamicsInput,
+    FailedExecutionFeedbackBasis,
+    CancelledExecutionFeedbackBasis,
     InsufficientDynamicsFeedbackBasis,
     BlockedDynamicsFeedbackBasis,
     UnavailableDynamicsFeedbackBasis,
@@ -38,7 +39,7 @@ pub struct BlueBrainDynamicsExecutionFeedbackLane {
 }
 
 pub const CANONICAL_BLUE_BRAIN_DYNAMICS_EXECUTION_FEEDBACK_MAP:
-    [BlueBrainDynamicsExecutionFeedbackLane; 8] = [
+    [BlueBrainDynamicsExecutionFeedbackLane; 9] = [
     BlueBrainDynamicsExecutionFeedbackLane {
         state: BlueBrainDynamicsExecutionFeedbackState::ExecutionInformedDynamicsInput,
         lane: "blue_brain_dynamics_execution_informed_input",
@@ -50,9 +51,14 @@ pub const CANONICAL_BLUE_BRAIN_DYNAMICS_EXECUTION_FEEDBACK_MAP:
         canonical_guard: "bounded canonical references/context may inform dynamics diagnostics without direct execution authority",
     },
     BlueBrainDynamicsExecutionFeedbackLane {
-        state: BlueBrainDynamicsExecutionFeedbackState::CaveatedExecutionInformedDynamicsInput,
-        lane: "blue_brain_dynamics_execution_informed_caveated_input",
-        canonical_guard: "failed/cancelled/blocked/unavailable execution basis remains caveated and never promoted to successful modulation basis",
+        state: BlueBrainDynamicsExecutionFeedbackState::FailedExecutionFeedbackBasis,
+        lane: "blue_brain_dynamics_feedback_basis_failed",
+        canonical_guard: "failed execution basis may only inform caveated diagnostics and never promotes to successful/current modulation basis",
+    },
+    BlueBrainDynamicsExecutionFeedbackLane {
+        state: BlueBrainDynamicsExecutionFeedbackState::CancelledExecutionFeedbackBasis,
+        lane: "blue_brain_dynamics_feedback_basis_cancelled",
+        canonical_guard: "cancelled execution basis remains weak/caveated and cannot be interpreted as failed/completed/current basis",
     },
     BlueBrainDynamicsExecutionFeedbackLane {
         state: BlueBrainDynamicsExecutionFeedbackState::InsufficientDynamicsFeedbackBasis,
@@ -378,7 +384,8 @@ pub struct BlueBrainKuramotoModulationInput {
     pub unsupported_input_refs: Vec<String>,
     pub blocked_input_refs: Vec<String>,
     pub canonical_execution_result_refs: Vec<String>,
-    pub failed_or_cancelled_execution_result_refs: Vec<String>,
+    pub failed_execution_result_refs: Vec<String>,
+    pub cancelled_execution_result_refs: Vec<String>,
     pub blocked_execution_result_refs: Vec<String>,
     pub insufficient_execution_result_refs: Vec<String>,
     pub unavailable_execution_result_refs: Vec<String>,
@@ -400,9 +407,10 @@ impl BlueBrainKuramotoModulationInput {
         self.blocked_input_refs.dedup();
         self.canonical_execution_result_refs.sort_unstable();
         self.canonical_execution_result_refs.dedup();
-        self.failed_or_cancelled_execution_result_refs
-            .sort_unstable();
-        self.failed_or_cancelled_execution_result_refs.dedup();
+        self.failed_execution_result_refs.sort_unstable();
+        self.failed_execution_result_refs.dedup();
+        self.cancelled_execution_result_refs.sort_unstable();
+        self.cancelled_execution_result_refs.dedup();
         self.blocked_execution_result_refs.sort_unstable();
         self.blocked_execution_result_refs.dedup();
         self.insufficient_execution_result_refs.sort_unstable();
@@ -1242,7 +1250,8 @@ pub fn dynamics_execution_feedback_state_token(
         BlueBrainDynamicsExecutionFeedbackState::ReferenceInformedDynamicsInput => {
             "reference_informed_dynamics_input"
         }
-        BlueBrainDynamicsExecutionFeedbackState::CaveatedExecutionInformedDynamicsInput => {
+        BlueBrainDynamicsExecutionFeedbackState::FailedExecutionFeedbackBasis
+        | BlueBrainDynamicsExecutionFeedbackState::CancelledExecutionFeedbackBasis => {
             "caveated_execution_informed_dynamics_input"
         }
         BlueBrainDynamicsExecutionFeedbackState::InsufficientDynamicsFeedbackBasis => {
@@ -1505,8 +1514,11 @@ fn classify_execution_feedback_state(
     if !input.unavailable_execution_result_refs.is_empty() {
         return BlueBrainDynamicsExecutionFeedbackState::UnavailableDynamicsFeedbackBasis;
     }
-    if !input.failed_or_cancelled_execution_result_refs.is_empty() {
-        return BlueBrainDynamicsExecutionFeedbackState::CaveatedExecutionInformedDynamicsInput;
+    if !input.failed_execution_result_refs.is_empty() {
+        return BlueBrainDynamicsExecutionFeedbackState::FailedExecutionFeedbackBasis;
+    }
+    if !input.cancelled_execution_result_refs.is_empty() {
+        return BlueBrainDynamicsExecutionFeedbackState::CancelledExecutionFeedbackBasis;
     }
     if !input.canonical_execution_result_refs.is_empty() {
         return BlueBrainDynamicsExecutionFeedbackState::ExecutionInformedDynamicsInput;
@@ -1911,7 +1923,8 @@ fn append_execution_feedback_caveats(
         BlueBrainDynamicsExecutionFeedbackState::ReferenceInformedDynamicsInput => {
             caveats.push("reference_informed_modulation_observed".to_string());
         }
-        BlueBrainDynamicsExecutionFeedbackState::CaveatedExecutionInformedDynamicsInput => {
+        BlueBrainDynamicsExecutionFeedbackState::FailedExecutionFeedbackBasis
+        | BlueBrainDynamicsExecutionFeedbackState::CancelledExecutionFeedbackBasis => {
             caveats.push("caveated_execution_feedback_basis".to_string());
         }
         BlueBrainDynamicsExecutionFeedbackState::InsufficientDynamicsFeedbackBasis => {
@@ -1988,7 +2001,8 @@ mod tests {
             unsupported_input_refs: vec![],
             blocked_input_refs: vec![],
             canonical_execution_result_refs: vec![],
-            failed_or_cancelled_execution_result_refs: vec![],
+            failed_execution_result_refs: vec![],
+            cancelled_execution_result_refs: vec![],
             blocked_execution_result_refs: vec![],
             insufficient_execution_result_refs: vec![],
             unavailable_execution_result_refs: vec![],
@@ -2459,8 +2473,7 @@ mod tests {
             lane.state == BlueBrainDynamicsExecutionFeedbackState::ReferenceInformedDynamicsInput
         }));
         assert!(map.iter().any(|lane| {
-            lane.state
-                == BlueBrainDynamicsExecutionFeedbackState::CaveatedExecutionInformedDynamicsInput
+            lane.state == BlueBrainDynamicsExecutionFeedbackState::FailedExecutionFeedbackBasis
         }));
         assert!(map.iter().any(|lane| {
             lane.state == BlueBrainDynamicsExecutionFeedbackState::InsufficientDynamicsFeedbackBasis
@@ -2720,17 +2733,31 @@ mod tests {
     }
 
     #[test]
-    fn failed_cancelled_blocked_unavailable_basis_remains_caveated_or_blocked() {
+    fn failed_cancelled_blocked_unavailable_basis_stays_strictly_separated() {
         let mut failed = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
         failed
-            .failed_or_cancelled_execution_result_refs
+            .failed_execution_result_refs
             .push("bb14:minimal_execution:h1:emit_canonical_signal:result:failed".to_string());
         let failed_result = evaluate_blue_brain_kuramoto_modulation(failed);
         assert_eq!(
             failed_result.execution_feedback_state,
-            BlueBrainDynamicsExecutionFeedbackState::CaveatedExecutionInformedDynamicsInput
+            BlueBrainDynamicsExecutionFeedbackState::FailedExecutionFeedbackBasis
         );
         assert!(failed_result
+            .caveats
+            .iter()
+            .any(|item| item == "caveated_execution_feedback_basis"));
+
+        let mut cancelled = base_input(BlueBrainKuramotoScopeState::DiagnosticOnly);
+        cancelled
+            .cancelled_execution_result_refs
+            .push("bb14:minimal_execution:h1:emit_canonical_signal:result:cancelled".to_string());
+        let cancelled_result = evaluate_blue_brain_kuramoto_modulation(cancelled);
+        assert_eq!(
+            cancelled_result.execution_feedback_state,
+            BlueBrainDynamicsExecutionFeedbackState::CancelledExecutionFeedbackBasis
+        );
+        assert!(cancelled_result
             .caveats
             .iter()
             .any(|item| item == "caveated_execution_feedback_basis"));

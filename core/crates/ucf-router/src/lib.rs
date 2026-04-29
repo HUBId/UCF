@@ -4745,7 +4745,8 @@ impl Router {
             unsupported_input_refs.push("missing_evidence_reference_basis".to_string());
         }
         let mut canonical_execution_result_refs = Vec::new();
-        let mut failed_or_cancelled_execution_result_refs = Vec::new();
+        let mut failed_execution_result_refs = Vec::new();
+        let mut cancelled_execution_result_refs = Vec::new();
         let mut blocked_execution_result_refs = Vec::new();
         let mut insufficient_execution_result_refs = Vec::new();
         let mut unavailable_execution_result_refs = Vec::new();
@@ -4767,11 +4768,12 @@ impl Router {
                         (BlueBrainExecutionReferenceOutcome::Successful, _) => {
                             canonical_execution_result_refs.push(evidence_ref.clone())
                         }
-                        (
-                            BlueBrainExecutionReferenceOutcome::Failed
-                            | BlueBrainExecutionReferenceOutcome::Cancelled,
-                            _,
-                        ) => failed_or_cancelled_execution_result_refs.push(evidence_ref.clone()),
+                        (BlueBrainExecutionReferenceOutcome::Failed, _) => {
+                            failed_execution_result_refs.push(evidence_ref.clone())
+                        }
+                        (BlueBrainExecutionReferenceOutcome::Cancelled, _) => {
+                            cancelled_execution_result_refs.push(evidence_ref.clone())
+                        }
                         (BlueBrainExecutionReferenceOutcome::Blocked, _)
                         | (_, BlueBrainReferenceValidity::Blocked) => {
                             blocked_execution_result_refs.push(evidence_ref.clone())
@@ -4820,7 +4822,8 @@ impl Router {
             unsupported_input_refs,
             blocked_input_refs,
             canonical_execution_result_refs,
-            failed_or_cancelled_execution_result_refs,
+            failed_execution_result_refs,
+            cancelled_execution_result_refs,
             blocked_execution_result_refs,
             insufficient_execution_result_refs,
             unavailable_execution_result_refs,
@@ -7916,7 +7919,8 @@ mod tests {
             &cf, &snapshot, &attention, None, &delta,
         );
         assert_eq!(input.canonical_execution_result_refs.len(), 1);
-        assert_eq!(input.failed_or_cancelled_execution_result_refs.len(), 2);
+        assert_eq!(input.failed_execution_result_refs.len(), 1);
+        assert_eq!(input.cancelled_execution_result_refs.len(), 1);
         assert_eq!(input.blocked_execution_result_refs.len(), 1);
         assert_eq!(input.insufficient_execution_result_refs.len(), 1);
         assert_eq!(input.unavailable_execution_result_refs.len(), 1);
