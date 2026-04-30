@@ -25,6 +25,8 @@ Dieses README ist die **kanonische Einstiegsfläche** für operative Doku-Pfade 
   - `docs/blue_brain_final_maintenance_handoff_serie_bb25_prompt6_v1.md`
 - **Region-2 selection line (BB26 P1):**
   - `docs/blue_brain_second_region_selection_serie_bb26_prompt1_v1.md`
+- **Region-2 integration line (BB26 P2):**
+  - `docs/blue_brain_second_region_integration_serie_bb26_prompt2_v1.md`
 - **BlueBrain/Runtime/Selection hardening line (BB19):**
   - `docs/blue_brain_runtime_selection_contract_hardening_serie_bb19_prompt1_v1.md`
   - `docs/blue_brain_runtime_selection_diagnostics_hardening_serie_bb19_prompt2_v1.md`

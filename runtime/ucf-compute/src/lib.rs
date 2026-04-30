@@ -174,16 +174,22 @@ pub use blue_brain_minimal_execution::{
     BlueBrainMinimalExecutionTraceCore, BlueBrainProposalExecutionFeedbackClass,
 };
 pub use blue_brain_region_first_integration::{
-    classify_blue_brain_first_region_input_guard,
-    evaluate_blue_brain_first_region_attention_selection, BlueBrainFirstRegionAdvisoryOutputClass,
+    classify_blue_brain_first_region_input_guard, classify_blue_brain_second_region_input_guard,
+    evaluate_blue_brain_first_region_attention_selection,
+    evaluate_blue_brain_second_region_memory_context, BlueBrainFirstRegionAdvisoryOutputClass,
     BlueBrainFirstRegionClass, BlueBrainFirstRegionFinalizationClass,
     BlueBrainFirstRegionInputGuard, BlueBrainFirstRegionInputSource,
     BlueBrainFirstRegionInputSurface, BlueBrainFirstRegionOutputSurface,
-    BlueBrainFirstRegionPathClass, BlueBrainFirstRegionStateSurface, BlueBrainSecondRegionClass,
-    BlueBrainSecondRegionExpansionState, BlueBrainSecondRegionSelectionClass,
+    BlueBrainFirstRegionPathClass, BlueBrainFirstRegionStateSurface,
+    BlueBrainSecondRegionAdvisoryOutputClass, BlueBrainSecondRegionClass,
+    BlueBrainSecondRegionExpansionState, BlueBrainSecondRegionInputGuard,
+    BlueBrainSecondRegionInputSource, BlueBrainSecondRegionInputSurface,
+    BlueBrainSecondRegionOutputSurface, BlueBrainSecondRegionPathClass,
+    BlueBrainSecondRegionSelectionClass, BlueBrainSecondRegionStateSurface,
     BLUE_BRAIN_SECOND_REGION_CLASS_SELECTION, BLUE_BRAIN_SECOND_REGION_EXPANSION_STATE,
     CANONICAL_BLUE_BRAIN_FIRST_REGION_FINALIZATION_MAP,
     CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP,
+    CANONICAL_BLUE_BRAIN_SECOND_REGION_INTEGRATION_MAP,
     CANONICAL_BLUE_BRAIN_SECOND_REGION_SELECTION_MAP,
 };
 pub use canonical_reference::{
