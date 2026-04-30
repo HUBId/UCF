@@ -61,6 +61,34 @@ pub const CANONICAL_BLUE_BRAIN_FIRST_REGION_HARDENING_MAP: [BlueBrainFirstRegion
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFirstRegionFinalizationClass {
+    StableFirstRegionBaseline,
+    UsableWithCaveatsFirstRegionSurface,
+    AdvisoryOnlyFrozenRegionSignal,
+    DiagnosticOnlyDeferredRegionState,
+    SecondRegionNotOpenedYet,
+    NonCanonicalInternalOnlyRegionPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_FIRST_REGION_FINALIZATION_MAP:
+    [BlueBrainFirstRegionFinalizationClass; 6] = [
+    BlueBrainFirstRegionFinalizationClass::StableFirstRegionBaseline,
+    BlueBrainFirstRegionFinalizationClass::UsableWithCaveatsFirstRegionSurface,
+    BlueBrainFirstRegionFinalizationClass::AdvisoryOnlyFrozenRegionSignal,
+    BlueBrainFirstRegionFinalizationClass::DiagnosticOnlyDeferredRegionState,
+    BlueBrainFirstRegionFinalizationClass::SecondRegionNotOpenedYet,
+    BlueBrainFirstRegionFinalizationClass::NonCanonicalInternalOnlyRegionPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainSecondRegionExpansionState {
+    NotOpenedYetExplicitRescopeRequired,
+}
+
+pub const BLUE_BRAIN_SECOND_REGION_EXPANSION_STATE: BlueBrainSecondRegionExpansionState =
+    BlueBrainSecondRegionExpansionState::NotOpenedYetExplicitRescopeRequired;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainFirstRegionStateSurface {
     ActiveBoundedAdvisoryOnly,
     BlockedDeferred,
@@ -412,6 +440,30 @@ mod tests {
         assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_DIAGNOSTIC_MAP.contains(
             &BlueBrainFirstRegionDiagnosticState::NonCanonicalInternalOnlyRegionDiagnosticPath
         ));
+    }
+
+    #[test]
+    fn first_region_finalization_map_contains_required_classes() {
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_FINALIZATION_MAP
+            .contains(&BlueBrainFirstRegionFinalizationClass::StableFirstRegionBaseline));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_FINALIZATION_MAP
+            .contains(&BlueBrainFirstRegionFinalizationClass::UsableWithCaveatsFirstRegionSurface));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_FINALIZATION_MAP
+            .contains(&BlueBrainFirstRegionFinalizationClass::AdvisoryOnlyFrozenRegionSignal));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_FINALIZATION_MAP
+            .contains(&BlueBrainFirstRegionFinalizationClass::DiagnosticOnlyDeferredRegionState));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_FINALIZATION_MAP
+            .contains(&BlueBrainFirstRegionFinalizationClass::SecondRegionNotOpenedYet));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_FINALIZATION_MAP
+            .contains(&BlueBrainFirstRegionFinalizationClass::NonCanonicalInternalOnlyRegionPath));
+    }
+
+    #[test]
+    fn second_region_expansion_state_remains_not_opened_yet() {
+        assert_eq!(
+            BLUE_BRAIN_SECOND_REGION_EXPANSION_STATE,
+            BlueBrainSecondRegionExpansionState::NotOpenedYetExplicitRescopeRequired
+        );
     }
 
     #[test]

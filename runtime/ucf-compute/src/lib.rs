@@ -176,9 +176,12 @@ pub use blue_brain_minimal_execution::{
 pub use blue_brain_region_first_integration::{
     classify_blue_brain_first_region_input_guard,
     evaluate_blue_brain_first_region_attention_selection, BlueBrainFirstRegionAdvisoryOutputClass,
-    BlueBrainFirstRegionClass, BlueBrainFirstRegionInputGuard, BlueBrainFirstRegionInputSource,
+    BlueBrainFirstRegionClass, BlueBrainFirstRegionFinalizationClass,
+    BlueBrainFirstRegionInputGuard, BlueBrainFirstRegionInputSource,
     BlueBrainFirstRegionInputSurface, BlueBrainFirstRegionOutputSurface,
     BlueBrainFirstRegionPathClass, BlueBrainFirstRegionStateSurface,
+    BlueBrainSecondRegionExpansionState, BLUE_BRAIN_SECOND_REGION_EXPANSION_STATE,
+    CANONICAL_BLUE_BRAIN_FIRST_REGION_FINALIZATION_MAP,
     CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP,
 };
 pub use canonical_reference::{
