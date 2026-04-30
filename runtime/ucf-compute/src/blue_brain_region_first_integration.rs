@@ -757,4 +757,26 @@ mod tests {
             BlueBrainFirstRegionContractSignal::NonCanonicalInternalOnly
         ));
     }
+
+    #[test]
+    fn region1_maintenance_reference_doc_pins_canonical_maps_and_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_region1_maintenance_reference_surface_serie_bb25_prompt2_v1.md"
+        );
+        assert!(doc.contains("Canonical Region-1 Maintenance Reference Map"));
+        assert!(doc.contains("Canonical region-1 test surface"));
+        assert!(doc.contains("Maintenance-facing index/reference path"));
+        assert!(doc.contains("Non-canonical/internal-only or legacy region-1 path"));
+        assert!(doc.contains("region-2-not-opened"));
+        assert!(doc.contains("first_region_stabilization_map_contains_required_classes"));
+    }
+
+    #[test]
+    fn docs_readme_exposes_region1_maintenance_entrypoint() {
+        let doc = include_str!("../../../docs/README.md");
+        assert!(doc.contains("Region-1 maintenance reference surface (BB25)"));
+        assert!(doc.contains(
+            "docs/blue_brain_region1_maintenance_reference_surface_serie_bb25_prompt2_v1.md"
+        ));
+    }
 }

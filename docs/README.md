@@ -15,6 +15,10 @@ Dieses README ist die **kanonische Einstiegsfläche** für operative Doku-Pfade 
 - **BB23 freeze/maintenance baseline:** `docs/blue_brain_bb23_freeze_maintenance_baseline_serie_bb23_prompt1_v1.md`
 - **BB23 maintenance guard rails / allowed-change envelope:** `docs/blue_brain_bb23_maintenance_guard_rails_allowed_change_envelope_serie_bb23_prompt2_v1.md`
 - **BB23 final freeze/readiness statement (maintenance transition):** `docs/blue_brain_bb23_final_freeze_readiness_statement_serie_bb23_prompt3_v1.md`
+- **Region-1 maintenance reference surface (BB25):**
+  - `docs/blue_brain_first_region_finalization_serie_bb24_prompt10_v1.md`
+  - `docs/blue_brain_first_region_stabilization_serie_bb25_prompt1_v1.md`
+  - `docs/blue_brain_region1_maintenance_reference_surface_serie_bb25_prompt2_v1.md`
 - **BlueBrain/Runtime/Selection hardening line (BB19):**
   - `docs/blue_brain_runtime_selection_contract_hardening_serie_bb19_prompt1_v1.md`
   - `docs/blue_brain_runtime_selection_diagnostics_hardening_serie_bb19_prompt2_v1.md`
