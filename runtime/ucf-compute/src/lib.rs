@@ -179,10 +179,12 @@ pub use blue_brain_region_first_integration::{
     BlueBrainFirstRegionClass, BlueBrainFirstRegionFinalizationClass,
     BlueBrainFirstRegionInputGuard, BlueBrainFirstRegionInputSource,
     BlueBrainFirstRegionInputSurface, BlueBrainFirstRegionOutputSurface,
-    BlueBrainFirstRegionPathClass, BlueBrainFirstRegionStateSurface,
-    BlueBrainSecondRegionExpansionState, BLUE_BRAIN_SECOND_REGION_EXPANSION_STATE,
+    BlueBrainFirstRegionPathClass, BlueBrainFirstRegionStateSurface, BlueBrainSecondRegionClass,
+    BlueBrainSecondRegionExpansionState, BlueBrainSecondRegionSelectionClass,
+    BLUE_BRAIN_SECOND_REGION_CLASS_SELECTION, BLUE_BRAIN_SECOND_REGION_EXPANSION_STATE,
     CANONICAL_BLUE_BRAIN_FIRST_REGION_FINALIZATION_MAP,
     CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP,
+    CANONICAL_BLUE_BRAIN_SECOND_REGION_SELECTION_MAP,
 };
 pub use canonical_reference::{
     canonical_reference_consumption_decision, canonical_reference_validity_state,
