@@ -10,6 +10,13 @@ pub enum BlueBrainFirstRegionClass {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainFirstRegionPathClass {
+    RegionToRuntimeAdvisorySignal,
+    RuntimeToRegionBoundedInput,
+    RegionToSelectionAdvisorySignal,
+    SelectionToRegionBoundedStateInput,
+    RegionReferenceSignal,
+    CaveatedDeferredBlockedRegionContractSignal,
+    ReferenceOnlyRegionContractSignal,
     RegionInputSurface,
     RegionStateSurface,
     RegionOutputAdvisorySurface,
@@ -18,7 +25,14 @@ pub enum BlueBrainFirstRegionPathClass {
     NonCanonicalInternalOnlyRegionPath,
 }
 
-pub const CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP: [BlueBrainFirstRegionPathClass; 6] = [
+pub const CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP: [BlueBrainFirstRegionPathClass; 13] = [
+    BlueBrainFirstRegionPathClass::RegionToRuntimeAdvisorySignal,
+    BlueBrainFirstRegionPathClass::RuntimeToRegionBoundedInput,
+    BlueBrainFirstRegionPathClass::RegionToSelectionAdvisorySignal,
+    BlueBrainFirstRegionPathClass::SelectionToRegionBoundedStateInput,
+    BlueBrainFirstRegionPathClass::RegionReferenceSignal,
+    BlueBrainFirstRegionPathClass::CaveatedDeferredBlockedRegionContractSignal,
+    BlueBrainFirstRegionPathClass::ReferenceOnlyRegionContractSignal,
     BlueBrainFirstRegionPathClass::RegionInputSurface,
     BlueBrainFirstRegionPathClass::RegionStateSurface,
     BlueBrainFirstRegionPathClass::RegionOutputAdvisorySurface,
@@ -69,6 +83,20 @@ pub enum BlueBrainFirstRegionAdvisoryOutputClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFirstRegionContractSignal {
+    RegionToRuntimeAdvisory,
+    RuntimeToRegionBoundedInput,
+    RegionToSelectionAdvisory,
+    SelectionToRegionBoundedStateInput,
+    RegionReference,
+    Caveated,
+    Deferred,
+    Blocked,
+    ReferenceOnly,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlueBrainFirstRegionOutputSurface {
     pub advisory_class: BlueBrainFirstRegionAdvisoryOutputClass,
     pub runtime_advisory_only: bool,
@@ -80,6 +108,8 @@ pub struct BlueBrainFirstRegionOutputSurface {
     pub direct_memory_commit: bool,
     pub direct_compute_invocation: bool,
     pub safety_override: bool,
+    pub contract_signal: BlueBrainFirstRegionContractSignal,
+    pub reference_only: bool,
 }
 
 pub fn classify_blue_brain_first_region_input_guard(
@@ -150,6 +180,33 @@ pub fn evaluate_blue_brain_first_region_attention_selection(
         }
     };
 
+    let contract_signal = if non_canonical_attention {
+        BlueBrainFirstRegionContractSignal::NonCanonicalInternalOnly
+    } else if blocked_or_deferred {
+        if matches!(
+            input.deferral_class,
+            BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred
+                | BlueBrainCandidateDeferralLifecycleClass::CandidateDeferredPendingStrongerEvidence
+                | BlueBrainCandidateDeferralLifecycleClass::CandidateDeferredPendingContextUpdate
+        ) {
+            BlueBrainFirstRegionContractSignal::Deferred
+        } else {
+            BlueBrainFirstRegionContractSignal::Blocked
+        }
+    } else if matches!(
+        input.reference_validity,
+        BlueBrainReferenceValidity::Caveated | BlueBrainReferenceValidity::Stale
+    ) {
+        BlueBrainFirstRegionContractSignal::Caveated
+    } else if matches!(
+        input.reference_validity,
+        BlueBrainReferenceValidity::ReferenceOnly
+    ) {
+        BlueBrainFirstRegionContractSignal::ReferenceOnly
+    } else {
+        BlueBrainFirstRegionContractSignal::RegionToRuntimeAdvisory
+    };
+
     (
         state,
         BlueBrainFirstRegionOutputSurface {
@@ -163,6 +220,8 @@ pub fn evaluate_blue_brain_first_region_attention_selection(
             direct_memory_commit: false,
             direct_compute_invocation: false,
             safety_override: false,
+            contract_signal,
+            reference_only: contract_signal == BlueBrainFirstRegionContractSignal::ReferenceOnly,
         },
     )
 }
@@ -173,6 +232,20 @@ mod tests {
 
     #[test]
     fn first_region_map_contains_all_required_paths() {
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainFirstRegionPathClass::RegionToRuntimeAdvisorySignal));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainFirstRegionPathClass::RuntimeToRegionBoundedInput));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainFirstRegionPathClass::RegionToSelectionAdvisorySignal));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainFirstRegionPathClass::SelectionToRegionBoundedStateInput));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainFirstRegionPathClass::RegionReferenceSignal));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainFirstRegionPathClass::CaveatedDeferredBlockedRegionContractSignal));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainFirstRegionPathClass::ReferenceOnlyRegionContractSignal));
         assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP
             .contains(&BlueBrainFirstRegionPathClass::RegionInputSurface));
         assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP
@@ -207,6 +280,10 @@ mod tests {
         assert!(!output.direct_memory_commit);
         assert!(!output.direct_compute_invocation);
         assert!(!output.safety_override);
+        assert_eq!(
+            output.contract_signal,
+            BlueBrainFirstRegionContractSignal::RegionToRuntimeAdvisory
+        );
     }
 
     #[test]
@@ -241,5 +318,66 @@ mod tests {
             non_canonical_output.advisory_class,
             BlueBrainFirstRegionAdvisoryOutputClass::NonCanonicalInternalOnly
         );
+        assert_eq!(
+            non_canonical_output.contract_signal,
+            BlueBrainFirstRegionContractSignal::NonCanonicalInternalOnly
+        );
+    }
+
+    #[test]
+    fn first_region_distinguishes_deferred_blocked_caveated_and_reference_only() {
+        let (_, deferred) = evaluate_blue_brain_first_region_attention_selection(
+            BlueBrainFirstRegionInputSurface {
+                attention_class: BlueBrainControlAttentionSelectionClass::AttentionTarget,
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred,
+                reference_validity: BlueBrainReferenceValidity::Current,
+                context_priority: BlueBrainContextEvidencePriorityClass::DeferredContext,
+            },
+        );
+        assert_eq!(
+            deferred.contract_signal,
+            BlueBrainFirstRegionContractSignal::Deferred
+        );
+
+        let (_, blocked) = evaluate_blue_brain_first_region_attention_selection(
+            BlueBrainFirstRegionInputSurface {
+                attention_class: BlueBrainControlAttentionSelectionClass::AttentionTarget,
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateRejected,
+                reference_validity: BlueBrainReferenceValidity::Current,
+                context_priority: BlueBrainContextEvidencePriorityClass::PrimaryContext,
+            },
+        );
+        assert_eq!(
+            blocked.contract_signal,
+            BlueBrainFirstRegionContractSignal::Blocked
+        );
+
+        let (_, caveated) = evaluate_blue_brain_first_region_attention_selection(
+            BlueBrainFirstRegionInputSurface {
+                attention_class: BlueBrainControlAttentionSelectionClass::AttentionTarget,
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::Caveated,
+                context_priority: BlueBrainContextEvidencePriorityClass::SupportingContext,
+            },
+        );
+        assert_eq!(
+            caveated.contract_signal,
+            BlueBrainFirstRegionContractSignal::Caveated
+        );
+
+        let (_, reference_only) = evaluate_blue_brain_first_region_attention_selection(
+            BlueBrainFirstRegionInputSurface {
+                attention_class: BlueBrainControlAttentionSelectionClass::AttentionTarget,
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::ReferenceOnly,
+                context_priority:
+                    BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+            },
+        );
+        assert_eq!(
+            reference_only.contract_signal,
+            BlueBrainFirstRegionContractSignal::ReferenceOnly
+        );
+        assert!(reference_only.reference_only);
     }
 }
