@@ -583,6 +583,28 @@ mod tests {
     }
 
     #[test]
+    fn first_region_accepts_only_canonical_input_sources() {
+        assert_eq!(
+            classify_blue_brain_first_region_input_guard(
+                BlueBrainFirstRegionInputSource::RuntimeSelectionSignal
+            ),
+            BlueBrainFirstRegionInputGuard::Canonical
+        );
+        assert_eq!(
+            classify_blue_brain_first_region_input_guard(
+                BlueBrainFirstRegionInputSource::RuntimeDeferralSignal
+            ),
+            BlueBrainFirstRegionInputGuard::Canonical
+        );
+        assert_eq!(
+            classify_blue_brain_first_region_input_guard(
+                BlueBrainFirstRegionInputSource::ContextReferenceSignal
+            ),
+            BlueBrainFirstRegionInputGuard::Canonical
+        );
+    }
+
+    #[test]
     fn first_region_rejects_non_canonical_input_sources() {
         assert_eq!(
             classify_blue_brain_first_region_input_guard(
