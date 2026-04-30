@@ -81,6 +81,24 @@ pub const CANONICAL_BLUE_BRAIN_FIRST_REGION_FINALIZATION_MAP:
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFirstRegionStabilizationClass {
+    StableFirstRegionBaseline,
+    MaintenanceHardenedRegionSurface,
+    MaintenanceHardenedDiagnosticsPath,
+    MaintenanceHardenedContractPath,
+    NonCanonicalInternalOnlyResidualPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_FIRST_REGION_STABILIZATION_MAP:
+    [BlueBrainFirstRegionStabilizationClass; 5] = [
+    BlueBrainFirstRegionStabilizationClass::StableFirstRegionBaseline,
+    BlueBrainFirstRegionStabilizationClass::MaintenanceHardenedRegionSurface,
+    BlueBrainFirstRegionStabilizationClass::MaintenanceHardenedDiagnosticsPath,
+    BlueBrainFirstRegionStabilizationClass::MaintenanceHardenedContractPath,
+    BlueBrainFirstRegionStabilizationClass::NonCanonicalInternalOnlyResidualPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainSecondRegionExpansionState {
     NotOpenedYetExplicitRescopeRequired,
 }
@@ -228,6 +246,15 @@ pub fn blue_brain_first_region_reference_contract_signal(
     output: BlueBrainFirstRegionOutputSurface,
 ) -> BlueBrainFirstRegionContractSignal {
     output.contract_signal
+}
+
+pub fn blue_brain_first_region_is_canonical_contract_signal(
+    signal: BlueBrainFirstRegionContractSignal,
+) -> bool {
+    !matches!(
+        signal,
+        BlueBrainFirstRegionContractSignal::NonCanonicalInternalOnly
+    )
 }
 
 pub fn evaluate_blue_brain_first_region_attention_selection(
@@ -456,6 +483,23 @@ mod tests {
             .contains(&BlueBrainFirstRegionFinalizationClass::SecondRegionNotOpenedYet));
         assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_FINALIZATION_MAP
             .contains(&BlueBrainFirstRegionFinalizationClass::NonCanonicalInternalOnlyRegionPath));
+    }
+
+    #[test]
+    fn first_region_stabilization_map_contains_required_classes() {
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_STABILIZATION_MAP
+            .contains(&BlueBrainFirstRegionStabilizationClass::StableFirstRegionBaseline));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_STABILIZATION_MAP
+            .contains(&BlueBrainFirstRegionStabilizationClass::MaintenanceHardenedRegionSurface));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_STABILIZATION_MAP
+            .contains(&BlueBrainFirstRegionStabilizationClass::MaintenanceHardenedDiagnosticsPath));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_STABILIZATION_MAP
+            .contains(&BlueBrainFirstRegionStabilizationClass::MaintenanceHardenedContractPath));
+        assert!(
+            CANONICAL_BLUE_BRAIN_FIRST_REGION_STABILIZATION_MAP.contains(
+                &BlueBrainFirstRegionStabilizationClass::NonCanonicalInternalOnlyResidualPath
+            )
+        );
     }
 
     #[test]
@@ -702,5 +746,15 @@ mod tests {
         assert_eq!(runtime_signal, selection_signal);
         assert_eq!(runtime_signal, reference_signal);
         assert_eq!(runtime_signal, BlueBrainFirstRegionContractSignal::Caveated);
+        assert!(blue_brain_first_region_is_canonical_contract_signal(
+            runtime_signal
+        ));
+    }
+
+    #[test]
+    fn first_region_non_canonical_contract_signal_is_explicitly_non_canonical() {
+        assert!(!blue_brain_first_region_is_canonical_contract_signal(
+            BlueBrainFirstRegionContractSignal::NonCanonicalInternalOnly
+        ));
     }
 }
