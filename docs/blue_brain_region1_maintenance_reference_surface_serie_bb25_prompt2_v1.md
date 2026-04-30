@@ -19,6 +19,7 @@ gebaut und kein Scope über advisory-/diagnostic-only hinaus erweitert.
 
 ### C) Maintenance-facing index/reference path
 - `docs/README.md` (operativer Einstieg)
+- `docs/roadmap/REPO_MAP.md` (schneller maintenance-first Repo-Einstieg)
 - `docs/blue_brain_bb23_freeze_maintenance_baseline_serie_bb23_prompt1_v1.md`
 - `docs/blue_brain_bb23_maintenance_guard_rails_allowed_change_envelope_serie_bb23_prompt2_v1.md`
 
@@ -57,6 +58,7 @@ Für Region-1-bezogene Doku gilt:
 2. Keine aspirativen Aussagen über weitere Regionen oder Autoritätsausbau.
 3. Historische Prompt-Dokus bleiben zulässig, aber als Aufbau-/Traceability-Fläche, nicht als neue operative Baseline.
 4. Maintenance-/Freeze-Kontext aus BB23 bleibt übergeordnet verbindlich.
+5. Region-2-/Mehrfachregionen-Formulierungen sind nicht maintenance-default und bleiben außerhalb dieser Referenzfläche.
 
 ## 5) Targeted Drift-Checks für diese Referenzfläche
 

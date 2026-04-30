@@ -768,6 +768,7 @@ mod tests {
         assert!(doc.contains("Maintenance-facing index/reference path"));
         assert!(doc.contains("Non-canonical/internal-only or legacy region-1 path"));
         assert!(doc.contains("region-2-not-opened"));
+        assert!(doc.contains("docs/roadmap/REPO_MAP.md"));
         assert!(doc.contains("first_region_stabilization_map_contains_required_classes"));
     }
 
@@ -778,5 +779,15 @@ mod tests {
         assert!(doc.contains(
             "docs/blue_brain_region1_maintenance_reference_surface_serie_bb25_prompt2_v1.md"
         ));
+    }
+
+    #[test]
+    fn roadmap_map_exposes_region1_maintenance_entrypoint_and_boundary() {
+        let doc = include_str!("../../../docs/roadmap/REPO_MAP.md");
+        assert!(doc.contains("Region-1 maintenance reference surface (BB25)"));
+        assert!(doc.contains(
+            "docs/blue_brain_region1_maintenance_reference_surface_serie_bb25_prompt2_v1.md"
+        ));
+        assert!(doc.contains("Region 1 bleibt die einzige geöffnete Regionenklasse"));
     }
 }
