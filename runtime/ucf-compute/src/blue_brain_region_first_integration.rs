@@ -779,6 +779,24 @@ mod tests {
         assert!(doc.contains(
             "docs/blue_brain_region1_maintenance_reference_surface_serie_bb25_prompt2_v1.md"
         ));
+        assert!(doc.contains(
+            "docs/blue_brain_region1_final_stabilization_sweep_serie_bb25_prompt3_v1.md"
+        ));
+    }
+
+    #[test]
+    fn region1_final_stabilization_sweep_doc_pins_status_classes_and_decision() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_region1_final_stabilization_sweep_serie_bb25_prompt3_v1.md"
+        );
+        assert!(doc.contains("Stable maintenance-hardened region-1 baseline"));
+        assert!(doc.contains("Usable with caveats"));
+        assert!(doc.contains("Advisory-only"));
+        assert!(doc.contains("Diagnostic-only / deferred"));
+        assert!(doc.contains("Non-canonical / internal-only"));
+        assert!(doc.contains("Maintenance genügt"));
+        assert!(doc.contains("expliziter Region-2-Re-Scope"));
+        assert!(doc.contains("NotOpenedYetExplicitRescopeRequired"));
     }
 
     #[test]
@@ -787,6 +805,9 @@ mod tests {
         assert!(doc.contains("Region-1 maintenance reference surface (BB25)"));
         assert!(doc.contains(
             "docs/blue_brain_region1_maintenance_reference_surface_serie_bb25_prompt2_v1.md"
+        ));
+        assert!(doc.contains(
+            "docs/blue_brain_region1_final_stabilization_sweep_serie_bb25_prompt3_v1.md"
         ));
         assert!(doc.contains("Region 1 bleibt die einzige geöffnete Regionenklasse"));
     }

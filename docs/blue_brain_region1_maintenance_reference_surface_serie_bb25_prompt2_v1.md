@@ -12,6 +12,7 @@ gebaut und kein Scope über advisory-/diagnostic-only hinaus erweitert.
 - `docs/blue_brain_first_region_finalization_serie_bb24_prompt10_v1.md`
 - `docs/blue_brain_first_region_stabilization_serie_bb25_prompt1_v1.md`
 - `docs/blue_brain_region1_maintenance_reference_surface_serie_bb25_prompt2_v1.md` (diese Datei)
+- `docs/blue_brain_region1_final_stabilization_sweep_serie_bb25_prompt3_v1.md`
 
 ### B) Canonical region-1 test surface
 - `runtime/ucf-compute/src/blue_brain_region_first_integration.rs`
@@ -70,3 +71,5 @@ Targeted checks für Region-1-Doku-/Testkonsistenz:
 - `region1_maintenance_reference_doc_pins_canonical_maps_and_boundaries`
 
 Damit bleibt Region 1 schnell auffindbar, operativ eindeutig und maintenance-fähig – ohne implizite Öffnung einer zweiten Regionenklasse.
+
+BB25 Prompt 3 finalisiert diese Referenzfläche als maintenance-hardened Abschlusskarte und bestätigt den Maintenance-Modus als Default.
