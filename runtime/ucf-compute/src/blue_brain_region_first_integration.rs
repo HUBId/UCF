@@ -92,9 +92,33 @@ pub enum BlueBrainFirstRegionContractSignal {
     Caveated,
     Deferred,
     Blocked,
+    Insufficient,
+    DiagnosticOnly,
     ReferenceOnly,
     NonCanonicalInternalOnly,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFirstRegionDiagnosticState {
+    RegionAdvisoryOnlyDiagnostic,
+    RegionCaveatedDiagnostic,
+    RegionDeferredDiagnostic,
+    RegionBlockedDiagnostic,
+    RegionInsufficientDiagnostic,
+    RegionDiagnosticOnlyState,
+    NonCanonicalInternalOnlyRegionDiagnosticPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_FIRST_REGION_DIAGNOSTIC_MAP: [BlueBrainFirstRegionDiagnosticState;
+    7] = [
+    BlueBrainFirstRegionDiagnosticState::RegionAdvisoryOnlyDiagnostic,
+    BlueBrainFirstRegionDiagnosticState::RegionCaveatedDiagnostic,
+    BlueBrainFirstRegionDiagnosticState::RegionDeferredDiagnostic,
+    BlueBrainFirstRegionDiagnosticState::RegionBlockedDiagnostic,
+    BlueBrainFirstRegionDiagnosticState::RegionInsufficientDiagnostic,
+    BlueBrainFirstRegionDiagnosticState::RegionDiagnosticOnlyState,
+    BlueBrainFirstRegionDiagnosticState::NonCanonicalInternalOnlyRegionDiagnosticPath,
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlueBrainFirstRegionOutputSurface {
@@ -109,6 +133,7 @@ pub struct BlueBrainFirstRegionOutputSurface {
     pub direct_compute_invocation: bool,
     pub safety_override: bool,
     pub contract_signal: BlueBrainFirstRegionContractSignal,
+    pub diagnostic_state: BlueBrainFirstRegionDiagnosticState,
     pub reference_only: bool,
 }
 
@@ -200,11 +225,47 @@ pub fn evaluate_blue_brain_first_region_attention_selection(
         BlueBrainFirstRegionContractSignal::Caveated
     } else if matches!(
         input.reference_validity,
+        BlueBrainReferenceValidity::Insufficient
+    ) {
+        BlueBrainFirstRegionContractSignal::Insufficient
+    } else if matches!(
+        input.reference_validity,
         BlueBrainReferenceValidity::ReferenceOnly
     ) {
-        BlueBrainFirstRegionContractSignal::ReferenceOnly
+        BlueBrainFirstRegionContractSignal::DiagnosticOnly
     } else {
         BlueBrainFirstRegionContractSignal::RegionToRuntimeAdvisory
+    };
+
+    let diagnostic_state = match contract_signal {
+        BlueBrainFirstRegionContractSignal::RegionToRuntimeAdvisory
+        | BlueBrainFirstRegionContractSignal::RegionToSelectionAdvisory => {
+            BlueBrainFirstRegionDiagnosticState::RegionAdvisoryOnlyDiagnostic
+        }
+        BlueBrainFirstRegionContractSignal::Caveated => {
+            BlueBrainFirstRegionDiagnosticState::RegionCaveatedDiagnostic
+        }
+        BlueBrainFirstRegionContractSignal::Deferred => {
+            BlueBrainFirstRegionDiagnosticState::RegionDeferredDiagnostic
+        }
+        BlueBrainFirstRegionContractSignal::Blocked => {
+            BlueBrainFirstRegionDiagnosticState::RegionBlockedDiagnostic
+        }
+        BlueBrainFirstRegionContractSignal::Insufficient => {
+            BlueBrainFirstRegionDiagnosticState::RegionInsufficientDiagnostic
+        }
+        BlueBrainFirstRegionContractSignal::DiagnosticOnly
+        | BlueBrainFirstRegionContractSignal::ReferenceOnly
+        | BlueBrainFirstRegionContractSignal::RegionReference => {
+            BlueBrainFirstRegionDiagnosticState::RegionDiagnosticOnlyState
+        }
+        BlueBrainFirstRegionContractSignal::NonCanonicalInternalOnly => {
+            BlueBrainFirstRegionDiagnosticState::NonCanonicalInternalOnlyRegionDiagnosticPath
+        }
+        BlueBrainFirstRegionContractSignal::RuntimeToRegionBoundedInput
+        | BlueBrainFirstRegionContractSignal::SelectionToRegionBoundedStateInput => {
+            BlueBrainFirstRegionDiagnosticState::RegionAdvisoryOnlyDiagnostic
+        }
     };
 
     (
@@ -221,7 +282,12 @@ pub fn evaluate_blue_brain_first_region_attention_selection(
             direct_compute_invocation: false,
             safety_override: false,
             contract_signal,
-            reference_only: contract_signal == BlueBrainFirstRegionContractSignal::ReferenceOnly,
+            diagnostic_state,
+            reference_only: matches!(
+                contract_signal,
+                BlueBrainFirstRegionContractSignal::DiagnosticOnly
+                    | BlueBrainFirstRegionContractSignal::ReferenceOnly
+            ),
         },
     )
 }
@@ -261,6 +327,25 @@ mod tests {
     }
 
     #[test]
+    fn first_region_diagnostic_map_contains_all_required_states() {
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_DIAGNOSTIC_MAP
+            .contains(&BlueBrainFirstRegionDiagnosticState::RegionAdvisoryOnlyDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_DIAGNOSTIC_MAP
+            .contains(&BlueBrainFirstRegionDiagnosticState::RegionCaveatedDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_DIAGNOSTIC_MAP
+            .contains(&BlueBrainFirstRegionDiagnosticState::RegionDeferredDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_DIAGNOSTIC_MAP
+            .contains(&BlueBrainFirstRegionDiagnosticState::RegionBlockedDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_DIAGNOSTIC_MAP
+            .contains(&BlueBrainFirstRegionDiagnosticState::RegionInsufficientDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_DIAGNOSTIC_MAP
+            .contains(&BlueBrainFirstRegionDiagnosticState::RegionDiagnosticOnlyState));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_DIAGNOSTIC_MAP.contains(
+            &BlueBrainFirstRegionDiagnosticState::NonCanonicalInternalOnlyRegionDiagnosticPath
+        ));
+    }
+
+    #[test]
     fn first_region_output_is_advisory_and_non_authoritative() {
         let (_, output) = evaluate_blue_brain_first_region_attention_selection(
             BlueBrainFirstRegionInputSurface {
@@ -283,6 +368,10 @@ mod tests {
         assert_eq!(
             output.contract_signal,
             BlueBrainFirstRegionContractSignal::RegionToRuntimeAdvisory
+        );
+        assert_eq!(
+            output.diagnostic_state,
+            BlueBrainFirstRegionDiagnosticState::RegionAdvisoryOnlyDiagnostic
         );
     }
 
@@ -322,6 +411,10 @@ mod tests {
             non_canonical_output.contract_signal,
             BlueBrainFirstRegionContractSignal::NonCanonicalInternalOnly
         );
+        assert_eq!(
+            non_canonical_output.diagnostic_state,
+            BlueBrainFirstRegionDiagnosticState::NonCanonicalInternalOnlyRegionDiagnosticPath
+        );
     }
 
     #[test]
@@ -338,6 +431,10 @@ mod tests {
             deferred.contract_signal,
             BlueBrainFirstRegionContractSignal::Deferred
         );
+        assert_eq!(
+            deferred.diagnostic_state,
+            BlueBrainFirstRegionDiagnosticState::RegionDeferredDiagnostic
+        );
 
         let (_, blocked) = evaluate_blue_brain_first_region_attention_selection(
             BlueBrainFirstRegionInputSurface {
@@ -350,6 +447,10 @@ mod tests {
         assert_eq!(
             blocked.contract_signal,
             BlueBrainFirstRegionContractSignal::Blocked
+        );
+        assert_eq!(
+            blocked.diagnostic_state,
+            BlueBrainFirstRegionDiagnosticState::RegionBlockedDiagnostic
         );
 
         let (_, caveated) = evaluate_blue_brain_first_region_attention_selection(
@@ -364,6 +465,10 @@ mod tests {
             caveated.contract_signal,
             BlueBrainFirstRegionContractSignal::Caveated
         );
+        assert_eq!(
+            caveated.diagnostic_state,
+            BlueBrainFirstRegionDiagnosticState::RegionCaveatedDiagnostic
+        );
 
         let (_, reference_only) = evaluate_blue_brain_first_region_attention_selection(
             BlueBrainFirstRegionInputSurface {
@@ -376,8 +481,35 @@ mod tests {
         );
         assert_eq!(
             reference_only.contract_signal,
-            BlueBrainFirstRegionContractSignal::ReferenceOnly
+            BlueBrainFirstRegionContractSignal::DiagnosticOnly
         );
         assert!(reference_only.reference_only);
+        assert_eq!(
+            reference_only.diagnostic_state,
+            BlueBrainFirstRegionDiagnosticState::RegionDiagnosticOnlyState
+        );
+    }
+
+    #[test]
+    fn first_region_marks_insufficient_without_promoting_to_caveated_or_blocked() {
+        let (_, insufficient) = evaluate_blue_brain_first_region_attention_selection(
+            BlueBrainFirstRegionInputSurface {
+                attention_class: BlueBrainControlAttentionSelectionClass::AttentionTarget,
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::Insufficient,
+                context_priority: BlueBrainContextEvidencePriorityClass::InsufficientContext,
+            },
+        );
+
+        assert_eq!(
+            insufficient.contract_signal,
+            BlueBrainFirstRegionContractSignal::Insufficient
+        );
+        assert_eq!(
+            insufficient.diagnostic_state,
+            BlueBrainFirstRegionDiagnosticState::RegionInsufficientDiagnostic
+        );
+        assert!(!insufficient.direct_execution_trigger);
+        assert!(!insufficient.direct_retry_trigger);
     }
 }
