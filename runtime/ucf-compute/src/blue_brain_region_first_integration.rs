@@ -107,6 +107,32 @@ pub const BLUE_BRAIN_SECOND_REGION_EXPANSION_STATE: BlueBrainSecondRegionExpansi
     BlueBrainSecondRegionExpansionState::NotOpenedYetExplicitRescopeRequired;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainSecondRegionClass {
+    MemoryContextRelated,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainSecondRegionSelectionClass {
+    SecondExpansionCandidate,
+    ViableButNotSecond,
+    LaterPhaseCandidate,
+    SimulationOnlyDeferredCandidate,
+    NonCanonicalInternalOnlyPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_SECOND_REGION_SELECTION_MAP: [BlueBrainSecondRegionSelectionClass;
+    5] = [
+    BlueBrainSecondRegionSelectionClass::SecondExpansionCandidate,
+    BlueBrainSecondRegionSelectionClass::ViableButNotSecond,
+    BlueBrainSecondRegionSelectionClass::LaterPhaseCandidate,
+    BlueBrainSecondRegionSelectionClass::SimulationOnlyDeferredCandidate,
+    BlueBrainSecondRegionSelectionClass::NonCanonicalInternalOnlyPath,
+];
+
+pub const BLUE_BRAIN_SECOND_REGION_CLASS_SELECTION: BlueBrainSecondRegionClass =
+    BlueBrainSecondRegionClass::MemoryContextRelated;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainFirstRegionStateSurface {
     ActiveBoundedAdvisoryOnly,
     BlockedDeferred,
@@ -511,6 +537,28 @@ mod tests {
     }
 
     #[test]
+    fn second_region_selection_map_contains_required_classes() {
+        assert!(CANONICAL_BLUE_BRAIN_SECOND_REGION_SELECTION_MAP
+            .contains(&BlueBrainSecondRegionSelectionClass::SecondExpansionCandidate));
+        assert!(CANONICAL_BLUE_BRAIN_SECOND_REGION_SELECTION_MAP
+            .contains(&BlueBrainSecondRegionSelectionClass::ViableButNotSecond));
+        assert!(CANONICAL_BLUE_BRAIN_SECOND_REGION_SELECTION_MAP
+            .contains(&BlueBrainSecondRegionSelectionClass::LaterPhaseCandidate));
+        assert!(CANONICAL_BLUE_BRAIN_SECOND_REGION_SELECTION_MAP
+            .contains(&BlueBrainSecondRegionSelectionClass::SimulationOnlyDeferredCandidate));
+        assert!(CANONICAL_BLUE_BRAIN_SECOND_REGION_SELECTION_MAP
+            .contains(&BlueBrainSecondRegionSelectionClass::NonCanonicalInternalOnlyPath));
+    }
+
+    #[test]
+    fn second_region_class_selection_is_memory_context_related() {
+        assert_eq!(
+            BLUE_BRAIN_SECOND_REGION_CLASS_SELECTION,
+            BlueBrainSecondRegionClass::MemoryContextRelated
+        );
+    }
+
+    #[test]
     fn first_region_output_is_advisory_and_non_authoritative() {
         let (_, output) = evaluate_blue_brain_first_region_attention_selection(
             BlueBrainFirstRegionInputSurface {
@@ -810,5 +858,20 @@ mod tests {
             "docs/blue_brain_region1_final_stabilization_sweep_serie_bb25_prompt3_v1.md"
         ));
         assert!(doc.contains("Region 1 bleibt die einzige geöffnete Regionenklasse"));
+    }
+
+    #[test]
+    fn second_region_selection_doc_pins_candidate_statuses_and_guards() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_second_region_selection_serie_bb26_prompt1_v1.md"
+        );
+        assert!(doc.contains("Second-expansion candidate"));
+        assert!(doc.contains("Memory/Context-related"));
+        assert!(doc.contains("Viable but not second"));
+        assert!(doc.contains("Later-phase candidate"));
+        assert!(doc.contains("Simulation-only/deferred candidate"));
+        assert!(doc.contains("Non-canonical/internal-only path"));
+        assert!(doc.contains("keine direkte Action-/Retry-/Memory-/Compute-Autorität"));
+        assert!(doc.contains("keine Öffnung einer dritten Regionenklasse"));
     }
 }
