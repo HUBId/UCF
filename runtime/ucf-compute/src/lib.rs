@@ -49,6 +49,7 @@ pub mod blue_brain_combined_retrieval;
 pub mod blue_brain_dynamics;
 pub mod blue_brain_memory;
 pub mod blue_brain_minimal_execution;
+pub mod blue_brain_region_first_integration;
 #[cfg(any(
     feature = "compute-candle",
     feature = "llm-candle",
@@ -171,6 +172,14 @@ pub use blue_brain_minimal_execution::{
     BlueBrainMinimalExecutionReport, BlueBrainMinimalExecutionRequest,
     BlueBrainMinimalExecutionResultBoundary, BlueBrainMinimalExecutionState,
     BlueBrainMinimalExecutionTraceCore, BlueBrainProposalExecutionFeedbackClass,
+};
+pub use blue_brain_region_first_integration::{
+    classify_blue_brain_first_region_input_guard,
+    evaluate_blue_brain_first_region_attention_selection, BlueBrainFirstRegionAdvisoryOutputClass,
+    BlueBrainFirstRegionClass, BlueBrainFirstRegionInputGuard, BlueBrainFirstRegionInputSource,
+    BlueBrainFirstRegionInputSurface, BlueBrainFirstRegionOutputSurface,
+    BlueBrainFirstRegionPathClass, BlueBrainFirstRegionStateSurface,
+    CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP,
 };
 pub use canonical_reference::{
     canonical_reference_consumption_decision, canonical_reference_validity_state,
