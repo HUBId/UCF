@@ -13,6 +13,7 @@ Zweck: schneller, repo-treuer Einstieg in die **aktuell operativen** Linien ohne
   - `docs/blue_brain_region1_maintenance_reference_surface_serie_bb25_prompt2_v1.md`
   - `docs/blue_brain_region1_final_stabilization_sweep_serie_bb25_prompt3_v1.md`
   - `docs/blue_brain_post_bb25_roadmap_decision_serie_bb25_prompt4_v1.md`
+  - `docs/blue_brain_post_bb25_maintenance_default_decision_map_serie_bb25_prompt5_v1.md`
 - **Cross-line state semantics (BB20 P2):** `docs/blue_brain_bb20_cross_line_terminology_state_harmonization_serie_bb20_prompt2_v1.md`
 - **Final readiness sweep + next-priority lock (BB20 P4):** `docs/blue_brain_bb20_final_readiness_sweep_next_priority_lock_serie_bb20_prompt4_v1.md`
 - **Docs operational index:** `docs/README.md`

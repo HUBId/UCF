@@ -42,6 +42,13 @@ Nicht-Maintenance (nur per explizitem Re-Scope):
 - neue operative Autoritätskanäle,
 - Scope-/Capability-Erweiterung über BB23-Envelope hinaus.
 
+## 5) Kanonische Post-BB25 Decision-Map
+
+Die explizite Decision-Map für den Maintenance-Default nach BB25 steht in:
+- `docs/blue_brain_post_bb25_maintenance_default_decision_map_serie_bb25_prompt5_v1.md`
+
+Sie hält Region 1 als einzige aktive Expansion fest, markiert Region 2 als bewusst nicht aktiv (nur expliziter Re-Scope) und verhindert implizite Serienfortsetzung.
+
 ## 5) Konsequenz für die Roadmap-Führung
 
 Zur Vermeidung einer impliziten neuen Serie gilt:
