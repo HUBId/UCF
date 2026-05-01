@@ -166,6 +166,139 @@ pub const CANONICAL_BLUE_BRAIN_SECOND_REGION_INTEGRATION_MAP: [BlueBrainSecondRe
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainInterRegionRelationClass {
+    Region1ToRegion2Bounded,
+    Region2ToRegion1Bounded,
+    SharedReferenceMediated,
+    CaveatedInterRegion,
+    BlockedDeferredInterRegion,
+    NonCanonicalInternalOnlyPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_INTER_REGION_RELATION_MAP: [BlueBrainInterRegionRelationClass; 6] = [
+    BlueBrainInterRegionRelationClass::Region1ToRegion2Bounded,
+    BlueBrainInterRegionRelationClass::Region2ToRegion1Bounded,
+    BlueBrainInterRegionRelationClass::SharedReferenceMediated,
+    BlueBrainInterRegionRelationClass::CaveatedInterRegion,
+    BlueBrainInterRegionRelationClass::BlockedDeferredInterRegion,
+    BlueBrainInterRegionRelationClass::NonCanonicalInternalOnlyPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainInterRegionRelationSurface {
+    pub relation_class: BlueBrainInterRegionRelationClass,
+    pub region1_to_region2_advisory_only: bool,
+    pub region2_to_region1_advisory_only: bool,
+    pub reference_mediated_only: bool,
+    pub caveated: bool,
+    pub deferred: bool,
+    pub blocked: bool,
+    pub direct_action_selection: bool,
+    pub direct_execution_trigger: bool,
+    pub direct_retry_trigger: bool,
+    pub direct_memory_commit: bool,
+    pub direct_compute_invocation: bool,
+    pub safety_override: bool,
+}
+
+pub fn evaluate_blue_brain_inter_region_relation(
+    region1: BlueBrainFirstRegionOutputSurface,
+    region2: BlueBrainSecondRegionOutputSurface,
+) -> BlueBrainInterRegionRelationSurface {
+    let non_canonical = matches!(
+        region1.contract_signal,
+        BlueBrainFirstRegionContractSignal::NonCanonicalInternalOnly
+    ) || matches!(
+        region2.runtime_contract_signal,
+        BlueBrainSecondRegionContractSignal::NonCanonicalInternalOnly
+    ) || matches!(
+        region2.selection_contract_signal,
+        BlueBrainSecondRegionContractSignal::NonCanonicalInternalOnly
+    ) || matches!(
+        region2.reference_contract_signal,
+        BlueBrainSecondRegionContractSignal::NonCanonicalInternalOnly
+    );
+
+    let blocked = matches!(
+        region1.contract_signal,
+        BlueBrainFirstRegionContractSignal::Blocked
+    ) || matches!(
+        region2.runtime_contract_signal,
+        BlueBrainSecondRegionContractSignal::Blocked
+    ) || matches!(
+        region2.selection_contract_signal,
+        BlueBrainSecondRegionContractSignal::Blocked
+    );
+
+    let deferred = matches!(
+        region1.contract_signal,
+        BlueBrainFirstRegionContractSignal::Deferred
+    ) || matches!(
+        region2.runtime_contract_signal,
+        BlueBrainSecondRegionContractSignal::Deferred
+    ) || matches!(
+        region2.selection_contract_signal,
+        BlueBrainSecondRegionContractSignal::Deferred
+    );
+
+    let caveated = matches!(
+        region1.contract_signal,
+        BlueBrainFirstRegionContractSignal::Caveated
+            | BlueBrainFirstRegionContractSignal::Insufficient
+    ) || matches!(
+        region2.runtime_contract_signal,
+        BlueBrainSecondRegionContractSignal::Caveated
+    ) || matches!(
+        region2.selection_contract_signal,
+        BlueBrainSecondRegionContractSignal::Caveated
+    ) || matches!(
+        region2.reference_contract_signal,
+        BlueBrainSecondRegionContractSignal::Caveated
+    );
+
+    let relation_class = if non_canonical {
+        BlueBrainInterRegionRelationClass::NonCanonicalInternalOnlyPath
+    } else if blocked || deferred {
+        BlueBrainInterRegionRelationClass::BlockedDeferredInterRegion
+    } else if caveated {
+        BlueBrainInterRegionRelationClass::CaveatedInterRegion
+    } else if matches!(
+        region2.reference_contract_signal,
+        BlueBrainSecondRegionContractSignal::ReferenceOnly
+            | BlueBrainSecondRegionContractSignal::RegionReferenceSignal
+    ) || region1.reference_only
+    {
+        BlueBrainInterRegionRelationClass::SharedReferenceMediated
+    } else if matches!(
+        region1.contract_signal,
+        BlueBrainFirstRegionContractSignal::RegionToRuntimeAdvisory
+            | BlueBrainFirstRegionContractSignal::RegionToSelectionAdvisory
+    ) {
+        BlueBrainInterRegionRelationClass::Region1ToRegion2Bounded
+    } else {
+        BlueBrainInterRegionRelationClass::Region2ToRegion1Bounded
+    };
+
+    BlueBrainInterRegionRelationSurface {
+        relation_class,
+        region1_to_region2_advisory_only: region1.runtime_advisory_only
+            && region1.selection_advisory_only,
+        region2_to_region1_advisory_only: region2.runtime_advisory_only
+            && region2.selection_advisory_only,
+        reference_mediated_only: region1.reference_bounded_only && region2.reference_bounded_only,
+        caveated,
+        deferred,
+        blocked,
+        direct_action_selection: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        safety_override: false,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainSecondRegionStateSurface {
     ActiveBoundedAdvisoryOnly,
     CaveatedReferenceState,
@@ -976,6 +1109,119 @@ mod tests {
         assert!(doc.contains("region-2-to-selection advisory signal"));
         assert!(doc.contains("selection-to-region-2 bounded state input"));
         assert!(doc.contains("region-2-reference signal"));
+    }
+
+    #[test]
+    fn inter_region_relation_map_contains_required_classes() {
+        assert!(CANONICAL_BLUE_BRAIN_INTER_REGION_RELATION_MAP
+            .contains(&BlueBrainInterRegionRelationClass::Region1ToRegion2Bounded));
+        assert!(CANONICAL_BLUE_BRAIN_INTER_REGION_RELATION_MAP
+            .contains(&BlueBrainInterRegionRelationClass::Region2ToRegion1Bounded));
+        assert!(CANONICAL_BLUE_BRAIN_INTER_REGION_RELATION_MAP
+            .contains(&BlueBrainInterRegionRelationClass::SharedReferenceMediated));
+        assert!(CANONICAL_BLUE_BRAIN_INTER_REGION_RELATION_MAP
+            .contains(&BlueBrainInterRegionRelationClass::CaveatedInterRegion));
+        assert!(CANONICAL_BLUE_BRAIN_INTER_REGION_RELATION_MAP
+            .contains(&BlueBrainInterRegionRelationClass::BlockedDeferredInterRegion));
+        assert!(CANONICAL_BLUE_BRAIN_INTER_REGION_RELATION_MAP
+            .contains(&BlueBrainInterRegionRelationClass::NonCanonicalInternalOnlyPath));
+    }
+
+    #[test]
+    fn inter_region_relation_stays_advisory_only_without_direct_authority() {
+        let (_, first_output) = evaluate_blue_brain_first_region_attention_selection(
+            BlueBrainFirstRegionInputSurface {
+                attention_class: BlueBrainControlAttentionSelectionClass::AttentionTarget,
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::Current,
+                context_priority: BlueBrainContextEvidencePriorityClass::PrimaryContext,
+            },
+        );
+        let (_, second_output) =
+            evaluate_blue_brain_second_region_memory_context(BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::Current,
+                context_priority: BlueBrainContextEvidencePriorityClass::SupportingContext,
+            });
+
+        let relation = evaluate_blue_brain_inter_region_relation(first_output, second_output);
+        assert!(relation.region1_to_region2_advisory_only);
+        assert!(relation.region2_to_region1_advisory_only);
+        assert!(relation.reference_mediated_only);
+        assert!(!relation.direct_action_selection);
+        assert!(!relation.direct_execution_trigger);
+        assert!(!relation.direct_retry_trigger);
+        assert!(!relation.direct_memory_commit);
+        assert!(!relation.direct_compute_invocation);
+        assert!(!relation.safety_override);
+    }
+
+    #[test]
+    fn inter_region_relation_distinguishes_caveated_deferred_and_shared_reference() {
+        let (_, first_output) = evaluate_blue_brain_first_region_attention_selection(
+            BlueBrainFirstRegionInputSurface {
+                attention_class: BlueBrainControlAttentionSelectionClass::AttentionTarget,
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::Current,
+                context_priority: BlueBrainContextEvidencePriorityClass::SupportingContext,
+            },
+        );
+        let (_, second_caveated) =
+            evaluate_blue_brain_second_region_memory_context(BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::Caveated,
+                context_priority: BlueBrainContextEvidencePriorityClass::SupportingContext,
+            });
+        let caveated = evaluate_blue_brain_inter_region_relation(first_output, second_caveated);
+        assert_eq!(
+            caveated.relation_class,
+            BlueBrainInterRegionRelationClass::CaveatedInterRegion
+        );
+
+        let (_, second_deferred) =
+            evaluate_blue_brain_second_region_memory_context(BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred,
+                reference_validity: BlueBrainReferenceValidity::Current,
+                context_priority: BlueBrainContextEvidencePriorityClass::DeferredContext,
+            });
+        let deferred = evaluate_blue_brain_inter_region_relation(first_output, second_deferred);
+        assert_eq!(
+            deferred.relation_class,
+            BlueBrainInterRegionRelationClass::BlockedDeferredInterRegion
+        );
+        assert!(deferred.deferred);
+
+        let (_, second_reference_only) =
+            evaluate_blue_brain_second_region_memory_context(BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::ReferenceOnly,
+                context_priority: BlueBrainContextEvidencePriorityClass::SupportingContext,
+            });
+        let shared_ref =
+            evaluate_blue_brain_inter_region_relation(first_output, second_reference_only);
+        assert_eq!(
+            shared_ref.relation_class,
+            BlueBrainInterRegionRelationClass::SharedReferenceMediated
+        );
+    }
+
+    #[test]
+    fn inter_region_relation_doc_pins_scope_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_first_inter_region_relation_line_serie_bb26_prompt4_v1.md"
+        );
+        assert!(doc.contains("region-1-to-region-2 bounded relation"));
+        assert!(doc.contains("region-2-to-region-1 bounded relation"));
+        assert!(doc.contains("shared reference-mediated relation"));
+        assert!(doc.contains("caveated inter-region relation"));
+        assert!(doc.contains("blocked/deferred inter-region relation"));
+        assert!(doc.contains("non-canonical/internal-only inter-region path"));
+        assert!(doc.contains("no direct action selection"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
     }
 
     #[test]
