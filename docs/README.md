@@ -29,6 +29,10 @@ Dieses README ist die **kanonische Einstiegsfläche** für operative Doku-Pfade 
   - `docs/blue_brain_second_region_integration_serie_bb26_prompt2_v1.md`
 - **Region-2 runtime/selection/reference contract line (BB26 P3):**
   - `docs/blue_brain_second_region_runtime_selection_reference_contract_serie_bb26_prompt3_v1.md`
+- **Region-2 first bounded inter-region relation line (BB26 P4):**
+  - `docs/blue_brain_first_inter_region_relation_line_serie_bb26_prompt4_v1.md`
+- **Region-2 diagnostics/caveat/deferred semantics line (BB26 P5):**
+  - `docs/blue_brain_second_region_diagnostics_caveat_deferred_semantics_serie_bb26_prompt5_v1.md`
 - **BlueBrain/Runtime/Selection hardening line (BB19):**
   - `docs/blue_brain_runtime_selection_contract_hardening_serie_bb19_prompt1_v1.md`
   - `docs/blue_brain_runtime_selection_diagnostics_hardening_serie_bb19_prompt2_v1.md`
