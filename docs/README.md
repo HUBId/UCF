@@ -39,6 +39,9 @@ Dieses README ist die **kanonische Einstiegsfläche** für operative Doku-Pfade 
   - `docs/blue_brain_two_region_guard_contract_consistency_serie_bb26_prompt7_v1.md`
 - **BB26 readiness sweep / second-region expansion boundary (BB26 P8):**
   - `docs/blue_brain_bb26_readiness_sweep_second_region_expansion_boundary_serie_bb26_prompt8_v1.md`
+- **Two-region maintenance stabilization/reference line (BB27):**
+  - `docs/blue_brain_two_region_maintenance_stabilization_serie_bb27_prompt1_v1.md`
+  - `docs/blue_brain_two_region_docs_tests_reference_cleanup_serie_bb27_prompt2_v1.md`
 - **BlueBrain/Runtime/Selection hardening line (BB19):**
   - `docs/blue_brain_runtime_selection_contract_hardening_serie_bb19_prompt1_v1.md`
   - `docs/blue_brain_runtime_selection_diagnostics_hardening_serie_bb19_prompt2_v1.md`
