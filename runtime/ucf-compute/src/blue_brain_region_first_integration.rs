@@ -248,12 +248,15 @@ pub fn evaluate_blue_brain_inter_region_relation(
     ) || matches!(
         region2.runtime_contract_signal,
         BlueBrainSecondRegionContractSignal::Caveated
+            | BlueBrainSecondRegionContractSignal::Insufficient
     ) || matches!(
         region2.selection_contract_signal,
         BlueBrainSecondRegionContractSignal::Caveated
+            | BlueBrainSecondRegionContractSignal::Insufficient
     ) || matches!(
         region2.reference_contract_signal,
         BlueBrainSecondRegionContractSignal::Caveated
+            | BlueBrainSecondRegionContractSignal::Insufficient
     );
 
     let relation_class = if non_canonical {
@@ -316,11 +319,36 @@ pub enum BlueBrainSecondRegionContractSignal {
     SelectionToRegionBoundedStateInput,
     RegionReferenceSignal,
     Caveated,
+    Insufficient,
     Deferred,
     Blocked,
     ReferenceOnly,
     NonCanonicalInternalOnly,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainSecondRegionDiagnosticState {
+    Region2AdvisoryOnlyDiagnostic,
+    Region2CaveatedDiagnostic,
+    Region2DeferredDiagnostic,
+    Region2BlockedDiagnostic,
+    Region2InsufficientDiagnostic,
+    Region2DiagnosticOnlyState,
+    CaveatedInterRegionDiagnosticInfluence,
+    NonCanonicalInternalOnlyRegion2DiagnosticPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_SECOND_REGION_DIAGNOSTIC_MAP:
+    [BlueBrainSecondRegionDiagnosticState; 8] = [
+    BlueBrainSecondRegionDiagnosticState::Region2AdvisoryOnlyDiagnostic,
+    BlueBrainSecondRegionDiagnosticState::Region2CaveatedDiagnostic,
+    BlueBrainSecondRegionDiagnosticState::Region2DeferredDiagnostic,
+    BlueBrainSecondRegionDiagnosticState::Region2BlockedDiagnostic,
+    BlueBrainSecondRegionDiagnosticState::Region2InsufficientDiagnostic,
+    BlueBrainSecondRegionDiagnosticState::Region2DiagnosticOnlyState,
+    BlueBrainSecondRegionDiagnosticState::CaveatedInterRegionDiagnosticInfluence,
+    BlueBrainSecondRegionDiagnosticState::NonCanonicalInternalOnlyRegion2DiagnosticPath,
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainSecondRegionInputSource {
@@ -364,6 +392,9 @@ pub struct BlueBrainSecondRegionOutputSurface {
     pub runtime_contract_signal: BlueBrainSecondRegionContractSignal,
     pub selection_contract_signal: BlueBrainSecondRegionContractSignal,
     pub reference_contract_signal: BlueBrainSecondRegionContractSignal,
+    pub runtime_diagnostic_state: BlueBrainSecondRegionDiagnosticState,
+    pub selection_diagnostic_state: BlueBrainSecondRegionDiagnosticState,
+    pub reference_diagnostic_state: BlueBrainSecondRegionDiagnosticState,
     pub runtime_advisory_only: bool,
     pub selection_advisory_only: bool,
     pub reference_bounded_only: bool,
@@ -373,6 +404,56 @@ pub struct BlueBrainSecondRegionOutputSurface {
     pub direct_memory_commit: bool,
     pub direct_compute_invocation: bool,
     pub safety_override: bool,
+}
+
+pub fn blue_brain_second_region_runtime_contract_signal(
+    output: BlueBrainSecondRegionOutputSurface,
+) -> BlueBrainSecondRegionContractSignal {
+    output.runtime_contract_signal
+}
+
+pub fn blue_brain_second_region_selection_contract_signal(
+    output: BlueBrainSecondRegionOutputSurface,
+) -> BlueBrainSecondRegionContractSignal {
+    output.selection_contract_signal
+}
+
+pub fn blue_brain_second_region_reference_contract_signal(
+    output: BlueBrainSecondRegionOutputSurface,
+) -> BlueBrainSecondRegionContractSignal {
+    output.reference_contract_signal
+}
+
+fn second_region_diagnostic_state_for_signal(
+    signal: BlueBrainSecondRegionContractSignal,
+) -> BlueBrainSecondRegionDiagnosticState {
+    match signal {
+        BlueBrainSecondRegionContractSignal::RegionToRuntimeAdvisory
+        | BlueBrainSecondRegionContractSignal::RegionToSelectionAdvisory
+        | BlueBrainSecondRegionContractSignal::RuntimeToRegionBoundedInput
+        | BlueBrainSecondRegionContractSignal::SelectionToRegionBoundedStateInput => {
+            BlueBrainSecondRegionDiagnosticState::Region2AdvisoryOnlyDiagnostic
+        }
+        BlueBrainSecondRegionContractSignal::Caveated => {
+            BlueBrainSecondRegionDiagnosticState::Region2CaveatedDiagnostic
+        }
+        BlueBrainSecondRegionContractSignal::Deferred => {
+            BlueBrainSecondRegionDiagnosticState::Region2DeferredDiagnostic
+        }
+        BlueBrainSecondRegionContractSignal::Blocked => {
+            BlueBrainSecondRegionDiagnosticState::Region2BlockedDiagnostic
+        }
+        BlueBrainSecondRegionContractSignal::Insufficient => {
+            BlueBrainSecondRegionDiagnosticState::Region2InsufficientDiagnostic
+        }
+        BlueBrainSecondRegionContractSignal::ReferenceOnly
+        | BlueBrainSecondRegionContractSignal::RegionReferenceSignal => {
+            BlueBrainSecondRegionDiagnosticState::Region2DiagnosticOnlyState
+        }
+        BlueBrainSecondRegionContractSignal::NonCanonicalInternalOnly => {
+            BlueBrainSecondRegionDiagnosticState::NonCanonicalInternalOnlyRegion2DiagnosticPath
+        }
+    }
 }
 
 pub fn classify_blue_brain_second_region_input_guard(
@@ -451,7 +532,18 @@ pub fn evaluate_blue_brain_second_region_memory_context(
         )
     } else if matches!(
         input.reference_validity,
-        BlueBrainReferenceValidity::Caveated | BlueBrainReferenceValidity::Insufficient
+        BlueBrainReferenceValidity::Insufficient
+    ) {
+        (
+            BlueBrainSecondRegionStateSurface::CaveatedReferenceState,
+            BlueBrainSecondRegionAdvisoryOutputClass::CaveatHint,
+            BlueBrainSecondRegionContractSignal::Insufficient,
+            BlueBrainSecondRegionContractSignal::Insufficient,
+            BlueBrainSecondRegionContractSignal::Insufficient,
+        )
+    } else if matches!(
+        input.reference_validity,
+        BlueBrainReferenceValidity::Caveated
     ) {
         (
             BlueBrainSecondRegionStateSurface::CaveatedReferenceState,
@@ -470,11 +562,21 @@ pub fn evaluate_blue_brain_second_region_memory_context(
         )
     };
 
+    let runtime_diagnostic_state =
+        second_region_diagnostic_state_for_signal(runtime_contract_signal);
+    let selection_diagnostic_state =
+        second_region_diagnostic_state_for_signal(selection_contract_signal);
+    let reference_diagnostic_state =
+        second_region_diagnostic_state_for_signal(reference_contract_signal);
+
     let output = BlueBrainSecondRegionOutputSurface {
         advisory_class,
         runtime_contract_signal,
         selection_contract_signal,
         reference_contract_signal,
+        runtime_diagnostic_state,
+        selection_diagnostic_state,
+        reference_diagnostic_state,
         runtime_advisory_only: true,
         selection_advisory_only: true,
         reference_bounded_only: true,
@@ -1016,6 +1118,10 @@ mod tests {
             caveated_output.advisory_class,
             BlueBrainSecondRegionAdvisoryOutputClass::CaveatHint
         );
+        assert_eq!(
+            caveated_output.runtime_diagnostic_state,
+            BlueBrainSecondRegionDiagnosticState::Region2CaveatedDiagnostic
+        );
 
         let (deferred_state, deferred_output) =
             evaluate_blue_brain_second_region_memory_context(BlueBrainSecondRegionInputSurface {
@@ -1034,6 +1140,10 @@ mod tests {
         assert_eq!(
             deferred_output.runtime_contract_signal,
             BlueBrainSecondRegionContractSignal::Deferred
+        );
+        assert_eq!(
+            deferred_output.runtime_diagnostic_state,
+            BlueBrainSecondRegionDiagnosticState::Region2DeferredDiagnostic
         );
 
         let (non_canonical_state, non_canonical_output) =
@@ -1066,6 +1176,38 @@ mod tests {
             blocked_output.runtime_contract_signal,
             BlueBrainSecondRegionContractSignal::Blocked
         );
+        assert_eq!(
+            blocked_output.runtime_diagnostic_state,
+            BlueBrainSecondRegionDiagnosticState::Region2BlockedDiagnostic
+        );
+    }
+
+    #[test]
+    fn second_region_distinguishes_insufficient_from_caveated() {
+        let (_, insufficient_output) =
+            evaluate_blue_brain_second_region_memory_context(BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::Insufficient,
+                context_priority: BlueBrainContextEvidencePriorityClass::InsufficientContext,
+            });
+        let (_, caveated_output) =
+            evaluate_blue_brain_second_region_memory_context(BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::Caveated,
+                context_priority: BlueBrainContextEvidencePriorityClass::SupportingContext,
+            });
+        assert_eq!(
+            insufficient_output.runtime_contract_signal,
+            BlueBrainSecondRegionContractSignal::Insufficient
+        );
+        assert_eq!(
+            insufficient_output.runtime_diagnostic_state,
+            BlueBrainSecondRegionDiagnosticState::Region2InsufficientDiagnostic
+        );
+        assert_eq!(
+            caveated_output.runtime_diagnostic_state,
+            BlueBrainSecondRegionDiagnosticState::Region2CaveatedDiagnostic
+        );
     }
 
     #[test]
@@ -1087,6 +1229,40 @@ mod tests {
         assert_eq!(
             reference_only_output.runtime_contract_signal,
             BlueBrainSecondRegionContractSignal::RegionToRuntimeAdvisory
+        );
+        assert_eq!(
+            reference_only_output.reference_diagnostic_state,
+            BlueBrainSecondRegionDiagnosticState::Region2DiagnosticOnlyState
+        );
+    }
+
+    #[test]
+    fn second_region_runtime_selection_reference_use_same_diagnostics_surface() {
+        let (_, output) =
+            evaluate_blue_brain_second_region_memory_context(BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred,
+                reference_validity: BlueBrainReferenceValidity::Current,
+                context_priority: BlueBrainContextEvidencePriorityClass::DeferredContext,
+            });
+        assert_eq!(
+            blue_brain_second_region_runtime_contract_signal(output),
+            BlueBrainSecondRegionContractSignal::Deferred
+        );
+        assert_eq!(
+            blue_brain_second_region_selection_contract_signal(output),
+            BlueBrainSecondRegionContractSignal::Deferred
+        );
+        assert_eq!(
+            blue_brain_second_region_reference_contract_signal(output),
+            BlueBrainSecondRegionContractSignal::Deferred
+        );
+        assert_eq!(
+            output.runtime_diagnostic_state,
+            output.selection_diagnostic_state
+        );
+        assert_eq!(
+            output.selection_diagnostic_state,
+            output.reference_diagnostic_state
         );
     }
 
@@ -1222,6 +1398,29 @@ mod tests {
         assert!(doc.contains("no direct memory commit"));
         assert!(doc.contains("no direct compute invocation"));
         assert!(doc.contains("no safety override"));
+    }
+
+    #[test]
+    fn second_region_diagnostics_doc_pins_canonical_state_line() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_second_region_diagnostics_caveat_deferred_semantics_serie_bb26_prompt5_v1.md"
+        );
+        assert!(doc.contains("region-2 advisory-only diagnostic"));
+        assert!(doc.contains("region-2 caveated diagnostic"));
+        assert!(doc.contains("region-2 deferred diagnostic"));
+        assert!(doc.contains("region-2 blocked diagnostic"));
+        assert!(doc.contains("region-2 insufficient diagnostic"));
+        assert!(doc.contains("region-2 diagnostic-only state"));
+        assert!(doc.contains("caveated inter-region diagnostic influence"));
+        assert!(doc.contains("non-canonical/internal-only region-2 diagnostic path"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("no third-region expansion"));
+        assert!(doc.contains("no broad inter-region platform"));
     }
 
     #[test]

@@ -21,6 +21,10 @@ Zweck: schneller, repo-treuer Einstieg in die **aktuell operativen** Linien ohne
   - `docs/blue_brain_second_region_integration_serie_bb26_prompt2_v1.md`
 - **Region-2 runtime/selection/reference contract line (BB26 P3):**
   - `docs/blue_brain_second_region_runtime_selection_reference_contract_serie_bb26_prompt3_v1.md`
+- **Region-2 first bounded inter-region relation line (BB26 P4):**
+  - `docs/blue_brain_first_inter_region_relation_line_serie_bb26_prompt4_v1.md`
+- **Region-2 diagnostics/caveat/deferred semantics line (BB26 P5):**
+  - `docs/blue_brain_second_region_diagnostics_caveat_deferred_semantics_serie_bb26_prompt5_v1.md`
 - **Cross-line state semantics (BB20 P2):** `docs/blue_brain_bb20_cross_line_terminology_state_harmonization_serie_bb20_prompt2_v1.md`
 - **Final readiness sweep + next-priority lock (BB20 P4):** `docs/blue_brain_bb20_final_readiness_sweep_next_priority_lock_serie_bb20_prompt4_v1.md`
 - **Docs operational index:** `docs/README.md`
