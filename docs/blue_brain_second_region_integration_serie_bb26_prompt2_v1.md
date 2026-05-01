@@ -12,12 +12,22 @@ Diese Integration bleibt **abstract-functional** und **advisory-only**. Sie öff
 
 Verbindliche Integrationsklassen:
 
-1. `region-2 input surface`
-2. `region-2 state surface`
-3. `region-2 output/advisory surface`
-4. `region-2 reference surface`
-5. `blocked/deferred region-2 path`
-6. `non-canonical/internal-only region-2 path`
+1. `region-2-to-runtime advisory signal`
+2. `runtime-to-region-2 bounded input`
+3. `region-2-to-selection advisory signal`
+4. `selection-to-region-2 bounded state input`
+5. `region-2-reference signal`
+6. `caveated/deferred/blocked region-2 contract signal`
+7. `reference-only region-2 contract signal`
+8. `region-2 input surface`
+9. `region-2 state surface`
+10. `region-2 output/advisory surface`
+11. `region-2 reference surface`
+12. `blocked/deferred region-2 path`
+13. `non-canonical/internal-only region-2 path`
+
+Die Signalnamen oben sind die kanonische second-region contract map; die Surface-Einträge bleiben die minimalen Integrationspunkte.
+
 
 ## 2) Region-2 input surface (minimal)
 
@@ -40,7 +50,9 @@ Region 2 trägt genau folgende bounded Zustände:
 
 - `active_bounded_advisory_only`,
 - `caveated_reference_state`,
-- `deferred_or_blocked_state`,
+- `deferred_state`,
+- `blocked_state`,
+- `reference_only_state`,
 - `non_canonical_internal_only`.
 
 Damit bleibt Region 2 komplementär zu Region 1:

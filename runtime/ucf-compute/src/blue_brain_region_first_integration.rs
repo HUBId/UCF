@@ -134,6 +134,13 @@ pub const BLUE_BRAIN_SECOND_REGION_CLASS_SELECTION: BlueBrainSecondRegionClass =
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainSecondRegionPathClass {
+    RegionToRuntimeAdvisorySignal,
+    RuntimeToRegionBoundedInput,
+    RegionToSelectionAdvisorySignal,
+    SelectionToRegionBoundedStateInput,
+    RegionReferenceSignal,
+    CaveatedDeferredBlockedRegionContractSignal,
+    ReferenceOnlyRegionContractSignal,
     RegionInputSurface,
     RegionStateSurface,
     RegionOutputAdvisorySurface,
@@ -142,7 +149,14 @@ pub enum BlueBrainSecondRegionPathClass {
     NonCanonicalInternalOnlyRegionPath,
 }
 
-pub const CANONICAL_BLUE_BRAIN_SECOND_REGION_INTEGRATION_MAP: [BlueBrainSecondRegionPathClass; 6] = [
+pub const CANONICAL_BLUE_BRAIN_SECOND_REGION_INTEGRATION_MAP: [BlueBrainSecondRegionPathClass; 13] = [
+    BlueBrainSecondRegionPathClass::RegionToRuntimeAdvisorySignal,
+    BlueBrainSecondRegionPathClass::RuntimeToRegionBoundedInput,
+    BlueBrainSecondRegionPathClass::RegionToSelectionAdvisorySignal,
+    BlueBrainSecondRegionPathClass::SelectionToRegionBoundedStateInput,
+    BlueBrainSecondRegionPathClass::RegionReferenceSignal,
+    BlueBrainSecondRegionPathClass::CaveatedDeferredBlockedRegionContractSignal,
+    BlueBrainSecondRegionPathClass::ReferenceOnlyRegionContractSignal,
     BlueBrainSecondRegionPathClass::RegionInputSurface,
     BlueBrainSecondRegionPathClass::RegionStateSurface,
     BlueBrainSecondRegionPathClass::RegionOutputAdvisorySurface,
@@ -155,7 +169,23 @@ pub const CANONICAL_BLUE_BRAIN_SECOND_REGION_INTEGRATION_MAP: [BlueBrainSecondRe
 pub enum BlueBrainSecondRegionStateSurface {
     ActiveBoundedAdvisoryOnly,
     CaveatedReferenceState,
-    DeferredOrBlockedState,
+    DeferredState,
+    BlockedState,
+    ReferenceOnlyState,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainSecondRegionContractSignal {
+    RegionToRuntimeAdvisory,
+    RuntimeToRegionBoundedInput,
+    RegionToSelectionAdvisory,
+    SelectionToRegionBoundedStateInput,
+    RegionReferenceSignal,
+    Caveated,
+    Deferred,
+    Blocked,
+    ReferenceOnly,
     NonCanonicalInternalOnly,
 }
 
@@ -198,6 +228,9 @@ pub enum BlueBrainSecondRegionAdvisoryOutputClass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlueBrainSecondRegionOutputSurface {
     pub advisory_class: BlueBrainSecondRegionAdvisoryOutputClass,
+    pub runtime_contract_signal: BlueBrainSecondRegionContractSignal,
+    pub selection_contract_signal: BlueBrainSecondRegionContractSignal,
+    pub reference_contract_signal: BlueBrainSecondRegionContractSignal,
     pub runtime_advisory_only: bool,
     pub selection_advisory_only: bool,
     pub reference_bounded_only: bool,
@@ -239,42 +272,76 @@ pub fn evaluate_blue_brain_second_region_memory_context(
     BlueBrainSecondRegionStateSurface,
     BlueBrainSecondRegionOutputSurface,
 ) {
-    let (state, advisory_class) = if input.context_priority
+    let (
+        state,
+        advisory_class,
+        runtime_contract_signal,
+        selection_contract_signal,
+        reference_contract_signal,
+    ) = if input.context_priority
         == BlueBrainContextEvidencePriorityClass::NonCanonicalInternalOnlyPriorityPath
         || input.reference_validity == BlueBrainReferenceValidity::NonCanonicalInternalOnlyPath
     {
         (
             BlueBrainSecondRegionStateSurface::NonCanonicalInternalOnly,
             BlueBrainSecondRegionAdvisoryOutputClass::NonCanonicalInternalOnly,
+            BlueBrainSecondRegionContractSignal::NonCanonicalInternalOnly,
+            BlueBrainSecondRegionContractSignal::NonCanonicalInternalOnly,
+            BlueBrainSecondRegionContractSignal::NonCanonicalInternalOnly,
+        )
+    } else if input.deferral_class == BlueBrainCandidateDeferralLifecycleClass::CandidateRejected {
+        (
+            BlueBrainSecondRegionStateSurface::BlockedState,
+            BlueBrainSecondRegionAdvisoryOutputClass::BlockedDeferred,
+            BlueBrainSecondRegionContractSignal::Blocked,
+            BlueBrainSecondRegionContractSignal::Blocked,
+            BlueBrainSecondRegionContractSignal::Blocked,
         )
     } else if matches!(
         input.deferral_class,
         BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred
-            | BlueBrainCandidateDeferralLifecycleClass::CandidateRejected
     ) {
         (
-            BlueBrainSecondRegionStateSurface::DeferredOrBlockedState,
-            BlueBrainSecondRegionAdvisoryOutputClass::BlockedDeferred,
+            BlueBrainSecondRegionStateSurface::DeferredState,
+            BlueBrainSecondRegionAdvisoryOutputClass::DeferralHint,
+            BlueBrainSecondRegionContractSignal::Deferred,
+            BlueBrainSecondRegionContractSignal::Deferred,
+            BlueBrainSecondRegionContractSignal::Deferred,
+        )
+    } else if input.reference_validity == BlueBrainReferenceValidity::ReferenceOnly {
+        (
+            BlueBrainSecondRegionStateSurface::ReferenceOnlyState,
+            BlueBrainSecondRegionAdvisoryOutputClass::ReferenceBoundedSignal,
+            BlueBrainSecondRegionContractSignal::RegionToRuntimeAdvisory,
+            BlueBrainSecondRegionContractSignal::RegionToSelectionAdvisory,
+            BlueBrainSecondRegionContractSignal::ReferenceOnly,
         )
     } else if matches!(
         input.reference_validity,
-        BlueBrainReferenceValidity::Caveated
-            | BlueBrainReferenceValidity::ReferenceOnly
-            | BlueBrainReferenceValidity::Insufficient
+        BlueBrainReferenceValidity::Caveated | BlueBrainReferenceValidity::Insufficient
     ) {
         (
             BlueBrainSecondRegionStateSurface::CaveatedReferenceState,
             BlueBrainSecondRegionAdvisoryOutputClass::CaveatHint,
+            BlueBrainSecondRegionContractSignal::Caveated,
+            BlueBrainSecondRegionContractSignal::Caveated,
+            BlueBrainSecondRegionContractSignal::Caveated,
         )
     } else {
         (
             BlueBrainSecondRegionStateSurface::ActiveBoundedAdvisoryOnly,
             BlueBrainSecondRegionAdvisoryOutputClass::ReferenceBoundedSignal,
+            BlueBrainSecondRegionContractSignal::RegionToRuntimeAdvisory,
+            BlueBrainSecondRegionContractSignal::RegionToSelectionAdvisory,
+            BlueBrainSecondRegionContractSignal::RegionReferenceSignal,
         )
     };
 
     let output = BlueBrainSecondRegionOutputSurface {
         advisory_class,
+        runtime_contract_signal,
+        selection_contract_signal,
+        reference_contract_signal,
         runtime_advisory_only: true,
         selection_advisory_only: true,
         reference_bounded_only: true,
@@ -825,11 +892,15 @@ mod tests {
             });
         assert_eq!(
             deferred_state,
-            BlueBrainSecondRegionStateSurface::DeferredOrBlockedState
+            BlueBrainSecondRegionStateSurface::DeferredState
         );
         assert_eq!(
             deferred_output.advisory_class,
-            BlueBrainSecondRegionAdvisoryOutputClass::BlockedDeferred
+            BlueBrainSecondRegionAdvisoryOutputClass::DeferralHint
+        );
+        assert_eq!(
+            deferred_output.runtime_contract_signal,
+            BlueBrainSecondRegionContractSignal::Deferred
         );
 
         let (non_canonical_state, non_canonical_output) =
@@ -847,6 +918,43 @@ mod tests {
             non_canonical_output.advisory_class,
             BlueBrainSecondRegionAdvisoryOutputClass::NonCanonicalInternalOnly
         );
+
+        let (blocked_state, blocked_output) =
+            evaluate_blue_brain_second_region_memory_context(BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateRejected,
+                reference_validity: BlueBrainReferenceValidity::Current,
+                context_priority: BlueBrainContextEvidencePriorityClass::SupportingContext,
+            });
+        assert_eq!(
+            blocked_state,
+            BlueBrainSecondRegionStateSurface::BlockedState
+        );
+        assert_eq!(
+            blocked_output.runtime_contract_signal,
+            BlueBrainSecondRegionContractSignal::Blocked
+        );
+    }
+
+    #[test]
+    fn second_region_distinguishes_reference_only_from_caveated_and_blocked() {
+        let (reference_only_state, reference_only_output) =
+            evaluate_blue_brain_second_region_memory_context(BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::ReferenceOnly,
+                context_priority: BlueBrainContextEvidencePriorityClass::SupportingContext,
+            });
+        assert_eq!(
+            reference_only_state,
+            BlueBrainSecondRegionStateSurface::ReferenceOnlyState
+        );
+        assert_eq!(
+            reference_only_output.reference_contract_signal,
+            BlueBrainSecondRegionContractSignal::ReferenceOnly
+        );
+        assert_eq!(
+            reference_only_output.runtime_contract_signal,
+            BlueBrainSecondRegionContractSignal::RegionToRuntimeAdvisory
+        );
     }
 
     #[test]
@@ -863,6 +971,11 @@ mod tests {
         assert!(doc.contains("non-canonical/internal-only region-2 path"));
         assert!(doc.contains("keine direkte Action-/Retry-/Memory-/Compute-Autorität"));
         assert!(doc.contains("keine dritte Regionenklasse"));
+        assert!(doc.contains("region-2-to-runtime advisory signal"));
+        assert!(doc.contains("runtime-to-region-2 bounded input"));
+        assert!(doc.contains("region-2-to-selection advisory signal"));
+        assert!(doc.contains("selection-to-region-2 bounded state input"));
+        assert!(doc.contains("region-2-reference signal"));
     }
 
     #[test]
