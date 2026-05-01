@@ -51,7 +51,7 @@ Maintenance-Interpretation folgt der BB23 Allowed-Change-Map: maintenance-safe, 
 - `advisory-only` / `bounded` Linien bleiben ohne direkte Ausführungsautorität.
 - `candidate-only`, `test-only`, `deferred`, `non-canonical` markieren nicht-operative oder nicht-hochgestufte Pfade.
 - `no-direct-*` Guard Rails bleiben verpflichtend.
-- Exactly two regions are active (Region 1 + Region 2) on bounded, advisory/reference-constrained surfaces; opening a third region requires explicit re-scope.
+- Region 1 bleibt die einzige geöffnete Regionenklasse in der BB25-Freeze-Lesart; die BB26/BB27 Zwei-Regionen-Basis ergänzt Region 2 nur bounded/advisory/reference-constrained, und eine dritte Regionenklasse bleibt explizit re-scope-pflichtig.
 
 Primäre Referenzen:
 - `docs/blue_brain_execution_guard_rails_production_facing_serie_bb18_prompt3_v1.md`
