@@ -166,6 +166,26 @@ pub const CANONICAL_BLUE_BRAIN_SECOND_REGION_INTEGRATION_MAP: [BlueBrainSecondRe
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainSecondRegionHardeningClass {
+    GuardedCanonicalRegionSurface,
+    GuardedRegionDiagnosticsPath,
+    GuardedBoundedInterRegionRelationPath,
+    BlockedForbiddenAuthorityPath,
+    NonCanonicalInternalOnlyRegionPath,
+    TestOnlyHelperNonOperationalPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_SECOND_REGION_HARDENING_MAP: [BlueBrainSecondRegionHardeningClass;
+    6] = [
+    BlueBrainSecondRegionHardeningClass::GuardedCanonicalRegionSurface,
+    BlueBrainSecondRegionHardeningClass::GuardedRegionDiagnosticsPath,
+    BlueBrainSecondRegionHardeningClass::GuardedBoundedInterRegionRelationPath,
+    BlueBrainSecondRegionHardeningClass::BlockedForbiddenAuthorityPath,
+    BlueBrainSecondRegionHardeningClass::NonCanonicalInternalOnlyRegionPath,
+    BlueBrainSecondRegionHardeningClass::TestOnlyHelperNonOperationalPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainInterRegionRelationClass {
     Region1ToRegion2Bounded,
     Region2ToRegion1Bounded,
@@ -1033,6 +1053,22 @@ mod tests {
     }
 
     #[test]
+    fn second_region_hardening_map_contains_guarded_and_exclusion_paths() {
+        assert!(CANONICAL_BLUE_BRAIN_SECOND_REGION_HARDENING_MAP
+            .contains(&BlueBrainSecondRegionHardeningClass::GuardedCanonicalRegionSurface));
+        assert!(CANONICAL_BLUE_BRAIN_SECOND_REGION_HARDENING_MAP
+            .contains(&BlueBrainSecondRegionHardeningClass::GuardedRegionDiagnosticsPath));
+        assert!(CANONICAL_BLUE_BRAIN_SECOND_REGION_HARDENING_MAP
+            .contains(&BlueBrainSecondRegionHardeningClass::GuardedBoundedInterRegionRelationPath));
+        assert!(CANONICAL_BLUE_BRAIN_SECOND_REGION_HARDENING_MAP
+            .contains(&BlueBrainSecondRegionHardeningClass::BlockedForbiddenAuthorityPath));
+        assert!(CANONICAL_BLUE_BRAIN_SECOND_REGION_HARDENING_MAP
+            .contains(&BlueBrainSecondRegionHardeningClass::NonCanonicalInternalOnlyRegionPath));
+        assert!(CANONICAL_BLUE_BRAIN_SECOND_REGION_HARDENING_MAP
+            .contains(&BlueBrainSecondRegionHardeningClass::TestOnlyHelperNonOperationalPath));
+    }
+
+    #[test]
     fn second_region_input_guard_accepts_only_canonical_inputs() {
         assert_eq!(
             classify_blue_brain_second_region_input_guard(
@@ -1264,6 +1300,51 @@ mod tests {
             output.selection_diagnostic_state,
             output.reference_diagnostic_state
         );
+        assert_eq!(
+            output.runtime_contract_signal,
+            output.selection_contract_signal
+        );
+    }
+
+    #[test]
+    fn second_region_no_direct_authority_flags_stay_false_for_all_diagnostics_paths() {
+        let inputs = [
+            BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::Current,
+                context_priority: BlueBrainContextEvidencePriorityClass::SupportingContext,
+            },
+            BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::Caveated,
+                context_priority: BlueBrainContextEvidencePriorityClass::SupportingContext,
+            },
+            BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred,
+                reference_validity: BlueBrainReferenceValidity::Current,
+                context_priority: BlueBrainContextEvidencePriorityClass::DeferredContext,
+            },
+            BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateRejected,
+                reference_validity: BlueBrainReferenceValidity::Current,
+                context_priority: BlueBrainContextEvidencePriorityClass::SupportingContext,
+            },
+            BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::ReferenceOnly,
+                context_priority: BlueBrainContextEvidencePriorityClass::SupportingContext,
+            },
+        ];
+
+        for input in inputs {
+            let (_, output) = evaluate_blue_brain_second_region_memory_context(input);
+            assert!(!output.direct_action_selection);
+            assert!(!output.direct_execution_trigger);
+            assert!(!output.direct_retry_trigger);
+            assert!(!output.direct_memory_commit);
+            assert!(!output.direct_compute_invocation);
+            assert!(!output.safety_override);
+        }
     }
 
     #[test]
@@ -1738,5 +1819,26 @@ mod tests {
         assert!(doc.contains("Non-canonical/internal-only path"));
         assert!(doc.contains("keine direkte Action-/Retry-/Memory-/Compute-Autorität"));
         assert!(doc.contains("keine Öffnung einer dritten Regionenklasse"));
+    }
+
+    #[test]
+    fn second_region_hardening_doc_pins_no_direct_and_non_canonical_cleanup() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_second_region_tests_guards_cleanup_serie_bb26_prompt6_v1.md"
+        );
+        assert!(doc.contains("guarded canonical region-2 surface"));
+        assert!(doc.contains("guarded region-2 diagnostics path"));
+        assert!(doc.contains("guarded bounded inter-region relation path"));
+        assert!(doc.contains("blocked forbidden authority path"));
+        assert!(doc.contains("non-canonical/internal-only region-2 path"));
+        assert!(doc.contains("test-only/helper path not operational"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("no third-region expansion"));
+        assert!(doc.contains("no broad inter-region platform"));
     }
 }
