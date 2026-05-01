@@ -42,6 +42,9 @@ For the post-BB27 roadmap stance, this file is the explicit decision reference a
 
 No contradictory expansion claim is introduced here.
 
+The canonical post-BB27 decision-map detail is pinned in:
+- `docs/blue_brain_bb27_post_maintenance_default_decision_map_serie_bb27_prompt5_v1.md`
+
 ## 5) Minimal consistency checks for this decision lock
 
 1. Documentation states maintenance as post-BB27 default mode.
