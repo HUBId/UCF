@@ -1,6 +1,6 @@
 # Serie BB27 Prompt 6: Final maintenance handoff map (post two-region baseline)
 
-Status: **final maintenance handoff locked** after BB27.
+Status: **current operational authority (BB27) locked**. Dieses Dokument ist die maßgebliche aktuelle operative Endlage der Blue-Brain-Autoritätskette.
 
 Purpose: this document is a narrow closure handoff. It introduces no new functional block, no new architecture series, and no implicit Region-3 preparation.
 
@@ -67,7 +67,7 @@ The following boundaries stay intentionally unchanged:
 
 ## 6) Central reference alignment
 
-This handoff is aligned with and subordinate to the BB23→BB27 closure chain:
+This handoff is aligned with the BB23→BB27 closure chain and serves as the current operational authority anchor:
 
 - `docs/blue_brain_bb23_freeze_maintenance_baseline_serie_bb23_prompt1_v1.md`
 - `docs/blue_brain_bb23_maintenance_guard_rails_allowed_change_envelope_serie_bb23_prompt2_v1.md`
@@ -85,3 +85,10 @@ Operationally relevant shorthand from this point forward:
 - Region 3: **inactive unless explicitly re-scoped later**,
 - series status: **terminated at BB27 Prompt 6**,
 - boundaries: **BB23 guards and BB26/BB27 two-region limits remain authoritative**.
+
+
+## 8) Authority classification (historical vs current)
+
+- **Dokumenttyp:** current authority (operative Endlage).
+- **Verbindlichkeit heute:** maßgeblich für aktive Regionenlage und Maintenance-Default.
+- **Historical snapshots:** BB25-Post-Decision/Handoff-Dokumente bleiben zur Historie erhalten, aber ohne aktuelle operative Vorrangwirkung.
