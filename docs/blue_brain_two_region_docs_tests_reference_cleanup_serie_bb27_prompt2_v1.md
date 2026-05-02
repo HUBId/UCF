@@ -63,7 +63,22 @@ Maintenance-facing checks should keep drift visible in three places:
 2. no-direct/freeze boundaries (`blue_brain_region_first_integration.rs` tests),
 3. two-region-only semantics (no implied region-3 opening, no platform claims).
 
-## 6) Follow-up within BB27 (narrow)
+## 6) Maintenance findings map (Pass-1 canonical classes)
+
+Maintenance findings are intentionally narrow and fixed to:
+
+1. `real bug`
+2. `semantic inconsistency`
+3. `guard weakness`
+4. `doc/test drift`
+5. `non-canonical residual path`
+6. `no-change-needed finding`
+
+The classes above are represented in code via
+`CANONICAL_BLUE_BRAIN_TWO_REGION_MAINTENANCE_FINDINGS_MAP` and are used to keep maintenance reports
+explicit without introducing a new platform layer.
+
+## 7) Follow-up within BB27 (narrow)
 
 1. Keep doc link integrity checks for canonical two-region map entries.
 2. Prune stale duplicate two-region phrases in older non-canonical notes when touched.

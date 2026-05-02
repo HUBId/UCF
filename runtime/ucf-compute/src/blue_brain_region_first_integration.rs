@@ -223,6 +223,26 @@ pub const CANONICAL_BLUE_BRAIN_TWO_REGION_CONSISTENCY_MAP: [BlueBrainTwoRegionCo
     BlueBrainTwoRegionConsistencyClass::NonCanonicalInternalOnlyTwoRegionPath,
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainTwoRegionMaintenanceFindingClass {
+    RealBug,
+    SemanticInconsistency,
+    GuardWeakness,
+    DocTestDrift,
+    NonCanonicalResidualPath,
+    NoChangeNeeded,
+}
+
+pub const CANONICAL_BLUE_BRAIN_TWO_REGION_MAINTENANCE_FINDINGS_MAP:
+    [BlueBrainTwoRegionMaintenanceFindingClass; 6] = [
+    BlueBrainTwoRegionMaintenanceFindingClass::RealBug,
+    BlueBrainTwoRegionMaintenanceFindingClass::SemanticInconsistency,
+    BlueBrainTwoRegionMaintenanceFindingClass::GuardWeakness,
+    BlueBrainTwoRegionMaintenanceFindingClass::DocTestDrift,
+    BlueBrainTwoRegionMaintenanceFindingClass::NonCanonicalResidualPath,
+    BlueBrainTwoRegionMaintenanceFindingClass::NoChangeNeeded,
+];
+
 pub fn classify_blue_brain_two_region_consistency(
     region1: BlueBrainFirstRegionOutputSurface,
     region2: BlueBrainSecondRegionOutputSurface,
@@ -233,9 +253,10 @@ pub fn classify_blue_brain_two_region_consistency(
         BlueBrainInterRegionRelationClass::NonCanonicalInternalOnlyPath
     ) {
         BlueBrainTwoRegionConsistencyClass::NonCanonicalInternalOnlyTwoRegionPath
-    } else if relation.blocked || relation.deferred || relation.caveated {
+    } else if relation.blocked || relation.deferred {
         BlueBrainTwoRegionConsistencyClass::BlockedInsufficientTwoRegionPath
-    } else if region1.reference_only
+    } else if relation.caveated
+        || region1.reference_only
         || matches!(
             region2.reference_contract_signal,
             BlueBrainSecondRegionContractSignal::ReferenceOnly
@@ -1943,6 +1964,22 @@ mod tests {
     }
 
     #[test]
+    fn two_region_maintenance_findings_map_contains_required_classes() {
+        assert!(CANONICAL_BLUE_BRAIN_TWO_REGION_MAINTENANCE_FINDINGS_MAP
+            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::RealBug));
+        assert!(CANONICAL_BLUE_BRAIN_TWO_REGION_MAINTENANCE_FINDINGS_MAP
+            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::SemanticInconsistency));
+        assert!(CANONICAL_BLUE_BRAIN_TWO_REGION_MAINTENANCE_FINDINGS_MAP
+            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::GuardWeakness));
+        assert!(CANONICAL_BLUE_BRAIN_TWO_REGION_MAINTENANCE_FINDINGS_MAP
+            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::DocTestDrift));
+        assert!(CANONICAL_BLUE_BRAIN_TWO_REGION_MAINTENANCE_FINDINGS_MAP
+            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::NonCanonicalResidualPath));
+        assert!(CANONICAL_BLUE_BRAIN_TWO_REGION_MAINTENANCE_FINDINGS_MAP
+            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::NoChangeNeeded));
+    }
+
+    #[test]
     fn two_region_relation_and_consistency_preserve_no_direct_authority() {
         let (_, region1) = evaluate_blue_brain_first_region_attention_selection(
             BlueBrainFirstRegionInputSurface {
@@ -1969,6 +2006,32 @@ mod tests {
         assert!(matches!(
             classify_blue_brain_two_region_consistency(region1, region2, relation),
             BlueBrainTwoRegionConsistencyClass::BoundedInterRegionRelationPath
+        ));
+    }
+
+    #[test]
+    fn two_region_consistency_keeps_caveated_distinct_from_blocked_insufficient() {
+        let (_, region1) = evaluate_blue_brain_first_region_attention_selection(
+            BlueBrainFirstRegionInputSurface {
+                attention_class: BlueBrainControlAttentionSelectionClass::AttentionTarget,
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateInsufficient,
+                reference_validity: BlueBrainReferenceValidity::Current,
+                context_priority: BlueBrainContextEvidencePriorityClass::PrimaryContext,
+            },
+        );
+        let (_, region2) =
+            evaluate_blue_brain_second_region_memory_context(BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::Current,
+                context_priority: BlueBrainContextEvidencePriorityClass::PrimaryContext,
+            });
+        let relation = evaluate_blue_brain_inter_region_relation(region1, region2);
+        assert!(relation.caveated);
+        assert!(!relation.blocked);
+        assert!(!relation.deferred);
+        assert!(matches!(
+            classify_blue_brain_two_region_consistency(region1, region2, relation),
+            BlueBrainTwoRegionConsistencyClass::CaveatedTwoRegionPath
         ));
     }
 }
