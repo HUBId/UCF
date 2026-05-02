@@ -1,5 +1,11 @@
 # Serie BB25 Prompt 6: Final Maintenance Handoff (serienlogik bewusst beendet)
 
+> ⚠️ **Authority notice (historical snapshot):** Dieses Dokument ist ein historisches BB25-Handoff und hat heute keinen Vorrang als operative Endlage.  
+> Aktuelle operative Autorität (BB27-Zwei-Regionen-Endlage):  
+> - `docs/blue_brain_bb27_post_maintenance_default_decision_map_serie_bb27_prompt5_v1.md`  
+> - `docs/blue_brain_bb27_final_maintenance_handoff_map_serie_bb27_prompt6_v1.md`  
+> Kanonische Klassifikation: `docs/blue_brain_authority_chain_status_map.md`
+
 Status: **historischer Snapshot (BB25-Handoff), nicht aktuelle operative Autorität**. Dieses Handoff beschreibt den damaligen Endpunkt mit Region 1 aktiv und Region 2 nicht aktiv. Die aktuelle operative Endlage ist im BB27-Zielbild (Region 1 + Region 2 aktiv) dokumentiert.
 
 Diese Referenz ist absichtlich schmal: Sie konsolidiert den erreichten Abschlusszustand nach BB23/BB24/BB25, beendet die aktuelle Serienlogik explizit und setzt keinen neuen Ausbaupfad.

@@ -4,6 +4,9 @@ Dieses README ist die **kanonische Einstiegsfläche** für operative Doku-Pfade 
 
 ## 0) Authority chain (historical vs current)
 
+Kanonische Status-Map:
+- `docs/blue_brain_authority_chain_status_map.md`
+
 - **Current operational authority (maßgeblich):**
   - `docs/blue_brain_bb27_post_maintenance_default_decision_map_serie_bb27_prompt5_v1.md`
   - `docs/blue_brain_bb27_final_maintenance_handoff_map_serie_bb27_prompt6_v1.md`
@@ -12,6 +15,12 @@ Dieses README ist die **kanonische Einstiegsfläche** für operative Doku-Pfade 
   - `docs/blue_brain_final_maintenance_handoff_serie_bb25_prompt6_v1.md`
 
 Regel: Bei Konflikten zwischen historischen BB25-Aussagen und BB27-Endlage gilt **immer** die BB27-Current-Authority-Linie.
+
+Autoritätsklassen im Repo-Kontext:
+- current operational authority
+- historical snapshot
+- supporting reference
+- non-canonical / outdated pointer
 
 
 ## 1) Canonical operational entrypoints

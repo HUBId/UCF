@@ -1,5 +1,12 @@
 # Serie BB25 Prompt 5: Post-BB25 Maintenance-Default Decision Map
 
+> ⚠️ **Authority notice (historical snapshot):** Dieses Dokument beschreibt den BB25-Stand als historischen Entscheidungs-Snapshot.  
+> **Nicht** als aktuelle operative Autorität lesen.  
+> Maßgebliche aktuelle Endlage:  
+> - `docs/blue_brain_bb27_post_maintenance_default_decision_map_serie_bb27_prompt5_v1.md`  
+> - `docs/blue_brain_bb27_final_maintenance_handoff_map_serie_bb27_prompt6_v1.md`  
+> Kanonische Klassifikation: `docs/blue_brain_authority_chain_status_map.md`
+
 Status: **historischer Snapshot (BB25-Stand), nicht aktuelle operative Autorität**. Dokumentiert den damaligen Post-BB25-Entscheidungsstand mit Region 1 aktiv und Region 2 nicht aktiv. Aktuelle operative Autorität liegt bei den BB27-Abschlussdokumenten.
 
 Diese Datei konsolidiert ausschließlich die technische Default-Entscheidung nach BB25. Sie führt **keine** neue Serie, **keine** neue Regionenimplementierung und **keine** neue Plattformarbeit ein.
