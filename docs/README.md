@@ -43,6 +43,8 @@ Dieses README ist die **kanonische Einstiegsfläche** für operative Doku-Pfade 
   - `docs/blue_brain_two_region_maintenance_stabilization_serie_bb27_prompt1_v1.md`
   - `docs/blue_brain_two_region_docs_tests_reference_cleanup_serie_bb27_prompt2_v1.md`
   - `docs/blue_brain_bb27_final_two_region_stabilization_sweep_serie_bb27_prompt3_v1.md`
+  - `docs/blue_brain_bb27_post_maintenance_default_decision_map_serie_bb27_prompt5_v1.md`
+  - `docs/blue_brain_bb27_final_maintenance_handoff_map_serie_bb27_prompt6_v1.md`
 - **BlueBrain/Runtime/Selection hardening line (BB19):**
   - `docs/blue_brain_runtime_selection_contract_hardening_serie_bb19_prompt1_v1.md`
   - `docs/blue_brain_runtime_selection_diagnostics_hardening_serie_bb19_prompt2_v1.md`
@@ -63,6 +65,13 @@ Referenzpunkte für die technische Scope-Grenze:
 - `docs/supported_scope_execution_v13.md`
 - `docs/blue_brain_bb23_maintenance_guard_rails_allowed_change_envelope_serie_bb23_prompt2_v1.md`
 - `docs/blue_brain_bb23_final_freeze_readiness_statement_serie_bb23_prompt3_v1.md`
+
+## 2.1) Post-BB27 maintenance default (final handoff)
+
+- Aktive Regionenexpansionen bleiben **nur Region 1 und Region 2**.
+- Standardmodus bleibt **Maintenance/Bugfix/Cleanup**.
+- **Region 3 ist nicht aktiv** und benötigt später einen expliziten Re-Scope.
+- Die BB24–BB27 Serienlogik wird als aktive Ausbau-Lane **bewusst beendet**.
 
 ## 3) Guard rails and boundaries (must stay visible)
 
