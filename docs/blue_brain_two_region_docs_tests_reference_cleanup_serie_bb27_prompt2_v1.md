@@ -63,15 +63,15 @@ Maintenance-facing checks should keep drift visible in three places:
 2. no-direct/freeze boundaries (`blue_brain_region_first_integration.rs` tests),
 3. two-region-only semantics (no implied region-3 opening, no platform claims).
 
-## 6) Maintenance findings map (Pass-1 canonical classes)
+## 6) Guard/Semantic drift map (Pass-2 canonical classes)
 
 Maintenance findings are intentionally narrow and fixed to:
 
-1. `real bug`
-2. `semantic inconsistency`
-3. `guard weakness`
-4. `doc/test drift`
-5. `non-canonical residual path`
+1. `semantic drift risk`
+2. `guard drift risk`
+3. `ambiguous state meaning`
+4. `weak test coverage`
+5. `doc/code wording drift`
 6. `no-change-needed finding`
 
 The classes above are represented in code via
