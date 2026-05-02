@@ -1,6 +1,6 @@
 # Serie BB25 Prompt 5: Post-BB25 Maintenance-Default Decision Map
 
-Status: **kanonische Post-BB25-Entscheidungsfläche**. Region 1 bleibt die einzige aktive Regionenexpansion; Maintenance/Bugfix/Cleanup ist der Default; Region 2 bleibt bewusst offen, aber nicht aktiv.
+Status: **historischer Snapshot (BB25-Stand), nicht aktuelle operative Autorität**. Dokumentiert den damaligen Post-BB25-Entscheidungsstand mit Region 1 aktiv und Region 2 nicht aktiv. Aktuelle operative Autorität liegt bei den BB27-Abschlussdokumenten.
 
 Diese Datei konsolidiert ausschließlich die technische Default-Entscheidung nach BB25. Sie führt **keine** neue Serie, **keine** neue Regionenimplementierung und **keine** neue Plattformarbeit ein.
 
@@ -59,3 +59,10 @@ Diese Decision-Map ist auf folgende bestehende Referenzen gebunden:
 - `docs/blue_brain_post_bb25_roadmap_decision_serie_bb25_prompt4_v1.md`
 
 Sie ergänzt diese Linien als Post-BB25-Default-Explizitheit und erzeugt keine zweite operative Wahrheit.
+
+
+## 7) Authority classification (historical vs current)
+
+- **Dokumenttyp:** historical snapshot (BB25-Zeitpunkt).
+- **Verbindlichkeit heute:** nur historisch erklärend; **nicht** maßgebliche operative Endlage.
+- **Current authority:** `docs/blue_brain_bb27_post_maintenance_default_decision_map_serie_bb27_prompt5_v1.md` und `docs/blue_brain_bb27_final_maintenance_handoff_map_serie_bb27_prompt6_v1.md`.

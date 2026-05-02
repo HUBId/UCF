@@ -1,6 +1,6 @@
 # Serie BB25 Prompt 6: Final Maintenance Handoff (serienlogik bewusst beendet)
 
-Status: **finales technisches Handoff in den Maintenance-Modus abgeschlossen**. Region 1 bleibt die einzige aktive Regionenexpansion; Region 2 bleibt nicht aktiv und erfordert später expliziten Re-Scope; es gibt keinen impliziten BB26-Fortsetzungspfad.
+Status: **historischer Snapshot (BB25-Handoff), nicht aktuelle operative Autorität**. Dieses Handoff beschreibt den damaligen Endpunkt mit Region 1 aktiv und Region 2 nicht aktiv. Die aktuelle operative Endlage ist im BB27-Zielbild (Region 1 + Region 2 aktiv) dokumentiert.
 
 Diese Referenz ist absichtlich schmal: Sie konsolidiert den erreichten Abschlusszustand nach BB23/BB24/BB25, beendet die aktuelle Serienlogik explizit und setzt keinen neuen Ausbaupfad.
 
@@ -60,3 +60,10 @@ Diese Handoff-Referenz konsolidiert, ersetzt aber nicht, die bestehenden kanonis
 - `docs/blue_brain_post_bb25_maintenance_default_decision_map_serie_bb25_prompt5_v1.md`
 
 Damit bleibt die Wahrheit zentral: **Maintenance-default aktiv, Region 1 einzig aktiv, Region 2 nicht aktiv ohne expliziten Re-Scope, Serienlogik bewusst beendet**.
+
+
+## 7) Authority classification (historical vs current)
+
+- **Dokumenttyp:** historical snapshot (BB25-Handoff-Endmarke).
+- **Verbindlichkeit heute:** historisch/nachvollziehend; **nicht** die aktuelle operative Endlage.
+- **Current authority:** `docs/blue_brain_bb27_post_maintenance_default_decision_map_serie_bb27_prompt5_v1.md` und `docs/blue_brain_bb27_final_maintenance_handoff_map_serie_bb27_prompt6_v1.md`.
