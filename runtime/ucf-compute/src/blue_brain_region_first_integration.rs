@@ -225,22 +225,22 @@ pub const CANONICAL_BLUE_BRAIN_TWO_REGION_CONSISTENCY_MAP: [BlueBrainTwoRegionCo
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainTwoRegionMaintenanceFindingClass {
-    RealBug,
-    SemanticInconsistency,
-    GuardWeakness,
-    DocTestDrift,
-    NonCanonicalResidualPath,
-    NoChangeNeeded,
+    SemanticDriftRisk,
+    GuardDriftRisk,
+    AmbiguousStateMeaning,
+    WeakTestCoverage,
+    DocCodeWordingDrift,
+    NoChangeNeededFinding,
 }
 
 pub const CANONICAL_BLUE_BRAIN_TWO_REGION_MAINTENANCE_FINDINGS_MAP:
     [BlueBrainTwoRegionMaintenanceFindingClass; 6] = [
-    BlueBrainTwoRegionMaintenanceFindingClass::RealBug,
-    BlueBrainTwoRegionMaintenanceFindingClass::SemanticInconsistency,
-    BlueBrainTwoRegionMaintenanceFindingClass::GuardWeakness,
-    BlueBrainTwoRegionMaintenanceFindingClass::DocTestDrift,
-    BlueBrainTwoRegionMaintenanceFindingClass::NonCanonicalResidualPath,
-    BlueBrainTwoRegionMaintenanceFindingClass::NoChangeNeeded,
+    BlueBrainTwoRegionMaintenanceFindingClass::SemanticDriftRisk,
+    BlueBrainTwoRegionMaintenanceFindingClass::GuardDriftRisk,
+    BlueBrainTwoRegionMaintenanceFindingClass::AmbiguousStateMeaning,
+    BlueBrainTwoRegionMaintenanceFindingClass::WeakTestCoverage,
+    BlueBrainTwoRegionMaintenanceFindingClass::DocCodeWordingDrift,
+    BlueBrainTwoRegionMaintenanceFindingClass::NoChangeNeededFinding,
 ];
 
 pub fn classify_blue_brain_two_region_consistency(
@@ -1966,17 +1966,17 @@ mod tests {
     #[test]
     fn two_region_maintenance_findings_map_contains_required_classes() {
         assert!(CANONICAL_BLUE_BRAIN_TWO_REGION_MAINTENANCE_FINDINGS_MAP
-            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::RealBug));
+            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::SemanticDriftRisk));
         assert!(CANONICAL_BLUE_BRAIN_TWO_REGION_MAINTENANCE_FINDINGS_MAP
-            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::SemanticInconsistency));
+            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::GuardDriftRisk));
         assert!(CANONICAL_BLUE_BRAIN_TWO_REGION_MAINTENANCE_FINDINGS_MAP
-            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::GuardWeakness));
+            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::AmbiguousStateMeaning));
         assert!(CANONICAL_BLUE_BRAIN_TWO_REGION_MAINTENANCE_FINDINGS_MAP
-            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::DocTestDrift));
+            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::WeakTestCoverage));
         assert!(CANONICAL_BLUE_BRAIN_TWO_REGION_MAINTENANCE_FINDINGS_MAP
-            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::NonCanonicalResidualPath));
+            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::DocCodeWordingDrift));
         assert!(CANONICAL_BLUE_BRAIN_TWO_REGION_MAINTENANCE_FINDINGS_MAP
-            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::NoChangeNeeded));
+            .contains(&BlueBrainTwoRegionMaintenanceFindingClass::NoChangeNeededFinding));
     }
 
     #[test]
