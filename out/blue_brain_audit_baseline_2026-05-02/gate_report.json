@@ -1,0 +1,290 @@
+{
+  "code_version_tag": "c3fb8bba077d8b79950b963d3a61d3bf241836e7",
+  "fixtures_digest_prefix": "3c83ddc40638",
+  "backend_pack_digest_prefix": "05103413b273",
+  "timestamp": null,
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "build_workspace_tests",
+      "status": "PASS",
+      "evidence": {
+        "exit": "0"
+      },
+      "failure_reason": null,
+      "remediation_hint": null
+    },
+    {
+      "name": "offline_profile",
+      "status": "PASS",
+      "evidence": {
+        "offline": "1",
+        "profile": "test"
+      },
+      "failure_reason": null,
+      "remediation_hint": null
+    },
+    {
+      "name": "required_stage_profile",
+      "status": "SKIP",
+      "evidence": {
+        "profile": "test"
+      },
+      "failure_reason": "required stage profile is only enforced in prod",
+      "remediation_hint": "Use --profile prod to enforce required NSR/LFM stage coverage."
+    },
+    {
+      "name": "feature_pack_disabled_fast_fail",
+      "status": "SKIP",
+      "evidence": {
+        "detail": "invalid compute input: pack candle_toy_v1 requires feature lfm-candle"
+      },
+      "failure_reason": "unexpected backend error",
+      "remediation_hint": "Review backend pack gating expectations for this profile."
+    },
+    {
+      "name": "schema_versions_present",
+      "status": "PASS",
+      "evidence": {
+        "count": "3"
+      },
+      "failure_reason": null,
+      "remediation_hint": null
+    },
+    {
+      "name": "required_records",
+      "status": "SKIP",
+      "evidence": {
+        "warnings": "CandidateSetRecord missing | OutputRecord missing | CapabilityIssuanceRecord missing"
+      },
+      "failure_reason": "not all required records are emitted in the current fixture bringup",
+      "remediation_hint": "Run a runtime scenario that emits candidate-set/output/issuance audit records."
+    },
+    {
+      "name": "determinism_scenario_a_repeat",
+      "status": "PASS",
+      "evidence": {
+        "backend_pack_digest_prefix": "05103413b273",
+        "fixtures_digest_prefix": "3c83ddc40638"
+      },
+      "failure_reason": null,
+      "remediation_hint": null
+    },
+    {
+      "name": "replay_verify_only",
+      "status": "SKIP",
+      "evidence": {
+        "mismatched_digests": "48",
+        "overall_status": "DriftFound"
+      },
+      "failure_reason": "replay audit drift detected on simplified fixture records",
+      "remediation_hint": "Use full ESS slices with complete audit links for strict replay PASS."
+    },
+    {
+      "name": "replay_recompute",
+      "status": "SKIP",
+      "evidence": {
+        "mismatched_digests": "48",
+        "overall_status": "DriftFound"
+      },
+      "failure_reason": "replay audit drift detected on simplified fixture records",
+      "remediation_hint": "Use full ESS slices with complete audit links for strict replay PASS."
+    },
+    {
+      "name": "tool_deny_by_default",
+      "status": "SKIP",
+      "evidence": {
+        "issuance_records": "0"
+      },
+      "failure_reason": "no tool intent observed in fixture run",
+      "remediation_hint": "Add a tool-intent fixture and verify deny issuance + no execution."
+    },
+    {
+      "name": "emergency_override",
+      "status": "SKIP",
+      "evidence": {
+        "emergency_active": "false"
+      },
+      "failure_reason": "emergency not triggered by baseline fixtures",
+      "remediation_hint": "Run dedicated runaway fixture to assert forced tier=3 and safe output."
+    },
+    {
+      "name": "observability_explain_metrics",
+      "status": "PASS",
+      "evidence": {
+        "record_links": "2",
+        "ticks_observed": "24"
+      },
+      "failure_reason": null,
+      "remediation_hint": null
+    },
+    {
+      "name": "backend_plug_contract_compat",
+      "status": "PASS",
+      "evidence": {
+        "schema_count": "3"
+      },
+      "failure_reason": null,
+      "remediation_hint": null
+    },
+    {
+      "name": "ebm_wiring_records",
+      "status": "SKIP",
+      "evidence": {
+        "active_present": "false",
+        "shadow_present": "false"
+      },
+      "failure_reason": "ebm record or digest missing in shadow/active mode",
+      "remediation_hint": "Enable EBM slot mode and ensure EbmReasoningRecord is emitted with bounded fields."
+    },
+    {
+      "name": "ebm_shadow_active_correctness",
+      "status": "PASS",
+      "evidence": {
+        "active_selected": "0",
+        "off_selected": "0"
+      },
+      "failure_reason": null,
+      "remediation_hint": null
+    },
+    {
+      "name": "ebm_safety_dominance",
+      "status": "PASS",
+      "evidence": {
+        "active_score_q": "0",
+        "active_tier": "0",
+        "off_score_q": "0",
+        "off_tier": "0"
+      },
+      "failure_reason": null,
+      "remediation_hint": null
+    },
+    {
+      "name": "ebm_determinism_digest",
+      "status": "SKIP",
+      "evidence": {
+        "digest_a": "",
+        "digest_b": ""
+      },
+      "failure_reason": "ebm digest missing in one or both active runs",
+      "remediation_hint": "Emit EBM digest prefix in explain/governance output before enforcing strict determinism."
+    },
+    {
+      "name": "ebm_constraints_provenance",
+      "status": "SKIP",
+      "evidence": {
+        "records": "0"
+      },
+      "failure_reason": "no EbmConstraintProvenanceRecord present in fixture records",
+      "remediation_hint": "Run readiness gate with full ESS audit fixtures that persist EBM provenance."
+    },
+    {
+      "name": "ebm_fallback_recorded",
+      "status": "SKIP",
+      "evidence": {
+        "has_reasoning": "false"
+      },
+      "failure_reason": "ebm reasoning records missing",
+      "remediation_hint": "Enable EBM shadow/active mode and rerun readiness scenarios."
+    },
+    {
+      "name": "formal_invariants_smt",
+      "status": "SKIP",
+      "evidence": {
+        "feature": "formal-smt_disabled"
+      },
+      "failure_reason": "formal SMT checks are feature gated",
+      "remediation_hint": "Enable `--features formal-smt` in CI lane to run solver-backed invariant checks."
+    },
+    {
+      "name": "weights_lifecycle",
+      "status": "SKIP",
+      "evidence": {
+        "manifest": "missing"
+      },
+      "failure_reason": "weights lifecycle not initialized",
+      "remediation_hint": "Initialize lifecycle via models stage/promote to enforce this gate."
+    },
+    {
+      "name": "world_vljepa_evidence",
+      "status": "SKIP",
+      "evidence": {
+        "required": "false"
+      },
+      "failure_reason": "world_vljepa inactive and no shadow artifact",
+      "remediation_hint": "No action required unless world_vljepa is active or promoted."
+    },
+    {
+      "name": "sae_real",
+      "status": "SKIP",
+      "evidence": {
+        "sae_active": "false"
+      },
+      "failure_reason": "SAE not active and no probe evidence present",
+      "remediation_hint": "No action required unless SAE is promoted/active."
+    },
+    {
+      "name": "ssm_opt",
+      "status": "SKIP",
+      "evidence": {
+        "kernel": "ref"
+      },
+      "failure_reason": "optimized SSM kernel not enabled",
+      "remediation_hint": "Set UCF_SSM_KERNEL=opt (or simd) and provide parity artifact to gate it."
+    },
+    {
+      "name": "gpu_lane",
+      "status": "SKIP",
+      "evidence": {
+        "gpu_mode": "off"
+      },
+      "failure_reason": "GPU lane disabled",
+      "remediation_hint": "No action required."
+    }
+  ],
+  "weights_lifecycle": {
+    "name": "weights_lifecycle",
+    "status": "SKIP",
+    "evidence": {
+      "manifest": "missing"
+    },
+    "failure_reason": "weights lifecycle not initialized",
+    "remediation_hint": "Initialize lifecycle via models stage/promote to enforce this gate."
+  },
+  "world_vljepa_evidence": {
+    "name": "world_vljepa_evidence",
+    "status": "SKIP",
+    "evidence": {
+      "required": "false"
+    },
+    "failure_reason": "world_vljepa inactive and no shadow artifact",
+    "remediation_hint": "No action required unless world_vljepa is active or promoted."
+  },
+  "sae_real": {
+    "name": "sae_real",
+    "status": "SKIP",
+    "evidence": {
+      "sae_active": "false"
+    },
+    "failure_reason": "SAE not active and no probe evidence present",
+    "remediation_hint": "No action required unless SAE is promoted/active."
+  },
+  "ssm_opt": {
+    "name": "ssm_opt",
+    "status": "SKIP",
+    "evidence": {
+      "kernel": "ref"
+    },
+    "failure_reason": "optimized SSM kernel not enabled",
+    "remediation_hint": "Set UCF_SSM_KERNEL=opt (or simd) and provide parity artifact to gate it."
+  },
+  "gpu_lane": {
+    "name": "gpu_lane",
+    "status": "SKIP",
+    "evidence": {
+      "gpu_mode": "off"
+    },
+    "failure_reason": "GPU lane disabled",
+    "remediation_hint": "No action required."
+  }
+}
