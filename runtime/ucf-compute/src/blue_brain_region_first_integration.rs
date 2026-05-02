@@ -2014,8 +2014,8 @@ mod tests {
         let (_, region1) = evaluate_blue_brain_first_region_attention_selection(
             BlueBrainFirstRegionInputSurface {
                 attention_class: BlueBrainControlAttentionSelectionClass::AttentionTarget,
-                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateInsufficient,
-                reference_validity: BlueBrainReferenceValidity::Current,
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::Caveated,
                 context_priority: BlueBrainContextEvidencePriorityClass::PrimaryContext,
             },
         );
