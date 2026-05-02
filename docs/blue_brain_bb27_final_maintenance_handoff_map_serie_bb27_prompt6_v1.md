@@ -1,5 +1,10 @@
 # Serie BB27 Prompt 6: Final maintenance handoff map (post two-region baseline)
 
+> ✅ **Authority notice (current operational authority):** Dieses Dokument ist Teil der aktuell maßgeblichen operativen Endlage.  
+> Aktive Endlage: **Region 1 + Region 2 aktiv**, Maintenance/Bugfix/Cleanup als Default.  
+> Historische BB25-Handoff-/Decision-Dokumente bleiben referenzierbar, aber sind nicht gleichrangig operativ.  
+> Kanonische Klassifikation: `docs/blue_brain_authority_chain_status_map.md`
+
 Status: **current operational authority (BB27) locked**. Dieses Dokument ist die maßgebliche aktuelle operative Endlage der Blue-Brain-Autoritätskette.
 
 Purpose: this document is a narrow closure handoff. It introduces no new functional block, no new architecture series, and no implicit Region-3 preparation.
