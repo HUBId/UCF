@@ -2,3 +2,14 @@ target/
 **/*.rs.bk
 /target
 .DS_Store
+
+# Local runtime/test artifacts
+/.ucf/
+/config_resolved.json
+/crates/dbm_bus/hpa_state.json
+/engine/hpa_state.json
+/fuzz/Cargo.lock
+/runtime/ucf-compute/.ucf/
+/runtime/ucf-ops/config_resolved.json
+/runtime/ucf-ops/out/
+/runtime/ucf-ops/policies/

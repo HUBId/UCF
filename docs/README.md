@@ -87,6 +87,24 @@ Referenzpunkte für die technische Scope-Grenze:
 - **Region 3 ist nicht aktiv** und benötigt später einen expliziten Re-Scope.
 - Die BB24–BB27 Serienlogik wird als aktive Ausbau-Lane **bewusst beendet**.
 
+
+## 2.2) Audit-Baseline (Blue-Brain / Zwei-Regionen) — 2026-05-02
+
+Für einen reproduzierbaren Audit-Baseline-Pass wurden die kanonischen AGENTS-Checks frisch ausgeführt; die Reports liegen unter:
+
+- `out/blue_brain_audit_baseline_2026-05-02/docs_lint_report.json`
+- `out/blue_brain_audit_baseline_2026-05-02/gate_report.json`
+
+Ausgeführt wurden:
+
+- `cargo test --workspace`
+- `cargo run -p ucf-ops -- docs lint --strict --out ./out/blue_brain_audit_baseline_2026-05-02/docs_lint_report.json`
+- `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/blue_brain_audit_baseline_2026-05-02/gate_report.json`
+- `cargo fmt --all -- --check`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+
+Diese Baseline dokumentiert den wartungsstabilen Stand ohne Scope-Erweiterung (keine Region-3-/Plattform-/Planner-Neulogik).
+
 ## 3) Guard rails and boundaries (must stay visible)
 
 - Keine implizite Scope-Erweiterung außerhalb der unterstützten Scope-Artefakte.
