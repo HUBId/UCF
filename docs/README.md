@@ -27,7 +27,8 @@ Regel: Bei Konflikten zwischen historischen BB25-Aussagen und BB27-Endlage gilt 
 - **BB23 freeze/maintenance baseline:** `docs/blue_brain_bb23_freeze_maintenance_baseline_serie_bb23_prompt1_v1.md`
 - **BB23 maintenance guard rails / allowed-change envelope:** `docs/blue_brain_bb23_maintenance_guard_rails_allowed_change_envelope_serie_bb23_prompt2_v1.md`
 - **BB23 final freeze/readiness statement (maintenance transition):** `docs/blue_brain_bb23_final_freeze_readiness_statement_serie_bb23_prompt3_v1.md`
-- **Region-1 maintenance reference surface (BB25, historical snapshot line):**
+- **Region-1 maintenance reference surface (BB25):**
+  - _Authority class: historical snapshot line (nicht aktuelle operative Autorität)._
   - `docs/blue_brain_first_region_finalization_serie_bb24_prompt10_v1.md`
   - `docs/blue_brain_first_region_stabilization_serie_bb25_prompt1_v1.md`
   - `docs/blue_brain_region1_maintenance_reference_surface_serie_bb25_prompt2_v1.md`
@@ -51,7 +52,8 @@ Regel: Bei Konflikten zwischen historischen BB25-Aussagen und BB27-Endlage gilt 
   - `docs/blue_brain_two_region_guard_contract_consistency_serie_bb26_prompt7_v1.md`
 - **BB26 readiness sweep / second-region expansion boundary (BB26 P8):**
   - `docs/blue_brain_bb26_readiness_sweep_second_region_expansion_boundary_serie_bb26_prompt8_v1.md`
-- **Two-region maintenance stabilization/reference line (BB27, current authority line):**
+- **Two-region maintenance stabilization/reference line (BB27):**
+  - _Authority class: current operational authority line._
   - `docs/blue_brain_two_region_maintenance_stabilization_serie_bb27_prompt1_v1.md`
   - `docs/blue_brain_two_region_docs_tests_reference_cleanup_serie_bb27_prompt2_v1.md`
   - `docs/blue_brain_bb27_final_two_region_stabilization_sweep_serie_bb27_prompt3_v1.md`
