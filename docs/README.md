@@ -72,6 +72,9 @@ Autoritätsklassen im Repo-Kontext:
   - `docs/blue_brain_third_region_selection_serie_bb28_prompt1_v1.md`
   - `docs/blue_brain_third_region_integration_serie_bb28_prompt2_v1.md`
   - `docs/blue_brain_third_region_runtime_selection_reference_contract_serie_bb28_prompt3_v1.md`
+  - `docs/blue_brain_third_region_relation_line_serie_bb28_prompt4_v1.md`
+  - `docs/blue_brain_third_region_diagnostics_caveat_deferred_semantics_serie_bb28_prompt5_v1.md`
+  - `docs/blue_brain_third_region_tests_guards_cleanup_serie_bb28_prompt6_v1.md`
   - _Authority class: current operational authority line._
   - `docs/blue_brain_two_region_maintenance_stabilization_serie_bb27_prompt1_v1.md`
   - `docs/blue_brain_two_region_docs_tests_reference_cleanup_serie_bb27_prompt2_v1.md`
