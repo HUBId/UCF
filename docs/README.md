@@ -109,7 +109,8 @@ Referenzpunkte für die technische Scope-Grenze:
 - Aktive Regionenbasis ist **Region 1 + Region 2 + Region 3 (bounded advisory/reference lane)**.
 - Standardmodus bleibt **Maintenance/Bugfix/Cleanup** mit klarer no-direct-* Guard-Linie.
 - **Region 4 ist nicht aktiv** und benötigt einen späteren expliziten Re-Scope.
-- Die BB28-Linie schließt als kontrollierte Drei-Regionen-Basis ohne Plattformausweitung.
+- Die BB28/BB29-Linie schließt als kontrollierte, maintenance-gehärtete Drei-Regionen-Basis ohne Plattformausweitung.
+- Canonical stabilization map: `docs/blue_brain_three_region_maintenance_stabilization_line_serie_bb29_prompt1_v1.md`
 
 
 ## 2.2) Audit-Baseline (Blue-Brain / Zwei-Regionen) — 2026-05-02
@@ -127,7 +128,7 @@ Ausgeführt wurden:
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
 
-Diese Baseline dokumentiert den wartungsstabilen Stand ohne Scope-Erweiterung (keine Region-3-/Plattform-/Planner-Neulogik).
+Diese Baseline dokumentiert den wartungsstabilen Stand ohne Scope-Erweiterung (keine Region-4-/Plattform-/Planner-Neulogik).
 
 ## 3) Guard rails and boundaries (must stay visible)
 
