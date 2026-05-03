@@ -177,6 +177,29 @@ pub const CANONICAL_BLUE_BRAIN_THIRD_REGION_INTEGRATION_MAP: [BlueBrainThirdRegi
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainThirdRegionContractClass {
+    Region3ToRuntimeAdvisorySignal,
+    RuntimeToRegion3BoundedInput,
+    Region3ToSelectionAdvisorySignal,
+    SelectionToRegion3BoundedStateInput,
+    Region3ReferenceSignal,
+    CaveatedDeferredBlockedRegion3ContractSignal,
+    ReferenceOnlyRegion3ContractSignal,
+    NonCanonicalInternalOnlyRegion3ContractPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_THIRD_REGION_CONTRACT_MAP: [BlueBrainThirdRegionContractClass; 8] = [
+    BlueBrainThirdRegionContractClass::Region3ToRuntimeAdvisorySignal,
+    BlueBrainThirdRegionContractClass::RuntimeToRegion3BoundedInput,
+    BlueBrainThirdRegionContractClass::Region3ToSelectionAdvisorySignal,
+    BlueBrainThirdRegionContractClass::SelectionToRegion3BoundedStateInput,
+    BlueBrainThirdRegionContractClass::Region3ReferenceSignal,
+    BlueBrainThirdRegionContractClass::CaveatedDeferredBlockedRegion3ContractSignal,
+    BlueBrainThirdRegionContractClass::ReferenceOnlyRegion3ContractSignal,
+    BlueBrainThirdRegionContractClass::NonCanonicalInternalOnlyRegion3ContractPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainSecondRegionPathClass {
     RegionToRuntimeAdvisorySignal,
     RuntimeToRegionBoundedInput,
@@ -2124,6 +2147,56 @@ mod tests {
         assert!(doc.contains("no direct compute invocation"));
         assert!(doc.contains("no safety override"));
         assert!(doc.contains("keine Öffnung einer vierten Regionenklasse"));
+    }
+
+    #[test]
+    fn third_region_contract_map_contains_required_classes() {
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_CONTRACT_MAP
+            .contains(&BlueBrainThirdRegionContractClass::Region3ToRuntimeAdvisorySignal));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_CONTRACT_MAP
+            .contains(&BlueBrainThirdRegionContractClass::RuntimeToRegion3BoundedInput));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_CONTRACT_MAP
+            .contains(&BlueBrainThirdRegionContractClass::Region3ToSelectionAdvisorySignal));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_CONTRACT_MAP
+            .contains(&BlueBrainThirdRegionContractClass::SelectionToRegion3BoundedStateInput));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_CONTRACT_MAP
+            .contains(&BlueBrainThirdRegionContractClass::Region3ReferenceSignal));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_CONTRACT_MAP.contains(
+            &BlueBrainThirdRegionContractClass::CaveatedDeferredBlockedRegion3ContractSignal
+        ));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_CONTRACT_MAP
+            .contains(&BlueBrainThirdRegionContractClass::ReferenceOnlyRegion3ContractSignal));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_CONTRACT_MAP.contains(
+            &BlueBrainThirdRegionContractClass::NonCanonicalInternalOnlyRegion3ContractPath
+        ));
+    }
+
+    #[test]
+    fn third_region_contract_doc_pins_runtime_selection_reference_semantics() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_third_region_runtime_selection_reference_contract_serie_bb28_prompt3_v1.md"
+        );
+        assert!(doc.contains("third-region contract map"));
+        assert!(doc.contains("region-3-to-runtime advisory signal"));
+        assert!(doc.contains("runtime-to-region-3 bounded input"));
+        assert!(doc.contains("region-3-to-selection advisory signal"));
+        assert!(doc.contains("selection-to-region-3 bounded state input"));
+        assert!(doc.contains("region-3-reference signal"));
+        assert!(doc.contains("caveated/deferred/blocked region-3 contract signal"));
+        assert!(doc.contains("reference-only region-3 contract signal"));
+        assert!(doc.contains("non-canonical/internal-only region-3 contract path"));
+        assert!(doc.contains("deferred != blocked"));
+        assert!(doc.contains("blocked != failed execution"));
+        assert!(doc.contains("caveated != strong region-3 signal"));
+        assert!(doc.contains("reference-only != operative support basis"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("no fourth-region opening"));
+        assert!(doc.contains("no broad inter-region platform"));
     }
 
     #[test]
