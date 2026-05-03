@@ -158,6 +158,25 @@ pub const BLUE_BRAIN_THIRD_REGION_CLASS_SELECTION: BlueBrainThirdRegionClass =
     BlueBrainThirdRegionClass::RuntimeFeedbackIntegrationRelated;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainThirdRegionPathClass {
+    Region3InputSurface,
+    Region3StateSurface,
+    Region3OutputAdvisorySurface,
+    Region3ReferenceSurface,
+    BlockedDeferredRegion3Path,
+    NonCanonicalInternalOnlyRegion3Path,
+}
+
+pub const CANONICAL_BLUE_BRAIN_THIRD_REGION_INTEGRATION_MAP: [BlueBrainThirdRegionPathClass; 6] = [
+    BlueBrainThirdRegionPathClass::Region3InputSurface,
+    BlueBrainThirdRegionPathClass::Region3StateSurface,
+    BlueBrainThirdRegionPathClass::Region3OutputAdvisorySurface,
+    BlueBrainThirdRegionPathClass::Region3ReferenceSurface,
+    BlueBrainThirdRegionPathClass::BlockedDeferredRegion3Path,
+    BlueBrainThirdRegionPathClass::NonCanonicalInternalOnlyRegion3Path,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainSecondRegionPathClass {
     RegionToRuntimeAdvisorySignal,
     RuntimeToRegionBoundedInput,
@@ -709,6 +728,61 @@ pub fn evaluate_blue_brain_second_region_memory_context(
         safety_override: false,
     };
     (state, output)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainThirdRegionStateSurface {
+    ActiveBoundedFeedbackAdvisoryOnly,
+    CaveatedFeedbackState,
+    DeferredFeedbackState,
+    BlockedFeedbackState,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainThirdRegionInputSource {
+    RuntimeFeedbackSignal,
+    RuntimeDeferralSignal,
+    SelectionCaveatSignal,
+    ReferenceValiditySignal,
+    ToolActionControlSignal,
+    ComputeInternalStateSignal,
+    SafetyOverrideSignal,
+    ImplicitMemoryMutationSignal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainThirdRegionInputGuard {
+    Canonical,
+    RejectedToolActionControl,
+    RejectedComputeInternalState,
+    RejectedSafetyOverride,
+    RejectedImplicitMemoryMutation,
+}
+
+pub fn classify_blue_brain_third_region_input_guard(
+    source: BlueBrainThirdRegionInputSource,
+) -> BlueBrainThirdRegionInputGuard {
+    match source {
+        BlueBrainThirdRegionInputSource::RuntimeFeedbackSignal
+        | BlueBrainThirdRegionInputSource::RuntimeDeferralSignal
+        | BlueBrainThirdRegionInputSource::SelectionCaveatSignal
+        | BlueBrainThirdRegionInputSource::ReferenceValiditySignal => {
+            BlueBrainThirdRegionInputGuard::Canonical
+        }
+        BlueBrainThirdRegionInputSource::ToolActionControlSignal => {
+            BlueBrainThirdRegionInputGuard::RejectedToolActionControl
+        }
+        BlueBrainThirdRegionInputSource::ComputeInternalStateSignal => {
+            BlueBrainThirdRegionInputGuard::RejectedComputeInternalState
+        }
+        BlueBrainThirdRegionInputSource::SafetyOverrideSignal => {
+            BlueBrainThirdRegionInputGuard::RejectedSafetyOverride
+        }
+        BlueBrainThirdRegionInputSource::ImplicitMemoryMutationSignal => {
+            BlueBrainThirdRegionInputGuard::RejectedImplicitMemoryMutation
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1979,6 +2053,77 @@ mod tests {
         assert!(doc.contains("keine direkte Action-/Retry-/Memory-/Compute-Autorität"));
         assert!(doc.contains("keine Öffnung einer vierten Regionenklasse"));
         assert!(doc.contains("bounded advisory-only"));
+    }
+
+    #[test]
+    fn third_region_integration_map_contains_required_classes() {
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainThirdRegionPathClass::Region3InputSurface));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainThirdRegionPathClass::Region3StateSurface));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainThirdRegionPathClass::Region3OutputAdvisorySurface));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainThirdRegionPathClass::Region3ReferenceSurface));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainThirdRegionPathClass::BlockedDeferredRegion3Path));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainThirdRegionPathClass::NonCanonicalInternalOnlyRegion3Path));
+    }
+
+    #[test]
+    fn third_region_input_guards_preserve_no_direct_authority_inputs() {
+        assert_eq!(
+            classify_blue_brain_third_region_input_guard(
+                BlueBrainThirdRegionInputSource::RuntimeFeedbackSignal
+            ),
+            BlueBrainThirdRegionInputGuard::Canonical
+        );
+        assert_eq!(
+            classify_blue_brain_third_region_input_guard(
+                BlueBrainThirdRegionInputSource::ToolActionControlSignal
+            ),
+            BlueBrainThirdRegionInputGuard::RejectedToolActionControl
+        );
+        assert_eq!(
+            classify_blue_brain_third_region_input_guard(
+                BlueBrainThirdRegionInputSource::ComputeInternalStateSignal
+            ),
+            BlueBrainThirdRegionInputGuard::RejectedComputeInternalState
+        );
+        assert_eq!(
+            classify_blue_brain_third_region_input_guard(
+                BlueBrainThirdRegionInputSource::SafetyOverrideSignal
+            ),
+            BlueBrainThirdRegionInputGuard::RejectedSafetyOverride
+        );
+        assert_eq!(
+            classify_blue_brain_third_region_input_guard(
+                BlueBrainThirdRegionInputSource::ImplicitMemoryMutationSignal
+            ),
+            BlueBrainThirdRegionInputGuard::RejectedImplicitMemoryMutation
+        );
+    }
+
+    #[test]
+    fn third_region_integration_doc_pins_surfaces_and_bounds() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_third_region_integration_serie_bb28_prompt2_v1.md"
+        );
+        assert!(doc.contains("Canonical Third-Region Integration Map"));
+        assert!(doc.contains("region-3 input surface"));
+        assert!(doc.contains("region-3 state surface"));
+        assert!(doc.contains("region-3 output/advisory surface"));
+        assert!(doc.contains("region-3 reference surface"));
+        assert!(doc.contains("blocked/deferred region-3 path"));
+        assert!(doc.contains("non-canonical/internal-only region-3 path"));
+        assert!(doc.contains("no direct action selection"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("keine Öffnung einer vierten Regionenklasse"));
     }
 
     #[test]

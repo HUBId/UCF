@@ -31,6 +31,7 @@ Zweck: schneller, repo-treuer Einstieg in die **aktuell operativen** Linien ohne
   - `docs/blue_brain_bb27_final_two_region_stabilization_sweep_serie_bb27_prompt3_v1.md`
 - **Third-region selection line (BB28):**
   - `docs/blue_brain_third_region_selection_serie_bb28_prompt1_v1.md`
+  - `docs/blue_brain_third_region_integration_serie_bb28_prompt2_v1.md`
   - `docs/blue_brain_two_region_maintenance_stabilization_serie_bb27_prompt1_v1.md`
   - `docs/blue_brain_two_region_docs_tests_reference_cleanup_serie_bb27_prompt2_v1.md`
   - `docs/blue_brain_bb27_final_two_region_stabilization_sweep_serie_bb27_prompt3_v1.md`
