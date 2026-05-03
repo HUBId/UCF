@@ -200,6 +200,79 @@ pub const CANONICAL_BLUE_BRAIN_THIRD_REGION_CONTRACT_MAP: [BlueBrainThirdRegionC
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainThirdRegionContractSignal {
+    Region3ToRuntimeAdvisory,
+    RuntimeToRegion3BoundedInput,
+    Region3ToSelectionAdvisory,
+    SelectionToRegion3BoundedStateInput,
+    Region3ReferenceSignal,
+    Caveated,
+    Deferred,
+    Blocked,
+    Insufficient,
+    DiagnosticOnly,
+    ReferenceOnly,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainThirdRegionDiagnosticState {
+    Region3AdvisoryOnlyDiagnostic,
+    Region3CaveatedDiagnostic,
+    Region3DeferredDiagnostic,
+    Region3BlockedDiagnostic,
+    Region3InsufficientDiagnostic,
+    Region3DiagnosticOnlyState,
+    CaveatedInterRegionDiagnosticInfluence,
+    NonCanonicalInternalOnlyRegion3DiagnosticPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_THIRD_REGION_DIAGNOSTIC_MAP: [BlueBrainThirdRegionDiagnosticState;
+    8] = [
+    BlueBrainThirdRegionDiagnosticState::Region3AdvisoryOnlyDiagnostic,
+    BlueBrainThirdRegionDiagnosticState::Region3CaveatedDiagnostic,
+    BlueBrainThirdRegionDiagnosticState::Region3DeferredDiagnostic,
+    BlueBrainThirdRegionDiagnosticState::Region3BlockedDiagnostic,
+    BlueBrainThirdRegionDiagnosticState::Region3InsufficientDiagnostic,
+    BlueBrainThirdRegionDiagnosticState::Region3DiagnosticOnlyState,
+    BlueBrainThirdRegionDiagnosticState::CaveatedInterRegionDiagnosticInfluence,
+    BlueBrainThirdRegionDiagnosticState::NonCanonicalInternalOnlyRegion3DiagnosticPath,
+];
+
+pub fn blue_brain_third_region_diagnostic_state_for_signal(
+    signal: BlueBrainThirdRegionContractSignal,
+) -> BlueBrainThirdRegionDiagnosticState {
+    match signal {
+        BlueBrainThirdRegionContractSignal::Region3ToRuntimeAdvisory
+        | BlueBrainThirdRegionContractSignal::RuntimeToRegion3BoundedInput
+        | BlueBrainThirdRegionContractSignal::Region3ToSelectionAdvisory
+        | BlueBrainThirdRegionContractSignal::SelectionToRegion3BoundedStateInput => {
+            BlueBrainThirdRegionDiagnosticState::Region3AdvisoryOnlyDiagnostic
+        }
+        BlueBrainThirdRegionContractSignal::Caveated => {
+            BlueBrainThirdRegionDiagnosticState::Region3CaveatedDiagnostic
+        }
+        BlueBrainThirdRegionContractSignal::Deferred => {
+            BlueBrainThirdRegionDiagnosticState::Region3DeferredDiagnostic
+        }
+        BlueBrainThirdRegionContractSignal::Blocked => {
+            BlueBrainThirdRegionDiagnosticState::Region3BlockedDiagnostic
+        }
+        BlueBrainThirdRegionContractSignal::Insufficient => {
+            BlueBrainThirdRegionDiagnosticState::Region3InsufficientDiagnostic
+        }
+        BlueBrainThirdRegionContractSignal::DiagnosticOnly
+        | BlueBrainThirdRegionContractSignal::ReferenceOnly
+        | BlueBrainThirdRegionContractSignal::Region3ReferenceSignal => {
+            BlueBrainThirdRegionDiagnosticState::Region3DiagnosticOnlyState
+        }
+        BlueBrainThirdRegionContractSignal::NonCanonicalInternalOnly => {
+            BlueBrainThirdRegionDiagnosticState::NonCanonicalInternalOnlyRegion3DiagnosticPath
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainSecondRegionPathClass {
     RegionToRuntimeAdvisorySignal,
     RuntimeToRegionBoundedInput,
@@ -389,6 +462,35 @@ pub fn evaluate_blue_brain_third_region_relation(
         direct_memory_commit: false,
         direct_compute_invocation: false,
         safety_override: false,
+    }
+}
+
+pub fn blue_brain_third_region_inter_region_diagnostic_influence(
+    relation: BlueBrainThirdRegionRelationSurface,
+) -> BlueBrainThirdRegionDiagnosticState {
+    match relation.relation_class {
+        BlueBrainThirdRegionRelationClass::CaveatedInterRegionRelation => {
+            BlueBrainThirdRegionDiagnosticState::CaveatedInterRegionDiagnosticInfluence
+        }
+        BlueBrainThirdRegionRelationClass::BlockedDeferredInterRegionRelation => {
+            if relation.blocked {
+                BlueBrainThirdRegionDiagnosticState::Region3BlockedDiagnostic
+            } else {
+                BlueBrainThirdRegionDiagnosticState::Region3DeferredDiagnostic
+            }
+        }
+        BlueBrainThirdRegionRelationClass::NonCanonicalInternalOnlyInterRegionPath => {
+            BlueBrainThirdRegionDiagnosticState::NonCanonicalInternalOnlyRegion3DiagnosticPath
+        }
+        BlueBrainThirdRegionRelationClass::SharedReferenceMediatedRelation => {
+            BlueBrainThirdRegionDiagnosticState::Region3DiagnosticOnlyState
+        }
+        BlueBrainThirdRegionRelationClass::Region3ToRegion1Bounded
+        | BlueBrainThirdRegionRelationClass::Region1ToRegion3Bounded
+        | BlueBrainThirdRegionRelationClass::Region3ToRegion2Bounded
+        | BlueBrainThirdRegionRelationClass::Region2ToRegion3Bounded => {
+            BlueBrainThirdRegionDiagnosticState::Region3AdvisoryOnlyDiagnostic
+        }
     }
 }
 
@@ -2290,6 +2392,68 @@ mod tests {
         assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_CONTRACT_MAP.contains(
             &BlueBrainThirdRegionContractClass::NonCanonicalInternalOnlyRegion3ContractPath
         ));
+    }
+
+    #[test]
+    fn third_region_diagnostic_map_contains_required_states() {
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_DIAGNOSTIC_MAP
+            .contains(&BlueBrainThirdRegionDiagnosticState::Region3AdvisoryOnlyDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_DIAGNOSTIC_MAP
+            .contains(&BlueBrainThirdRegionDiagnosticState::Region3CaveatedDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_DIAGNOSTIC_MAP
+            .contains(&BlueBrainThirdRegionDiagnosticState::Region3DeferredDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_DIAGNOSTIC_MAP
+            .contains(&BlueBrainThirdRegionDiagnosticState::Region3BlockedDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_DIAGNOSTIC_MAP
+            .contains(&BlueBrainThirdRegionDiagnosticState::Region3InsufficientDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_DIAGNOSTIC_MAP
+            .contains(&BlueBrainThirdRegionDiagnosticState::Region3DiagnosticOnlyState));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_DIAGNOSTIC_MAP.contains(
+            &BlueBrainThirdRegionDiagnosticState::CaveatedInterRegionDiagnosticInfluence
+        ));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_DIAGNOSTIC_MAP.contains(
+            &BlueBrainThirdRegionDiagnosticState::NonCanonicalInternalOnlyRegion3DiagnosticPath
+        ));
+    }
+
+    #[test]
+    fn third_region_signal_to_diagnostic_state_distinguishes_core_states() {
+        assert_eq!(
+            blue_brain_third_region_diagnostic_state_for_signal(
+                BlueBrainThirdRegionContractSignal::Region3ToRuntimeAdvisory
+            ),
+            BlueBrainThirdRegionDiagnosticState::Region3AdvisoryOnlyDiagnostic
+        );
+        assert_eq!(
+            blue_brain_third_region_diagnostic_state_for_signal(
+                BlueBrainThirdRegionContractSignal::Caveated
+            ),
+            BlueBrainThirdRegionDiagnosticState::Region3CaveatedDiagnostic
+        );
+        assert_eq!(
+            blue_brain_third_region_diagnostic_state_for_signal(
+                BlueBrainThirdRegionContractSignal::Deferred
+            ),
+            BlueBrainThirdRegionDiagnosticState::Region3DeferredDiagnostic
+        );
+        assert_eq!(
+            blue_brain_third_region_diagnostic_state_for_signal(
+                BlueBrainThirdRegionContractSignal::Blocked
+            ),
+            BlueBrainThirdRegionDiagnosticState::Region3BlockedDiagnostic
+        );
+        assert_eq!(
+            blue_brain_third_region_diagnostic_state_for_signal(
+                BlueBrainThirdRegionContractSignal::Insufficient
+            ),
+            BlueBrainThirdRegionDiagnosticState::Region3InsufficientDiagnostic
+        );
+        assert_eq!(
+            blue_brain_third_region_diagnostic_state_for_signal(
+                BlueBrainThirdRegionContractSignal::ReferenceOnly
+            ),
+            BlueBrainThirdRegionDiagnosticState::Region3DiagnosticOnlyState
+        );
     }
 
     #[test]
