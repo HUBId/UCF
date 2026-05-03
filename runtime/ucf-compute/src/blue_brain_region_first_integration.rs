@@ -272,6 +272,127 @@ pub const CANONICAL_BLUE_BRAIN_INTER_REGION_RELATION_MAP: [BlueBrainInterRegionR
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainThirdRegionRelationClass {
+    Region3ToRegion1Bounded,
+    Region1ToRegion3Bounded,
+    Region3ToRegion2Bounded,
+    Region2ToRegion3Bounded,
+    SharedReferenceMediatedRelation,
+    CaveatedInterRegionRelation,
+    BlockedDeferredInterRegionRelation,
+    NonCanonicalInternalOnlyInterRegionPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_THIRD_REGION_RELATION_MAP: [BlueBrainThirdRegionRelationClass; 8] = [
+    BlueBrainThirdRegionRelationClass::Region3ToRegion1Bounded,
+    BlueBrainThirdRegionRelationClass::Region1ToRegion3Bounded,
+    BlueBrainThirdRegionRelationClass::Region3ToRegion2Bounded,
+    BlueBrainThirdRegionRelationClass::Region2ToRegion3Bounded,
+    BlueBrainThirdRegionRelationClass::SharedReferenceMediatedRelation,
+    BlueBrainThirdRegionRelationClass::CaveatedInterRegionRelation,
+    BlueBrainThirdRegionRelationClass::BlockedDeferredInterRegionRelation,
+    BlueBrainThirdRegionRelationClass::NonCanonicalInternalOnlyInterRegionPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainThirdRegionRelationSurface {
+    pub relation_class: BlueBrainThirdRegionRelationClass,
+    pub region3_to_region1_advisory_only: bool,
+    pub region1_to_region3_advisory_only: bool,
+    pub region3_to_region2_advisory_only: bool,
+    pub region2_to_region3_advisory_only: bool,
+    pub reference_mediated_only: bool,
+    pub caveated: bool,
+    pub deferred: bool,
+    pub blocked: bool,
+    pub direct_action_selection: bool,
+    pub direct_execution_trigger: bool,
+    pub direct_retry_trigger: bool,
+    pub direct_memory_commit: bool,
+    pub direct_compute_invocation: bool,
+    pub safety_override: bool,
+}
+
+pub fn evaluate_blue_brain_third_region_relation(
+    region1: BlueBrainFirstRegionOutputSurface,
+    region2: BlueBrainSecondRegionOutputSurface,
+) -> BlueBrainThirdRegionRelationSurface {
+    let relation12 = evaluate_blue_brain_inter_region_relation(region1, region2);
+    let region3_is_feedback_advisory = matches!(
+        region2.runtime_contract_signal,
+        BlueBrainSecondRegionContractSignal::RegionToRuntimeAdvisory
+    ) && matches!(
+        region2.selection_contract_signal,
+        BlueBrainSecondRegionContractSignal::RegionToSelectionAdvisory
+    );
+
+    let region3_receives_bounded_inputs = matches!(
+        region2.runtime_contract_signal,
+        BlueBrainSecondRegionContractSignal::Deferred
+            | BlueBrainSecondRegionContractSignal::Blocked
+            | BlueBrainSecondRegionContractSignal::Caveated
+            | BlueBrainSecondRegionContractSignal::Insufficient
+            | BlueBrainSecondRegionContractSignal::ReferenceOnly
+            | BlueBrainSecondRegionContractSignal::RegionToRuntimeAdvisory
+    ) && matches!(
+        region2.selection_contract_signal,
+        BlueBrainSecondRegionContractSignal::Deferred
+            | BlueBrainSecondRegionContractSignal::Blocked
+            | BlueBrainSecondRegionContractSignal::Caveated
+            | BlueBrainSecondRegionContractSignal::Insufficient
+            | BlueBrainSecondRegionContractSignal::RegionToSelectionAdvisory
+    );
+
+    let relation_class = if matches!(
+        relation12.relation_class,
+        BlueBrainInterRegionRelationClass::NonCanonicalInternalOnlyPath
+    ) {
+        BlueBrainThirdRegionRelationClass::NonCanonicalInternalOnlyInterRegionPath
+    } else if relation12.blocked || relation12.deferred {
+        BlueBrainThirdRegionRelationClass::BlockedDeferredInterRegionRelation
+    } else if relation12.caveated {
+        BlueBrainThirdRegionRelationClass::CaveatedInterRegionRelation
+    } else if relation12.reference_mediated_only
+        && (region1.reference_only
+            || matches!(
+                region2.reference_contract_signal,
+                BlueBrainSecondRegionContractSignal::ReferenceOnly
+                    | BlueBrainSecondRegionContractSignal::RegionReferenceSignal
+            ))
+    {
+        BlueBrainThirdRegionRelationClass::SharedReferenceMediatedRelation
+    } else if region3_is_feedback_advisory {
+        BlueBrainThirdRegionRelationClass::Region3ToRegion1Bounded
+    } else if region3_receives_bounded_inputs {
+        BlueBrainThirdRegionRelationClass::Region1ToRegion3Bounded
+    } else if relation12.region2_to_region1_advisory_only {
+        BlueBrainThirdRegionRelationClass::Region3ToRegion2Bounded
+    } else {
+        BlueBrainThirdRegionRelationClass::Region2ToRegion3Bounded
+    };
+
+    BlueBrainThirdRegionRelationSurface {
+        relation_class,
+        region3_to_region1_advisory_only: region2.runtime_advisory_only
+            && region2.selection_advisory_only,
+        region1_to_region3_advisory_only: region1.runtime_advisory_only
+            && region1.selection_advisory_only,
+        region3_to_region2_advisory_only: region2.runtime_advisory_only,
+        region2_to_region3_advisory_only: region2.selection_advisory_only,
+        reference_mediated_only: relation12.reference_mediated_only,
+        caveated: relation12.caveated,
+        deferred: relation12.deferred,
+        blocked: relation12.blocked,
+        direct_action_selection: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        safety_override: false,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainTwoRegionConsistencyClass {
     CanonicalRegion1Path,
     CanonicalRegion2Path,
@@ -2196,6 +2317,78 @@ mod tests {
         assert!(doc.contains("no direct compute invocation"));
         assert!(doc.contains("no safety override"));
         assert!(doc.contains("no fourth-region opening"));
+        assert!(doc.contains("no broad inter-region platform"));
+    }
+
+    #[test]
+    fn third_region_relation_map_contains_required_classes() {
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_RELATION_MAP
+            .contains(&BlueBrainThirdRegionRelationClass::Region3ToRegion1Bounded));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_RELATION_MAP
+            .contains(&BlueBrainThirdRegionRelationClass::Region1ToRegion3Bounded));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_RELATION_MAP
+            .contains(&BlueBrainThirdRegionRelationClass::Region3ToRegion2Bounded));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_RELATION_MAP
+            .contains(&BlueBrainThirdRegionRelationClass::Region2ToRegion3Bounded));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_RELATION_MAP
+            .contains(&BlueBrainThirdRegionRelationClass::SharedReferenceMediatedRelation));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_RELATION_MAP
+            .contains(&BlueBrainThirdRegionRelationClass::CaveatedInterRegionRelation));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_RELATION_MAP
+            .contains(&BlueBrainThirdRegionRelationClass::BlockedDeferredInterRegionRelation));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_RELATION_MAP
+            .contains(&BlueBrainThirdRegionRelationClass::NonCanonicalInternalOnlyInterRegionPath));
+    }
+
+    #[test]
+    fn third_region_relation_stays_bounded_advisory_only_without_direct_authority() {
+        let (_, region1) = evaluate_blue_brain_first_region_attention_selection(
+            BlueBrainFirstRegionInputSurface {
+                attention_class: BlueBrainControlAttentionSelectionClass::AttentionTarget,
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::Current,
+                context_priority: BlueBrainContextEvidencePriorityClass::PrimaryContext,
+            },
+        );
+        let (_, region2) =
+            evaluate_blue_brain_second_region_memory_context(BlueBrainSecondRegionInputSurface {
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::Current,
+                context_priority: BlueBrainContextEvidencePriorityClass::SupportingContext,
+            });
+
+        let relation = evaluate_blue_brain_third_region_relation(region1, region2);
+        assert!(relation.region3_to_region1_advisory_only);
+        assert!(relation.region1_to_region3_advisory_only);
+        assert!(relation.region3_to_region2_advisory_only);
+        assert!(relation.region2_to_region3_advisory_only);
+        assert!(!relation.direct_action_selection);
+        assert!(!relation.direct_execution_trigger);
+        assert!(!relation.direct_retry_trigger);
+        assert!(!relation.direct_memory_commit);
+        assert!(!relation.direct_compute_invocation);
+        assert!(!relation.safety_override);
+    }
+
+    #[test]
+    fn third_region_relation_doc_pins_direction_semantics_and_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_third_region_relation_line_serie_bb28_prompt4_v1.md"
+        );
+        assert!(doc.contains("region-3-to-region-1 bounded relation"));
+        assert!(doc.contains("region-1-to-region-3 bounded relation"));
+        assert!(doc.contains("region-3-to-region-2 bounded relation"));
+        assert!(doc.contains("region-2-to-region-3 bounded relation"));
+        assert!(doc.contains("shared reference-mediated relation"));
+        assert!(doc.contains("caveated inter-region relation"));
+        assert!(doc.contains("blocked/deferred inter-region relation"));
+        assert!(doc.contains("non-canonical/internal-only inter-region path"));
+        assert!(doc.contains("no direct action selection"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
         assert!(doc.contains("no broad inter-region platform"));
     }
 
