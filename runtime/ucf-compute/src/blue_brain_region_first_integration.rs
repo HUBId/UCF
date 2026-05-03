@@ -368,6 +368,25 @@ pub const CANONICAL_BLUE_BRAIN_THIRD_REGION_RELATION_MAP: [BlueBrainThirdRegionR
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainThirdRegionHardeningClass {
+    GuardedCanonicalRegion3Surface,
+    GuardedRegion3DiagnosticsPath,
+    GuardedBoundedInterRegionRelationPath,
+    BlockedForbiddenAuthorityPath,
+    NonCanonicalInternalOnlyRegion3Path,
+    TestOnlyHelperNonOperationalPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_THIRD_REGION_HARDENING_MAP: [BlueBrainThirdRegionHardeningClass; 6] = [
+    BlueBrainThirdRegionHardeningClass::GuardedCanonicalRegion3Surface,
+    BlueBrainThirdRegionHardeningClass::GuardedRegion3DiagnosticsPath,
+    BlueBrainThirdRegionHardeningClass::GuardedBoundedInterRegionRelationPath,
+    BlueBrainThirdRegionHardeningClass::BlockedForbiddenAuthorityPath,
+    BlueBrainThirdRegionHardeningClass::NonCanonicalInternalOnlyRegion3Path,
+    BlueBrainThirdRegionHardeningClass::TestOnlyHelperNonOperationalPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlueBrainThirdRegionRelationSurface {
     pub relation_class: BlueBrainThirdRegionRelationClass,
     pub region3_to_region1_advisory_only: bool,
@@ -2553,6 +2572,43 @@ mod tests {
         assert!(doc.contains("no direct memory commit"));
         assert!(doc.contains("no direct compute invocation"));
         assert!(doc.contains("no safety override"));
+        assert!(doc.contains("no broad inter-region platform"));
+    }
+
+    #[test]
+    fn third_region_hardening_map_contains_required_classes() {
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_HARDENING_MAP
+            .contains(&BlueBrainThirdRegionHardeningClass::GuardedCanonicalRegion3Surface));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_HARDENING_MAP
+            .contains(&BlueBrainThirdRegionHardeningClass::GuardedRegion3DiagnosticsPath));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_HARDENING_MAP
+            .contains(&BlueBrainThirdRegionHardeningClass::GuardedBoundedInterRegionRelationPath));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_HARDENING_MAP
+            .contains(&BlueBrainThirdRegionHardeningClass::BlockedForbiddenAuthorityPath));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_HARDENING_MAP
+            .contains(&BlueBrainThirdRegionHardeningClass::NonCanonicalInternalOnlyRegion3Path));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_HARDENING_MAP
+            .contains(&BlueBrainThirdRegionHardeningClass::TestOnlyHelperNonOperationalPath));
+    }
+
+    #[test]
+    fn third_region_hardening_doc_pins_no_direct_guard_lines_and_cleanup() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_third_region_tests_guards_cleanup_serie_bb28_prompt6_v1.md"
+        );
+        assert!(doc.contains("guarded canonical region-3 surface"));
+        assert!(doc.contains("guarded region-3 diagnostics path"));
+        assert!(doc.contains("guarded bounded inter-region relation path"));
+        assert!(doc.contains("blocked forbidden authority path"));
+        assert!(doc.contains("non-canonical/internal-only region-3 path"));
+        assert!(doc.contains("test-only/helper path not operational"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("no fourth-region opening"));
         assert!(doc.contains("no broad inter-region platform"));
     }
 
