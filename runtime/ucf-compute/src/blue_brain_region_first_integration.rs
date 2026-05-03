@@ -133,6 +133,31 @@ pub const BLUE_BRAIN_SECOND_REGION_CLASS_SELECTION: BlueBrainSecondRegionClass =
     BlueBrainSecondRegionClass::MemoryContextRelated;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainThirdRegionClass {
+    RuntimeFeedbackIntegrationRelated,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainThirdRegionSelectionClass {
+    ThirdExpansionCandidate,
+    ViableButNotThird,
+    LaterPhaseCandidate,
+    SimulationOnlyDeferredCandidate,
+    NonCanonicalInternalOnlyPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_THIRD_REGION_SELECTION_MAP: [BlueBrainThirdRegionSelectionClass; 5] = [
+    BlueBrainThirdRegionSelectionClass::ThirdExpansionCandidate,
+    BlueBrainThirdRegionSelectionClass::ViableButNotThird,
+    BlueBrainThirdRegionSelectionClass::LaterPhaseCandidate,
+    BlueBrainThirdRegionSelectionClass::SimulationOnlyDeferredCandidate,
+    BlueBrainThirdRegionSelectionClass::NonCanonicalInternalOnlyPath,
+];
+
+pub const BLUE_BRAIN_THIRD_REGION_CLASS_SELECTION: BlueBrainThirdRegionClass =
+    BlueBrainThirdRegionClass::RuntimeFeedbackIntegrationRelated;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainSecondRegionPathClass {
     RegionToRuntimeAdvisorySignal,
     RuntimeToRegionBoundedInput,
@@ -1113,6 +1138,28 @@ mod tests {
     }
 
     #[test]
+    fn third_region_selection_map_contains_required_classes() {
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_SELECTION_MAP
+            .contains(&BlueBrainThirdRegionSelectionClass::ThirdExpansionCandidate));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_SELECTION_MAP
+            .contains(&BlueBrainThirdRegionSelectionClass::ViableButNotThird));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_SELECTION_MAP
+            .contains(&BlueBrainThirdRegionSelectionClass::LaterPhaseCandidate));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_SELECTION_MAP
+            .contains(&BlueBrainThirdRegionSelectionClass::SimulationOnlyDeferredCandidate));
+        assert!(CANONICAL_BLUE_BRAIN_THIRD_REGION_SELECTION_MAP
+            .contains(&BlueBrainThirdRegionSelectionClass::NonCanonicalInternalOnlyPath));
+    }
+
+    #[test]
+    fn third_region_class_selection_is_runtime_feedback_integration_related() {
+        assert_eq!(
+            BLUE_BRAIN_THIRD_REGION_CLASS_SELECTION,
+            BlueBrainThirdRegionClass::RuntimeFeedbackIntegrationRelated
+        );
+    }
+
+    #[test]
     fn second_region_integration_map_contains_minimal_surfaces() {
         assert!(CANONICAL_BLUE_BRAIN_SECOND_REGION_INTEGRATION_MAP
             .contains(&BlueBrainSecondRegionPathClass::RegionInputSurface));
@@ -1916,6 +1963,22 @@ mod tests {
         assert!(doc.contains("no safety override"));
         assert!(doc.contains("no third-region expansion"));
         assert!(doc.contains("no broad inter-region platform"));
+    }
+
+    #[test]
+    fn third_region_selection_doc_pins_candidate_statuses_and_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_third_region_selection_serie_bb28_prompt1_v1.md"
+        );
+        assert!(doc.contains("Third-expansion candidate"));
+        assert!(doc.contains("Runtime-feedback-integration-related"));
+        assert!(doc.contains("Viable but not third"));
+        assert!(doc.contains("Later-phase candidate"));
+        assert!(doc.contains("Simulation-only/deferred candidate"));
+        assert!(doc.contains("Non-canonical/internal-only path"));
+        assert!(doc.contains("keine direkte Action-/Retry-/Memory-/Compute-Autorität"));
+        assert!(doc.contains("keine Öffnung einer vierten Regionenklasse"));
+        assert!(doc.contains("bounded advisory-only"));
     }
 
     #[test]
