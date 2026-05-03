@@ -76,6 +76,7 @@ Autoritätsklassen im Repo-Kontext:
   - `docs/blue_brain_third_region_diagnostics_caveat_deferred_semantics_serie_bb28_prompt5_v1.md`
   - `docs/blue_brain_third_region_tests_guards_cleanup_serie_bb28_prompt6_v1.md`
   - `docs/blue_brain_three_region_guard_contract_consistency_serie_bb28_prompt7_v1.md`
+  - `docs/blue_brain_bb28_readiness_sweep_third_region_expansion_boundary_serie_bb28_prompt8_v1.md`
   - _Authority class: current operational authority line._
   - `docs/blue_brain_two_region_maintenance_stabilization_serie_bb27_prompt1_v1.md`
   - `docs/blue_brain_two_region_docs_tests_reference_cleanup_serie_bb27_prompt2_v1.md`
@@ -103,12 +104,12 @@ Referenzpunkte für die technische Scope-Grenze:
 - `docs/blue_brain_bb23_maintenance_guard_rails_allowed_change_envelope_serie_bb23_prompt2_v1.md`
 - `docs/blue_brain_bb23_final_freeze_readiness_statement_serie_bb23_prompt3_v1.md`
 
-## 2.1) Post-BB27 maintenance default (final handoff)
+## 2.1) Post-BB28 maintenance default (third-region bounded handoff)
 
-- Aktive Regionenexpansionen bleiben **nur Region 1 und Region 2**.
-- Standardmodus bleibt **Maintenance/Bugfix/Cleanup**.
-- **Region 3 ist nicht aktiv** und benötigt später einen expliziten Re-Scope.
-- Die BB24–BB27 Serienlogik wird als aktive Ausbau-Lane **bewusst beendet**.
+- Aktive Regionenbasis ist **Region 1 + Region 2 + Region 3 (bounded advisory/reference lane)**.
+- Standardmodus bleibt **Maintenance/Bugfix/Cleanup** mit klarer no-direct-* Guard-Linie.
+- **Region 4 ist nicht aktiv** und benötigt einen späteren expliziten Re-Scope.
+- Die BB28-Linie schließt als kontrollierte Drei-Regionen-Basis ohne Plattformausweitung.
 
 
 ## 2.2) Audit-Baseline (Blue-Brain / Zwei-Regionen) — 2026-05-02
