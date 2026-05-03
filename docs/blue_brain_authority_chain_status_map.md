@@ -22,8 +22,9 @@ Nur diese Klassen sind für die operative Einordnung zu verwenden:
 
 - `docs/blue_brain_bb27_post_maintenance_default_decision_map_serie_bb27_prompt5_v1.md`
 - `docs/blue_brain_bb27_final_maintenance_handoff_map_serie_bb27_prompt6_v1.md`
+- `docs/blue_brain_bb28_readiness_sweep_third_region_expansion_boundary_serie_bb28_prompt8_v1.md`
 
-Operative Endlage: **Region 1 und Region 2 aktiv**, Maintenance/Bugfix/Cleanup als Default, Region 3 inaktiv bis explizitem Re-Scope.
+Operative Endlage: **Region 1, Region 2 und Region 3 (bounded advisory/reference) aktiv**, Maintenance/Bugfix/Cleanup als Default, Region 4 inaktiv bis explizitem Re-Scope.
 
 ### Historical snapshot (nicht aktuelle operative Autorität)
 
