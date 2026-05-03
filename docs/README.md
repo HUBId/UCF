@@ -61,14 +61,14 @@ Autoritätsklassen im Repo-Kontext:
   - `docs/blue_brain_two_region_guard_contract_consistency_serie_bb26_prompt7_v1.md`
 - **BB26 readiness sweep / second-region expansion boundary (BB26 P8):**
   - `docs/blue_brain_bb26_readiness_sweep_second_region_expansion_boundary_serie_bb26_prompt8_v1.md`
-- **Two-region maintenance stabilization/reference line (BB27):**
+- **Two-region maintenance stabilization/reference line (BB27):
   - _Authority class: current operational authority line._
   - `docs/blue_brain_two_region_maintenance_stabilization_serie_bb27_prompt1_v1.md`
   - `docs/blue_brain_two_region_docs_tests_reference_cleanup_serie_bb27_prompt2_v1.md`
   - `docs/blue_brain_bb27_final_two_region_stabilization_sweep_serie_bb27_prompt3_v1.md`
   - `docs/blue_brain_bb27_post_maintenance_default_decision_map_serie_bb27_prompt5_v1.md`
   - `docs/blue_brain_bb27_final_maintenance_handoff_map_serie_bb27_prompt6_v1.md`
-- **Third-region selection line (BB28):**
+- **Third-region selection line (BB28):
   - `docs/blue_brain_third_region_selection_serie_bb28_prompt1_v1.md`
   - `docs/blue_brain_third_region_integration_serie_bb28_prompt2_v1.md`
   - `docs/blue_brain_third_region_runtime_selection_reference_contract_serie_bb28_prompt3_v1.md`
@@ -77,12 +77,9 @@ Autoritätsklassen im Repo-Kontext:
   - `docs/blue_brain_third_region_tests_guards_cleanup_serie_bb28_prompt6_v1.md`
   - `docs/blue_brain_three_region_guard_contract_consistency_serie_bb28_prompt7_v1.md`
   - `docs/blue_brain_bb28_readiness_sweep_third_region_expansion_boundary_serie_bb28_prompt8_v1.md`
-  - _Authority class: current operational authority line._
-  - `docs/blue_brain_two_region_maintenance_stabilization_serie_bb27_prompt1_v1.md`
-  - `docs/blue_brain_two_region_docs_tests_reference_cleanup_serie_bb27_prompt2_v1.md`
-  - `docs/blue_brain_bb27_final_two_region_stabilization_sweep_serie_bb27_prompt3_v1.md`
-  - `docs/blue_brain_bb27_post_maintenance_default_decision_map_serie_bb27_prompt5_v1.md`
-  - `docs/blue_brain_bb27_final_maintenance_handoff_map_serie_bb27_prompt6_v1.md`
+- **Three-region maintenance stabilization/reference line (BB29):
+  - `docs/blue_brain_three_region_maintenance_stabilization_line_serie_bb29_prompt1_v1.md`
+  - `docs/blue_brain_three_region_docs_tests_index_cleanup_serie_bb29_prompt2_v1.md`
 - **BlueBrain/Runtime/Selection hardening line (BB19):**
   - `docs/blue_brain_runtime_selection_contract_hardening_serie_bb19_prompt1_v1.md`
   - `docs/blue_brain_runtime_selection_diagnostics_hardening_serie_bb19_prompt2_v1.md`

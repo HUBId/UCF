@@ -2719,6 +2719,36 @@ mod tests {
     }
 
     #[test]
+    fn three_region_docs_tests_cleanup_doc_pins_canonical_categories_and_region4_boundary() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_three_region_docs_tests_index_cleanup_serie_bb29_prompt2_v1.md"
+        );
+        assert!(doc.contains("canonical three-region reference doc"));
+        assert!(doc.contains("canonical region-1 test surface"));
+        assert!(doc.contains("canonical region-2 test surface"));
+        assert!(doc.contains("canonical region-3 test surface"));
+        assert!(doc.contains("canonical bounded relation test surfaces"));
+        assert!(doc.contains("maintenance-facing index/reference path"));
+        assert!(doc.contains("non-canonical/internal-only or legacy three-region path"));
+        assert!(doc.contains("Region 4 ist **nicht offen**"));
+    }
+
+    #[test]
+    fn docs_indexes_expose_bb29_three_region_maintenance_reference_line() {
+        let readme = include_str!("../../../docs/README.md");
+        assert!(readme.contains("Three-region maintenance stabilization/reference line (BB29)"));
+        assert!(readme.contains(
+            "docs/blue_brain_three_region_docs_tests_index_cleanup_serie_bb29_prompt2_v1.md"
+        ));
+
+        let repo_map = include_str!("../../../docs/roadmap/REPO_MAP.md");
+        assert!(repo_map.contains("Three-region maintenance stabilization/reference line (BB29)"));
+        assert!(repo_map.contains(
+            "docs/blue_brain_three_region_docs_tests_index_cleanup_serie_bb29_prompt2_v1.md"
+        ));
+    }
+
+    #[test]
     fn two_region_consistency_map_contains_required_classes() {
         assert!(CANONICAL_BLUE_BRAIN_TWO_REGION_CONSISTENCY_MAP
             .contains(&BlueBrainTwoRegionConsistencyClass::CanonicalRegion1Path));
