@@ -33,11 +33,12 @@ Kanonische Kategorien für die operative Referenzfläche:
 ## 3) Maintenance guard and boundary visibility (must stay explicit)
 
 - Drei-Regionen-Basis bleibt maintenance-hardened und bounded.
-- `no direct action trigger`
-- `no direct execution trigger`
-- `no direct retry trigger`
-- `no direct memory commit`
-- `no direct compute invocation`
+- `no-direct-action`
+- `no-direct-execution`
+- `no-direct-retry`
+- `no-direct-memory`
+- `no-direct-compute`
+- `no direct policy decision`
 - `no safety override`
 - keine implizite Plattformbildung über Regionenrelationen.
 - Region 4 ist **nicht offen** und benötigt expliziten Re-Scope.

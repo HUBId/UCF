@@ -2730,6 +2730,13 @@ mod tests {
         assert!(doc.contains("canonical bounded relation test surfaces"));
         assert!(doc.contains("maintenance-facing index/reference path"));
         assert!(doc.contains("non-canonical/internal-only or legacy three-region path"));
+        assert!(doc.contains("no-direct-action"));
+        assert!(doc.contains("no-direct-execution"));
+        assert!(doc.contains("no-direct-retry"));
+        assert!(doc.contains("no-direct-memory"));
+        assert!(doc.contains("no-direct-compute"));
+        assert!(doc.contains("no direct policy decision"));
+        assert!(doc.contains("no safety override"));
         assert!(doc.contains("Region 4 ist **nicht offen**"));
     }
 
