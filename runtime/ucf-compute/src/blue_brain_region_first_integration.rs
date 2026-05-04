@@ -158,6 +158,110 @@ pub const BLUE_BRAIN_THIRD_REGION_CLASS_SELECTION: BlueBrainThirdRegionClass =
     BlueBrainThirdRegionClass::RuntimeFeedbackIntegrationRelated;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFirstAnatomicalRegion {
+    HippocampusLikeRegion,
+}
+
+pub const BLUE_BRAIN_FIRST_ANATOMICAL_REGION_SELECTION: BlueBrainFirstAnatomicalRegion =
+    BlueBrainFirstAnatomicalRegion::HippocampusLikeRegion;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFirstAnatomicalRegionPathClass {
+    AnatomicalRegionInputSurface,
+    AnatomicalRegionStateSurface,
+    AnatomicalRegionOutputAdvisorySurface,
+    AnatomicalRegionReferenceSurface,
+    AnatomicalToFunctionalRegionMapping,
+    BlockedDeferredAnatomicalRegionPath,
+    NonCanonicalInternalOnlyAnatomicalRegionPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_INTEGRATION_MAP:
+    [BlueBrainFirstAnatomicalRegionPathClass; 7] = [
+    BlueBrainFirstAnatomicalRegionPathClass::AnatomicalRegionInputSurface,
+    BlueBrainFirstAnatomicalRegionPathClass::AnatomicalRegionStateSurface,
+    BlueBrainFirstAnatomicalRegionPathClass::AnatomicalRegionOutputAdvisorySurface,
+    BlueBrainFirstAnatomicalRegionPathClass::AnatomicalRegionReferenceSurface,
+    BlueBrainFirstAnatomicalRegionPathClass::AnatomicalToFunctionalRegionMapping,
+    BlueBrainFirstAnatomicalRegionPathClass::BlockedDeferredAnatomicalRegionPath,
+    BlueBrainFirstAnatomicalRegionPathClass::NonCanonicalInternalOnlyAnatomicalRegionPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFirstAnatomicalRegionInputClass {
+    RuntimeSelectionContextSignal,
+    AdvisoryReferenceSignal,
+    ToolActionControlSignal,
+    ComputeInternalRawState,
+    SafetyOverrideSignal,
+    MemoryMutationSignal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFirstAnatomicalRegionInputGuard {
+    AllowedBoundedInput,
+    BlockedForbiddenInput,
+}
+
+pub fn classify_blue_brain_first_anatomical_region_input_guard(
+    input: BlueBrainFirstAnatomicalRegionInputClass,
+) -> BlueBrainFirstAnatomicalRegionInputGuard {
+    match input {
+        BlueBrainFirstAnatomicalRegionInputClass::RuntimeSelectionContextSignal
+        | BlueBrainFirstAnatomicalRegionInputClass::AdvisoryReferenceSignal => {
+            BlueBrainFirstAnatomicalRegionInputGuard::AllowedBoundedInput
+        }
+        BlueBrainFirstAnatomicalRegionInputClass::ToolActionControlSignal
+        | BlueBrainFirstAnatomicalRegionInputClass::ComputeInternalRawState
+        | BlueBrainFirstAnatomicalRegionInputClass::SafetyOverrideSignal
+        | BlueBrainFirstAnatomicalRegionInputClass::MemoryMutationSignal => {
+            BlueBrainFirstAnatomicalRegionInputGuard::BlockedForbiddenInput
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFirstAnatomicalRegionOutputClass {
+    AdvisorySalienceHint,
+    AdvisoryGatingHint,
+    AdvisoryMemoryContextHint,
+    AdvisoryReferenceBoundedSignal,
+    DirectActionSelection,
+    DirectExecutionTrigger,
+    DirectRetryTrigger,
+    DirectMemoryCommit,
+    DirectComputeInvocation,
+    SafetyOverrideSignal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFirstAnatomicalRegionOutputGuard {
+    AllowedAdvisoryOutput,
+    BlockedForbiddenOutput,
+}
+
+pub fn classify_blue_brain_first_anatomical_region_output_guard(
+    output: BlueBrainFirstAnatomicalRegionOutputClass,
+) -> BlueBrainFirstAnatomicalRegionOutputGuard {
+    match output {
+        BlueBrainFirstAnatomicalRegionOutputClass::AdvisorySalienceHint
+        | BlueBrainFirstAnatomicalRegionOutputClass::AdvisoryGatingHint
+        | BlueBrainFirstAnatomicalRegionOutputClass::AdvisoryMemoryContextHint
+        | BlueBrainFirstAnatomicalRegionOutputClass::AdvisoryReferenceBoundedSignal => {
+            BlueBrainFirstAnatomicalRegionOutputGuard::AllowedAdvisoryOutput
+        }
+        BlueBrainFirstAnatomicalRegionOutputClass::DirectActionSelection
+        | BlueBrainFirstAnatomicalRegionOutputClass::DirectExecutionTrigger
+        | BlueBrainFirstAnatomicalRegionOutputClass::DirectRetryTrigger
+        | BlueBrainFirstAnatomicalRegionOutputClass::DirectMemoryCommit
+        | BlueBrainFirstAnatomicalRegionOutputClass::DirectComputeInvocation
+        | BlueBrainFirstAnatomicalRegionOutputClass::SafetyOverrideSignal => {
+            BlueBrainFirstAnatomicalRegionOutputGuard::BlockedForbiddenOutput
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainThirdRegionPathClass {
     Region3InputSurface,
     Region3StateSurface,
@@ -2913,5 +3017,89 @@ mod tests {
             classify_blue_brain_two_region_consistency(region1, region2, relation),
             BlueBrainTwoRegionConsistencyClass::CaveatedTwoRegionPath
         ));
+    }
+
+    #[test]
+    fn first_anatomical_region_selection_is_hippocampus_like_region() {
+        assert_eq!(
+            BLUE_BRAIN_FIRST_ANATOMICAL_REGION_SELECTION,
+            BlueBrainFirstAnatomicalRegion::HippocampusLikeRegion
+        );
+    }
+
+    #[test]
+    fn first_anatomical_region_integration_map_contains_required_classes() {
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainFirstAnatomicalRegionPathClass::AnatomicalRegionInputSurface));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainFirstAnatomicalRegionPathClass::AnatomicalRegionStateSurface));
+        assert!(
+            CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_INTEGRATION_MAP.contains(
+                &BlueBrainFirstAnatomicalRegionPathClass::AnatomicalRegionOutputAdvisorySurface
+            )
+        );
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_INTEGRATION_MAP
+            .contains(&BlueBrainFirstAnatomicalRegionPathClass::AnatomicalRegionReferenceSurface));
+        assert!(
+            CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_INTEGRATION_MAP.contains(
+                &BlueBrainFirstAnatomicalRegionPathClass::AnatomicalToFunctionalRegionMapping
+            )
+        );
+        assert!(
+            CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_INTEGRATION_MAP.contains(
+                &BlueBrainFirstAnatomicalRegionPathClass::BlockedDeferredAnatomicalRegionPath
+            )
+        );
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_INTEGRATION_MAP.contains(
+            &BlueBrainFirstAnatomicalRegionPathClass::NonCanonicalInternalOnlyAnatomicalRegionPath
+        ));
+    }
+
+    #[test]
+    fn first_anatomical_region_input_output_guards_preserve_advisory_only_boundaries() {
+        assert_eq!(
+            classify_blue_brain_first_anatomical_region_input_guard(
+                BlueBrainFirstAnatomicalRegionInputClass::RuntimeSelectionContextSignal
+            ),
+            BlueBrainFirstAnatomicalRegionInputGuard::AllowedBoundedInput
+        );
+        assert_eq!(
+            classify_blue_brain_first_anatomical_region_input_guard(
+                BlueBrainFirstAnatomicalRegionInputClass::ToolActionControlSignal
+            ),
+            BlueBrainFirstAnatomicalRegionInputGuard::BlockedForbiddenInput
+        );
+        assert_eq!(
+            classify_blue_brain_first_anatomical_region_output_guard(
+                BlueBrainFirstAnatomicalRegionOutputClass::AdvisoryReferenceBoundedSignal
+            ),
+            BlueBrainFirstAnatomicalRegionOutputGuard::AllowedAdvisoryOutput
+        );
+        assert_eq!(
+            classify_blue_brain_first_anatomical_region_output_guard(
+                BlueBrainFirstAnatomicalRegionOutputClass::DirectExecutionTrigger
+            ),
+            BlueBrainFirstAnatomicalRegionOutputGuard::BlockedForbiddenOutput
+        );
+    }
+
+    #[test]
+    fn first_anatomical_region_integration_doc_pins_minimal_surfaces_and_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_first_anatomical_region_integration_serie_bb30_prompt3_v1.md"
+        );
+
+        assert!(doc.contains("hippocampus_like_region"));
+        assert!(doc.contains("anatomical region input surface"));
+        assert!(doc.contains("anatomical region state surface"));
+        assert!(doc.contains("anatomical region output/advisory surface"));
+        assert!(doc.contains("anatomical region reference surface"));
+        assert!(doc.contains("direct action selection"));
+        assert!(doc.contains("direct execution trigger"));
+        assert!(doc.contains("direct retry trigger"));
+        assert!(doc.contains("direct memory commit"));
+        assert!(doc.contains("direct compute invocation"));
+        assert!(doc.contains("safety override"));
+        assert!(doc.contains("no fourth-region opening"));
     }
 }
