@@ -1,5 +1,10 @@
 # Serie BB29 Prompt 5: Post-BB29 Maintenance-Default und Region-4-Re-Scope-Grenze
 
+> ✅ **Authority notice (current operational authority):** Dieses Dokument ist Teil der aktuell maßgeblichen BB29-Endlage.  
+> Historische BB25/BB27-Handoff- und Decision-Dokumente bleiben referenzierbar, sind aber operativ superseded.  
+> Kanonische Klassifikation: `docs/blue_brain_authority_chain_status_map.md`
+
+
 Status: **explizit fixiert**. Diese Notiz konsolidiert den Zustand nach der stabilisierten Drei-Regionen-Basis und führt **keine** neue Funktionalität, **keine** neue Serie und **keine** Plattformlinie ein.
 
 ## 1) Repo-basierte Abschlusslage (BB29)

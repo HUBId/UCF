@@ -1,5 +1,10 @@
 # Serie BB29 Prompt 6: Final Maintenance Handoff nach stabilisierter Drei-Regionen-Basis
 
+> ✅ **Authority notice (current operational authority):** Dieses Dokument ist Teil der aktuell maßgeblichen BB29-Endlage.  
+> Historische BB25/BB27-Handoff- und Decision-Dokumente bleiben referenzierbar, sind aber operativ superseded.  
+> Kanonische Klassifikation: `docs/blue_brain_authority_chain_status_map.md`
+
+
 Status: **final fixiert**. Diese Notiz beendet die BB24–BB29-Serienlogik bewusst und überführt den Repo-Default technisch in **Maintenance/Bugfix/Cleanup**.
 
 ## 1) Repo-basierte Abschlusslage nach BB29 (hart geprüft)
