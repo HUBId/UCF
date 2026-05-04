@@ -188,6 +188,30 @@ pub const CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_INTEGRATION_MAP:
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFirstAnatomicalRegionModelModeClass {
+    AbstractFunctionalCurrentMode,
+    BoundedKuramotoLikeCurrentMode,
+    HodgkinHuxleySimulationOnlyDiagnosticOnlyCurrentMode,
+    LaterSelectiveHodgkinHuxleyDeepening,
+    DeferredNotSuitableNowModelPath,
+    NonCanonicalInternalOnlyModelPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_MODEL_DECISION_MAP:
+    [BlueBrainFirstAnatomicalRegionModelModeClass; 6] = [
+    BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode,
+    BlueBrainFirstAnatomicalRegionModelModeClass::BoundedKuramotoLikeCurrentMode,
+    BlueBrainFirstAnatomicalRegionModelModeClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCurrentMode,
+    BlueBrainFirstAnatomicalRegionModelModeClass::LaterSelectiveHodgkinHuxleyDeepening,
+    BlueBrainFirstAnatomicalRegionModelModeClass::DeferredNotSuitableNowModelPath,
+    BlueBrainFirstAnatomicalRegionModelModeClass::NonCanonicalInternalOnlyModelPath,
+];
+
+pub const BLUE_BRAIN_FIRST_ANATOMICAL_REGION_CURRENT_MODEL_MODE:
+    BlueBrainFirstAnatomicalRegionModelModeClass =
+    BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainFirstAnatomicalRegionInputClass {
     RuntimeSelectionContextSignal,
     AdvisoryReferenceSignal,
@@ -3101,5 +3125,63 @@ mod tests {
         assert!(doc.contains("direct compute invocation"));
         assert!(doc.contains("safety override"));
         assert!(doc.contains("no fourth-region opening"));
+    }
+
+    #[test]
+    fn first_anatomical_region_model_decision_map_contains_required_classes() {
+        assert!(
+            CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_MODEL_DECISION_MAP.contains(
+                &BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode
+            )
+        );
+        assert!(
+            CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_MODEL_DECISION_MAP.contains(
+                &BlueBrainFirstAnatomicalRegionModelModeClass::BoundedKuramotoLikeCurrentMode
+            )
+        );
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_MODEL_DECISION_MAP.contains(
+            &BlueBrainFirstAnatomicalRegionModelModeClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCurrentMode
+        ));
+        assert!(
+            CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_MODEL_DECISION_MAP.contains(
+                &BlueBrainFirstAnatomicalRegionModelModeClass::LaterSelectiveHodgkinHuxleyDeepening
+            )
+        );
+        assert!(
+            CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_MODEL_DECISION_MAP.contains(
+                &BlueBrainFirstAnatomicalRegionModelModeClass::DeferredNotSuitableNowModelPath
+            )
+        );
+        assert!(
+            CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_MODEL_DECISION_MAP.contains(
+                &BlueBrainFirstAnatomicalRegionModelModeClass::NonCanonicalInternalOnlyModelPath
+            )
+        );
+    }
+
+    #[test]
+    fn first_anatomical_region_current_model_mode_is_abstract_functional() {
+        assert_eq!(
+            BLUE_BRAIN_FIRST_ANATOMICAL_REGION_CURRENT_MODEL_MODE,
+            BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode
+        );
+    }
+
+    #[test]
+    fn first_anatomical_region_model_decision_doc_pins_current_mode_and_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_first_anatomical_region_model_decision_serie_bb30_prompt4_v1.md"
+        );
+        assert!(doc.contains("hippocampus_like_region"));
+        assert!(doc.contains("abstract functional current mode"));
+        assert!(doc.contains("bounded Kuramoto-like current mode"));
+        assert!(doc.contains("Hodgkin-Huxley simulation-only/diagnostic-only current mode"));
+        assert!(doc.contains("later selective HH deepening"));
+        assert!(doc.contains("deferred/not-suitable-now model path"));
+        assert!(doc.contains("non-canonical/internal-only model path"));
+        assert!(doc.contains("no direct action execution"));
+        assert!(doc.contains("no retry orchestration"));
+        assert!(doc.contains("no automatic memory persistence"));
+        assert!(doc.contains("no HH production integration"));
     }
 }
