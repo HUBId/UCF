@@ -42,6 +42,7 @@ Zweck: schneller, repo-treuer Einstieg in die **aktuell operativen** Linien ohne
   - `docs/blue_brain_three_region_maintenance_stabilization_line_serie_bb29_prompt1_v1.md`
   - `docs/blue_brain_three_region_docs_tests_index_cleanup_serie_bb29_prompt2_v1.md`
   - `docs/blue_brain_bb29_final_three_region_stabilization_sweep_serie_bb29_prompt3_v1.md`
+  - `docs/blue_brain_bb29_post_decision_lock_serie_bb29_prompt4_v1.md`
 - **Cross-line state semantics (BB20 P2):** `docs/blue_brain_bb20_cross_line_terminology_state_harmonization_serie_bb20_prompt2_v1.md`
 - **Final readiness sweep + next-priority lock (BB20 P4):** `docs/blue_brain_bb20_final_readiness_sweep_next_priority_lock_serie_bb20_prompt4_v1.md`
 - **Docs operational index:** `docs/README.md`
@@ -68,7 +69,7 @@ Maintenance-Interpretation folgt der BB23 Allowed-Change-Map: maintenance-safe, 
 - `candidate-only`, `test-only`, `deferred`, `non-canonical` markieren nicht-operative oder nicht-hochgestufte Pfade.
 - `no-direct-*` Guard Rails bleiben verpflichtend.
 - Region 1 bleibt die einzige geöffnete Regionenklasse in der BB25-Freeze-Lesart; der aktuelle Maintenance-Betrieb führt zusätzlich die maintenance-gehärtete Drei-Regionen-Basis (Region 1 + Region 2 + Region 3) mit bounded Relations aus BB28/BB29.
-- Eine vierte Regionenklasse bleibt explizit re-scope-pflichtig (nicht automatisch aktiv).
+- Nach BB29 ist **Maintenance/Bugfix/Cleanup ohne neue Serie** der explizite Default; eine vierte Regionenklasse bleibt explizit re-scope-pflichtig (nicht automatisch aktiv).
 
 Primäre Referenzen:
 - `docs/blue_brain_execution_guard_rails_production_facing_serie_bb18_prompt3_v1.md`
