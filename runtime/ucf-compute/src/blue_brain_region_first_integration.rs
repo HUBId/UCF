@@ -212,6 +212,95 @@ pub const BLUE_BRAIN_FIRST_ANATOMICAL_REGION_CURRENT_MODEL_MODE:
     BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFirstAnatomicalRegionContractSignal {
+    AnatomicalToRuntimeAdvisory,
+    RuntimeToAnatomicalBoundedInput,
+    AnatomicalToSelectionAdvisory,
+    SelectionToAnatomicalBoundedStateInput,
+    AnatomicalReferenceSignal,
+    Caveated,
+    Deferred,
+    Blocked,
+    Insufficient,
+    DiagnosticOnly,
+    ReferenceOnly,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFirstAnatomicalRegionDiagnosticState {
+    AnatomicalRegionAdvisoryOnlyDiagnostic,
+    AnatomicalRegionCaveatedDiagnostic,
+    AnatomicalRegionDeferredDiagnostic,
+    AnatomicalRegionBlockedDiagnostic,
+    AnatomicalRegionInsufficientDiagnostic,
+    AnatomicalRegionDiagnosticOnlyState,
+    NonCanonicalInternalOnlyAnatomicalRegionDiagnosticPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_DIAGNOSTIC_MAP:
+    [BlueBrainFirstAnatomicalRegionDiagnosticState; 7] = [
+    BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionAdvisoryOnlyDiagnostic,
+    BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionCaveatedDiagnostic,
+    BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionDeferredDiagnostic,
+    BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionBlockedDiagnostic,
+    BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionInsufficientDiagnostic,
+    BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionDiagnosticOnlyState,
+    BlueBrainFirstAnatomicalRegionDiagnosticState::NonCanonicalInternalOnlyAnatomicalRegionDiagnosticPath,
+];
+
+pub fn blue_brain_first_anatomical_region_diagnostic_state_for_signal(
+    signal: BlueBrainFirstAnatomicalRegionContractSignal,
+) -> BlueBrainFirstAnatomicalRegionDiagnosticState {
+    match signal {
+        BlueBrainFirstAnatomicalRegionContractSignal::AnatomicalToRuntimeAdvisory
+        | BlueBrainFirstAnatomicalRegionContractSignal::RuntimeToAnatomicalBoundedInput
+        | BlueBrainFirstAnatomicalRegionContractSignal::AnatomicalToSelectionAdvisory
+        | BlueBrainFirstAnatomicalRegionContractSignal::SelectionToAnatomicalBoundedStateInput => {
+            BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionAdvisoryOnlyDiagnostic
+        }
+        BlueBrainFirstAnatomicalRegionContractSignal::Caveated => {
+            BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionCaveatedDiagnostic
+        }
+        BlueBrainFirstAnatomicalRegionContractSignal::Deferred => {
+            BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionDeferredDiagnostic
+        }
+        BlueBrainFirstAnatomicalRegionContractSignal::Blocked => {
+            BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionBlockedDiagnostic
+        }
+        BlueBrainFirstAnatomicalRegionContractSignal::Insufficient => {
+            BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionInsufficientDiagnostic
+        }
+        BlueBrainFirstAnatomicalRegionContractSignal::DiagnosticOnly
+        | BlueBrainFirstAnatomicalRegionContractSignal::ReferenceOnly
+        | BlueBrainFirstAnatomicalRegionContractSignal::AnatomicalReferenceSignal => {
+            BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionDiagnosticOnlyState
+        }
+        BlueBrainFirstAnatomicalRegionContractSignal::NonCanonicalInternalOnly => {
+            BlueBrainFirstAnatomicalRegionDiagnosticState::NonCanonicalInternalOnlyAnatomicalRegionDiagnosticPath
+        }
+    }
+}
+
+pub fn blue_brain_first_anatomical_region_runtime_diagnostic_read(
+    signal: BlueBrainFirstAnatomicalRegionContractSignal,
+) -> BlueBrainFirstAnatomicalRegionDiagnosticState {
+    blue_brain_first_anatomical_region_diagnostic_state_for_signal(signal)
+}
+
+pub fn blue_brain_first_anatomical_region_selection_diagnostic_read(
+    signal: BlueBrainFirstAnatomicalRegionContractSignal,
+) -> BlueBrainFirstAnatomicalRegionDiagnosticState {
+    blue_brain_first_anatomical_region_diagnostic_state_for_signal(signal)
+}
+
+pub fn blue_brain_first_anatomical_region_reference_diagnostic_read(
+    signal: BlueBrainFirstAnatomicalRegionContractSignal,
+) -> BlueBrainFirstAnatomicalRegionDiagnosticState {
+    blue_brain_first_anatomical_region_diagnostic_state_for_signal(signal)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainFirstAnatomicalRegionInputClass {
     RuntimeSelectionContextSignal,
     AdvisoryReferenceSignal,
@@ -3183,5 +3272,113 @@ mod tests {
         assert!(doc.contains("no retry orchestration"));
         assert!(doc.contains("no automatic memory persistence"));
         assert!(doc.contains("no HH production integration"));
+    }
+
+    #[test]
+    fn first_anatomical_region_diagnostic_map_contains_required_states() {
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_DIAGNOSTIC_MAP.contains(
+            &BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionAdvisoryOnlyDiagnostic
+        ));
+        assert!(
+            CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_DIAGNOSTIC_MAP.contains(
+                &BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionCaveatedDiagnostic
+            )
+        );
+        assert!(
+            CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_DIAGNOSTIC_MAP.contains(
+                &BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionDeferredDiagnostic
+            )
+        );
+        assert!(
+            CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_DIAGNOSTIC_MAP.contains(
+                &BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionBlockedDiagnostic
+            )
+        );
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_DIAGNOSTIC_MAP.contains(
+            &BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionInsufficientDiagnostic
+        ));
+        assert!(
+            CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_DIAGNOSTIC_MAP.contains(
+                &BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionDiagnosticOnlyState
+            )
+        );
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_DIAGNOSTIC_MAP.contains(
+            &BlueBrainFirstAnatomicalRegionDiagnosticState::NonCanonicalInternalOnlyAnatomicalRegionDiagnosticPath
+        ));
+    }
+
+    #[test]
+    fn first_anatomical_region_diagnostics_keep_contract_semantics_distinct() {
+        assert_eq!(
+            blue_brain_first_anatomical_region_diagnostic_state_for_signal(
+                BlueBrainFirstAnatomicalRegionContractSignal::AnatomicalToRuntimeAdvisory
+            ),
+            BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionAdvisoryOnlyDiagnostic
+        );
+        assert_eq!(
+            blue_brain_first_anatomical_region_diagnostic_state_for_signal(
+                BlueBrainFirstAnatomicalRegionContractSignal::Caveated
+            ),
+            BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionCaveatedDiagnostic
+        );
+        assert_eq!(
+            blue_brain_first_anatomical_region_diagnostic_state_for_signal(
+                BlueBrainFirstAnatomicalRegionContractSignal::Deferred
+            ),
+            BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionDeferredDiagnostic
+        );
+        assert_eq!(
+            blue_brain_first_anatomical_region_diagnostic_state_for_signal(
+                BlueBrainFirstAnatomicalRegionContractSignal::Blocked
+            ),
+            BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionBlockedDiagnostic
+        );
+        assert_eq!(
+            blue_brain_first_anatomical_region_diagnostic_state_for_signal(
+                BlueBrainFirstAnatomicalRegionContractSignal::Insufficient
+            ),
+            BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionInsufficientDiagnostic
+        );
+        assert_eq!(
+            blue_brain_first_anatomical_region_diagnostic_state_for_signal(
+                BlueBrainFirstAnatomicalRegionContractSignal::DiagnosticOnly
+            ),
+            BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionDiagnosticOnlyState
+        );
+    }
+
+    #[test]
+    fn first_anatomical_region_runtime_selection_reference_reads_are_consistent() {
+        let signal = BlueBrainFirstAnatomicalRegionContractSignal::ReferenceOnly;
+        let runtime_read = blue_brain_first_anatomical_region_runtime_diagnostic_read(signal);
+        let selection_read = blue_brain_first_anatomical_region_selection_diagnostic_read(signal);
+        let reference_read = blue_brain_first_anatomical_region_reference_diagnostic_read(signal);
+        assert_eq!(runtime_read, selection_read);
+        assert_eq!(selection_read, reference_read);
+        assert_eq!(
+            runtime_read,
+            BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionDiagnosticOnlyState
+        );
+    }
+
+    #[test]
+    fn first_anatomical_region_diagnostics_doc_pins_contract_and_no_direct_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_first_anatomical_region_diagnostics_contract_semantics_serie_bb30_prompt5_v1.md"
+        );
+        assert!(doc.contains("advisory-only diagnostic"));
+        assert!(doc.contains("caveated diagnostic"));
+        assert!(doc.contains("deferred diagnostic"));
+        assert!(doc.contains("blocked diagnostic"));
+        assert!(doc.contains("insufficient diagnostic"));
+        assert!(doc.contains("diagnostic-only state"));
+        assert!(doc.contains("non-canonical/internal-only anatomical region diagnostic path"));
+        assert!(doc.contains("runtime/selection/reference"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
     }
 }
