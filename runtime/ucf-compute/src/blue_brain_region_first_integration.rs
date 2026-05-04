@@ -86,15 +86,17 @@ pub enum BlueBrainFirstRegionStabilizationClass {
     MaintenanceHardenedRegionSurface,
     MaintenanceHardenedDiagnosticsPath,
     MaintenanceHardenedContractPath,
+    MaintenanceHardenedModelBoundary,
     NonCanonicalInternalOnlyResidualPath,
 }
 
 pub const CANONICAL_BLUE_BRAIN_FIRST_REGION_STABILIZATION_MAP:
-    [BlueBrainFirstRegionStabilizationClass; 5] = [
+    [BlueBrainFirstRegionStabilizationClass; 6] = [
     BlueBrainFirstRegionStabilizationClass::StableFirstRegionBaseline,
     BlueBrainFirstRegionStabilizationClass::MaintenanceHardenedRegionSurface,
     BlueBrainFirstRegionStabilizationClass::MaintenanceHardenedDiagnosticsPath,
     BlueBrainFirstRegionStabilizationClass::MaintenanceHardenedContractPath,
+    BlueBrainFirstRegionStabilizationClass::MaintenanceHardenedModelBoundary,
     BlueBrainFirstRegionStabilizationClass::NonCanonicalInternalOnlyResidualPath,
 ];
 
@@ -3404,5 +3406,47 @@ mod tests {
         assert!(doc.contains("zweite anatomische Region"));
         assert!(doc.contains("Stabilisierungspass der ersten anatomischen Region"));
         assert!(doc.contains("maintenance-only Core"));
+    }
+
+    #[test]
+    fn first_anatomical_stabilization_map_is_maintenance_hardened_and_model_bounded() {
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_STABILIZATION_MAP
+            .contains(&BlueBrainFirstRegionStabilizationClass::StableFirstRegionBaseline));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_STABILIZATION_MAP
+            .contains(&BlueBrainFirstRegionStabilizationClass::MaintenanceHardenedRegionSurface));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_STABILIZATION_MAP
+            .contains(&BlueBrainFirstRegionStabilizationClass::MaintenanceHardenedDiagnosticsPath));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_STABILIZATION_MAP
+            .contains(&BlueBrainFirstRegionStabilizationClass::MaintenanceHardenedContractPath));
+        assert!(CANONICAL_BLUE_BRAIN_FIRST_REGION_STABILIZATION_MAP
+            .contains(&BlueBrainFirstRegionStabilizationClass::MaintenanceHardenedModelBoundary));
+        assert!(
+            CANONICAL_BLUE_BRAIN_FIRST_REGION_STABILIZATION_MAP.contains(
+                &BlueBrainFirstRegionStabilizationClass::NonCanonicalInternalOnlyResidualPath
+            )
+        );
+    }
+
+    #[test]
+    fn first_anatomical_stabilization_doc_pins_surface_contract_model_and_guards() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_first_anatomical_stabilization_line_serie_bb31_prompt1_v1.md"
+        );
+        assert!(doc.contains("stable first-anatomical baseline"));
+        assert!(doc.contains("maintenance-hardened anatomical surface"));
+        assert!(doc.contains("maintenance-hardened diagnostics path"));
+        assert!(doc.contains("maintenance-hardened contract path"));
+        assert!(doc.contains("maintenance-hardened model boundary"));
+        assert!(doc.contains("non-canonical/internal-only residual path"));
+        assert!(doc.contains("advisory-only remains advisory-only"));
+        assert!(doc.contains("reference-only remains reference-only"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("no second anatomical region"));
+        assert!(doc.contains("abstract functional current mode"));
     }
 }
