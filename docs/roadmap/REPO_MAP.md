@@ -69,6 +69,7 @@ Maintenance-Interpretation folgt der BB23 Allowed-Change-Map: maintenance-safe, 
 - `advisory-only` / `bounded` Linien bleiben ohne direkte Ausführungsautorität.
 - `candidate-only`, `test-only`, `deferred`, `non-canonical` markieren nicht-operative oder nicht-hochgestufte Pfade.
 - `no-direct-*` Guard Rails bleiben verpflichtend.
+- Region 1 bleibt die einzige geöffnete Regionenklasse in der BB25-Freeze-Lesart; der aktuelle Maintenance-Betrieb führt zusätzlich die maintenance-gehärtete Drei-Regionen-Basis (Region 1 + Region 2 + Region 3) mit bounded Relations aus BB28/BB29.
 - Die operative Regionenbasis nach BB29 ist explizit auf Region 1, Region 2 und Region 3 begrenzt (maintenance-gehärtet, bounded Relations).
 - Nach BB29 ist **Maintenance/Bugfix/Cleanup ohne neue Serie** der explizite Default.
 - Region 4 bleibt bewusst nicht aktiv und ist nur per explizitem Re-Scope möglich (kein automatischer nächster Schritt).
