@@ -81,6 +81,8 @@ Autoritätsklassen im Repo-Kontext:
   - `docs/blue_brain_three_region_maintenance_stabilization_line_serie_bb29_prompt1_v1.md`
   - `docs/blue_brain_three_region_docs_tests_index_cleanup_serie_bb29_prompt2_v1.md`
   - `docs/blue_brain_bb29_final_three_region_stabilization_sweep_serie_bb29_prompt3_v1.md`
+  - `docs/blue_brain_bb29_post_decision_lock_serie_bb29_prompt4_v1.md`
+  - `docs/blue_brain_bb29_post_maintenance_default_decision_map_serie_bb29_prompt5_v1.md`
 - **BlueBrain/Runtime/Selection hardening line (BB19):**
   - `docs/blue_brain_runtime_selection_contract_hardening_serie_bb19_prompt1_v1.md`
   - `docs/blue_brain_runtime_selection_diagnostics_hardening_serie_bb19_prompt2_v1.md`
@@ -102,13 +104,14 @@ Referenzpunkte für die technische Scope-Grenze:
 - `docs/blue_brain_bb23_maintenance_guard_rails_allowed_change_envelope_serie_bb23_prompt2_v1.md`
 - `docs/blue_brain_bb23_final_freeze_readiness_statement_serie_bb23_prompt3_v1.md`
 
-## 2.1) Post-BB28 maintenance default (third-region bounded handoff)
+## 2.1) Post-BB29 maintenance default (three-region bounded handoff)
 
 - Aktive Regionenbasis ist **Region 1 + Region 2 + Region 3 (bounded advisory/reference lane)**.
 - Standardmodus bleibt **Maintenance/Bugfix/Cleanup** mit klarer no-direct-* Guard-Linie.
 - **Region 4 ist nicht aktiv** und benötigt einen späteren expliziten Re-Scope.
 - Die BB28/BB29-Linie schließt als kontrollierte, maintenance-gehärtete Drei-Regionen-Basis ohne Plattformausweitung.
 - Canonical stabilization map: `docs/blue_brain_three_region_maintenance_stabilization_line_serie_bb29_prompt1_v1.md`
+- Canonical post-decision map: `docs/blue_brain_bb29_post_maintenance_default_decision_map_serie_bb29_prompt5_v1.md`
 
 
 ## 2.2) Audit-Baseline (Blue-Brain / Zwei-Regionen) — 2026-05-02
