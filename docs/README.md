@@ -81,6 +81,8 @@ Autoritätsklassen im Repo-Kontext:
   - `docs/blue_brain_third_region_tests_guards_cleanup_serie_bb28_prompt6_v1.md`
   - `docs/blue_brain_three_region_guard_contract_consistency_serie_bb28_prompt7_v1.md`
   - `docs/blue_brain_bb28_readiness_sweep_third_region_expansion_boundary_serie_bb28_prompt8_v1.md`
+- **Anatomical region decision line (BB30 P1, supporting reference):**
+  - `docs/blue_brain_anatomical_region_decision_line_serie_bb30_prompt1_v1.md`
 - **Three-region maintenance stabilization/reference line (BB29):
   - `docs/blue_brain_three_region_maintenance_stabilization_line_serie_bb29_prompt1_v1.md`
   - `docs/blue_brain_three_region_docs_tests_index_cleanup_serie_bb29_prompt2_v1.md`
