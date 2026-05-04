@@ -1,0 +1,156 @@
+{
+  "ok": true,
+  "mode": "strict",
+  "checks": [
+    {
+      "name": "spec_snapshot",
+      "status": "pass",
+      "detail": "docs/spec_snapshot.md is up-to-date",
+      "remediation": null
+    },
+    {
+      "name": "policy_packs",
+      "status": "pass",
+      "detail": "policy graph valid (schema=1 digest=685156b448e6e6772af6c6dcad215db1ed0ffaeb8feffd0a43e3419b768ef254)",
+      "remediation": null
+    },
+    {
+      "name": "prompt_series_index",
+      "status": "pass",
+      "detail": "132 prompt IDs validated",
+      "remediation": null
+    },
+    {
+      "name": "module_map",
+      "status": "pass",
+      "detail": "module_map crate entries match cargo metadata",
+      "remediation": null
+    },
+    {
+      "name": "hardware_neutral_docs",
+      "status": "pass",
+      "detail": "no hardware-specific terms detected in guarded docs",
+      "remediation": null
+    },
+    {
+      "name": "v3_docs_consistency",
+      "status": "pass",
+      "detail": "v3 docs are present and linked from portability/strict/index snapshots",
+      "remediation": null
+    },
+    {
+      "name": "v4_docs_consistency",
+      "status": "pass",
+      "detail": "v4 docs are present and linked from portability/docs checks/index snapshots",
+      "remediation": null
+    },
+    {
+      "name": "v5_docs_consistency",
+      "status": "pass",
+      "detail": "v5 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "v6_docs_consistency",
+      "status": "pass",
+      "detail": "v6 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "v7_docs_consistency",
+      "status": "pass",
+      "detail": "v7 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "v8_docs_consistency",
+      "status": "pass",
+      "detail": "v8 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "v9_docs_consistency",
+      "status": "pass",
+      "detail": "v9 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "v10_docs_consistency",
+      "status": "pass",
+      "detail": "v10 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "v11_docs_consistency",
+      "status": "pass",
+      "detail": "v11 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "v12_docs_consistency",
+      "status": "pass",
+      "detail": "v12 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "v13_docs_consistency",
+      "status": "pass",
+      "detail": "v13 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "v14_docs_consistency",
+      "status": "pass",
+      "detail": "v14 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "v15_docs_consistency",
+      "status": "pass",
+      "detail": "v15 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "v16_docs_consistency",
+      "status": "pass",
+      "detail": "v16 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "v17_docs_consistency",
+      "status": "pass",
+      "detail": "v17 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "v18_docs_consistency",
+      "status": "pass",
+      "detail": "v18 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "v19_docs_consistency",
+      "status": "pass",
+      "detail": "v19 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "v20_docs_consistency",
+      "status": "pass",
+      "detail": "v20 docs are present and linked from portability/docs checks",
+      "remediation": null
+    },
+    {
+      "name": "remediation_registry_doc",
+      "status": "pass",
+      "detail": "docs/remediation_codes_v1.md is up-to-date",
+      "remediation": null
+    },
+    {
+      "name": "artifact_schema_snapshots",
+      "status": "pass",
+      "detail": "artifact schema snapshots are up-to-date (123 artifacts)",
+      "remediation": null
+    }
+  ]
+}

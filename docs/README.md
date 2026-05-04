@@ -118,18 +118,18 @@ Referenzpunkte für die technische Scope-Grenze:
 - Canonical post-decision map: `docs/blue_brain_bb29_post_maintenance_default_decision_map_serie_bb29_prompt5_v1.md`
 
 
-## 2.2) Audit-Baseline (Blue-Brain / Zwei-Regionen) — 2026-05-02
+## 2.2) Audit-Baseline (Blue-Brain / Drei-Regionen, BB29) — 2026-05-04
 
 Für einen reproduzierbaren Audit-Baseline-Pass wurden die kanonischen AGENTS-Checks frisch ausgeführt; die Reports liegen unter:
 
-- `out/blue_brain_audit_baseline_2026-05-02/docs_lint_report.json`
-- `out/blue_brain_audit_baseline_2026-05-02/gate_report.json`
+- `out/blue_brain_audit_baseline_2026-05-04/docs_lint_report.json`
+- `out/blue_brain_audit_baseline_2026-05-04/gate_report.json`
 
 Ausgeführt wurden:
 
 - `cargo test --workspace`
-- `cargo run -p ucf-ops -- docs lint --strict --out ./out/blue_brain_audit_baseline_2026-05-02/docs_lint_report.json`
-- `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/blue_brain_audit_baseline_2026-05-02/gate_report.json`
+- `cargo run -p ucf-ops -- docs lint --strict --out ./out/blue_brain_audit_baseline_2026-05-04/docs_lint_report.json`
+- `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/blue_brain_audit_baseline_2026-05-04/gate_report.json`
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
 
