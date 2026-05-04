@@ -1,11 +1,12 @@
 # Serie BB27 Prompt 6: Final maintenance handoff map (post two-region baseline)
 
-> ✅ **Authority notice (current operational authority):** Dieses Dokument ist Teil der aktuell maßgeblichen operativen Endlage.  
-> Aktive Endlage: **Region 1 + Region 2 aktiv**, Maintenance/Bugfix/Cleanup als Default.  
-> Historische BB25-Handoff-/Decision-Dokumente bleiben referenzierbar, aber sind nicht gleichrangig operativ.  
+> ⚠️ **Authority notice (historical snapshot / superseded):** Dieses Dokument beschreibt die frühere BB27-Endlage und ist **nicht** mehr current operational authority.  
+> Aktuelle maßgebliche Endlage: **BB29** über
+> - `docs/blue_brain_bb29_post_maintenance_default_decision_map_serie_bb29_prompt5_v1.md`
+> - `docs/blue_brain_bb29_final_maintenance_handoff_map_serie_bb29_prompt6_v1.md`
 > Kanonische Klassifikation: `docs/blue_brain_authority_chain_status_map.md`
 
-Status: **current operational authority (BB27) locked**. Dieses Dokument ist die maßgebliche aktuelle operative Endlage der Blue-Brain-Autoritätskette.
+Status: **historical snapshot (BB27), superseded by BB29 current authority**.
 
 Purpose: this document is a narrow closure handoff. It introduces no new functional block, no new architecture series, and no implicit Region-3 preparation.
 
@@ -94,6 +95,6 @@ Operationally relevant shorthand from this point forward:
 
 ## 8) Authority classification (historical vs current)
 
-- **Dokumenttyp:** current authority (operative Endlage).
-- **Verbindlichkeit heute:** maßgeblich für aktive Regionenlage und Maintenance-Default.
-- **Historical snapshots:** BB25-Post-Decision/Handoff-Dokumente bleiben zur Historie erhalten, aber ohne aktuelle operative Vorrangwirkung.
+- **Dokumenttyp:** historical snapshot (superseded authority state).
+- **Verbindlichkeit heute:** dokumentarisch relevant, aber nicht operativ maßgeblich.
+- **Current operational authority:** BB29-Post-Decision/Handoff-Dokumente (`...bb29_prompt5_v1.md`, `...bb29_prompt6_v1.md`).

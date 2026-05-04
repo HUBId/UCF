@@ -16,13 +16,12 @@ Nur diese Klassen sind für die operative Einordnung zu verwenden:
 4. **non-canonical / outdated pointer**
    - Verweis, der nicht als aktuelle Autorität gelesen werden darf (z. B. veraltete oder historisch überholte Pointer).
 
-## Canonical classification (BB25 vs BB27)
+## Canonical classification (BB29 current line)
 
 ### Current operational authority (maßgeblich)
 
-- `docs/blue_brain_bb27_post_maintenance_default_decision_map_serie_bb27_prompt5_v1.md`
-- `docs/blue_brain_bb27_final_maintenance_handoff_map_serie_bb27_prompt6_v1.md`
-- `docs/blue_brain_bb28_readiness_sweep_third_region_expansion_boundary_serie_bb28_prompt8_v1.md`
+- `docs/blue_brain_bb29_post_maintenance_default_decision_map_serie_bb29_prompt5_v1.md`
+- `docs/blue_brain_bb29_final_maintenance_handoff_map_serie_bb29_prompt6_v1.md`
 
 Operative Endlage: **Region 1, Region 2 und Region 3 (bounded advisory/reference) aktiv**, Maintenance/Bugfix/Cleanup als Default, Region 4 inaktiv bis explizitem Re-Scope.
 
@@ -30,22 +29,25 @@ Operative Endlage: **Region 1, Region 2 und Region 3 (bounded advisory/reference
 
 - `docs/blue_brain_post_bb25_maintenance_default_decision_map_serie_bb25_prompt5_v1.md`
 - `docs/blue_brain_final_maintenance_handoff_serie_bb25_prompt6_v1.md`
+- `docs/blue_brain_bb27_post_maintenance_default_decision_map_serie_bb27_prompt5_v1.md`
+- `docs/blue_brain_bb27_final_maintenance_handoff_map_serie_bb27_prompt6_v1.md`
 
-Historische Aussage bleibt erhalten (BB25-Zeitpunkt), aber wird durch BB27-Endlage operativ übersteuert.
+Historische Aussage bleibt erhalten (BB25/BB27-Zeitpunkt), wird aber durch die BB29-Endlage operativ übersteuert.
 
 ### Supporting reference (nicht konkurrenzierende Endlage)
 
 - `docs/blue_brain_bb23_freeze_maintenance_baseline_serie_bb23_prompt1_v1.md`
 - `docs/blue_brain_bb23_maintenance_guard_rails_allowed_change_envelope_serie_bb23_prompt2_v1.md`
 - `docs/blue_brain_bb23_final_freeze_readiness_statement_serie_bb23_prompt3_v1.md`
-- `docs/blue_brain_bb26_readiness_sweep_second_region_expansion_boundary_serie_bb26_prompt8_v1.md`
-- `docs/blue_brain_bb27_final_two_region_stabilization_sweep_serie_bb27_prompt3_v1.md`
+- `docs/blue_brain_bb28_readiness_sweep_third_region_expansion_boundary_serie_bb28_prompt8_v1.md`
+- `docs/blue_brain_bb29_final_three_region_stabilization_sweep_serie_bb29_prompt3_v1.md`
+- `docs/blue_brain_bb29_post_decision_lock_serie_bb29_prompt4_v1.md`
 
 ### Non-canonical / outdated pointer
 
-- Jede Lesart, die BB25-Dokumente als heute gleichrangige operative Autorität behandelt.
+- Jede Lesart, die BB25- oder BB27-Dokumente als heute gleichrangige operative Autorität behandelt.
 - Implizite Fortsetzungs-/Expansionspointer ohne expliziten Re-Scope.
 
 ## Conflict rule (single truth)
 
-Wenn historische BB25-Aussagen und BB27-Endlage unterschiedlich sind, gilt **ausschließlich** die BB27-Current-Authority-Linie als operativ verbindlich.
+Wenn historische BB25/BB27-Aussagen und BB29-Endlage unterschiedlich sind, gilt **ausschließlich** die BB29-Current-Authority-Linie als operativ verbindlich.
