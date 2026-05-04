@@ -3381,4 +3381,28 @@ mod tests {
         assert!(doc.contains("no direct compute invocation"));
         assert!(doc.contains("no safety override"));
     }
+
+    #[test]
+    fn bb30_prompt6_readiness_doc_pins_first_anatomical_expansion_boundary() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_bb30_readiness_sweep_first_anatomical_expansion_boundary_serie_bb30_prompt6_v1.md"
+        );
+        assert!(doc.contains("hippocampus_like_region"));
+        assert!(doc.contains("stable first-anatomical operational surface"));
+        assert!(doc.contains("usable with caveats"));
+        assert!(doc.contains("advisory-only"));
+        assert!(doc.contains("deferred/blocked/insufficient/diagnostic-only/reference-only"));
+        assert!(doc.contains("stable current model mode"));
+        assert!(doc.contains("non-canonical/internal-only"));
+        assert!(doc.contains("abstract functional current mode"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("zweite anatomische Region"));
+        assert!(doc.contains("Stabilisierungspass der ersten anatomischen Region"));
+        assert!(doc.contains("maintenance-only Core"));
+    }
 }
