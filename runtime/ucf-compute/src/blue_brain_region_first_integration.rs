@@ -3479,11 +3479,34 @@ mod tests {
         assert!(readme.contains(
             "docs/blue_brain_first_anatomical_docs_tests_index_cleanup_serie_bb31_prompt2_v1.md"
         ));
+        assert!(readme.contains(
+            "docs/blue_brain_bb31_final_first_anatomical_stabilization_sweep_serie_bb31_prompt3_v1.md"
+        ));
 
         let repo_map = include_str!("../../../docs/roadmap/REPO_MAP.md");
         assert!(repo_map.contains("First-anatomical maintenance reference surface (BB31)"));
         assert!(repo_map.contains(
             "docs/blue_brain_first_anatomical_docs_tests_index_cleanup_serie_bb31_prompt2_v1.md"
         ));
+        assert!(repo_map.contains(
+            "docs/blue_brain_bb31_final_first_anatomical_stabilization_sweep_serie_bb31_prompt3_v1.md"
+        ));
+    }
+
+    #[test]
+    fn bb31_prompt3_final_sweep_doc_pins_stability_map_and_maintenance_default() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_bb31_final_first_anatomical_stabilization_sweep_serie_bb31_prompt3_v1.md"
+        );
+        assert!(doc.contains("hippocampus_like_region"));
+        assert!(doc.contains("stable maintenance-hardened first-anatomical baseline"));
+        assert!(doc.contains("usable-with-caveats first-anatomical contract lane"));
+        assert!(doc.contains("advisory-only anatomical output lane"));
+        assert!(doc.contains("diagnostic-only/deferred anatomical diagnostics lane"));
+        assert!(doc.contains("non-canonical/internal-only anatomical residual lane"));
+        assert!(doc.contains("no direct action/execution/retry/memory/compute"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("Maintenance/Bugfix/Cleanup genügt"));
+        assert!(doc.contains("expliziter anatomischer Region-2-Re-Scope"));
     }
 }
