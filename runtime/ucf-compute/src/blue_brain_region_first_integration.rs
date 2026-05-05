@@ -3723,6 +3723,31 @@ mod tests {
     }
 
     #[test]
+    fn amygdala_br2_role_map_doc_pins_role_integration_mode_boundaries_and_separation() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_amygdala_region_role_map_serie_br2_prompt1_v1.md"
+        );
+        assert!(doc.contains("salience weighting role"));
+        assert!(doc.contains("threat/valence caveat role"));
+        assert!(doc.contains("bounded priority modulation role"));
+        assert!(doc.contains("reference-linked affective tagging role"));
+        assert!(doc.contains("non-role / out-of-scope biological detail"));
+        assert!(doc.contains("abstract functional current mode"));
+        assert!(doc.contains("HH bleibt `simulation-only/diagnostic-only`"));
+        assert!(doc.contains("later selective HH deepening"));
+        assert!(doc.contains("hippocampus_like_region"));
+        assert!(doc.contains("amygdala_like_region"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("keine HH-Produktivintegration"));
+        assert!(doc.contains("keine neue Compute-Core-Arbeit"));
+    }
+
+    #[test]
     fn hippocampus_br1_role_map_doc_pins_role_integration_mode_and_scope_boundaries() {
         let doc = include_str!(
             "../../../docs/blue_brain_hippocampus_region_role_map_serie_br1_prompt1_v1.md"
