@@ -91,6 +91,7 @@ Autoritätsklassen im Repo-Kontext:
 - **First anatomical maintenance stabilization/reference line (BB31):**
   - `docs/blue_brain_first_anatomical_stabilization_line_serie_bb31_prompt1_v1.md`
   - `docs/blue_brain_first_anatomical_docs_tests_index_cleanup_serie_bb31_prompt2_v1.md`
+  - `docs/blue_brain_bb31_final_first_anatomical_stabilization_sweep_serie_bb31_prompt3_v1.md`
 - **Three-region maintenance stabilization/reference line (BB29):
   - `docs/blue_brain_three_region_maintenance_stabilization_line_serie_bb29_prompt1_v1.md`
   - `docs/blue_brain_three_region_docs_tests_index_cleanup_serie_bb29_prompt2_v1.md`
