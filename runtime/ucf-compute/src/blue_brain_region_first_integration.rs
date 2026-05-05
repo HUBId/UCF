@@ -209,6 +209,26 @@ pub const CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_MODEL_DECISION_MAP:
     BlueBrainFirstAnatomicalRegionModelModeClass::NonCanonicalInternalOnlyModelPath,
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHippocampusIntegrationClass {
+    HippocampusInputSurface,
+    HippocampusStateSurface,
+    HippocampusOutputAdvisorySurface,
+    HippocampusReferenceSurface,
+    BlockedDeferredHippocampusPath,
+    NonCanonicalInternalOnlyHippocampusPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_INTEGRATION_MAP: [BlueBrainHippocampusIntegrationClass;
+    6] = [
+    BlueBrainHippocampusIntegrationClass::HippocampusInputSurface,
+    BlueBrainHippocampusIntegrationClass::HippocampusStateSurface,
+    BlueBrainHippocampusIntegrationClass::HippocampusOutputAdvisorySurface,
+    BlueBrainHippocampusIntegrationClass::HippocampusReferenceSurface,
+    BlueBrainHippocampusIntegrationClass::BlockedDeferredHippocampusPath,
+    BlueBrainHippocampusIntegrationClass::NonCanonicalInternalOnlyHippocampusPath,
+];
+
 pub const BLUE_BRAIN_FIRST_ANATOMICAL_REGION_CURRENT_MODEL_MODE:
     BlueBrainFirstAnatomicalRegionModelModeClass =
     BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode;
@@ -3661,5 +3681,59 @@ mod tests {
         assert!(doc.contains("no direct execution/safety/memory authority"));
         assert!(doc.contains("no new compute-core expansion"));
         assert!(doc.contains("no planner/agent/retry/orchestration platform"));
+    }
+
+    #[test]
+    fn hippocampus_br1_integration_map_and_guards_remain_bounded() {
+        assert!(CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_INTEGRATION_MAP
+            .contains(&BlueBrainHippocampusIntegrationClass::HippocampusInputSurface));
+        assert!(CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_INTEGRATION_MAP
+            .contains(&BlueBrainHippocampusIntegrationClass::HippocampusStateSurface));
+        assert!(CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_INTEGRATION_MAP
+            .contains(&BlueBrainHippocampusIntegrationClass::HippocampusOutputAdvisorySurface));
+        assert!(CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_INTEGRATION_MAP
+            .contains(&BlueBrainHippocampusIntegrationClass::HippocampusReferenceSurface));
+        assert!(CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_INTEGRATION_MAP
+            .contains(&BlueBrainHippocampusIntegrationClass::BlockedDeferredHippocampusPath));
+        assert!(CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_INTEGRATION_MAP.contains(
+            &BlueBrainHippocampusIntegrationClass::NonCanonicalInternalOnlyHippocampusPath
+        ));
+
+        assert_eq!(
+            classify_blue_brain_first_anatomical_region_input_guard(
+                BlueBrainFirstAnatomicalRegionInputClass::ComputeInternalRawState
+            ),
+            BlueBrainFirstAnatomicalRegionInputGuard::BlockedForbiddenInput
+        );
+        assert_eq!(
+            classify_blue_brain_first_anatomical_region_output_guard(
+                BlueBrainFirstAnatomicalRegionOutputClass::DirectComputeInvocation
+            ),
+            BlueBrainFirstAnatomicalRegionOutputGuard::BlockedForbiddenOutput
+        );
+    }
+
+    #[test]
+    fn hippocampus_br1_integration_doc_pins_surfaces_contract_model_and_no_direct_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_hippocampus_minimal_bounded_integration_serie_br1_prompt2_v1.md"
+        );
+        assert!(doc.contains("hippocampus input surface"));
+        assert!(doc.contains("hippocampus state surface"));
+        assert!(doc.contains("hippocampus output/advisory surface"));
+        assert!(doc.contains("hippocampus reference surface"));
+        assert!(doc.contains("blocked/deferred hippocampus path"));
+        assert!(doc.contains("non-canonical/internal-only hippocampus path"));
+        assert!(doc.contains("runtime advisory read"));
+        assert!(doc.contains("selection advisory read"));
+        assert!(doc.contains("reference/context bounded read"));
+        assert!(doc.contains("abstract functional current mode"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("no parallel opening of additional anatomical regions"));
     }
 }
