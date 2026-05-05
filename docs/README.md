@@ -177,3 +177,6 @@ Wenn einzelne ältere Dateien weiterhin gebraucht werden, müssen sie gegen die 
 
 - **Hippocampus-first role consolidation (BR1):**
   - `docs/blue_brain_hippocampus_region_role_map_serie_br1_prompt1_v1.md`
+  - `docs/blue_brain_hippocampus_minimal_bounded_integration_serie_br1_prompt2_v1.md`
+  - `docs/blue_brain_hippocampus_surface_diagnostics_contracts_hardening_serie_br1_prompt3_v1.md`
+  - `docs/blue_brain_br1_hippocampus_readiness_sweep_expansion_boundary_serie_br1_prompt4_v1.md`
