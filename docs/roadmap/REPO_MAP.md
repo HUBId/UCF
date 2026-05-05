@@ -81,3 +81,5 @@ Primäre Referenzen:
 - `docs/blue_brain_execution_guard_rails_production_facing_serie_bb18_prompt3_v1.md`
 - `docs/blue_brain_bb16_readiness_sweep_bounded_dynamics_execution_line_serie_bb16_prompt4_v1.md`
 - `docs/blue_brain_runtime_selection_contract_hardening_serie_bb19_prompt1_v1.md`
+
+- Hippocampus-first BR1 canonical role map: `docs/blue_brain_hippocampus_region_role_map_serie_br1_prompt1_v1.md` (context indexing + memory association + episode/reference binding + bounded retrieval support; advisory-only boundaries remain in force).
