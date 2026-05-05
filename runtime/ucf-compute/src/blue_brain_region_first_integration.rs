@@ -344,6 +344,30 @@ pub enum BlueBrainFirstAnatomicalRegionDiagnosticState {
     NonCanonicalInternalOnlyAnatomicalRegionDiagnosticPath,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHippocampusContractClass {
+    HippocampusAdvisoryOnlyDiagnostic,
+    HippocampusCaveatedDiagnostic,
+    HippocampusDeferredDiagnostic,
+    HippocampusBlockedDiagnostic,
+    HippocampusInsufficientDiagnostic,
+    HippocampusDiagnosticOnlyState,
+    HippocampusBoundedContractSignal,
+    NonCanonicalInternalOnlyHippocampusPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_DIAGNOSTICS_CONTRACT_MAP:
+    [BlueBrainHippocampusContractClass; 8] = [
+    BlueBrainHippocampusContractClass::HippocampusAdvisoryOnlyDiagnostic,
+    BlueBrainHippocampusContractClass::HippocampusCaveatedDiagnostic,
+    BlueBrainHippocampusContractClass::HippocampusDeferredDiagnostic,
+    BlueBrainHippocampusContractClass::HippocampusBlockedDiagnostic,
+    BlueBrainHippocampusContractClass::HippocampusInsufficientDiagnostic,
+    BlueBrainHippocampusContractClass::HippocampusDiagnosticOnlyState,
+    BlueBrainHippocampusContractClass::HippocampusBoundedContractSignal,
+    BlueBrainHippocampusContractClass::NonCanonicalInternalOnlyHippocampusPath,
+];
+
 pub const CANONICAL_BLUE_BRAIN_FIRST_ANATOMICAL_REGION_DIAGNOSTIC_MAP:
     [BlueBrainFirstAnatomicalRegionDiagnosticState; 7] = [
     BlueBrainFirstAnatomicalRegionDiagnosticState::AnatomicalRegionAdvisoryOnlyDiagnostic,
@@ -404,6 +428,39 @@ pub fn blue_brain_first_anatomical_region_reference_diagnostic_read(
     signal: BlueBrainFirstAnatomicalRegionContractSignal,
 ) -> BlueBrainFirstAnatomicalRegionDiagnosticState {
     blue_brain_first_anatomical_region_diagnostic_state_for_signal(signal)
+}
+
+pub fn blue_brain_hippocampus_contract_class_for_signal(
+    signal: BlueBrainFirstAnatomicalRegionContractSignal,
+) -> BlueBrainHippocampusContractClass {
+    match signal {
+        BlueBrainFirstAnatomicalRegionContractSignal::AnatomicalToRuntimeAdvisory
+        | BlueBrainFirstAnatomicalRegionContractSignal::RuntimeToAnatomicalBoundedInput
+        | BlueBrainFirstAnatomicalRegionContractSignal::AnatomicalToSelectionAdvisory
+        | BlueBrainFirstAnatomicalRegionContractSignal::SelectionToAnatomicalBoundedStateInput => {
+            BlueBrainHippocampusContractClass::HippocampusAdvisoryOnlyDiagnostic
+        }
+        BlueBrainFirstAnatomicalRegionContractSignal::Caveated => {
+            BlueBrainHippocampusContractClass::HippocampusCaveatedDiagnostic
+        }
+        BlueBrainFirstAnatomicalRegionContractSignal::Deferred => {
+            BlueBrainHippocampusContractClass::HippocampusDeferredDiagnostic
+        }
+        BlueBrainFirstAnatomicalRegionContractSignal::Blocked => {
+            BlueBrainHippocampusContractClass::HippocampusBlockedDiagnostic
+        }
+        BlueBrainFirstAnatomicalRegionContractSignal::Insufficient => {
+            BlueBrainHippocampusContractClass::HippocampusInsufficientDiagnostic
+        }
+        BlueBrainFirstAnatomicalRegionContractSignal::DiagnosticOnly
+        | BlueBrainFirstAnatomicalRegionContractSignal::ReferenceOnly
+        | BlueBrainFirstAnatomicalRegionContractSignal::AnatomicalReferenceSignal => {
+            BlueBrainHippocampusContractClass::HippocampusDiagnosticOnlyState
+        }
+        BlueBrainFirstAnatomicalRegionContractSignal::NonCanonicalInternalOnly => {
+            BlueBrainHippocampusContractClass::NonCanonicalInternalOnlyHippocampusPath
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3735,5 +3792,65 @@ mod tests {
         assert!(doc.contains("no direct compute invocation"));
         assert!(doc.contains("no safety override"));
         assert!(doc.contains("no parallel opening of additional anatomical regions"));
+    }
+
+    #[test]
+    fn hippocampus_br1_prompt3_canonical_diagnostics_contract_map_is_complete_and_distinct() {
+        assert!(CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainHippocampusContractClass::HippocampusAdvisoryOnlyDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainHippocampusContractClass::HippocampusCaveatedDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainHippocampusContractClass::HippocampusDeferredDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainHippocampusContractClass::HippocampusBlockedDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainHippocampusContractClass::HippocampusInsufficientDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainHippocampusContractClass::HippocampusDiagnosticOnlyState));
+        assert!(CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainHippocampusContractClass::HippocampusBoundedContractSignal));
+        assert!(CANONICAL_BLUE_BRAIN_HIPPOCAMPUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainHippocampusContractClass::NonCanonicalInternalOnlyHippocampusPath));
+    }
+
+    #[test]
+    fn hippocampus_br1_prompt3_runtime_selection_reference_reads_stay_semantically_aligned() {
+        let signal = BlueBrainFirstAnatomicalRegionContractSignal::Caveated;
+        let runtime_read = blue_brain_first_anatomical_region_runtime_diagnostic_read(signal);
+        let selection_read = blue_brain_first_anatomical_region_selection_diagnostic_read(signal);
+        let reference_read = blue_brain_first_anatomical_region_reference_diagnostic_read(signal);
+        assert_eq!(runtime_read, selection_read);
+        assert_eq!(selection_read, reference_read);
+        assert_eq!(
+            blue_brain_hippocampus_contract_class_for_signal(signal),
+            BlueBrainHippocampusContractClass::HippocampusCaveatedDiagnostic
+        );
+    }
+
+    #[test]
+    fn hippocampus_br1_prompt3_doc_pins_canonical_contract_map_and_guard_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_hippocampus_surface_diagnostics_contracts_hardening_serie_br1_prompt3_v1.md"
+        );
+        assert!(doc.contains("hippocampus advisory-only diagnostic"));
+        assert!(doc.contains("hippocampus caveated diagnostic"));
+        assert!(doc.contains("hippocampus deferred diagnostic"));
+        assert!(doc.contains("hippocampus blocked diagnostic"));
+        assert!(doc.contains("hippocampus insufficient diagnostic"));
+        assert!(doc.contains("hippocampus diagnostic-only state"));
+        assert!(doc.contains("hippocampus bounded contract signal"));
+        assert!(doc.contains("non-canonical/internal-only hippocampus path"));
+        assert!(doc.contains("deferred != blocked"));
+        assert!(doc.contains("blocked != insufficient"));
+        assert!(doc.contains("advisory-only != caveated"));
+        assert!(doc.contains("no action request"));
+        assert!(doc.contains("no execution trigger"));
+        assert!(doc.contains("no retry trigger"));
+        assert!(doc.contains("no memory commit"));
+        assert!(doc.contains("no compute trigger"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("abstract functional (current mode)"));
+        assert!(doc.contains("HH simulation-only/diagnostic-only remains deferred"));
     }
 }
