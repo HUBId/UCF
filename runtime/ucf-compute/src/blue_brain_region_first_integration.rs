@@ -3449,4 +3449,41 @@ mod tests {
         assert!(doc.contains("no second anatomical region"));
         assert!(doc.contains("abstract functional current mode"));
     }
+
+    #[test]
+    fn first_anatomical_docs_tests_index_cleanup_doc_pins_canonical_reference_map() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_first_anatomical_docs_tests_index_cleanup_serie_bb31_prompt2_v1.md"
+        );
+        assert!(doc.contains("canonical anatomical-region reference doc"));
+        assert!(doc.contains("canonical anatomical-region test surface"));
+        assert!(doc.contains("maintenance-facing index/reference path"));
+        assert!(doc.contains("non-canonical/internal-only or legacy anatomical-region path"));
+        assert!(doc.contains("hippocampus_like_region"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("keine zweite anatomische Region"));
+    }
+
+    #[test]
+    fn docs_indexes_expose_bb31_first_anatomical_maintenance_reference_line() {
+        let readme = include_str!("../../../docs/README.md");
+        assert!(readme.contains("First anatomical maintenance stabilization/reference line (BB31)"));
+        assert!(readme.contains(
+            "docs/blue_brain_first_anatomical_stabilization_line_serie_bb31_prompt1_v1.md"
+        ));
+        assert!(readme.contains(
+            "docs/blue_brain_first_anatomical_docs_tests_index_cleanup_serie_bb31_prompt2_v1.md"
+        ));
+
+        let repo_map = include_str!("../../../docs/roadmap/REPO_MAP.md");
+        assert!(repo_map.contains("First-anatomical maintenance reference surface (BB31)"));
+        assert!(repo_map.contains(
+            "docs/blue_brain_first_anatomical_docs_tests_index_cleanup_serie_bb31_prompt2_v1.md"
+        ));
+    }
 }

@@ -70,6 +70,8 @@ Maintenance-Interpretation folgt der BB23 Allowed-Change-Map: maintenance-safe, 
 - `advisory-only` / `bounded` Linien bleiben ohne direkte Ausführungsautorität.
 - `candidate-only`, `test-only`, `deferred`, `non-canonical` markieren nicht-operative oder nicht-hochgestufte Pfade.
 - `no-direct-*` Guard Rails bleiben verpflichtend.
+- First-anatomical maintenance reference surface (BB31) bleibt auf `hippocampus_like_region` begrenzt; keine zweite anatomische Region ohne expliziten Re-Scope.
+- Canonical first-anatomical maintenance docs/tests/index path: `docs/blue_brain_first_anatomical_stabilization_line_serie_bb31_prompt1_v1.md` + `docs/blue_brain_first_anatomical_docs_tests_index_cleanup_serie_bb31_prompt2_v1.md`.
 - Region 1 bleibt die einzige geöffnete Regionenklasse in der BB25-Freeze-Lesart; der aktuelle Maintenance-Betrieb führt zusätzlich die maintenance-gehärtete Drei-Regionen-Basis (Region 1 + Region 2 + Region 3) mit bounded Relations aus BB28/BB29.
 - Die operative Regionenbasis nach BB29 ist explizit auf Region 1, Region 2 und Region 3 begrenzt (maintenance-gehärtet, bounded Relations).
 - Nach BB29 ist **Maintenance/Bugfix/Cleanup ohne neue Serie** der explizite Default.
