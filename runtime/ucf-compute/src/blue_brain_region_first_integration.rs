@@ -3644,4 +3644,22 @@ mod tests {
         assert!(doc.contains("no direct memory commit"));
         assert!(doc.contains("no direct compute invocation"));
     }
+
+    #[test]
+    fn hippocampus_br1_role_map_doc_pins_role_integration_mode_and_scope_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_hippocampus_region_role_map_serie_br1_prompt1_v1.md"
+        );
+        assert!(doc.contains("context indexing role"));
+        assert!(doc.contains("memory association role"));
+        assert!(doc.contains("episode/reference binding role"));
+        assert!(doc.contains("bounded retrieval support role"));
+        assert!(doc.contains("abstract functional (current/default)"));
+        assert!(doc.contains("HH simulation-only/diagnostic-only"));
+        assert!(doc.contains("later selective HH deepening"));
+        assert!(doc.contains("No implicit HH requirement is introduced for Hippocampus in BR1."));
+        assert!(doc.contains("no direct execution/safety/memory authority"));
+        assert!(doc.contains("no new compute-core expansion"));
+        assert!(doc.contains("no planner/agent/retry/orchestration platform"));
+    }
 }

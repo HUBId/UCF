@@ -174,3 +174,6 @@ Nur operativ relevante Abschlusslinien (BB8–BB19) als Referenzfläche:
 Die frühere `Chip-2` Architektur-/Modul-Indexstruktur in dieser Datei war für den aktuellen operativen UCF-Stand nicht mehr maßgeblich und wurde als primärer Einstieg entfernt.
 
 Wenn einzelne ältere Dateien weiterhin gebraucht werden, müssen sie gegen die oben genannten kanonischen operativen Referenzpfade validiert werden.
+
+- **Hippocampus-first role consolidation (BR1):**
+  - `docs/blue_brain_hippocampus_region_role_map_serie_br1_prompt1_v1.md`
