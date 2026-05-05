@@ -301,9 +301,11 @@ pub fn blue_brain_anatomical_region_model_mode(
             BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode
         }
         BlueBrainAnatomicalRegionClass::Amygdala
-        | BlueBrainAnatomicalRegionClass::AnteriorCingulateCortex
-        | BlueBrainAnatomicalRegionClass::Thalamus => {
+        | BlueBrainAnatomicalRegionClass::AnteriorCingulateCortex => {
             BlueBrainFirstAnatomicalRegionModelModeClass::BoundedKuramotoLikeCurrentMode
+        }
+        BlueBrainAnatomicalRegionClass::Thalamus => {
+            BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode
         }
         BlueBrainAnatomicalRegionClass::PrefrontalCortex => {
             BlueBrainFirstAnatomicalRegionModelModeClass::LaterSelectiveHodgkinHuxleyDeepening
@@ -3804,6 +3806,53 @@ mod tests {
         assert!(doc.contains("keine neue Compute-Core-Arbeit"));
     }
 
+    #[test]
+    fn thalamus_br3_role_map_doc_pins_role_integration_mode_boundaries_and_separation() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_thalamus_region_role_map_serie_br3_prompt1_v1.md"
+        );
+        assert!(doc.contains("relay/gating role"));
+        assert!(doc.contains("bounded routing role"));
+        assert!(doc.contains("selection-support role"));
+        assert!(doc.contains("reference-mediated signal routing role"));
+        assert!(doc.contains("non-role / out-of-scope biological detail"));
+        assert!(doc.contains("abstract functional current mode"));
+        assert!(doc.contains("bounded Kuramoto-like candidate"));
+        assert!(doc.contains("Hodgkin-Huxley simulation-only/diagnostic-only"));
+        assert!(doc.contains("later selective HH deepening"));
+        assert!(doc.contains("hippocampus_like_region"));
+        assert!(doc.contains("amygdala_like_region"));
+        assert!(doc.contains("thalamus_like_region"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("kein vollständiger biologischer Thalamus-Nachbau"));
+        assert!(doc.contains("keine HH-Produktivintegration"));
+        assert!(doc.contains("keine neue Compute-Core-Arbeit"));
+    }
+
+    #[test]
+    fn thalamus_model_mode_and_role_stay_distinct_from_hippocampus_and_amygdala() {
+        assert_eq!(
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Thalamus),
+            BlueBrainAnatomicalRegionSystemRoleClass::RelayIntegrationMediation
+        );
+        assert_eq!(
+            blue_brain_anatomical_region_model_mode(BlueBrainAnatomicalRegionClass::Thalamus),
+            BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode
+        );
+        assert_ne!(
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Thalamus),
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Amygdala)
+        );
+        assert_ne!(
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Thalamus),
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Hippocampus)
+        );
+    }
     #[test]
     fn hippocampus_br1_role_map_doc_pins_role_integration_mode_and_scope_boundaries() {
         let doc = include_str!(
