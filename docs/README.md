@@ -183,3 +183,4 @@ Wenn einzelne ältere Dateien weiterhin gebraucht werden, müssen sie gegen die 
 
 - **Amygdala-next role consolidation (BR2):**
   - `docs/blue_brain_amygdala_region_role_map_serie_br2_prompt1_v1.md`
+  - `docs/blue_brain_amygdala_surface_diagnostics_contracts_hardening_serie_br2_prompt3_v1.md`
