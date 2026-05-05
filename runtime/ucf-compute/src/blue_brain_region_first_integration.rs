@@ -214,6 +214,90 @@ pub const BLUE_BRAIN_FIRST_ANATOMICAL_REGION_CURRENT_MODEL_MODE:
     BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainAnatomicalRegionClass {
+    Hippocampus,
+    Amygdala,
+    PrefrontalCortex,
+    AnteriorCingulateCortex,
+    BasalGanglia,
+    Thalamus,
+    Insula,
+}
+
+pub const CANONICAL_BLUE_BRAIN_ANATOMICAL_REGION_MAP: [BlueBrainAnatomicalRegionClass; 7] = [
+    BlueBrainAnatomicalRegionClass::Hippocampus,
+    BlueBrainAnatomicalRegionClass::Amygdala,
+    BlueBrainAnatomicalRegionClass::PrefrontalCortex,
+    BlueBrainAnatomicalRegionClass::AnteriorCingulateCortex,
+    BlueBrainAnatomicalRegionClass::BasalGanglia,
+    BlueBrainAnatomicalRegionClass::Thalamus,
+    BlueBrainAnatomicalRegionClass::Insula,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainAnatomicalRegionSystemRoleClass {
+    AttentionSelectionMediation,
+    ThreatSalienceCaveatMediation,
+    ControlPolicyConsistencyMediation,
+    ConflictMonitoringMediation,
+    ActionGatingMediation,
+    RelayIntegrationMediation,
+    InteroceptiveContextMediation,
+}
+
+pub fn blue_brain_anatomical_region_system_role(
+    region: BlueBrainAnatomicalRegionClass,
+) -> BlueBrainAnatomicalRegionSystemRoleClass {
+    match region {
+        BlueBrainAnatomicalRegionClass::Hippocampus => {
+            BlueBrainAnatomicalRegionSystemRoleClass::AttentionSelectionMediation
+        }
+        BlueBrainAnatomicalRegionClass::Amygdala => {
+            BlueBrainAnatomicalRegionSystemRoleClass::ThreatSalienceCaveatMediation
+        }
+        BlueBrainAnatomicalRegionClass::PrefrontalCortex => {
+            BlueBrainAnatomicalRegionSystemRoleClass::ControlPolicyConsistencyMediation
+        }
+        BlueBrainAnatomicalRegionClass::AnteriorCingulateCortex => {
+            BlueBrainAnatomicalRegionSystemRoleClass::ConflictMonitoringMediation
+        }
+        BlueBrainAnatomicalRegionClass::BasalGanglia => {
+            BlueBrainAnatomicalRegionSystemRoleClass::ActionGatingMediation
+        }
+        BlueBrainAnatomicalRegionClass::Thalamus => {
+            BlueBrainAnatomicalRegionSystemRoleClass::RelayIntegrationMediation
+        }
+        BlueBrainAnatomicalRegionClass::Insula => {
+            BlueBrainAnatomicalRegionSystemRoleClass::InteroceptiveContextMediation
+        }
+    }
+}
+
+pub fn blue_brain_anatomical_region_model_mode(
+    region: BlueBrainAnatomicalRegionClass,
+) -> BlueBrainFirstAnatomicalRegionModelModeClass {
+    match region {
+        BlueBrainAnatomicalRegionClass::Hippocampus => {
+            BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode
+        }
+        BlueBrainAnatomicalRegionClass::Amygdala
+        | BlueBrainAnatomicalRegionClass::AnteriorCingulateCortex
+        | BlueBrainAnatomicalRegionClass::Thalamus => {
+            BlueBrainFirstAnatomicalRegionModelModeClass::BoundedKuramotoLikeCurrentMode
+        }
+        BlueBrainAnatomicalRegionClass::PrefrontalCortex => {
+            BlueBrainFirstAnatomicalRegionModelModeClass::LaterSelectiveHodgkinHuxleyDeepening
+        }
+        BlueBrainAnatomicalRegionClass::BasalGanglia => {
+            BlueBrainFirstAnatomicalRegionModelModeClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCurrentMode
+        }
+        BlueBrainAnatomicalRegionClass::Insula => {
+            BlueBrainFirstAnatomicalRegionModelModeClass::DeferredNotSuitableNowModelPath
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainFirstAnatomicalRegionContractSignal {
     AnatomicalToRuntimeAdvisory,
     RuntimeToAnatomicalBoundedInput,
@@ -3508,5 +3592,56 @@ mod tests {
         assert!(doc.contains("no safety override"));
         assert!(doc.contains("Maintenance/Bugfix/Cleanup genügt"));
         assert!(doc.contains("expliziter anatomischer Region-2-Re-Scope"));
+    }
+
+    #[test]
+    fn canonical_anatomical_region_map_pins_roles_and_model_modes() {
+        assert!(CANONICAL_BLUE_BRAIN_ANATOMICAL_REGION_MAP
+            .contains(&BlueBrainAnatomicalRegionClass::Hippocampus));
+        assert!(CANONICAL_BLUE_BRAIN_ANATOMICAL_REGION_MAP
+            .contains(&BlueBrainAnatomicalRegionClass::Amygdala));
+        assert!(CANONICAL_BLUE_BRAIN_ANATOMICAL_REGION_MAP
+            .contains(&BlueBrainAnatomicalRegionClass::PrefrontalCortex));
+        assert!(CANONICAL_BLUE_BRAIN_ANATOMICAL_REGION_MAP
+            .contains(&BlueBrainAnatomicalRegionClass::AnteriorCingulateCortex));
+        assert!(CANONICAL_BLUE_BRAIN_ANATOMICAL_REGION_MAP
+            .contains(&BlueBrainAnatomicalRegionClass::BasalGanglia));
+        assert!(CANONICAL_BLUE_BRAIN_ANATOMICAL_REGION_MAP
+            .contains(&BlueBrainAnatomicalRegionClass::Thalamus));
+        assert!(CANONICAL_BLUE_BRAIN_ANATOMICAL_REGION_MAP
+            .contains(&BlueBrainAnatomicalRegionClass::Insula));
+
+        assert_eq!(
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Hippocampus),
+            BlueBrainAnatomicalRegionSystemRoleClass::AttentionSelectionMediation
+        );
+        assert_eq!(
+            blue_brain_anatomical_region_model_mode(BlueBrainAnatomicalRegionClass::Hippocampus),
+            BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode
+        );
+        assert_eq!(
+            blue_brain_anatomical_region_model_mode(BlueBrainAnatomicalRegionClass::BasalGanglia),
+            BlueBrainFirstAnatomicalRegionModelModeClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCurrentMode
+        );
+    }
+
+    #[test]
+    fn anatomical_region_canonical_map_doc_pins_scope_and_deferred_boundary() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_anatomical_region_canonical_map_serie_bb32_prompt1_v1.md"
+        );
+        assert!(doc.contains("canonical anatomical region map"));
+        assert!(doc.contains("hippocampus"));
+        assert!(doc.contains("amygdala"));
+        assert!(doc.contains("prefrontal cortex"));
+        assert!(doc.contains("bounded kuramoto-like"));
+        assert!(doc.contains("HH simulation-only/diagnostic-only"));
+        assert!(doc.contains("later selective HH deepening"));
+        assert!(doc.contains("deferred"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
     }
 }
