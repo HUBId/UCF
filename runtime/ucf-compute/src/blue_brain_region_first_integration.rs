@@ -304,20 +304,20 @@ pub const CANONICAL_BLUE_BRAIN_CEREBELLUM_ROLE_MAP: [BlueBrainCerebellumRoleClas
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainCerebellumIntegrationClass {
-    CerebellumPredictionInputSurface,
-    CerebellumTimingCoordinationStateSurface,
-    CerebellumCorrectionMismatchOutputAdvisorySurface,
-    CerebellumExecutionSupportBoundedSurface,
+    CerebellumInputSurface,
+    CerebellumStateSurface,
+    CerebellumOutputAdvisorySurface,
+    CerebellumReferenceSurface,
     BlockedDeferredCerebellumPath,
     NonCanonicalInternalOnlyCerebellumPath,
 }
 
 pub const CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP: [BlueBrainCerebellumIntegrationClass;
     6] = [
-    BlueBrainCerebellumIntegrationClass::CerebellumPredictionInputSurface,
-    BlueBrainCerebellumIntegrationClass::CerebellumTimingCoordinationStateSurface,
-    BlueBrainCerebellumIntegrationClass::CerebellumCorrectionMismatchOutputAdvisorySurface,
-    BlueBrainCerebellumIntegrationClass::CerebellumExecutionSupportBoundedSurface,
+    BlueBrainCerebellumIntegrationClass::CerebellumInputSurface,
+    BlueBrainCerebellumIntegrationClass::CerebellumStateSurface,
+    BlueBrainCerebellumIntegrationClass::CerebellumOutputAdvisorySurface,
+    BlueBrainCerebellumIntegrationClass::CerebellumReferenceSurface,
     BlueBrainCerebellumIntegrationClass::BlockedDeferredCerebellumPath,
     BlueBrainCerebellumIntegrationClass::NonCanonicalInternalOnlyCerebellumPath,
 ];
@@ -2448,6 +2448,449 @@ pub fn evaluate_blue_brain_basal_ganglia_action_gating(
         runtime_advisory_only: true,
         selection_advisory_only: true,
         execution_readiness_caveat_only: true,
+        reference_bounded_only: true,
+        direct_action_selection: false,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        safety_override: false,
+    };
+    (state, output)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCerebellumStateSurface {
+    ActivePredictionTimingAdvisoryOnly,
+    TimingCoordinationAdvisoryState,
+    CorrectionMismatchAdvisoryState,
+    ExecutionSupportCaveatState,
+    ReferenceOnlyCorrectionState,
+    DeferredCorrectionState,
+    BlockedCorrectionState,
+    InsufficientCorrectionState,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCerebellumInputSource {
+    RuntimePredictionSignal,
+    RuntimeTimingSignal,
+    SelectionCoordinationSignal,
+    ExecutionFeedbackMismatchSignal,
+    ContextReferenceSignal,
+    ReferenceValiditySignal,
+    ToolActionControlSignal,
+    ComputeInternalRawStateSignal,
+    SafetyOverrideSignal,
+    ImplicitMemoryMutationSignal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCerebellumInputGuard {
+    AdvisoryOnlyInput,
+    ReferenceOnlyBoundedInput,
+    RejectedToolActionControl,
+    RejectedComputeInternalRawState,
+    RejectedSafetyOverride,
+    RejectedImplicitMemoryMutation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCerebellumInputSurface {
+    pub selection_signal: BlueBrainControlAttentionSelectionClass,
+    pub deferral_class: BlueBrainCandidateDeferralLifecycleClass,
+    pub reference_validity: BlueBrainReferenceValidity,
+    pub context_priority: BlueBrainContextEvidencePriorityClass,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCerebellumAdvisoryOutputClass {
+    TimingHint,
+    CorrectionHint,
+    MismatchHint,
+    ExecutionSupportCaveat,
+    ReferenceBoundedSignal,
+    BlockedDeferred,
+    InsufficientDiagnosticOutput,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCerebellumContractSignal {
+    CerebellumToRuntimeAdvisory,
+    RuntimeToCerebellumBoundedPredictionTimingInput,
+    CerebellumToSelectionAdvisory,
+    SelectionToCerebellumBoundedCoordinationInput,
+    CerebellumExecutionSupportCaveatSignal,
+    CerebellumReferenceSignal,
+    Caveated,
+    Deferred,
+    Blocked,
+    Insufficient,
+    ReferenceOnly,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCerebellumDiagnosticState {
+    CerebellumAdvisoryOnlyDiagnostic,
+    CerebellumCaveatedDiagnostic,
+    CerebellumDeferredDiagnostic,
+    CerebellumBlockedDiagnostic,
+    CerebellumInsufficientDiagnostic,
+    CerebellumDiagnosticOnlyState,
+    NonCanonicalInternalOnlyCerebellumDiagnosticPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCerebellumContractClass {
+    CerebellumAdvisoryOnlyDiagnostic,
+    CerebellumCaveatedDiagnostic,
+    CerebellumDeferredDiagnostic,
+    CerebellumBlockedDiagnostic,
+    CerebellumInsufficientDiagnostic,
+    CerebellumDiagnosticOnlyState,
+    CerebellumBoundedContractSignal,
+    NonCanonicalInternalOnlyCerebellumPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCerebellumCanonicalRead {
+    AdvisoryOnly,
+    Caveated,
+    Deferred,
+    Blocked,
+    Insufficient,
+    DiagnosticOnly,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCerebellumConsumerLayer {
+    Runtime,
+    Selection,
+    ExecutionInterface,
+    Reference,
+}
+
+pub const CANONICAL_BLUE_BRAIN_CEREBELLUM_DIAGNOSTICS_CONTRACT_MAP:
+    [BlueBrainCerebellumContractClass; 8] = [
+    BlueBrainCerebellumContractClass::CerebellumAdvisoryOnlyDiagnostic,
+    BlueBrainCerebellumContractClass::CerebellumCaveatedDiagnostic,
+    BlueBrainCerebellumContractClass::CerebellumDeferredDiagnostic,
+    BlueBrainCerebellumContractClass::CerebellumBlockedDiagnostic,
+    BlueBrainCerebellumContractClass::CerebellumInsufficientDiagnostic,
+    BlueBrainCerebellumContractClass::CerebellumDiagnosticOnlyState,
+    BlueBrainCerebellumContractClass::CerebellumBoundedContractSignal,
+    BlueBrainCerebellumContractClass::NonCanonicalInternalOnlyCerebellumPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCerebellumOutputSurface {
+    pub advisory_class: BlueBrainCerebellumAdvisoryOutputClass,
+    pub runtime_contract_signal: BlueBrainCerebellumContractSignal,
+    pub selection_contract_signal: BlueBrainCerebellumContractSignal,
+    pub execution_contract_signal: BlueBrainCerebellumContractSignal,
+    pub reference_contract_signal: BlueBrainCerebellumContractSignal,
+    pub runtime_diagnostic_state: BlueBrainCerebellumDiagnosticState,
+    pub selection_diagnostic_state: BlueBrainCerebellumDiagnosticState,
+    pub execution_diagnostic_state: BlueBrainCerebellumDiagnosticState,
+    pub reference_diagnostic_state: BlueBrainCerebellumDiagnosticState,
+    pub canonical_contract_read: BlueBrainCerebellumCanonicalRead,
+    pub runtime_advisory_only: bool,
+    pub selection_advisory_only: bool,
+    pub execution_support_caveat_only: bool,
+    pub reference_bounded_only: bool,
+    pub direct_action_selection: bool,
+    pub direct_action_trigger: bool,
+    pub direct_execution_trigger: bool,
+    pub direct_retry_trigger: bool,
+    pub direct_memory_commit: bool,
+    pub direct_compute_invocation: bool,
+    pub safety_override: bool,
+}
+
+pub fn classify_blue_brain_cerebellum_input_guard(
+    source: BlueBrainCerebellumInputSource,
+) -> BlueBrainCerebellumInputGuard {
+    match source {
+        BlueBrainCerebellumInputSource::RuntimePredictionSignal
+        | BlueBrainCerebellumInputSource::RuntimeTimingSignal
+        | BlueBrainCerebellumInputSource::SelectionCoordinationSignal
+        | BlueBrainCerebellumInputSource::ExecutionFeedbackMismatchSignal => {
+            BlueBrainCerebellumInputGuard::AdvisoryOnlyInput
+        }
+        BlueBrainCerebellumInputSource::ContextReferenceSignal
+        | BlueBrainCerebellumInputSource::ReferenceValiditySignal => {
+            BlueBrainCerebellumInputGuard::ReferenceOnlyBoundedInput
+        }
+        BlueBrainCerebellumInputSource::ToolActionControlSignal => {
+            BlueBrainCerebellumInputGuard::RejectedToolActionControl
+        }
+        BlueBrainCerebellumInputSource::ComputeInternalRawStateSignal => {
+            BlueBrainCerebellumInputGuard::RejectedComputeInternalRawState
+        }
+        BlueBrainCerebellumInputSource::SafetyOverrideSignal => {
+            BlueBrainCerebellumInputGuard::RejectedSafetyOverride
+        }
+        BlueBrainCerebellumInputSource::ImplicitMemoryMutationSignal => {
+            BlueBrainCerebellumInputGuard::RejectedImplicitMemoryMutation
+        }
+    }
+}
+
+pub fn blue_brain_cerebellum_diagnostic_state_for_signal(
+    signal: BlueBrainCerebellumContractSignal,
+) -> BlueBrainCerebellumDiagnosticState {
+    match signal {
+        BlueBrainCerebellumContractSignal::CerebellumToRuntimeAdvisory
+        | BlueBrainCerebellumContractSignal::RuntimeToCerebellumBoundedPredictionTimingInput
+        | BlueBrainCerebellumContractSignal::CerebellumToSelectionAdvisory
+        | BlueBrainCerebellumContractSignal::SelectionToCerebellumBoundedCoordinationInput
+        | BlueBrainCerebellumContractSignal::CerebellumExecutionSupportCaveatSignal => {
+            BlueBrainCerebellumDiagnosticState::CerebellumAdvisoryOnlyDiagnostic
+        }
+        BlueBrainCerebellumContractSignal::Caveated => {
+            BlueBrainCerebellumDiagnosticState::CerebellumCaveatedDiagnostic
+        }
+        BlueBrainCerebellumContractSignal::Deferred => {
+            BlueBrainCerebellumDiagnosticState::CerebellumDeferredDiagnostic
+        }
+        BlueBrainCerebellumContractSignal::Blocked => {
+            BlueBrainCerebellumDiagnosticState::CerebellumBlockedDiagnostic
+        }
+        BlueBrainCerebellumContractSignal::Insufficient => {
+            BlueBrainCerebellumDiagnosticState::CerebellumInsufficientDiagnostic
+        }
+        BlueBrainCerebellumContractSignal::ReferenceOnly
+        | BlueBrainCerebellumContractSignal::CerebellumReferenceSignal => {
+            BlueBrainCerebellumDiagnosticState::CerebellumDiagnosticOnlyState
+        }
+        BlueBrainCerebellumContractSignal::NonCanonicalInternalOnly => {
+            BlueBrainCerebellumDiagnosticState::NonCanonicalInternalOnlyCerebellumDiagnosticPath
+        }
+    }
+}
+
+pub fn blue_brain_cerebellum_contract_class_for_signal(
+    signal: BlueBrainCerebellumContractSignal,
+) -> BlueBrainCerebellumContractClass {
+    match signal {
+        BlueBrainCerebellumContractSignal::CerebellumToRuntimeAdvisory
+        | BlueBrainCerebellumContractSignal::CerebellumToSelectionAdvisory => {
+            BlueBrainCerebellumContractClass::CerebellumAdvisoryOnlyDiagnostic
+        }
+        BlueBrainCerebellumContractSignal::RuntimeToCerebellumBoundedPredictionTimingInput
+        | BlueBrainCerebellumContractSignal::SelectionToCerebellumBoundedCoordinationInput
+        | BlueBrainCerebellumContractSignal::CerebellumExecutionSupportCaveatSignal
+        | BlueBrainCerebellumContractSignal::CerebellumReferenceSignal => {
+            BlueBrainCerebellumContractClass::CerebellumBoundedContractSignal
+        }
+        BlueBrainCerebellumContractSignal::Caveated => {
+            BlueBrainCerebellumContractClass::CerebellumCaveatedDiagnostic
+        }
+        BlueBrainCerebellumContractSignal::Deferred => {
+            BlueBrainCerebellumContractClass::CerebellumDeferredDiagnostic
+        }
+        BlueBrainCerebellumContractSignal::Blocked => {
+            BlueBrainCerebellumContractClass::CerebellumBlockedDiagnostic
+        }
+        BlueBrainCerebellumContractSignal::Insufficient => {
+            BlueBrainCerebellumContractClass::CerebellumInsufficientDiagnostic
+        }
+        BlueBrainCerebellumContractSignal::ReferenceOnly => {
+            BlueBrainCerebellumContractClass::CerebellumDiagnosticOnlyState
+        }
+        BlueBrainCerebellumContractSignal::NonCanonicalInternalOnly => {
+            BlueBrainCerebellumContractClass::NonCanonicalInternalOnlyCerebellumPath
+        }
+    }
+}
+
+pub fn blue_brain_cerebellum_canonical_read_for_state(
+    state: BlueBrainCerebellumStateSurface,
+) -> BlueBrainCerebellumCanonicalRead {
+    match state {
+        BlueBrainCerebellumStateSurface::ActivePredictionTimingAdvisoryOnly
+        | BlueBrainCerebellumStateSurface::TimingCoordinationAdvisoryState
+        | BlueBrainCerebellumStateSurface::CorrectionMismatchAdvisoryState => {
+            BlueBrainCerebellumCanonicalRead::AdvisoryOnly
+        }
+        BlueBrainCerebellumStateSurface::ExecutionSupportCaveatState => {
+            BlueBrainCerebellumCanonicalRead::Caveated
+        }
+        BlueBrainCerebellumStateSurface::DeferredCorrectionState => {
+            BlueBrainCerebellumCanonicalRead::Deferred
+        }
+        BlueBrainCerebellumStateSurface::BlockedCorrectionState => {
+            BlueBrainCerebellumCanonicalRead::Blocked
+        }
+        BlueBrainCerebellumStateSurface::InsufficientCorrectionState => {
+            BlueBrainCerebellumCanonicalRead::Insufficient
+        }
+        BlueBrainCerebellumStateSurface::ReferenceOnlyCorrectionState => {
+            BlueBrainCerebellumCanonicalRead::DiagnosticOnly
+        }
+        BlueBrainCerebellumStateSurface::NonCanonicalInternalOnly => {
+            BlueBrainCerebellumCanonicalRead::NonCanonicalInternalOnly
+        }
+    }
+}
+
+pub fn blue_brain_cerebellum_consumer_contract_read(
+    output: BlueBrainCerebellumOutputSurface,
+    _layer: BlueBrainCerebellumConsumerLayer,
+) -> BlueBrainCerebellumCanonicalRead {
+    output.canonical_contract_read
+}
+
+pub fn evaluate_blue_brain_cerebellum_prediction_timing_correction(
+    input: BlueBrainCerebellumInputSurface,
+) -> (
+    BlueBrainCerebellumStateSurface,
+    BlueBrainCerebellumOutputSurface,
+) {
+    let (
+        state,
+        advisory_class,
+        runtime_signal,
+        selection_signal,
+        execution_signal,
+        reference_signal,
+    ) = if input.selection_signal
+        == BlueBrainControlAttentionSelectionClass::NonCanonicalInternalOnlySelectionPath
+        || input.context_priority
+            == BlueBrainContextEvidencePriorityClass::NonCanonicalInternalOnlyPriorityPath
+        || input.reference_validity == BlueBrainReferenceValidity::NonCanonicalInternalOnlyPath
+    {
+        (
+            BlueBrainCerebellumStateSurface::NonCanonicalInternalOnly,
+            BlueBrainCerebellumAdvisoryOutputClass::NonCanonicalInternalOnly,
+            BlueBrainCerebellumContractSignal::NonCanonicalInternalOnly,
+            BlueBrainCerebellumContractSignal::NonCanonicalInternalOnly,
+            BlueBrainCerebellumContractSignal::NonCanonicalInternalOnly,
+            BlueBrainCerebellumContractSignal::NonCanonicalInternalOnly,
+        )
+    } else if input.deferral_class == BlueBrainCandidateDeferralLifecycleClass::CandidateRejected
+        || input.reference_validity == BlueBrainReferenceValidity::Blocked
+        || input.reference_validity == BlueBrainReferenceValidity::Invalidated
+    {
+        (
+            BlueBrainCerebellumStateSurface::BlockedCorrectionState,
+            BlueBrainCerebellumAdvisoryOutputClass::BlockedDeferred,
+            BlueBrainCerebellumContractSignal::Blocked,
+            BlueBrainCerebellumContractSignal::Blocked,
+            BlueBrainCerebellumContractSignal::Blocked,
+            BlueBrainCerebellumContractSignal::Blocked,
+        )
+    } else if input.deferral_class
+        == BlueBrainCandidateDeferralLifecycleClass::CandidateInsufficient
+        || input.reference_validity == BlueBrainReferenceValidity::Insufficient
+        || input.context_priority == BlueBrainContextEvidencePriorityClass::InsufficientContext
+    {
+        (
+            BlueBrainCerebellumStateSurface::InsufficientCorrectionState,
+            BlueBrainCerebellumAdvisoryOutputClass::InsufficientDiagnosticOutput,
+            BlueBrainCerebellumContractSignal::Insufficient,
+            BlueBrainCerebellumContractSignal::Insufficient,
+            BlueBrainCerebellumContractSignal::Insufficient,
+            BlueBrainCerebellumContractSignal::Insufficient,
+        )
+    } else if matches!(
+        input.deferral_class,
+        BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred
+            | BlueBrainCandidateDeferralLifecycleClass::CandidateDeferredPendingStrongerEvidence
+            | BlueBrainCandidateDeferralLifecycleClass::CandidateDeferredPendingContextUpdate
+            | BlueBrainCandidateDeferralLifecycleClass::CandidateStale
+            | BlueBrainCandidateDeferralLifecycleClass::CandidateNotPersisted
+    ) || input.reference_validity == BlueBrainReferenceValidity::Stale
+    {
+        (
+            BlueBrainCerebellumStateSurface::DeferredCorrectionState,
+            BlueBrainCerebellumAdvisoryOutputClass::BlockedDeferred,
+            BlueBrainCerebellumContractSignal::Deferred,
+            BlueBrainCerebellumContractSignal::Deferred,
+            BlueBrainCerebellumContractSignal::Deferred,
+            BlueBrainCerebellumContractSignal::Deferred,
+        )
+    } else if input.reference_validity == BlueBrainReferenceValidity::ReferenceOnly {
+        (
+            BlueBrainCerebellumStateSurface::ReferenceOnlyCorrectionState,
+            BlueBrainCerebellumAdvisoryOutputClass::ReferenceBoundedSignal,
+            BlueBrainCerebellumContractSignal::CerebellumToRuntimeAdvisory,
+            BlueBrainCerebellumContractSignal::CerebellumToSelectionAdvisory,
+            BlueBrainCerebellumContractSignal::CerebellumExecutionSupportCaveatSignal,
+            BlueBrainCerebellumContractSignal::ReferenceOnly,
+        )
+    } else if input.reference_validity == BlueBrainReferenceValidity::Caveated
+        || input.context_priority
+            == BlueBrainContextEvidencePriorityClass::CaveatedEvidenceReference
+    {
+        (
+            BlueBrainCerebellumStateSurface::ExecutionSupportCaveatState,
+            BlueBrainCerebellumAdvisoryOutputClass::ExecutionSupportCaveat,
+            BlueBrainCerebellumContractSignal::Caveated,
+            BlueBrainCerebellumContractSignal::Caveated,
+            BlueBrainCerebellumContractSignal::Caveated,
+            BlueBrainCerebellumContractSignal::Caveated,
+        )
+    } else if matches!(
+        input.selection_signal,
+        BlueBrainControlAttentionSelectionClass::AttentionTarget
+            | BlueBrainControlAttentionSelectionClass::ContextSelection
+    ) {
+        (
+            BlueBrainCerebellumStateSurface::ActivePredictionTimingAdvisoryOnly,
+            BlueBrainCerebellumAdvisoryOutputClass::TimingHint,
+            BlueBrainCerebellumContractSignal::CerebellumToRuntimeAdvisory,
+            BlueBrainCerebellumContractSignal::CerebellumToSelectionAdvisory,
+            BlueBrainCerebellumContractSignal::RuntimeToCerebellumBoundedPredictionTimingInput,
+            BlueBrainCerebellumContractSignal::CerebellumReferenceSignal,
+        )
+    } else if input.selection_signal
+        == BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection
+    {
+        (
+            BlueBrainCerebellumStateSurface::CorrectionMismatchAdvisoryState,
+            BlueBrainCerebellumAdvisoryOutputClass::MismatchHint,
+            BlueBrainCerebellumContractSignal::CerebellumToRuntimeAdvisory,
+            BlueBrainCerebellumContractSignal::CerebellumToSelectionAdvisory,
+            BlueBrainCerebellumContractSignal::CerebellumExecutionSupportCaveatSignal,
+            BlueBrainCerebellumContractSignal::CerebellumReferenceSignal,
+        )
+    } else {
+        (
+            BlueBrainCerebellumStateSurface::TimingCoordinationAdvisoryState,
+            BlueBrainCerebellumAdvisoryOutputClass::CorrectionHint,
+            BlueBrainCerebellumContractSignal::CerebellumToRuntimeAdvisory,
+            BlueBrainCerebellumContractSignal::CerebellumToSelectionAdvisory,
+            BlueBrainCerebellumContractSignal::SelectionToCerebellumBoundedCoordinationInput,
+            BlueBrainCerebellumContractSignal::CerebellumReferenceSignal,
+        )
+    };
+
+    let output = BlueBrainCerebellumOutputSurface {
+        advisory_class,
+        runtime_contract_signal: runtime_signal,
+        selection_contract_signal: selection_signal,
+        execution_contract_signal: execution_signal,
+        reference_contract_signal: reference_signal,
+        runtime_diagnostic_state: blue_brain_cerebellum_diagnostic_state_for_signal(runtime_signal),
+        selection_diagnostic_state: blue_brain_cerebellum_diagnostic_state_for_signal(
+            selection_signal,
+        ),
+        execution_diagnostic_state: blue_brain_cerebellum_diagnostic_state_for_signal(
+            execution_signal,
+        ),
+        reference_diagnostic_state: blue_brain_cerebellum_diagnostic_state_for_signal(
+            reference_signal,
+        ),
+        canonical_contract_read: blue_brain_cerebellum_canonical_read_for_state(state),
+        runtime_advisory_only: true,
+        selection_advisory_only: true,
+        execution_support_caveat_only: true,
         reference_bounded_only: true,
         direct_action_selection: false,
         direct_action_trigger: false,
@@ -4593,16 +5036,13 @@ mod tests {
             .contains(&BlueBrainCerebellumRoleClass::NonRoleOutOfScopeBiologicalDetail));
 
         assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP
-            .contains(&BlueBrainCerebellumIntegrationClass::CerebellumPredictionInputSurface));
-        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP.contains(
-            &BlueBrainCerebellumIntegrationClass::CerebellumTimingCoordinationStateSurface
-        ));
-        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP.contains(
-            &BlueBrainCerebellumIntegrationClass::CerebellumCorrectionMismatchOutputAdvisorySurface
-        ));
-        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP.contains(
-            &BlueBrainCerebellumIntegrationClass::CerebellumExecutionSupportBoundedSurface
-        ));
+            .contains(&BlueBrainCerebellumIntegrationClass::CerebellumInputSurface));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP
+            .contains(&BlueBrainCerebellumIntegrationClass::CerebellumStateSurface));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP
+            .contains(&BlueBrainCerebellumIntegrationClass::CerebellumOutputAdvisorySurface));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP
+            .contains(&BlueBrainCerebellumIntegrationClass::CerebellumReferenceSurface));
 
         assert_eq!(
             blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Cerebellum),
@@ -4649,6 +5089,275 @@ mod tests {
         assert!(doc.contains("no direct compute invocation"));
         assert!(doc.contains("Cerebellum vor Hypothalamus"));
         assert!(doc.contains("keine semantische Dublette"));
+    }
+
+    #[test]
+    fn cerebellum_br5_prompt2_integration_map_surfaces_are_canonical_and_distinct() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP.len(), 6);
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP
+            .contains(&BlueBrainCerebellumIntegrationClass::CerebellumInputSurface));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP
+            .contains(&BlueBrainCerebellumIntegrationClass::CerebellumStateSurface));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP
+            .contains(&BlueBrainCerebellumIntegrationClass::CerebellumOutputAdvisorySurface));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP
+            .contains(&BlueBrainCerebellumIntegrationClass::CerebellumReferenceSurface));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP
+            .contains(&BlueBrainCerebellumIntegrationClass::BlockedDeferredCerebellumPath));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP.contains(
+            &BlueBrainCerebellumIntegrationClass::NonCanonicalInternalOnlyCerebellumPath
+        ));
+        assert_ne!(
+            BlueBrainCerebellumIntegrationClass::CerebellumInputSurface,
+            BlueBrainCerebellumIntegrationClass::CerebellumStateSurface
+        );
+        assert_ne!(
+            BlueBrainCerebellumIntegrationClass::CerebellumOutputAdvisorySurface,
+            BlueBrainCerebellumIntegrationClass::CerebellumReferenceSurface
+        );
+    }
+
+    #[test]
+    fn cerebellum_br5_prompt2_input_guards_reject_direct_authority_sources() {
+        assert_eq!(
+            classify_blue_brain_cerebellum_input_guard(
+                BlueBrainCerebellumInputSource::RuntimePredictionSignal
+            ),
+            BlueBrainCerebellumInputGuard::AdvisoryOnlyInput
+        );
+        assert_eq!(
+            classify_blue_brain_cerebellum_input_guard(
+                BlueBrainCerebellumInputSource::ExecutionFeedbackMismatchSignal
+            ),
+            BlueBrainCerebellumInputGuard::AdvisoryOnlyInput
+        );
+        assert_eq!(
+            classify_blue_brain_cerebellum_input_guard(
+                BlueBrainCerebellumInputSource::ContextReferenceSignal
+            ),
+            BlueBrainCerebellumInputGuard::ReferenceOnlyBoundedInput
+        );
+        assert_eq!(
+            classify_blue_brain_cerebellum_input_guard(
+                BlueBrainCerebellumInputSource::ToolActionControlSignal
+            ),
+            BlueBrainCerebellumInputGuard::RejectedToolActionControl
+        );
+        assert_eq!(
+            classify_blue_brain_cerebellum_input_guard(
+                BlueBrainCerebellumInputSource::ComputeInternalRawStateSignal
+            ),
+            BlueBrainCerebellumInputGuard::RejectedComputeInternalRawState
+        );
+        assert_eq!(
+            classify_blue_brain_cerebellum_input_guard(
+                BlueBrainCerebellumInputSource::SafetyOverrideSignal
+            ),
+            BlueBrainCerebellumInputGuard::RejectedSafetyOverride
+        );
+        assert_eq!(
+            classify_blue_brain_cerebellum_input_guard(
+                BlueBrainCerebellumInputSource::ImplicitMemoryMutationSignal
+            ),
+            BlueBrainCerebellumInputGuard::RejectedImplicitMemoryMutation
+        );
+    }
+
+    #[test]
+    fn cerebellum_br5_prompt2_runtime_selection_execution_reference_reads_stay_bounded() {
+        let cases = [
+            (
+                BlueBrainCerebellumInputSurface {
+                    selection_signal: BlueBrainControlAttentionSelectionClass::AttentionTarget,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                    reference_validity: BlueBrainReferenceValidity::Current,
+                    context_priority: BlueBrainContextEvidencePriorityClass::PrimaryContext,
+                },
+                BlueBrainCerebellumStateSurface::ActivePredictionTimingAdvisoryOnly,
+                BlueBrainCerebellumCanonicalRead::AdvisoryOnly,
+            ),
+            (
+                BlueBrainCerebellumInputSurface {
+                    selection_signal: BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                    reference_validity: BlueBrainReferenceValidity::ReferenceOnly,
+                    context_priority: BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+                },
+                BlueBrainCerebellumStateSurface::ReferenceOnlyCorrectionState,
+                BlueBrainCerebellumCanonicalRead::DiagnosticOnly,
+            ),
+            (
+                BlueBrainCerebellumInputSurface {
+                    selection_signal: BlueBrainControlAttentionSelectionClass::ContextSelection,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateStale,
+                    reference_validity: BlueBrainReferenceValidity::Stale,
+                    context_priority: BlueBrainContextEvidencePriorityClass::StaleContext,
+                },
+                BlueBrainCerebellumStateSurface::DeferredCorrectionState,
+                BlueBrainCerebellumCanonicalRead::Deferred,
+            ),
+            (
+                BlueBrainCerebellumInputSurface {
+                    selection_signal: BlueBrainControlAttentionSelectionClass::ContextSelection,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                    reference_validity: BlueBrainReferenceValidity::Caveated,
+                    context_priority: BlueBrainContextEvidencePriorityClass::CaveatedEvidenceReference,
+                },
+                BlueBrainCerebellumStateSurface::ExecutionSupportCaveatState,
+                BlueBrainCerebellumCanonicalRead::Caveated,
+            ),
+            (
+                BlueBrainCerebellumInputSurface {
+                    selection_signal: BlueBrainControlAttentionSelectionClass::ContextSelection,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateRejected,
+                    reference_validity: BlueBrainReferenceValidity::Blocked,
+                    context_priority: BlueBrainContextEvidencePriorityClass::IgnoredContext,
+                },
+                BlueBrainCerebellumStateSurface::BlockedCorrectionState,
+                BlueBrainCerebellumCanonicalRead::Blocked,
+            ),
+            (
+                BlueBrainCerebellumInputSurface {
+                    selection_signal:
+                        BlueBrainControlAttentionSelectionClass::NonCanonicalInternalOnlySelectionPath,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                    reference_validity: BlueBrainReferenceValidity::Current,
+                    context_priority: BlueBrainContextEvidencePriorityClass::PrimaryContext,
+                },
+                BlueBrainCerebellumStateSurface::NonCanonicalInternalOnly,
+                BlueBrainCerebellumCanonicalRead::NonCanonicalInternalOnly,
+            ),
+        ];
+
+        for (input, expected_state, expected_read) in cases {
+            let (state, output) =
+                evaluate_blue_brain_cerebellum_prediction_timing_correction(input);
+            assert_eq!(state, expected_state);
+            assert_eq!(output.canonical_contract_read, expected_read);
+            assert_eq!(
+                blue_brain_cerebellum_consumer_contract_read(
+                    output,
+                    BlueBrainCerebellumConsumerLayer::Runtime
+                ),
+                expected_read
+            );
+            assert_eq!(
+                blue_brain_cerebellum_consumer_contract_read(
+                    output,
+                    BlueBrainCerebellumConsumerLayer::Selection
+                ),
+                expected_read
+            );
+            assert_eq!(
+                blue_brain_cerebellum_consumer_contract_read(
+                    output,
+                    BlueBrainCerebellumConsumerLayer::ExecutionInterface
+                ),
+                expected_read
+            );
+            assert_eq!(
+                blue_brain_cerebellum_consumer_contract_read(
+                    output,
+                    BlueBrainCerebellumConsumerLayer::Reference
+                ),
+                expected_read
+            );
+            assert!(output.runtime_advisory_only);
+            assert!(output.selection_advisory_only);
+            assert!(output.execution_support_caveat_only);
+            assert!(output.reference_bounded_only);
+            assert!(!output.direct_action_selection);
+            assert!(!output.direct_action_trigger);
+            assert!(!output.direct_execution_trigger);
+            assert!(!output.direct_retry_trigger);
+            assert!(!output.direct_memory_commit);
+            assert!(!output.direct_compute_invocation);
+            assert!(!output.safety_override);
+        }
+    }
+
+    #[test]
+    fn cerebellum_br5_prompt2_diagnostics_contracts_mode_and_region_boundaries_are_pinned() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_CEREBELLUM_DIAGNOSTICS_CONTRACT_MAP,
+            [
+                BlueBrainCerebellumContractClass::CerebellumAdvisoryOnlyDiagnostic,
+                BlueBrainCerebellumContractClass::CerebellumCaveatedDiagnostic,
+                BlueBrainCerebellumContractClass::CerebellumDeferredDiagnostic,
+                BlueBrainCerebellumContractClass::CerebellumBlockedDiagnostic,
+                BlueBrainCerebellumContractClass::CerebellumInsufficientDiagnostic,
+                BlueBrainCerebellumContractClass::CerebellumDiagnosticOnlyState,
+                BlueBrainCerebellumContractClass::CerebellumBoundedContractSignal,
+                BlueBrainCerebellumContractClass::NonCanonicalInternalOnlyCerebellumPath,
+            ]
+        );
+        assert_eq!(
+            blue_brain_cerebellum_contract_class_for_signal(
+                BlueBrainCerebellumContractSignal::RuntimeToCerebellumBoundedPredictionTimingInput
+            ),
+            BlueBrainCerebellumContractClass::CerebellumBoundedContractSignal
+        );
+        assert_ne!(
+            BlueBrainCerebellumDiagnosticState::CerebellumAdvisoryOnlyDiagnostic,
+            BlueBrainCerebellumDiagnosticState::CerebellumCaveatedDiagnostic
+        );
+        assert_ne!(
+            BlueBrainCerebellumDiagnosticState::CerebellumDeferredDiagnostic,
+            BlueBrainCerebellumDiagnosticState::CerebellumBlockedDiagnostic
+        );
+        assert_eq!(
+            blue_brain_anatomical_region_model_mode(BlueBrainAnatomicalRegionClass::Cerebellum),
+            BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode
+        );
+        assert_ne!(
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Cerebellum),
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Hippocampus)
+        );
+        assert_ne!(
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Cerebellum),
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Amygdala)
+        );
+        assert_ne!(
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Cerebellum),
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Thalamus)
+        );
+        assert_ne!(
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Cerebellum),
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::BasalGanglia)
+        );
+    }
+
+    #[test]
+    fn cerebellum_br5_prompt2_doc_pins_minimal_bounded_integration_line() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_cerebellum_minimal_bounded_integration_serie_br5_prompt2_v1.md"
+        );
+        assert!(doc.contains("cerebellum input surface"));
+        assert!(doc.contains("cerebellum state surface"));
+        assert!(doc.contains("cerebellum output/advisory surface"));
+        assert!(doc.contains("cerebellum reference surface"));
+        assert!(doc.contains("blocked/deferred cerebellum path"));
+        assert!(doc.contains("non-canonical/internal-only cerebellum path"));
+        assert!(doc.contains("timing hint"));
+        assert!(doc.contains("correction hint"));
+        assert!(doc.contains("mismatch hint"));
+        assert!(doc.contains("execution-support caveat"));
+        assert!(doc.contains("reference-bounded signal"));
+        assert!(doc.contains("abstract functional current mode"));
+        assert!(doc.contains("Hodgkin-Huxley simulation-only/diagnostic-only"));
+        assert!(doc.contains("hippocampus_like_region"));
+        assert!(doc.contains("amygdala_like_region"));
+        assert!(doc.contains("thalamus_like_region"));
+        assert!(doc.contains("basal_ganglia_like_region"));
+        assert!(doc.contains("cerebellum_like_region"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no automatic memory persistence"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("öffnet keine sechste Region"));
     }
 
     #[test]
