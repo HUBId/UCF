@@ -98,3 +98,92 @@ fn docs_readme_indexes_br5_cerebellum_prompt1_role_map() {
         ],
     );
 }
+
+#[test]
+fn br5_cerebellum_prompt2_and_prompt3_docs_are_indexed() {
+    let readme = read_doc("docs/README.md");
+
+    assert_contains_all(
+        &readme,
+        &[
+            "docs/blue_brain_cerebellum_minimal_bounded_integration_serie_br5_prompt2_v1.md",
+            "docs/blue_brain_cerebellum_surface_diagnostics_contracts_hardening_serie_br5_prompt3_v1.md",
+        ],
+    );
+}
+
+#[test]
+fn br5_cerebellum_prompt3_pins_diagnostics_contract_map_and_reads() {
+    let doc = read_doc(
+        "docs/blue_brain_cerebellum_surface_diagnostics_contracts_hardening_serie_br5_prompt3_v1.md",
+    );
+
+    assert_contains_all(
+        &doc,
+        &[
+            "cerebellum advisory-only diagnostic",
+            "cerebellum caveated diagnostic",
+            "cerebellum deferred diagnostic",
+            "cerebellum blocked diagnostic",
+            "cerebellum insufficient diagnostic",
+            "cerebellum diagnostic-only state",
+            "cerebellum bounded contract signal",
+            "non-canonical/internal-only cerebellum path",
+            "Runtime, Selection, Execution-interface und Reference lesen denselben Cerebellum canonical contract read",
+            "advisory-only` ist ein bounded positives Signal ohne direkte Autorität",
+            "caveated` ist ausdrücklich kein starkes positives Signal",
+            "Deferred ist nicht blocked und nicht insufficient",
+            "Blocked ist nicht deferred und nicht insufficient",
+            "Insufficient ist nicht blocked und nicht deferred",
+        ],
+    );
+}
+
+#[test]
+fn br5_cerebellum_prompt3_preserves_model_boundaries_and_region_separation() {
+    let doc = read_doc(
+        "docs/blue_brain_cerebellum_surface_diagnostics_contracts_hardening_serie_br5_prompt3_v1.md",
+    );
+
+    assert_contains_all(
+        &doc,
+        &[
+            "abstract functional current mode",
+            "bounded Kuramoto-like candidate",
+            "Hodgkin-Huxley simulation-only/diagnostic-only",
+            "later selective HH deepening",
+            "keine Hodgkin-Huxley-Produktivintegration",
+            "hippocampus_like_region`: context/reference/episode/indexing-lastig",
+            "amygdala_like_region`: salience/valence/caveat/priority-lastig",
+            "thalamus_like_region`: relay/gating/routing-lastig",
+            "basal_ganglia_like_region`: action-gating/suppression/channel-selection-lastig",
+            "cerebellum_like_region`: prediction/timing/correction/mismatch-lastig",
+            "Hypothalamus und weitere anatomische Regionen bleiben deferred",
+        ],
+    );
+}
+
+#[test]
+fn br5_cerebellum_prompt3_keeps_no_direct_authority_guards() {
+    let doc = read_doc(
+        "docs/blue_brain_cerebellum_surface_diagnostics_contracts_hardening_serie_br5_prompt3_v1.md",
+    );
+
+    assert_contains_all(
+        &doc,
+        &[
+            "kein action request",
+            "kein direct action trigger",
+            "keine direct action selection",
+            "kein direct execution trigger",
+            "kein direct retry trigger",
+            "keine retry orchestration",
+            "kein direct memory commit",
+            "keine automatic memory persistence",
+            "kein direct compute invocation",
+            "kein safety override",
+            "keine allowed-actions extension",
+            "keine Planner-/Agenten-/Policy-/Governance-Plattform",
+        ],
+    );
+}

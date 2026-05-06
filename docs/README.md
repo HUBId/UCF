@@ -200,3 +200,5 @@ Wenn einzelne ältere Dateien weiterhin gebraucht werden, müssen sie gegen die 
 
 - **Cerebellum-next role consolidation (BR5):**
   - `docs/blue_brain_cerebellum_region_role_map_serie_br5_prompt1_v1.md`
+  - `docs/blue_brain_cerebellum_minimal_bounded_integration_serie_br5_prompt2_v1.md`
+  - `docs/blue_brain_cerebellum_surface_diagnostics_contracts_hardening_serie_br5_prompt3_v1.md`

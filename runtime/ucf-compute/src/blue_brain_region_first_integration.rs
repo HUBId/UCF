@@ -2588,6 +2588,57 @@ pub const CANONICAL_BLUE_BRAIN_CEREBELLUM_DIAGNOSTICS_CONTRACT_MAP:
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCerebellumContractMapEntry {
+    pub class: BlueBrainCerebellumContractClass,
+    pub canonical_read: BlueBrainCerebellumCanonicalRead,
+    pub direct_authority_allowed: bool,
+}
+
+pub const CANONICAL_BLUE_BRAIN_CEREBELLUM_DIAGNOSTICS_CONTRACT_ENTRIES:
+    [BlueBrainCerebellumContractMapEntry; 8] = [
+    BlueBrainCerebellumContractMapEntry {
+        class: BlueBrainCerebellumContractClass::CerebellumAdvisoryOnlyDiagnostic,
+        canonical_read: BlueBrainCerebellumCanonicalRead::AdvisoryOnly,
+        direct_authority_allowed: false,
+    },
+    BlueBrainCerebellumContractMapEntry {
+        class: BlueBrainCerebellumContractClass::CerebellumCaveatedDiagnostic,
+        canonical_read: BlueBrainCerebellumCanonicalRead::Caveated,
+        direct_authority_allowed: false,
+    },
+    BlueBrainCerebellumContractMapEntry {
+        class: BlueBrainCerebellumContractClass::CerebellumDeferredDiagnostic,
+        canonical_read: BlueBrainCerebellumCanonicalRead::Deferred,
+        direct_authority_allowed: false,
+    },
+    BlueBrainCerebellumContractMapEntry {
+        class: BlueBrainCerebellumContractClass::CerebellumBlockedDiagnostic,
+        canonical_read: BlueBrainCerebellumCanonicalRead::Blocked,
+        direct_authority_allowed: false,
+    },
+    BlueBrainCerebellumContractMapEntry {
+        class: BlueBrainCerebellumContractClass::CerebellumInsufficientDiagnostic,
+        canonical_read: BlueBrainCerebellumCanonicalRead::Insufficient,
+        direct_authority_allowed: false,
+    },
+    BlueBrainCerebellumContractMapEntry {
+        class: BlueBrainCerebellumContractClass::CerebellumDiagnosticOnlyState,
+        canonical_read: BlueBrainCerebellumCanonicalRead::DiagnosticOnly,
+        direct_authority_allowed: false,
+    },
+    BlueBrainCerebellumContractMapEntry {
+        class: BlueBrainCerebellumContractClass::CerebellumBoundedContractSignal,
+        canonical_read: BlueBrainCerebellumCanonicalRead::AdvisoryOnly,
+        direct_authority_allowed: false,
+    },
+    BlueBrainCerebellumContractMapEntry {
+        class: BlueBrainCerebellumContractClass::NonCanonicalInternalOnlyCerebellumPath,
+        canonical_read: BlueBrainCerebellumCanonicalRead::NonCanonicalInternalOnly,
+        direct_authority_allowed: false,
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlueBrainCerebellumOutputSurface {
     pub advisory_class: BlueBrainCerebellumAdvisoryOutputClass,
     pub runtime_contract_signal: BlueBrainCerebellumContractSignal,
@@ -2649,10 +2700,11 @@ pub fn blue_brain_cerebellum_diagnostic_state_for_signal(
         | BlueBrainCerebellumContractSignal::RuntimeToCerebellumBoundedPredictionTimingInput
         | BlueBrainCerebellumContractSignal::CerebellumToSelectionAdvisory
         | BlueBrainCerebellumContractSignal::SelectionToCerebellumBoundedCoordinationInput
-        | BlueBrainCerebellumContractSignal::CerebellumExecutionSupportCaveatSignal => {
+        | BlueBrainCerebellumContractSignal::CerebellumReferenceSignal => {
             BlueBrainCerebellumDiagnosticState::CerebellumAdvisoryOnlyDiagnostic
         }
-        BlueBrainCerebellumContractSignal::Caveated => {
+        BlueBrainCerebellumContractSignal::CerebellumExecutionSupportCaveatSignal
+        | BlueBrainCerebellumContractSignal::Caveated => {
             BlueBrainCerebellumDiagnosticState::CerebellumCaveatedDiagnostic
         }
         BlueBrainCerebellumContractSignal::Deferred => {
@@ -2664,8 +2716,7 @@ pub fn blue_brain_cerebellum_diagnostic_state_for_signal(
         BlueBrainCerebellumContractSignal::Insufficient => {
             BlueBrainCerebellumDiagnosticState::CerebellumInsufficientDiagnostic
         }
-        BlueBrainCerebellumContractSignal::ReferenceOnly
-        | BlueBrainCerebellumContractSignal::CerebellumReferenceSignal => {
+        BlueBrainCerebellumContractSignal::ReferenceOnly => {
             BlueBrainCerebellumDiagnosticState::CerebellumDiagnosticOnlyState
         }
         BlueBrainCerebellumContractSignal::NonCanonicalInternalOnly => {
@@ -2684,11 +2735,11 @@ pub fn blue_brain_cerebellum_contract_class_for_signal(
         }
         BlueBrainCerebellumContractSignal::RuntimeToCerebellumBoundedPredictionTimingInput
         | BlueBrainCerebellumContractSignal::SelectionToCerebellumBoundedCoordinationInput
-        | BlueBrainCerebellumContractSignal::CerebellumExecutionSupportCaveatSignal
         | BlueBrainCerebellumContractSignal::CerebellumReferenceSignal => {
             BlueBrainCerebellumContractClass::CerebellumBoundedContractSignal
         }
-        BlueBrainCerebellumContractSignal::Caveated => {
+        BlueBrainCerebellumContractSignal::CerebellumExecutionSupportCaveatSignal
+        | BlueBrainCerebellumContractSignal::Caveated => {
             BlueBrainCerebellumContractClass::CerebellumCaveatedDiagnostic
         }
         BlueBrainCerebellumContractSignal::Deferred => {
@@ -2737,6 +2788,59 @@ pub fn blue_brain_cerebellum_canonical_read_for_state(
             BlueBrainCerebellumCanonicalRead::NonCanonicalInternalOnly
         }
     }
+}
+
+pub fn blue_brain_cerebellum_canonical_read_for_signal(
+    signal: BlueBrainCerebellumContractSignal,
+) -> BlueBrainCerebellumCanonicalRead {
+    match signal {
+        BlueBrainCerebellumContractSignal::CerebellumToRuntimeAdvisory
+        | BlueBrainCerebellumContractSignal::RuntimeToCerebellumBoundedPredictionTimingInput
+        | BlueBrainCerebellumContractSignal::CerebellumToSelectionAdvisory
+        | BlueBrainCerebellumContractSignal::SelectionToCerebellumBoundedCoordinationInput
+        | BlueBrainCerebellumContractSignal::CerebellumReferenceSignal => {
+            BlueBrainCerebellumCanonicalRead::AdvisoryOnly
+        }
+        BlueBrainCerebellumContractSignal::CerebellumExecutionSupportCaveatSignal
+        | BlueBrainCerebellumContractSignal::Caveated => BlueBrainCerebellumCanonicalRead::Caveated,
+        BlueBrainCerebellumContractSignal::Deferred => BlueBrainCerebellumCanonicalRead::Deferred,
+        BlueBrainCerebellumContractSignal::Blocked => BlueBrainCerebellumCanonicalRead::Blocked,
+        BlueBrainCerebellumContractSignal::Insufficient => {
+            BlueBrainCerebellumCanonicalRead::Insufficient
+        }
+        BlueBrainCerebellumContractSignal::ReferenceOnly => {
+            BlueBrainCerebellumCanonicalRead::DiagnosticOnly
+        }
+        BlueBrainCerebellumContractSignal::NonCanonicalInternalOnly => {
+            BlueBrainCerebellumCanonicalRead::NonCanonicalInternalOnly
+        }
+    }
+}
+
+pub fn blue_brain_cerebellum_output_has_no_direct_authority(
+    output: BlueBrainCerebellumOutputSurface,
+) -> bool {
+    !output.direct_action_selection
+        && !output.direct_action_trigger
+        && !output.direct_execution_trigger
+        && !output.direct_retry_trigger
+        && !output.direct_memory_commit
+        && !output.direct_compute_invocation
+        && !output.safety_override
+}
+
+pub fn blue_brain_cerebellum_consumer_contract_reads_are_aligned(
+    output: BlueBrainCerebellumOutputSurface,
+) -> bool {
+    let canonical = output.canonical_contract_read;
+    [
+        BlueBrainCerebellumConsumerLayer::Runtime,
+        BlueBrainCerebellumConsumerLayer::Selection,
+        BlueBrainCerebellumConsumerLayer::ExecutionInterface,
+        BlueBrainCerebellumConsumerLayer::Reference,
+    ]
+    .into_iter()
+    .all(|layer| blue_brain_cerebellum_consumer_contract_read(output, layer) == canonical)
 }
 
 pub fn blue_brain_cerebellum_consumer_contract_read(
@@ -2819,9 +2923,9 @@ pub fn evaluate_blue_brain_cerebellum_prediction_timing_correction(
         (
             BlueBrainCerebellumStateSurface::ReferenceOnlyCorrectionState,
             BlueBrainCerebellumAdvisoryOutputClass::ReferenceBoundedSignal,
-            BlueBrainCerebellumContractSignal::CerebellumToRuntimeAdvisory,
-            BlueBrainCerebellumContractSignal::CerebellumToSelectionAdvisory,
-            BlueBrainCerebellumContractSignal::CerebellumExecutionSupportCaveatSignal,
+            BlueBrainCerebellumContractSignal::ReferenceOnly,
+            BlueBrainCerebellumContractSignal::ReferenceOnly,
+            BlueBrainCerebellumContractSignal::ReferenceOnly,
             BlueBrainCerebellumContractSignal::ReferenceOnly,
         )
     } else if input.reference_validity == BlueBrainReferenceValidity::Caveated
@@ -2857,7 +2961,7 @@ pub fn evaluate_blue_brain_cerebellum_prediction_timing_correction(
             BlueBrainCerebellumAdvisoryOutputClass::MismatchHint,
             BlueBrainCerebellumContractSignal::CerebellumToRuntimeAdvisory,
             BlueBrainCerebellumContractSignal::CerebellumToSelectionAdvisory,
-            BlueBrainCerebellumContractSignal::CerebellumExecutionSupportCaveatSignal,
+            BlueBrainCerebellumContractSignal::RuntimeToCerebellumBoundedPredictionTimingInput,
             BlueBrainCerebellumContractSignal::CerebellumReferenceSignal,
         )
     } else {
@@ -5262,6 +5366,10 @@ mod tests {
                 ),
                 expected_read
             );
+            assert!(blue_brain_cerebellum_consumer_contract_reads_are_aligned(
+                output
+            ));
+            assert!(blue_brain_cerebellum_output_has_no_direct_authority(output));
             assert!(output.runtime_advisory_only);
             assert!(output.selection_advisory_only);
             assert!(output.execution_support_caveat_only);
@@ -5325,6 +5433,114 @@ mod tests {
             blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Cerebellum),
             blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::BasalGanglia)
         );
+    }
+
+    #[test]
+    fn cerebellum_br5_prompt3_contract_map_separates_all_canonical_reads() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_CEREBELLUM_DIAGNOSTICS_CONTRACT_ENTRIES.len(),
+            CANONICAL_BLUE_BRAIN_CEREBELLUM_DIAGNOSTICS_CONTRACT_MAP.len()
+        );
+        for (entry, class) in CANONICAL_BLUE_BRAIN_CEREBELLUM_DIAGNOSTICS_CONTRACT_ENTRIES
+            .iter()
+            .zip(CANONICAL_BLUE_BRAIN_CEREBELLUM_DIAGNOSTICS_CONTRACT_MAP)
+        {
+            assert_eq!(entry.class, class);
+            assert!(!entry.direct_authority_allowed);
+        }
+        assert_eq!(
+            blue_brain_cerebellum_canonical_read_for_signal(
+                BlueBrainCerebellumContractSignal::CerebellumToRuntimeAdvisory
+            ),
+            BlueBrainCerebellumCanonicalRead::AdvisoryOnly
+        );
+        assert_eq!(
+            blue_brain_cerebellum_canonical_read_for_signal(
+                BlueBrainCerebellumContractSignal::CerebellumExecutionSupportCaveatSignal
+            ),
+            BlueBrainCerebellumCanonicalRead::Caveated
+        );
+        assert_ne!(
+            BlueBrainCerebellumCanonicalRead::AdvisoryOnly,
+            BlueBrainCerebellumCanonicalRead::Caveated
+        );
+        assert_ne!(
+            BlueBrainCerebellumCanonicalRead::Deferred,
+            BlueBrainCerebellumCanonicalRead::Blocked
+        );
+        assert_ne!(
+            BlueBrainCerebellumCanonicalRead::Blocked,
+            BlueBrainCerebellumCanonicalRead::Insufficient
+        );
+        assert_ne!(
+            BlueBrainCerebellumCanonicalRead::DiagnosticOnly,
+            BlueBrainCerebellumCanonicalRead::AdvisoryOnly
+        );
+    }
+
+    #[test]
+    fn cerebellum_br5_prompt3_reference_only_and_caveat_do_not_promote_to_authority() {
+        let reference_only = evaluate_blue_brain_cerebellum_prediction_timing_correction(
+            BlueBrainCerebellumInputSurface {
+                selection_signal:
+                    BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::ReferenceOnly,
+                context_priority:
+                    BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+            },
+        )
+        .1;
+        assert_eq!(
+            reference_only.canonical_contract_read,
+            BlueBrainCerebellumCanonicalRead::DiagnosticOnly
+        );
+        assert_eq!(
+            reference_only.runtime_diagnostic_state,
+            BlueBrainCerebellumDiagnosticState::CerebellumDiagnosticOnlyState
+        );
+        assert_eq!(
+            reference_only.selection_diagnostic_state,
+            BlueBrainCerebellumDiagnosticState::CerebellumDiagnosticOnlyState
+        );
+        assert_eq!(
+            reference_only.reference_diagnostic_state,
+            BlueBrainCerebellumDiagnosticState::CerebellumDiagnosticOnlyState
+        );
+        assert!(blue_brain_cerebellum_consumer_contract_reads_are_aligned(
+            reference_only
+        ));
+        assert!(blue_brain_cerebellum_output_has_no_direct_authority(
+            reference_only
+        ));
+
+        let caveated = evaluate_blue_brain_cerebellum_prediction_timing_correction(
+            BlueBrainCerebellumInputSurface {
+                selection_signal: BlueBrainControlAttentionSelectionClass::ContextSelection,
+                deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                reference_validity: BlueBrainReferenceValidity::Caveated,
+                context_priority: BlueBrainContextEvidencePriorityClass::CaveatedEvidenceReference,
+            },
+        )
+        .1;
+        assert_eq!(
+            caveated.canonical_contract_read,
+            BlueBrainCerebellumCanonicalRead::Caveated
+        );
+        assert_eq!(
+            caveated.runtime_diagnostic_state,
+            BlueBrainCerebellumDiagnosticState::CerebellumCaveatedDiagnostic
+        );
+        assert_ne!(
+            caveated.runtime_diagnostic_state,
+            BlueBrainCerebellumDiagnosticState::CerebellumAdvisoryOnlyDiagnostic
+        );
+        assert!(blue_brain_cerebellum_consumer_contract_reads_are_aligned(
+            caveated
+        ));
+        assert!(blue_brain_cerebellum_output_has_no_direct_authority(
+            caveated
+        ));
     }
 
     #[test]
