@@ -174,6 +174,7 @@ pub use blue_brain_minimal_execution::{
     BlueBrainMinimalExecutionTraceCore, BlueBrainProposalExecutionFeedbackClass,
 };
 pub use blue_brain_region_first_integration::{
+    blue_brain_thalamus_canonical_read_for_state, blue_brain_thalamus_consumer_contract_read,
     blue_brain_thalamus_contract_class_for_signal, blue_brain_thalamus_diagnostic_state_for_signal,
     classify_blue_brain_first_region_input_guard, classify_blue_brain_second_region_input_guard,
     classify_blue_brain_thalamus_input_guard, evaluate_blue_brain_first_region_attention_selection,
@@ -190,9 +191,9 @@ pub use blue_brain_region_first_integration::{
     BlueBrainSecondRegionInputSurface, BlueBrainSecondRegionOutputSurface,
     BlueBrainSecondRegionPathClass, BlueBrainSecondRegionSelectionClass,
     BlueBrainSecondRegionStateSurface, BlueBrainThalamusAdvisoryOutputClass,
-    BlueBrainThalamusContractClass, BlueBrainThalamusContractSignal,
-    BlueBrainThalamusDiagnosticState, BlueBrainThalamusInputGuard, BlueBrainThalamusInputSource,
-    BlueBrainThalamusInputSurface, BlueBrainThalamusIntegrationClass,
+    BlueBrainThalamusCanonicalRead, BlueBrainThalamusConsumerLayer, BlueBrainThalamusContractClass,
+    BlueBrainThalamusContractSignal, BlueBrainThalamusDiagnosticState, BlueBrainThalamusInputGuard,
+    BlueBrainThalamusInputSource, BlueBrainThalamusInputSurface, BlueBrainThalamusIntegrationClass,
     BlueBrainThalamusOutputSurface, BlueBrainThalamusStateSurface, BlueBrainThirdRegionClass,
     BlueBrainThirdRegionRelationClass, BlueBrainThirdRegionRelationSurface,
     BlueBrainThirdRegionSelectionClass, BLUE_BRAIN_SECOND_REGION_CLASS_SELECTION,
