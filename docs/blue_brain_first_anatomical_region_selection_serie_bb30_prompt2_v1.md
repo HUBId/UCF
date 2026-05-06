@@ -81,6 +81,8 @@ Warum schwerere Kandidaten nicht zuerst:
 
 `not first` bedeutet **nicht verworfen**, sondern kontrolliert nachgelagert.
 
+Post-BR4 note: `basal_ganglia_like_region` is no longer merely a generic later-phase candidate for the active next-region line; BR4 Prompt 1 promotes it as the next single bounded role-definition candidate after Hippocampus, Amygdala, and Thalamus, while preserving all no-direct guard rails.
+
 ## 6) Guard-/Scope-/Safety-Absicherung
 
 Für die priorisierte erste Region bleibt verbindlich:
