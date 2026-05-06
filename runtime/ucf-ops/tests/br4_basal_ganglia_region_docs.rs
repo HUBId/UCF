@@ -216,3 +216,121 @@ fn docs_readme_indexes_br4_basal_ganglia_prompt3_contract_hardening() {
         ],
     );
 }
+
+#[test]
+fn br4_basal_ganglia_readiness_map_closes_surfaces_diagnostics_contracts_and_model_mode() {
+    let doc = read_doc(
+        "docs/blue_brain_br4_basal_ganglia_readiness_sweep_expansion_boundary_serie_br4_prompt4_v1.md",
+    );
+
+    assert_contains_all(
+        &doc,
+        &[
+            "BR4-expansion-readiness map",
+            "stable basal-ganglia operational surface",
+            "usable with caveats",
+            "advisory-only",
+            "deferred/blocked/insufficient",
+            "diagnostic-only/reference-only",
+            "stable current model mode",
+            "non-canonical/internal-only",
+            "basal-ganglia input surface",
+            "basal-ganglia state surface",
+            "basal-ganglia output/advisory surface",
+            "basal-ganglia reference surface",
+            "basal-ganglia diagnostics states",
+            "basal-ganglia contract signals",
+            "abstract functional current mode",
+        ],
+    );
+
+    assert_contains_all(
+        &doc,
+        &[
+            "basal-ganglia input surface` is not `basal-ganglia state surface",
+            "basal-ganglia state surface` is not `basal-ganglia output/advisory surface",
+            "basal-ganglia diagnostics states` are not `basal-ganglia contract signals",
+            "basal-ganglia bounded contract signal` is not an action, execution, retry, compute, memory, or safety channel",
+            "basal-ganglia advisory-only diagnostic != basal-ganglia caveated diagnostic",
+            "basal-ganglia deferred diagnostic != basal-ganglia blocked diagnostic",
+            "basal-ganglia blocked diagnostic != basal-ganglia insufficient diagnostic",
+            "reference-only` remains read-only and non-actionable",
+        ],
+    );
+}
+
+#[test]
+fn br4_basal_ganglia_closeout_preserves_no_direct_compute_and_existing_bluebrain_lines() {
+    let doc = read_doc(
+        "docs/blue_brain_br4_basal_ganglia_readiness_sweep_expansion_boundary_serie_br4_prompt4_v1.md",
+    );
+
+    assert_contains_all(
+        &doc,
+        &[
+            "no direct action execution",
+            "no direct action selection",
+            "no direct action trigger",
+            "no direct execution trigger",
+            "no retry orchestration or retry trigger",
+            "no planner/agent logic",
+            "no automatic memory persistence, mutation, or commit",
+            "no safety override semantics",
+            "no direct compute invocation",
+            "no new compute-core work",
+            "no fifth anatomical region opened in this step",
+            "no productive Hodgkin-Huxley integration",
+            "no allowed-actions expansion",
+        ],
+    );
+
+    assert_contains_all(
+        &doc,
+        &[
+            "BB2 runtime transition/feedback",
+            "BB4 selection/priority/deferral",
+            "BB8 and BB17 context/memory/reference hardening",
+            "BB19 runtime/selection contract line",
+            "BB21 execution/reference interaction",
+            "BB12 bounded dynamics",
+            "final compute line",
+            "maintenance-only core",
+            "outward-facing contracts",
+        ],
+    );
+}
+
+#[test]
+fn br4_next_region_handoff_prioritizes_cerebellum_without_opening_region_five() {
+    let doc = read_doc(
+        "docs/blue_brain_br4_basal_ganglia_readiness_sweep_expansion_boundary_serie_br4_prompt4_v1.md",
+    );
+
+    assert_contains_all(
+        &doc,
+        &[
+            "Decision handoff: **prioritize Cerebellum as the next single anatomical-region candidate; keep Hypothalamus deferred.**",
+            "Higher near-term technical leverage",
+            "Cleaner attachment to existing UCF basis",
+            "Lower scope risk than Hypothalamus",
+            "HH-heavy regions still wait",
+            "does not open a fifth region inside BR4",
+        ],
+    );
+}
+
+#[test]
+fn docs_readme_indexes_br4_basal_ganglia_closeout_reference() {
+    let readme = read_doc("docs/README.md");
+
+    assert_contains_all(
+        &readme,
+        &[
+            "Basal-Ganglia-next role consolidation (BR4)",
+            "docs/blue_brain_basal_ganglia_region_role_map_serie_br4_prompt1_v1.md",
+            "docs/blue_brain_basal_ganglia_minimal_bounded_integration_serie_br4_prompt2_v1.md",
+            "docs/blue_brain_basal_ganglia_surface_diagnostics_contracts_hardening_serie_br4_prompt3_v1.md",
+            "docs/blue_brain_br4_basal_ganglia_readiness_sweep_expansion_boundary_serie_br4_prompt4_v1.md",
+        ],
+    );
+}
