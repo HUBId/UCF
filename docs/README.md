@@ -195,3 +195,4 @@ Wenn einzelne ältere Dateien weiterhin gebraucht werden, müssen sie gegen die 
 - **Basal-Ganglia-next role consolidation (BR4):**
   - `docs/blue_brain_basal_ganglia_region_role_map_serie_br4_prompt1_v1.md`
   - `docs/blue_brain_basal_ganglia_minimal_bounded_integration_serie_br4_prompt2_v1.md`
+  - `docs/blue_brain_basal_ganglia_surface_diagnostics_contracts_hardening_serie_br4_prompt3_v1.md`
