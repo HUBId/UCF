@@ -1536,6 +1536,7 @@ pub enum BlueBrainThalamusStateSurface {
     CaveatedReferenceRoutingState,
     DeferredRoutingState,
     BlockedRoutingState,
+    InsufficientRoutingState,
     ReferenceOnlyRoutingState,
     NonCanonicalInternalOnly,
 }
@@ -1578,6 +1579,7 @@ pub enum BlueBrainThalamusAdvisoryOutputClass {
     CaveatHint,
     ReferenceBoundedSignal,
     BlockedDeferred,
+    InsufficientDiagnosticOutput,
     NonCanonicalInternalOnly,
 }
 
@@ -1619,6 +1621,25 @@ pub enum BlueBrainThalamusContractClass {
     NonCanonicalInternalOnlyThalamusPath,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainThalamusCanonicalRead {
+    AdvisoryOnly,
+    Caveated,
+    Deferred,
+    Blocked,
+    Insufficient,
+    DiagnosticOnly,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainThalamusConsumerLayer {
+    Runtime,
+    Selection,
+    Routing,
+    Reference,
+}
+
 pub const CANONICAL_BLUE_BRAIN_THALAMUS_DIAGNOSTICS_CONTRACT_MAP: [BlueBrainThalamusContractClass;
     8] = [
     BlueBrainThalamusContractClass::ThalamusAdvisoryOnlyDiagnostic,
@@ -1642,6 +1663,7 @@ pub struct BlueBrainThalamusOutputSurface {
     pub selection_diagnostic_state: BlueBrainThalamusDiagnosticState,
     pub routing_diagnostic_state: BlueBrainThalamusDiagnosticState,
     pub reference_diagnostic_state: BlueBrainThalamusDiagnosticState,
+    pub canonical_contract_read: BlueBrainThalamusCanonicalRead,
     pub runtime_advisory_only: bool,
     pub selection_advisory_only: bool,
     pub routing_advisory_only: bool,
@@ -1717,10 +1739,13 @@ pub fn blue_brain_thalamus_contract_class_for_signal(
 ) -> BlueBrainThalamusContractClass {
     match signal {
         BlueBrainThalamusContractSignal::ThalamusToRuntimeAdvisory
-        | BlueBrainThalamusContractSignal::RuntimeToThalamusBoundedInput
-        | BlueBrainThalamusContractSignal::ThalamusToSelectionAdvisory
-        | BlueBrainThalamusContractSignal::SelectionToThalamusBoundedStateInput => {
+        | BlueBrainThalamusContractSignal::ThalamusToSelectionAdvisory => {
             BlueBrainThalamusContractClass::ThalamusAdvisoryOnlyDiagnostic
+        }
+        BlueBrainThalamusContractSignal::RuntimeToThalamusBoundedInput
+        | BlueBrainThalamusContractSignal::SelectionToThalamusBoundedStateInput
+        | BlueBrainThalamusContractSignal::ThalamusReferenceSignal => {
+            BlueBrainThalamusContractClass::ThalamusBoundedContractSignal
         }
         BlueBrainThalamusContractSignal::Caveated => {
             BlueBrainThalamusContractClass::ThalamusCaveatedDiagnostic
@@ -1734,8 +1759,7 @@ pub fn blue_brain_thalamus_contract_class_for_signal(
         BlueBrainThalamusContractSignal::Insufficient => {
             BlueBrainThalamusContractClass::ThalamusInsufficientDiagnostic
         }
-        BlueBrainThalamusContractSignal::ReferenceOnly
-        | BlueBrainThalamusContractSignal::ThalamusReferenceSignal => {
+        BlueBrainThalamusContractSignal::ReferenceOnly => {
             BlueBrainThalamusContractClass::ThalamusDiagnosticOnlyState
         }
         BlueBrainThalamusContractSignal::NonCanonicalInternalOnly => {
@@ -1744,6 +1768,40 @@ pub fn blue_brain_thalamus_contract_class_for_signal(
     }
 }
 
+pub fn blue_brain_thalamus_canonical_read_for_state(
+    state: BlueBrainThalamusStateSurface,
+) -> BlueBrainThalamusCanonicalRead {
+    match state {
+        BlueBrainThalamusStateSurface::ActiveBoundedRelayAdvisoryOnly => {
+            BlueBrainThalamusCanonicalRead::AdvisoryOnly
+        }
+        BlueBrainThalamusStateSurface::CaveatedReferenceRoutingState => {
+            BlueBrainThalamusCanonicalRead::Caveated
+        }
+        BlueBrainThalamusStateSurface::DeferredRoutingState => {
+            BlueBrainThalamusCanonicalRead::Deferred
+        }
+        BlueBrainThalamusStateSurface::BlockedRoutingState => {
+            BlueBrainThalamusCanonicalRead::Blocked
+        }
+        BlueBrainThalamusStateSurface::InsufficientRoutingState => {
+            BlueBrainThalamusCanonicalRead::Insufficient
+        }
+        BlueBrainThalamusStateSurface::ReferenceOnlyRoutingState => {
+            BlueBrainThalamusCanonicalRead::DiagnosticOnly
+        }
+        BlueBrainThalamusStateSurface::NonCanonicalInternalOnly => {
+            BlueBrainThalamusCanonicalRead::NonCanonicalInternalOnly
+        }
+    }
+}
+
+pub fn blue_brain_thalamus_consumer_contract_read(
+    output: BlueBrainThalamusOutputSurface,
+    _layer: BlueBrainThalamusConsumerLayer,
+) -> BlueBrainThalamusCanonicalRead {
+    output.canonical_contract_read
+}
 pub fn evaluate_blue_brain_thalamus_relay_routing(
     input: BlueBrainThalamusInputSurface,
 ) -> (
@@ -1777,6 +1835,19 @@ pub fn evaluate_blue_brain_thalamus_relay_routing(
                 BlueBrainThalamusContractSignal::Blocked,
                 BlueBrainThalamusContractSignal::Blocked,
             )
+        } else if input.deferral_class
+            == BlueBrainCandidateDeferralLifecycleClass::CandidateInsufficient
+            || input.reference_validity == BlueBrainReferenceValidity::Insufficient
+            || input.context_priority == BlueBrainContextEvidencePriorityClass::InsufficientContext
+        {
+            (
+                BlueBrainThalamusStateSurface::InsufficientRoutingState,
+                BlueBrainThalamusAdvisoryOutputClass::InsufficientDiagnosticOutput,
+                BlueBrainThalamusContractSignal::Insufficient,
+                BlueBrainThalamusContractSignal::Insufficient,
+                BlueBrainThalamusContractSignal::Insufficient,
+                BlueBrainThalamusContractSignal::Insufficient,
+            )
         } else if matches!(
             input.deferral_class,
             BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred
@@ -1802,8 +1873,7 @@ pub fn evaluate_blue_brain_thalamus_relay_routing(
                 BlueBrainThalamusContractSignal::ThalamusReferenceSignal,
                 BlueBrainThalamusContractSignal::ReferenceOnly,
             )
-        } else if input.reference_validity == BlueBrainReferenceValidity::Insufficient
-            || input.reference_validity == BlueBrainReferenceValidity::Caveated
+        } else if input.reference_validity == BlueBrainReferenceValidity::Caveated
             || input.context_priority
                 == BlueBrainContextEvidencePriorityClass::CaveatedEvidenceReference
         {
@@ -1853,6 +1923,7 @@ pub fn evaluate_blue_brain_thalamus_relay_routing(
         reference_diagnostic_state: blue_brain_thalamus_diagnostic_state_for_signal(
             reference_signal,
         ),
+        canonical_contract_read: blue_brain_thalamus_canonical_read_for_state(state),
         runtime_advisory_only: true,
         selection_advisory_only: true,
         routing_advisory_only: true,
@@ -4406,6 +4477,180 @@ mod tests {
     }
 
     #[test]
+    fn thalamus_br3_prompt3_canonical_diagnostics_contract_map_is_complete_and_distinct() {
+        assert!(CANONICAL_BLUE_BRAIN_THALAMUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainThalamusContractClass::ThalamusAdvisoryOnlyDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_THALAMUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainThalamusContractClass::ThalamusCaveatedDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_THALAMUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainThalamusContractClass::ThalamusDeferredDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_THALAMUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainThalamusContractClass::ThalamusBlockedDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_THALAMUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainThalamusContractClass::ThalamusInsufficientDiagnostic));
+        assert!(CANONICAL_BLUE_BRAIN_THALAMUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainThalamusContractClass::ThalamusDiagnosticOnlyState));
+        assert!(CANONICAL_BLUE_BRAIN_THALAMUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainThalamusContractClass::ThalamusBoundedContractSignal));
+        assert!(CANONICAL_BLUE_BRAIN_THALAMUS_DIAGNOSTICS_CONTRACT_MAP
+            .contains(&BlueBrainThalamusContractClass::NonCanonicalInternalOnlyThalamusPath));
+        assert_ne!(
+            BlueBrainThalamusCanonicalRead::AdvisoryOnly,
+            BlueBrainThalamusCanonicalRead::Caveated
+        );
+        assert_ne!(
+            BlueBrainThalamusCanonicalRead::Deferred,
+            BlueBrainThalamusCanonicalRead::Blocked
+        );
+        assert_ne!(
+            BlueBrainThalamusCanonicalRead::Blocked,
+            BlueBrainThalamusCanonicalRead::Insufficient
+        );
+    }
+
+    #[test]
+    fn thalamus_br3_prompt3_runtime_selection_routing_reference_reads_are_aligned() {
+        let cases = [
+            (
+                BlueBrainThalamusInputSurface {
+                    selection_signal: BlueBrainControlAttentionSelectionClass::AttentionTarget,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                    reference_validity: BlueBrainReferenceValidity::Current,
+                    context_priority: BlueBrainContextEvidencePriorityClass::PrimaryContext,
+                },
+                BlueBrainThalamusCanonicalRead::AdvisoryOnly,
+            ),
+            (
+                BlueBrainThalamusInputSurface {
+                    selection_signal:
+                        BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                    reference_validity: BlueBrainReferenceValidity::Caveated,
+                    context_priority:
+                        BlueBrainContextEvidencePriorityClass::CaveatedEvidenceReference,
+                },
+                BlueBrainThalamusCanonicalRead::Caveated,
+            ),
+            (
+                BlueBrainThalamusInputSurface {
+                    selection_signal:
+                        BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred,
+                    reference_validity: BlueBrainReferenceValidity::Current,
+                    context_priority:
+                        BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+                },
+                BlueBrainThalamusCanonicalRead::Deferred,
+            ),
+            (
+                BlueBrainThalamusInputSurface {
+                    selection_signal:
+                        BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateRejected,
+                    reference_validity: BlueBrainReferenceValidity::Current,
+                    context_priority:
+                        BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+                },
+                BlueBrainThalamusCanonicalRead::Blocked,
+            ),
+            (
+                BlueBrainThalamusInputSurface {
+                    selection_signal:
+                        BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateInsufficient,
+                    reference_validity: BlueBrainReferenceValidity::Current,
+                    context_priority:
+                        BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+                },
+                BlueBrainThalamusCanonicalRead::Insufficient,
+            ),
+            (
+                BlueBrainThalamusInputSurface {
+                    selection_signal:
+                        BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                    reference_validity: BlueBrainReferenceValidity::ReferenceOnly,
+                    context_priority:
+                        BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+                },
+                BlueBrainThalamusCanonicalRead::DiagnosticOnly,
+            ),
+        ];
+
+        for (input, expected) in cases {
+            let (state, output) = evaluate_blue_brain_thalamus_relay_routing(input);
+            assert_eq!(
+                blue_brain_thalamus_canonical_read_for_state(state),
+                expected
+            );
+            assert_eq!(output.canonical_contract_read, expected);
+            assert_eq!(
+                blue_brain_thalamus_consumer_contract_read(
+                    output,
+                    BlueBrainThalamusConsumerLayer::Runtime
+                ),
+                expected
+            );
+            assert_eq!(
+                blue_brain_thalamus_consumer_contract_read(
+                    output,
+                    BlueBrainThalamusConsumerLayer::Selection
+                ),
+                expected
+            );
+            assert_eq!(
+                blue_brain_thalamus_consumer_contract_read(
+                    output,
+                    BlueBrainThalamusConsumerLayer::Routing
+                ),
+                expected
+            );
+            assert_eq!(
+                blue_brain_thalamus_consumer_contract_read(
+                    output,
+                    BlueBrainThalamusConsumerLayer::Reference
+                ),
+                expected
+            );
+            assert!(!output.direct_action_selection);
+            assert!(!output.direct_execution_trigger);
+            assert!(!output.direct_retry_trigger);
+            assert!(!output.direct_memory_commit);
+            assert!(!output.direct_compute_invocation);
+            assert!(!output.safety_override);
+        }
+    }
+
+    #[test]
+    fn thalamus_br3_prompt3_insufficient_is_not_caveated_deferred_or_blocked() {
+        let input = BlueBrainThalamusInputSurface {
+            selection_signal: BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+            deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateInsufficient,
+            reference_validity: BlueBrainReferenceValidity::Current,
+            context_priority: BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+        };
+        let (state, output) = evaluate_blue_brain_thalamus_relay_routing(input);
+        assert_eq!(
+            state,
+            BlueBrainThalamusStateSurface::InsufficientRoutingState
+        );
+        assert_eq!(
+            output.runtime_diagnostic_state,
+            BlueBrainThalamusDiagnosticState::ThalamusInsufficientDiagnostic
+        );
+        assert_eq!(
+            output.advisory_class,
+            BlueBrainThalamusAdvisoryOutputClass::InsufficientDiagnosticOutput
+        );
+        assert_ne!(
+            state,
+            BlueBrainThalamusStateSurface::CaveatedReferenceRoutingState
+        );
+        assert_ne!(state, BlueBrainThalamusStateSurface::DeferredRoutingState);
+        assert_ne!(state, BlueBrainThalamusStateSurface::BlockedRoutingState);
+    }
+
+    #[test]
     fn thalamus_br3_prompt2_integration_map_surfaces_are_complete_and_distinct() {
         assert!(CANONICAL_BLUE_BRAIN_THALAMUS_INTEGRATION_MAP
             .contains(&BlueBrainThalamusIntegrationClass::ThalamusInputSurface));
@@ -4608,5 +4853,39 @@ mod tests {
         assert!(doc.contains("no direct compute invocation"));
         assert!(doc.contains("no safety override"));
         assert!(doc.contains("keine implizite Öffnung weiterer anatomischer Regionen"));
+    }
+
+    #[test]
+    fn thalamus_br3_prompt3_doc_pins_surface_diagnostics_contracts_and_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_thalamus_surface_diagnostics_contracts_hardening_serie_br3_prompt3_v1.md"
+        );
+        assert!(doc.contains("thalamus input surface"));
+        assert!(doc.contains("thalamus state surface"));
+        assert!(doc.contains("thalamus output/advisory surface"));
+        assert!(doc.contains("thalamus reference surface"));
+        assert!(doc.contains("thalamus advisory-only diagnostic"));
+        assert!(doc.contains("thalamus caveated diagnostic"));
+        assert!(doc.contains("thalamus deferred diagnostic"));
+        assert!(doc.contains("thalamus blocked diagnostic"));
+        assert!(doc.contains("thalamus insufficient diagnostic"));
+        assert!(doc.contains("thalamus diagnostic-only state"));
+        assert!(doc.contains("thalamus bounded contract signal"));
+        assert!(doc.contains("non-canonical/internal-only thalamus path"));
+        assert!(doc.contains("advisory-only != caveated"));
+        assert!(doc.contains("deferred != blocked"));
+        assert!(doc.contains("blocked != insufficient"));
+        assert!(doc.contains("no action request"));
+        assert!(doc.contains("no execution trigger"));
+        assert!(doc.contains("no retry trigger"));
+        assert!(doc.contains("no memory commit"));
+        assert!(doc.contains("no compute trigger"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("current model mode remains unchanged"));
+        assert!(doc.contains("abstract functional current mode"));
+        assert!(doc.contains("Hodgkin-Huxley simulation-only/diagnostic-only remains deferred"));
+        assert!(doc.contains("hippocampus remains context/reference/episode/indexing"));
+        assert!(doc.contains("amygdala remains salience/valence/caveat/priority"));
+        assert!(doc.contains("thalamus remains relay/gating/routing"));
     }
 }
