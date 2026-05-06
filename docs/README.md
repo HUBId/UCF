@@ -197,3 +197,6 @@ Wenn einzelne ältere Dateien weiterhin gebraucht werden, müssen sie gegen die 
   - `docs/blue_brain_basal_ganglia_minimal_bounded_integration_serie_br4_prompt2_v1.md`
   - `docs/blue_brain_basal_ganglia_surface_diagnostics_contracts_hardening_serie_br4_prompt3_v1.md`
   - `docs/blue_brain_br4_basal_ganglia_readiness_sweep_expansion_boundary_serie_br4_prompt4_v1.md`
+
+- **Cerebellum-next role consolidation (BR5):**
+  - `docs/blue_brain_cerebellum_region_role_map_serie_br5_prompt1_v1.md`
