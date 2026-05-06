@@ -1976,6 +1976,447 @@ pub fn evaluate_blue_brain_thalamus_relay_routing(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainBasalGangliaStateSurface {
+    ActiveBoundedActionGatingAdvisoryOnly,
+    SuppressionInhibitionAdvisoryState,
+    ChannelSelectionArbitrationAdvisoryState,
+    ExecutionReadinessCaveatState,
+    ReferenceOnlyActionGatingState,
+    DeferredActionGatingState,
+    BlockedActionGatingState,
+    InsufficientActionGatingState,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainBasalGangliaInputSource {
+    RuntimeReadinessSignal,
+    SelectionPrioritySignal,
+    SelectionDeferralSignal,
+    ActionGatingPostureSignal,
+    ContextReferenceSignal,
+    ReferenceValiditySignal,
+    ToolActionControlSignal,
+    ComputeInternalRawStateSignal,
+    SafetyOverrideSignal,
+    ImplicitMemoryMutationSignal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainBasalGangliaInputGuard {
+    CanonicalBoundedInput,
+    ReferenceOnlyBoundedInput,
+    AdvisoryOnlyInput,
+    RejectedToolActionControl,
+    RejectedComputeInternalRawState,
+    RejectedSafetyOverride,
+    RejectedImplicitMemoryMutation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainBasalGangliaInputSurface {
+    pub selection_signal: BlueBrainControlAttentionSelectionClass,
+    pub deferral_class: BlueBrainCandidateDeferralLifecycleClass,
+    pub reference_validity: BlueBrainReferenceValidity,
+    pub context_priority: BlueBrainContextEvidencePriorityClass,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainBasalGangliaAdvisoryOutputClass {
+    GatingHint,
+    SuppressionHint,
+    ChannelSelectionHint,
+    ExecutionReadinessCaveat,
+    ReferenceBoundedSignal,
+    BlockedDeferred,
+    InsufficientDiagnosticOutput,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainBasalGangliaContractSignal {
+    BasalGangliaToRuntimeAdvisory,
+    RuntimeToBasalGangliaBoundedReadinessInput,
+    BasalGangliaToSelectionAdvisory,
+    SelectionToBasalGangliaBoundedActionGatingInput,
+    BasalGangliaReferenceSignal,
+    Caveated,
+    Deferred,
+    Blocked,
+    Insufficient,
+    ReferenceOnly,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainBasalGangliaDiagnosticState {
+    BasalGangliaAdvisoryOnlyDiagnostic,
+    BasalGangliaCaveatedDiagnostic,
+    BasalGangliaDeferredDiagnostic,
+    BasalGangliaBlockedDiagnostic,
+    BasalGangliaInsufficientDiagnostic,
+    BasalGangliaDiagnosticOnlyState,
+    NonCanonicalInternalOnlyBasalGangliaDiagnosticPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainBasalGangliaContractClass {
+    BasalGangliaAdvisoryOnlyDiagnostic,
+    BasalGangliaCaveatedDiagnostic,
+    BasalGangliaDeferredDiagnostic,
+    BasalGangliaBlockedDiagnostic,
+    BasalGangliaInsufficientDiagnostic,
+    BasalGangliaDiagnosticOnlyState,
+    BasalGangliaBoundedContractSignal,
+    NonCanonicalInternalOnlyBasalGangliaPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainBasalGangliaCanonicalRead {
+    AdvisoryOnly,
+    Caveated,
+    Deferred,
+    Blocked,
+    Insufficient,
+    DiagnosticOnly,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainBasalGangliaConsumerLayer {
+    Runtime,
+    Selection,
+    ExecutionInterface,
+    Reference,
+}
+
+pub const CANONICAL_BLUE_BRAIN_BASAL_GANGLIA_DIAGNOSTICS_CONTRACT_MAP:
+    [BlueBrainBasalGangliaContractClass; 8] = [
+    BlueBrainBasalGangliaContractClass::BasalGangliaAdvisoryOnlyDiagnostic,
+    BlueBrainBasalGangliaContractClass::BasalGangliaCaveatedDiagnostic,
+    BlueBrainBasalGangliaContractClass::BasalGangliaDeferredDiagnostic,
+    BlueBrainBasalGangliaContractClass::BasalGangliaBlockedDiagnostic,
+    BlueBrainBasalGangliaContractClass::BasalGangliaInsufficientDiagnostic,
+    BlueBrainBasalGangliaContractClass::BasalGangliaDiagnosticOnlyState,
+    BlueBrainBasalGangliaContractClass::BasalGangliaBoundedContractSignal,
+    BlueBrainBasalGangliaContractClass::NonCanonicalInternalOnlyBasalGangliaPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainBasalGangliaOutputSurface {
+    pub advisory_class: BlueBrainBasalGangliaAdvisoryOutputClass,
+    pub runtime_contract_signal: BlueBrainBasalGangliaContractSignal,
+    pub selection_contract_signal: BlueBrainBasalGangliaContractSignal,
+    pub execution_contract_signal: BlueBrainBasalGangliaContractSignal,
+    pub reference_contract_signal: BlueBrainBasalGangliaContractSignal,
+    pub runtime_diagnostic_state: BlueBrainBasalGangliaDiagnosticState,
+    pub selection_diagnostic_state: BlueBrainBasalGangliaDiagnosticState,
+    pub execution_diagnostic_state: BlueBrainBasalGangliaDiagnosticState,
+    pub reference_diagnostic_state: BlueBrainBasalGangliaDiagnosticState,
+    pub canonical_contract_read: BlueBrainBasalGangliaCanonicalRead,
+    pub runtime_advisory_only: bool,
+    pub selection_advisory_only: bool,
+    pub execution_readiness_caveat_only: bool,
+    pub reference_bounded_only: bool,
+    pub direct_action_selection: bool,
+    pub direct_action_trigger: bool,
+    pub direct_execution_trigger: bool,
+    pub direct_retry_trigger: bool,
+    pub direct_memory_commit: bool,
+    pub direct_compute_invocation: bool,
+    pub safety_override: bool,
+}
+
+pub fn classify_blue_brain_basal_ganglia_input_guard(
+    source: BlueBrainBasalGangliaInputSource,
+) -> BlueBrainBasalGangliaInputGuard {
+    match source {
+        BlueBrainBasalGangliaInputSource::RuntimeReadinessSignal
+        | BlueBrainBasalGangliaInputSource::SelectionPrioritySignal
+        | BlueBrainBasalGangliaInputSource::SelectionDeferralSignal
+        | BlueBrainBasalGangliaInputSource::ActionGatingPostureSignal => {
+            BlueBrainBasalGangliaInputGuard::AdvisoryOnlyInput
+        }
+        BlueBrainBasalGangliaInputSource::ContextReferenceSignal
+        | BlueBrainBasalGangliaInputSource::ReferenceValiditySignal => {
+            BlueBrainBasalGangliaInputGuard::ReferenceOnlyBoundedInput
+        }
+        BlueBrainBasalGangliaInputSource::ToolActionControlSignal => {
+            BlueBrainBasalGangliaInputGuard::RejectedToolActionControl
+        }
+        BlueBrainBasalGangliaInputSource::ComputeInternalRawStateSignal => {
+            BlueBrainBasalGangliaInputGuard::RejectedComputeInternalRawState
+        }
+        BlueBrainBasalGangliaInputSource::SafetyOverrideSignal => {
+            BlueBrainBasalGangliaInputGuard::RejectedSafetyOverride
+        }
+        BlueBrainBasalGangliaInputSource::ImplicitMemoryMutationSignal => {
+            BlueBrainBasalGangliaInputGuard::RejectedImplicitMemoryMutation
+        }
+    }
+}
+
+pub fn blue_brain_basal_ganglia_diagnostic_state_for_signal(
+    signal: BlueBrainBasalGangliaContractSignal,
+) -> BlueBrainBasalGangliaDiagnosticState {
+    match signal {
+        BlueBrainBasalGangliaContractSignal::BasalGangliaToRuntimeAdvisory
+        | BlueBrainBasalGangliaContractSignal::RuntimeToBasalGangliaBoundedReadinessInput
+        | BlueBrainBasalGangliaContractSignal::BasalGangliaToSelectionAdvisory
+        | BlueBrainBasalGangliaContractSignal::SelectionToBasalGangliaBoundedActionGatingInput => {
+            BlueBrainBasalGangliaDiagnosticState::BasalGangliaAdvisoryOnlyDiagnostic
+        }
+        BlueBrainBasalGangliaContractSignal::Caveated => {
+            BlueBrainBasalGangliaDiagnosticState::BasalGangliaCaveatedDiagnostic
+        }
+        BlueBrainBasalGangliaContractSignal::Deferred => {
+            BlueBrainBasalGangliaDiagnosticState::BasalGangliaDeferredDiagnostic
+        }
+        BlueBrainBasalGangliaContractSignal::Blocked => {
+            BlueBrainBasalGangliaDiagnosticState::BasalGangliaBlockedDiagnostic
+        }
+        BlueBrainBasalGangliaContractSignal::Insufficient => {
+            BlueBrainBasalGangliaDiagnosticState::BasalGangliaInsufficientDiagnostic
+        }
+        BlueBrainBasalGangliaContractSignal::ReferenceOnly
+        | BlueBrainBasalGangliaContractSignal::BasalGangliaReferenceSignal => {
+            BlueBrainBasalGangliaDiagnosticState::BasalGangliaDiagnosticOnlyState
+        }
+        BlueBrainBasalGangliaContractSignal::NonCanonicalInternalOnly => {
+            BlueBrainBasalGangliaDiagnosticState::NonCanonicalInternalOnlyBasalGangliaDiagnosticPath
+        }
+    }
+}
+
+pub fn blue_brain_basal_ganglia_contract_class_for_signal(
+    signal: BlueBrainBasalGangliaContractSignal,
+) -> BlueBrainBasalGangliaContractClass {
+    match signal {
+        BlueBrainBasalGangliaContractSignal::BasalGangliaToRuntimeAdvisory
+        | BlueBrainBasalGangliaContractSignal::BasalGangliaToSelectionAdvisory => {
+            BlueBrainBasalGangliaContractClass::BasalGangliaAdvisoryOnlyDiagnostic
+        }
+        BlueBrainBasalGangliaContractSignal::RuntimeToBasalGangliaBoundedReadinessInput
+        | BlueBrainBasalGangliaContractSignal::SelectionToBasalGangliaBoundedActionGatingInput
+        | BlueBrainBasalGangliaContractSignal::BasalGangliaReferenceSignal => {
+            BlueBrainBasalGangliaContractClass::BasalGangliaBoundedContractSignal
+        }
+        BlueBrainBasalGangliaContractSignal::Caveated => {
+            BlueBrainBasalGangliaContractClass::BasalGangliaCaveatedDiagnostic
+        }
+        BlueBrainBasalGangliaContractSignal::Deferred => {
+            BlueBrainBasalGangliaContractClass::BasalGangliaDeferredDiagnostic
+        }
+        BlueBrainBasalGangliaContractSignal::Blocked => {
+            BlueBrainBasalGangliaContractClass::BasalGangliaBlockedDiagnostic
+        }
+        BlueBrainBasalGangliaContractSignal::Insufficient => {
+            BlueBrainBasalGangliaContractClass::BasalGangliaInsufficientDiagnostic
+        }
+        BlueBrainBasalGangliaContractSignal::ReferenceOnly => {
+            BlueBrainBasalGangliaContractClass::BasalGangliaDiagnosticOnlyState
+        }
+        BlueBrainBasalGangliaContractSignal::NonCanonicalInternalOnly => {
+            BlueBrainBasalGangliaContractClass::NonCanonicalInternalOnlyBasalGangliaPath
+        }
+    }
+}
+
+pub fn blue_brain_basal_ganglia_canonical_read_for_state(
+    state: BlueBrainBasalGangliaStateSurface,
+) -> BlueBrainBasalGangliaCanonicalRead {
+    match state {
+        BlueBrainBasalGangliaStateSurface::ActiveBoundedActionGatingAdvisoryOnly
+        | BlueBrainBasalGangliaStateSurface::SuppressionInhibitionAdvisoryState
+        | BlueBrainBasalGangliaStateSurface::ChannelSelectionArbitrationAdvisoryState => {
+            BlueBrainBasalGangliaCanonicalRead::AdvisoryOnly
+        }
+        BlueBrainBasalGangliaStateSurface::ExecutionReadinessCaveatState => {
+            BlueBrainBasalGangliaCanonicalRead::Caveated
+        }
+        BlueBrainBasalGangliaStateSurface::DeferredActionGatingState => {
+            BlueBrainBasalGangliaCanonicalRead::Deferred
+        }
+        BlueBrainBasalGangliaStateSurface::BlockedActionGatingState => {
+            BlueBrainBasalGangliaCanonicalRead::Blocked
+        }
+        BlueBrainBasalGangliaStateSurface::InsufficientActionGatingState => {
+            BlueBrainBasalGangliaCanonicalRead::Insufficient
+        }
+        BlueBrainBasalGangliaStateSurface::ReferenceOnlyActionGatingState => {
+            BlueBrainBasalGangliaCanonicalRead::DiagnosticOnly
+        }
+        BlueBrainBasalGangliaStateSurface::NonCanonicalInternalOnly => {
+            BlueBrainBasalGangliaCanonicalRead::NonCanonicalInternalOnly
+        }
+    }
+}
+
+pub fn blue_brain_basal_ganglia_consumer_contract_read(
+    output: BlueBrainBasalGangliaOutputSurface,
+    _layer: BlueBrainBasalGangliaConsumerLayer,
+) -> BlueBrainBasalGangliaCanonicalRead {
+    output.canonical_contract_read
+}
+
+pub fn evaluate_blue_brain_basal_ganglia_action_gating(
+    input: BlueBrainBasalGangliaInputSurface,
+) -> (
+    BlueBrainBasalGangliaStateSurface,
+    BlueBrainBasalGangliaOutputSurface,
+) {
+    let (
+        state,
+        advisory_class,
+        runtime_signal,
+        selection_signal,
+        execution_signal,
+        reference_signal,
+    ) = if input.selection_signal
+        == BlueBrainControlAttentionSelectionClass::NonCanonicalInternalOnlySelectionPath
+        || input.context_priority
+            == BlueBrainContextEvidencePriorityClass::NonCanonicalInternalOnlyPriorityPath
+        || input.reference_validity == BlueBrainReferenceValidity::NonCanonicalInternalOnlyPath
+    {
+        (
+            BlueBrainBasalGangliaStateSurface::NonCanonicalInternalOnly,
+            BlueBrainBasalGangliaAdvisoryOutputClass::NonCanonicalInternalOnly,
+            BlueBrainBasalGangliaContractSignal::NonCanonicalInternalOnly,
+            BlueBrainBasalGangliaContractSignal::NonCanonicalInternalOnly,
+            BlueBrainBasalGangliaContractSignal::NonCanonicalInternalOnly,
+            BlueBrainBasalGangliaContractSignal::NonCanonicalInternalOnly,
+        )
+    } else if input.deferral_class == BlueBrainCandidateDeferralLifecycleClass::CandidateRejected
+        || input.reference_validity == BlueBrainReferenceValidity::Blocked
+    {
+        (
+            BlueBrainBasalGangliaStateSurface::BlockedActionGatingState,
+            BlueBrainBasalGangliaAdvisoryOutputClass::BlockedDeferred,
+            BlueBrainBasalGangliaContractSignal::Blocked,
+            BlueBrainBasalGangliaContractSignal::Blocked,
+            BlueBrainBasalGangliaContractSignal::Blocked,
+            BlueBrainBasalGangliaContractSignal::Blocked,
+        )
+    } else if input.deferral_class
+        == BlueBrainCandidateDeferralLifecycleClass::CandidateInsufficient
+        || input.reference_validity == BlueBrainReferenceValidity::Insufficient
+        || input.context_priority == BlueBrainContextEvidencePriorityClass::InsufficientContext
+    {
+        (
+            BlueBrainBasalGangliaStateSurface::InsufficientActionGatingState,
+            BlueBrainBasalGangliaAdvisoryOutputClass::InsufficientDiagnosticOutput,
+            BlueBrainBasalGangliaContractSignal::Insufficient,
+            BlueBrainBasalGangliaContractSignal::Insufficient,
+            BlueBrainBasalGangliaContractSignal::Insufficient,
+            BlueBrainBasalGangliaContractSignal::Insufficient,
+        )
+    } else if matches!(
+        input.deferral_class,
+        BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred
+            | BlueBrainCandidateDeferralLifecycleClass::CandidateDeferredPendingStrongerEvidence
+            | BlueBrainCandidateDeferralLifecycleClass::CandidateDeferredPendingContextUpdate
+            | BlueBrainCandidateDeferralLifecycleClass::CandidateStale
+    ) || input.reference_validity == BlueBrainReferenceValidity::Stale
+    {
+        (
+            BlueBrainBasalGangliaStateSurface::DeferredActionGatingState,
+            BlueBrainBasalGangliaAdvisoryOutputClass::SuppressionHint,
+            BlueBrainBasalGangliaContractSignal::Deferred,
+            BlueBrainBasalGangliaContractSignal::Deferred,
+            BlueBrainBasalGangliaContractSignal::Deferred,
+            BlueBrainBasalGangliaContractSignal::Deferred,
+        )
+    } else if input.reference_validity == BlueBrainReferenceValidity::ReferenceOnly {
+        (
+            BlueBrainBasalGangliaStateSurface::ReferenceOnlyActionGatingState,
+            BlueBrainBasalGangliaAdvisoryOutputClass::ReferenceBoundedSignal,
+            BlueBrainBasalGangliaContractSignal::BasalGangliaToRuntimeAdvisory,
+            BlueBrainBasalGangliaContractSignal::BasalGangliaToSelectionAdvisory,
+            BlueBrainBasalGangliaContractSignal::BasalGangliaReferenceSignal,
+            BlueBrainBasalGangliaContractSignal::ReferenceOnly,
+        )
+    } else if input.reference_validity == BlueBrainReferenceValidity::Caveated
+        || input.context_priority
+            == BlueBrainContextEvidencePriorityClass::CaveatedEvidenceReference
+    {
+        (
+            BlueBrainBasalGangliaStateSurface::ExecutionReadinessCaveatState,
+            BlueBrainBasalGangliaAdvisoryOutputClass::ExecutionReadinessCaveat,
+            BlueBrainBasalGangliaContractSignal::Caveated,
+            BlueBrainBasalGangliaContractSignal::Caveated,
+            BlueBrainBasalGangliaContractSignal::Caveated,
+            BlueBrainBasalGangliaContractSignal::Caveated,
+        )
+    } else if matches!(
+        input.selection_signal,
+        BlueBrainControlAttentionSelectionClass::AttentionTarget
+            | BlueBrainControlAttentionSelectionClass::ContextSelection
+    ) {
+        (
+            BlueBrainBasalGangliaStateSurface::ActiveBoundedActionGatingAdvisoryOnly,
+            BlueBrainBasalGangliaAdvisoryOutputClass::GatingHint,
+            BlueBrainBasalGangliaContractSignal::BasalGangliaToRuntimeAdvisory,
+            BlueBrainBasalGangliaContractSignal::BasalGangliaToSelectionAdvisory,
+            BlueBrainBasalGangliaContractSignal::RuntimeToBasalGangliaBoundedReadinessInput,
+            BlueBrainBasalGangliaContractSignal::BasalGangliaReferenceSignal,
+        )
+    } else if input.selection_signal
+        == BlueBrainControlAttentionSelectionClass::MemoryCandidateSelection
+    {
+        (
+            BlueBrainBasalGangliaStateSurface::SuppressionInhibitionAdvisoryState,
+            BlueBrainBasalGangliaAdvisoryOutputClass::SuppressionHint,
+            BlueBrainBasalGangliaContractSignal::BasalGangliaToRuntimeAdvisory,
+            BlueBrainBasalGangliaContractSignal::BasalGangliaToSelectionAdvisory,
+            BlueBrainBasalGangliaContractSignal::SelectionToBasalGangliaBoundedActionGatingInput,
+            BlueBrainBasalGangliaContractSignal::BasalGangliaReferenceSignal,
+        )
+    } else {
+        (
+            BlueBrainBasalGangliaStateSurface::ChannelSelectionArbitrationAdvisoryState,
+            BlueBrainBasalGangliaAdvisoryOutputClass::ChannelSelectionHint,
+            BlueBrainBasalGangliaContractSignal::BasalGangliaToRuntimeAdvisory,
+            BlueBrainBasalGangliaContractSignal::BasalGangliaToSelectionAdvisory,
+            BlueBrainBasalGangliaContractSignal::SelectionToBasalGangliaBoundedActionGatingInput,
+            BlueBrainBasalGangliaContractSignal::BasalGangliaReferenceSignal,
+        )
+    };
+
+    let output = BlueBrainBasalGangliaOutputSurface {
+        advisory_class,
+        runtime_contract_signal: runtime_signal,
+        selection_contract_signal: selection_signal,
+        execution_contract_signal: execution_signal,
+        reference_contract_signal: reference_signal,
+        runtime_diagnostic_state: blue_brain_basal_ganglia_diagnostic_state_for_signal(
+            runtime_signal,
+        ),
+        selection_diagnostic_state: blue_brain_basal_ganglia_diagnostic_state_for_signal(
+            selection_signal,
+        ),
+        execution_diagnostic_state: blue_brain_basal_ganglia_diagnostic_state_for_signal(
+            execution_signal,
+        ),
+        reference_diagnostic_state: blue_brain_basal_ganglia_diagnostic_state_for_signal(
+            reference_signal,
+        ),
+        canonical_contract_read: blue_brain_basal_ganglia_canonical_read_for_state(state),
+        runtime_advisory_only: true,
+        selection_advisory_only: true,
+        execution_readiness_caveat_only: true,
+        reference_bounded_only: true,
+        direct_action_selection: false,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        safety_override: false,
+    };
+    (state, output)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainThirdRegionStateSurface {
     ActiveBoundedFeedbackAdvisoryOnly,
     CaveatedFeedbackState,
@@ -5004,5 +5445,222 @@ mod tests {
         assert!(doc.contains("hippocampus remains context/reference/episode/indexing"));
         assert!(doc.contains("amygdala remains salience/valence/caveat/priority"));
         assert!(doc.contains("thalamus remains relay/gating/routing"));
+    }
+
+    #[test]
+    fn basal_ganglia_br4_prompt2_surfaces_roles_and_guards_are_canonical() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_BASAL_GANGLIA_INTEGRATION_MAP.len(), 6);
+        assert!(CANONICAL_BLUE_BRAIN_BASAL_GANGLIA_INTEGRATION_MAP
+            .contains(&BlueBrainBasalGangliaIntegrationClass::BasalGangliaInputSurface));
+        assert!(CANONICAL_BLUE_BRAIN_BASAL_GANGLIA_INTEGRATION_MAP
+            .contains(&BlueBrainBasalGangliaIntegrationClass::BasalGangliaStateSurface));
+        assert!(CANONICAL_BLUE_BRAIN_BASAL_GANGLIA_INTEGRATION_MAP
+            .contains(&BlueBrainBasalGangliaIntegrationClass::BasalGangliaOutputAdvisorySurface));
+        assert!(CANONICAL_BLUE_BRAIN_BASAL_GANGLIA_INTEGRATION_MAP
+            .contains(&BlueBrainBasalGangliaIntegrationClass::BasalGangliaReferenceBoundedSurface));
+        assert!(CANONICAL_BLUE_BRAIN_BASAL_GANGLIA_INTEGRATION_MAP
+            .contains(&BlueBrainBasalGangliaIntegrationClass::BlockedDeferredBasalGangliaPath));
+        assert!(CANONICAL_BLUE_BRAIN_BASAL_GANGLIA_INTEGRATION_MAP.contains(
+            &BlueBrainBasalGangliaIntegrationClass::NonCanonicalInternalOnlyBasalGangliaPath
+        ));
+        assert_eq!(CANONICAL_BLUE_BRAIN_BASAL_GANGLIA_ROLE_MAP.len(), 5);
+        assert!(CANONICAL_BLUE_BRAIN_BASAL_GANGLIA_ROLE_MAP
+            .contains(&BlueBrainBasalGangliaRoleClass::ActionGatingRole));
+        assert!(CANONICAL_BLUE_BRAIN_BASAL_GANGLIA_ROLE_MAP
+            .contains(&BlueBrainBasalGangliaRoleClass::SuppressionInhibitionRole));
+        assert!(CANONICAL_BLUE_BRAIN_BASAL_GANGLIA_ROLE_MAP
+            .contains(&BlueBrainBasalGangliaRoleClass::BoundedSelectionChannelArbitrationRole));
+        assert!(CANONICAL_BLUE_BRAIN_BASAL_GANGLIA_ROLE_MAP
+            .contains(&BlueBrainBasalGangliaRoleClass::ExecutionReadinessModulationRole));
+
+        assert_eq!(
+            classify_blue_brain_basal_ganglia_input_guard(
+                BlueBrainBasalGangliaInputSource::RuntimeReadinessSignal
+            ),
+            BlueBrainBasalGangliaInputGuard::AdvisoryOnlyInput
+        );
+        assert_eq!(
+            classify_blue_brain_basal_ganglia_input_guard(
+                BlueBrainBasalGangliaInputSource::ReferenceValiditySignal
+            ),
+            BlueBrainBasalGangliaInputGuard::ReferenceOnlyBoundedInput
+        );
+        assert_eq!(
+            classify_blue_brain_basal_ganglia_input_guard(
+                BlueBrainBasalGangliaInputSource::ToolActionControlSignal
+            ),
+            BlueBrainBasalGangliaInputGuard::RejectedToolActionControl
+        );
+        assert_eq!(
+            classify_blue_brain_basal_ganglia_input_guard(
+                BlueBrainBasalGangliaInputSource::ComputeInternalRawStateSignal
+            ),
+            BlueBrainBasalGangliaInputGuard::RejectedComputeInternalRawState
+        );
+        assert_eq!(
+            classify_blue_brain_basal_ganglia_input_guard(
+                BlueBrainBasalGangliaInputSource::SafetyOverrideSignal
+            ),
+            BlueBrainBasalGangliaInputGuard::RejectedSafetyOverride
+        );
+        assert_eq!(
+            classify_blue_brain_basal_ganglia_input_guard(
+                BlueBrainBasalGangliaInputSource::ImplicitMemoryMutationSignal
+            ),
+            BlueBrainBasalGangliaInputGuard::RejectedImplicitMemoryMutation
+        );
+    }
+
+    #[test]
+    fn basal_ganglia_br4_prompt2_action_gating_outputs_remain_advisory_only() {
+        let input = BlueBrainBasalGangliaInputSurface {
+            selection_signal: BlueBrainControlAttentionSelectionClass::AttentionTarget,
+            deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+            reference_validity: BlueBrainReferenceValidity::Current,
+            context_priority: BlueBrainContextEvidencePriorityClass::PrimaryContext,
+        };
+        let (state, output) = evaluate_blue_brain_basal_ganglia_action_gating(input);
+
+        assert_eq!(
+            state,
+            BlueBrainBasalGangliaStateSurface::ActiveBoundedActionGatingAdvisoryOnly
+        );
+        assert_eq!(
+            output.advisory_class,
+            BlueBrainBasalGangliaAdvisoryOutputClass::GatingHint
+        );
+        assert_eq!(
+            blue_brain_basal_ganglia_consumer_contract_read(
+                output,
+                BlueBrainBasalGangliaConsumerLayer::Selection
+            ),
+            BlueBrainBasalGangliaCanonicalRead::AdvisoryOnly
+        );
+        assert!(output.runtime_advisory_only);
+        assert!(output.selection_advisory_only);
+        assert!(output.execution_readiness_caveat_only);
+        assert!(output.reference_bounded_only);
+        assert!(!output.direct_action_selection);
+        assert!(!output.direct_action_trigger);
+        assert!(!output.direct_execution_trigger);
+        assert!(!output.direct_retry_trigger);
+        assert!(!output.direct_memory_commit);
+        assert!(!output.direct_compute_invocation);
+        assert!(!output.safety_override);
+        assert_eq!(
+            output.runtime_contract_signal,
+            BlueBrainBasalGangliaContractSignal::BasalGangliaToRuntimeAdvisory
+        );
+        assert_eq!(
+            output.selection_contract_signal,
+            BlueBrainBasalGangliaContractSignal::BasalGangliaToSelectionAdvisory
+        );
+    }
+
+    #[test]
+    fn basal_ganglia_br4_prompt2_reference_deferred_blocked_and_noncanonical_do_not_escalate() {
+        let reference_only = BlueBrainBasalGangliaInputSurface {
+            selection_signal: BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+            deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+            reference_validity: BlueBrainReferenceValidity::ReferenceOnly,
+            context_priority: BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+        };
+        let (state, output) = evaluate_blue_brain_basal_ganglia_action_gating(reference_only);
+        assert_eq!(
+            state,
+            BlueBrainBasalGangliaStateSurface::ReferenceOnlyActionGatingState
+        );
+        assert_eq!(
+            output.reference_diagnostic_state,
+            BlueBrainBasalGangliaDiagnosticState::BasalGangliaDiagnosticOnlyState
+        );
+        assert!(!output.direct_memory_commit);
+
+        let deferred = BlueBrainBasalGangliaInputSurface {
+            deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred,
+            reference_validity: BlueBrainReferenceValidity::Current,
+            ..reference_only
+        };
+        let (state, output) = evaluate_blue_brain_basal_ganglia_action_gating(deferred);
+        assert_eq!(
+            state,
+            BlueBrainBasalGangliaStateSurface::DeferredActionGatingState
+        );
+        assert_eq!(
+            output.runtime_diagnostic_state,
+            BlueBrainBasalGangliaDiagnosticState::BasalGangliaDeferredDiagnostic
+        );
+        assert!(!output.direct_retry_trigger);
+
+        let blocked = BlueBrainBasalGangliaInputSurface {
+            deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateRejected,
+            reference_validity: BlueBrainReferenceValidity::Current,
+            ..reference_only
+        };
+        let (state, output) = evaluate_blue_brain_basal_ganglia_action_gating(blocked);
+        assert_eq!(
+            state,
+            BlueBrainBasalGangliaStateSurface::BlockedActionGatingState
+        );
+        assert_eq!(
+            output.execution_diagnostic_state,
+            BlueBrainBasalGangliaDiagnosticState::BasalGangliaBlockedDiagnostic
+        );
+        assert!(!output.direct_execution_trigger);
+
+        let noncanonical = BlueBrainBasalGangliaInputSurface {
+            selection_signal:
+                BlueBrainControlAttentionSelectionClass::NonCanonicalInternalOnlySelectionPath,
+            deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+            reference_validity: BlueBrainReferenceValidity::Current,
+            context_priority: BlueBrainContextEvidencePriorityClass::PrimaryContext,
+        };
+        let (state, output) = evaluate_blue_brain_basal_ganglia_action_gating(noncanonical);
+        assert_eq!(
+            state,
+            BlueBrainBasalGangliaStateSurface::NonCanonicalInternalOnly
+        );
+        assert_eq!(
+            blue_brain_basal_ganglia_contract_class_for_signal(output.runtime_contract_signal),
+            BlueBrainBasalGangliaContractClass::NonCanonicalInternalOnlyBasalGangliaPath
+        );
+    }
+
+    #[test]
+    fn basal_ganglia_br4_prompt2_doc_pins_surfaces_boundaries_and_region_separation() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_basal_ganglia_minimal_bounded_integration_serie_br4_prompt2_v1.md"
+        );
+        assert!(doc.contains("basal-ganglia input surface"));
+        assert!(doc.contains("basal-ganglia state surface"));
+        assert!(doc.contains("basal-ganglia output/advisory surface"));
+        assert!(doc.contains("basal-ganglia reference surface"));
+        assert!(doc.contains("blocked/deferred basal-ganglia path"));
+        assert!(doc.contains("non-canonical/internal-only basal-ganglia path"));
+        assert!(doc.contains("gating-hint"));
+        assert!(doc.contains("suppression-hint"));
+        assert!(doc.contains("channel-selection hint"));
+        assert!(doc.contains("execution-readiness caveat"));
+        assert!(doc.contains("reference-bounded signal"));
+        assert!(doc.contains(
+            "Runtime sieht Basal Ganglia ausschließlich als bounded diagnostic/advisory"
+        ));
+        assert!(doc.contains("Selection sieht Basal Ganglia ausschließlich als advisory"));
+        assert!(doc.contains("keine zweite Referenzwirklichkeit"));
+        assert!(doc.contains("keine implizite Memory-Persistenz"));
+        assert!(doc.contains("abstract functional current mode"));
+        assert!(doc.contains("keine Kuramoto-Produktivaufweitung"));
+        assert!(doc.contains("keine Hodgkin-Huxley-Produktivintegration"));
+        assert!(doc.contains("hippocampus_like_region"));
+        assert!(doc.contains("amygdala_like_region"));
+        assert!(doc.contains("thalamus_like_region"));
+        assert!(doc.contains("basal_ganglia_like_region"));
+        assert!(doc.contains("kein direct action trigger"));
+        assert!(doc.contains("kein direct execution trigger"));
+        assert!(doc.contains("kein direct retry trigger"));
+        assert!(doc.contains("kein direct memory commit"));
+        assert!(doc.contains("kein direct compute invocation"));
+        assert!(doc.contains("kein safety override"));
+        assert!(doc.contains("keine parallele Öffnung weiterer anatomischer Regionen"));
     }
 }
