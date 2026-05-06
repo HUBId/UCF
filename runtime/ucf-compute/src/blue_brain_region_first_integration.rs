@@ -285,6 +285,43 @@ pub const CANONICAL_BLUE_BRAIN_BASAL_GANGLIA_INTEGRATION_MAP:
     BlueBrainBasalGangliaIntegrationClass::NonCanonicalInternalOnlyBasalGangliaPath,
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCerebellumRoleClass {
+    PredictionRole,
+    TimingCoordinationRole,
+    ErrorCorrectionMismatchShapingRole,
+    BoundedExecutionSupportRole,
+    NonRoleOutOfScopeBiologicalDetail,
+}
+
+pub const CANONICAL_BLUE_BRAIN_CEREBELLUM_ROLE_MAP: [BlueBrainCerebellumRoleClass; 5] = [
+    BlueBrainCerebellumRoleClass::PredictionRole,
+    BlueBrainCerebellumRoleClass::TimingCoordinationRole,
+    BlueBrainCerebellumRoleClass::ErrorCorrectionMismatchShapingRole,
+    BlueBrainCerebellumRoleClass::BoundedExecutionSupportRole,
+    BlueBrainCerebellumRoleClass::NonRoleOutOfScopeBiologicalDetail,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCerebellumIntegrationClass {
+    CerebellumPredictionInputSurface,
+    CerebellumTimingCoordinationStateSurface,
+    CerebellumCorrectionMismatchOutputAdvisorySurface,
+    CerebellumExecutionSupportBoundedSurface,
+    BlockedDeferredCerebellumPath,
+    NonCanonicalInternalOnlyCerebellumPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP: [BlueBrainCerebellumIntegrationClass;
+    6] = [
+    BlueBrainCerebellumIntegrationClass::CerebellumPredictionInputSurface,
+    BlueBrainCerebellumIntegrationClass::CerebellumTimingCoordinationStateSurface,
+    BlueBrainCerebellumIntegrationClass::CerebellumCorrectionMismatchOutputAdvisorySurface,
+    BlueBrainCerebellumIntegrationClass::CerebellumExecutionSupportBoundedSurface,
+    BlueBrainCerebellumIntegrationClass::BlockedDeferredCerebellumPath,
+    BlueBrainCerebellumIntegrationClass::NonCanonicalInternalOnlyCerebellumPath,
+];
+
 pub const BLUE_BRAIN_FIRST_ANATOMICAL_REGION_CURRENT_MODEL_MODE:
     BlueBrainFirstAnatomicalRegionModelModeClass =
     BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode;
@@ -297,16 +334,18 @@ pub enum BlueBrainAnatomicalRegionClass {
     AnteriorCingulateCortex,
     BasalGanglia,
     Thalamus,
+    Cerebellum,
     Insula,
 }
 
-pub const CANONICAL_BLUE_BRAIN_ANATOMICAL_REGION_MAP: [BlueBrainAnatomicalRegionClass; 7] = [
+pub const CANONICAL_BLUE_BRAIN_ANATOMICAL_REGION_MAP: [BlueBrainAnatomicalRegionClass; 8] = [
     BlueBrainAnatomicalRegionClass::Hippocampus,
     BlueBrainAnatomicalRegionClass::Amygdala,
     BlueBrainAnatomicalRegionClass::PrefrontalCortex,
     BlueBrainAnatomicalRegionClass::AnteriorCingulateCortex,
     BlueBrainAnatomicalRegionClass::BasalGanglia,
     BlueBrainAnatomicalRegionClass::Thalamus,
+    BlueBrainAnatomicalRegionClass::Cerebellum,
     BlueBrainAnatomicalRegionClass::Insula,
 ];
 
@@ -318,6 +357,7 @@ pub enum BlueBrainAnatomicalRegionSystemRoleClass {
     ConflictMonitoringMediation,
     ActionGatingMediation,
     RelayIntegrationMediation,
+    PredictionTimingCorrectionMediation,
     InteroceptiveContextMediation,
 }
 
@@ -343,6 +383,9 @@ pub fn blue_brain_anatomical_region_system_role(
         BlueBrainAnatomicalRegionClass::Thalamus => {
             BlueBrainAnatomicalRegionSystemRoleClass::RelayIntegrationMediation
         }
+        BlueBrainAnatomicalRegionClass::Cerebellum => {
+            BlueBrainAnatomicalRegionSystemRoleClass::PredictionTimingCorrectionMediation
+        }
         BlueBrainAnatomicalRegionClass::Insula => {
             BlueBrainAnatomicalRegionSystemRoleClass::InteroceptiveContextMediation
         }
@@ -366,7 +409,8 @@ pub fn blue_brain_anatomical_region_model_mode(
         BlueBrainAnatomicalRegionClass::PrefrontalCortex => {
             BlueBrainFirstAnatomicalRegionModelModeClass::LaterSelectiveHodgkinHuxleyDeepening
         }
-        BlueBrainAnatomicalRegionClass::BasalGanglia => {
+        BlueBrainAnatomicalRegionClass::BasalGanglia
+        | BlueBrainAnatomicalRegionClass::Cerebellum => {
             BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode
         }
         BlueBrainAnatomicalRegionClass::Insula => {
@@ -4531,6 +4575,80 @@ mod tests {
         assert!(doc.contains("zweite anatomische Region"));
         assert!(doc.contains("Stabilisierungspass der ersten anatomischen Region"));
         assert!(doc.contains("maintenance-only Core"));
+    }
+
+    #[test]
+    fn cerebellum_br5_role_map_is_prediction_timing_correction_and_abstract_functional() {
+        assert!(CANONICAL_BLUE_BRAIN_ANATOMICAL_REGION_MAP
+            .contains(&BlueBrainAnatomicalRegionClass::Cerebellum));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_ROLE_MAP
+            .contains(&BlueBrainCerebellumRoleClass::PredictionRole));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_ROLE_MAP
+            .contains(&BlueBrainCerebellumRoleClass::TimingCoordinationRole));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_ROLE_MAP
+            .contains(&BlueBrainCerebellumRoleClass::ErrorCorrectionMismatchShapingRole));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_ROLE_MAP
+            .contains(&BlueBrainCerebellumRoleClass::BoundedExecutionSupportRole));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_ROLE_MAP
+            .contains(&BlueBrainCerebellumRoleClass::NonRoleOutOfScopeBiologicalDetail));
+
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP
+            .contains(&BlueBrainCerebellumIntegrationClass::CerebellumPredictionInputSurface));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP.contains(
+            &BlueBrainCerebellumIntegrationClass::CerebellumTimingCoordinationStateSurface
+        ));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP.contains(
+            &BlueBrainCerebellumIntegrationClass::CerebellumCorrectionMismatchOutputAdvisorySurface
+        ));
+        assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP.contains(
+            &BlueBrainCerebellumIntegrationClass::CerebellumExecutionSupportBoundedSurface
+        ));
+
+        assert_eq!(
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Cerebellum),
+            BlueBrainAnatomicalRegionSystemRoleClass::PredictionTimingCorrectionMediation
+        );
+        assert_eq!(
+            blue_brain_anatomical_region_model_mode(BlueBrainAnatomicalRegionClass::Cerebellum),
+            BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode
+        );
+        assert_ne!(
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Cerebellum),
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Hippocampus)
+        );
+        assert_ne!(
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Cerebellum),
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Amygdala)
+        );
+        assert_ne!(
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Cerebellum),
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Thalamus)
+        );
+        assert_ne!(
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::Cerebellum),
+            blue_brain_anatomical_region_system_role(BlueBrainAnatomicalRegionClass::BasalGanglia)
+        );
+    }
+
+    #[test]
+    fn cerebellum_br5_prompt1_doc_pins_role_mode_boundaries_and_handoff() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_cerebellum_region_role_map_serie_br5_prompt1_v1.md"
+        );
+
+        assert!(doc.contains("cerebellum_like_region"));
+        assert!(doc.contains("prediction role"));
+        assert!(doc.contains("timing/coordination role"));
+        assert!(doc.contains("error-correction or mismatch-shaping role"));
+        assert!(doc.contains("bounded execution-support role"));
+        assert!(doc.contains("abstract functional current mode"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no retry orchestration"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("Cerebellum vor Hypothalamus"));
+        assert!(doc.contains("keine semantische Dublette"));
     }
 
     #[test]

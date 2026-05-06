@@ -1,28 +1,35 @@
 # DBM 18 Cerebellum
 
 ## Zweck
-v0.1 Roadmap: Platzhalter basierend auf der bereits abgestimmten Planung für DBM 18 Cerebellum.
+DBM 18 ist die Cerebellum-nahe Modulfläche für die BR5-Rollenkarte. Die kanonische UCF-Systemrolle ist `cerebellum_like_region`: advisory prediction/timing/correction/mismatch support, bounded execution-support und keine direkte Autorität. Die maßgebliche Regionsdefinition steht in `docs/blue_brain_cerebellum_region_role_map_serie_br5_prompt1_v1.md`; diese Moduldatei erzeugt keine zweite Wahrheitsquelle.
 
 ## Inputs
-v0.1 Roadmap: Eingaben werden gemäß den bestehenden Entwürfen für DBM 18 Cerebellum definiert.
+Zulässige Inputs bleiben bounded und diagnostisch: Prediction-, Timing-/Coordination-, correction-/mismatch- und execution-feedback-nahe Lesarten aus bestehenden Runtime-/Selection-/Execution-interface-/Reference-Linien. Nicht zulässig sind direkte Action-, Retry-, Memory-Commit-, Safety-Override- oder Compute-Trigger.
 
 ## State
-v0.1 Roadmap: Interner Zustand folgt den vorbesprochenen Checkpoints für DBM 18 Cerebellum.
+Der aktuelle Zustand ist `abstract functional current mode`. Bounded Kuramoto-like timing coupling bleibt ein späterer Kandidat; Hodgkin-Huxley bleibt simulation-only/diagnostic-only bzw. später selektiv neu zu scopen und ist keine Produktivpflicht.
 
 ## Outputs
-v0.1 Roadmap: Ausgabe-Artefakte orientieren sich an den bisherigen Skizzen für DBM 18 Cerebellum.
+Outputs sind advisory-only: Kalibrierungs-, Timing-, Correction-/Mismatch- und bounded execution-support Hinweise. Sie dürfen bestehende Contract-/Diagnostic-Lesarten caveated, deferred, blocked oder insufficient machen, aber keine Ausführung freigeben und keine Auswahl treffen.
 
 ## Regeln
-v0.1 Roadmap: Deterministische Regeln (sortierte RCs, tighten-only) gelten analog zu den vereinbarten Leitplanken für DBM 18 Cerebellum.
+Deterministische Regeln (sortierte RCs, tighten-only) gelten analog zu den bestehenden BlueBrain-Leitplanken. Cerebellum-Signale bleiben read-only/advisory für Konsumenten und dürfen keine neue Plattform, keine allowed-actions-Erweiterung und keine Compute-Core-Arbeit öffnen.
 
 ## Invarianten
-v0.1 Roadmap: Invarianten bleiben wie diskutiert bestehen; keine zusätzlichen Annahmen für DBM 18 Cerebellum.
+- no direct action trigger
+- no direct action selection
+- no direct execution trigger
+- no retry trigger
+- no direct memory commit
+- no direct compute invocation
+- no safety override
+- keine biologische Vollsimulation
 
 ## Tests
-v0.1 Roadmap: Testabdeckung folgt dem Golden-Stream-Pattern und den Anti-Flapping-Vorgaben für DBM 18 Cerebellum.
+BR5-Tests pinnen die kanonischen Rollen, den Integrationsmodus, die Abgrenzung zu Hippocampus/Amygdala/Thalamus/Basal Ganglia und die no-direct-Scope-Grenzen. Spätere Golden-Stream- oder Anti-Flapping-Tests dürfen nur auf dieser Rollenkarte aufbauen.
 
 ## Observability
-v0.1 Roadmap: Beobachtbarkeit wird gemäß den bisherigen Monitoring-Stubs für DBM 18 Cerebellum vorbereitet.
+Observability bleibt diagnostisch: Cerebellum markers dürfen Prediction-/Timing-/Correction-/Mismatch-Lesarten sichtbar machen, aber keine Runtime-, Selection-, Execution-, Retry-, Memory- oder Compute-Autorität erzeugen.
 
 ## Microcircuit
-v0.1 Roadmap: Microcircuit-Pfad richtet sich nach den abgestuften Phasen A/B/C für DBM 18 Cerebellum.
+Microcircuit-Details wie Purkinje-/Granule-/Deep-Nuclei-/Spiking-Pfade bleiben deferred. Ein späterer Microcircuit-Pfad muss separat als simulation-only/diagnostic-only oder later selective HH deepening begründet werden.

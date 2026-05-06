@@ -12,7 +12,8 @@ The following set is the canonical anatomical region map for this phase:
 4. anterior cingulate cortex
 5. basal ganglia
 6. thalamus
-7. insula
+7. cerebellum
+8. insula
 
 ## 2) mapping from functional base to anatomical regions
 
@@ -22,6 +23,7 @@ The following set is the canonical anatomical region map for this phase:
 - conflict-monitoring lane is mapped to anterior cingulate cortex.
 - action-gating mediation lane is mapped to basal ganglia.
 - relay integration lane is mapped to thalamus.
+- prediction/timing/correction/mismatch calibration lane is mapped to cerebellum.
 - interoceptive context lane is mapped to insula.
 
 ## 3) model mode per anatomical region
@@ -31,6 +33,7 @@ The following set is the canonical anatomical region map for this phase:
 - anterior cingulate cortex: bounded kuramoto-like.
 - thalamus: abstract functional current mode.
 - basal ganglia: abstract functional current mode.
+- cerebellum: abstract functional current mode.
 - prefrontal cortex: later selective HH deepening.
 - insula: deferred.
 
