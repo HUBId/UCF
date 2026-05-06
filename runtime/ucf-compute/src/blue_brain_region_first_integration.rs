@@ -322,6 +322,35 @@ pub const CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP: [BlueBrainCerebellumI
     BlueBrainCerebellumIntegrationClass::NonCanonicalInternalOnlyCerebellumPath,
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCerebellumExpansionReadinessClass {
+    StableCerebellumOperationalSurface,
+    UsableWithCaveats,
+    AdvisoryOnly,
+    DeferredBlockedInsufficientDiagnosticOnlyReferenceOnly,
+    StableCurrentModelMode,
+    NonCanonicalInternalOnly,
+}
+
+pub const CANONICAL_BLUE_BRAIN_CEREBELLUM_EXPANSION_READINESS_MAP:
+    [BlueBrainCerebellumExpansionReadinessClass; 6] = [
+    BlueBrainCerebellumExpansionReadinessClass::StableCerebellumOperationalSurface,
+    BlueBrainCerebellumExpansionReadinessClass::UsableWithCaveats,
+    BlueBrainCerebellumExpansionReadinessClass::AdvisoryOnly,
+    BlueBrainCerebellumExpansionReadinessClass::DeferredBlockedInsufficientDiagnosticOnlyReferenceOnly,
+    BlueBrainCerebellumExpansionReadinessClass::StableCurrentModelMode,
+    BlueBrainCerebellumExpansionReadinessClass::NonCanonicalInternalOnly,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainPostBr5NextDirection {
+    Hypothalamus,
+    InterRegionArchitectureStage,
+}
+
+pub const BLUE_BRAIN_POST_BR5_PRIORITIZED_NEXT_DIRECTION: BlueBrainPostBr5NextDirection =
+    BlueBrainPostBr5NextDirection::InterRegionArchitectureStage;
+
 pub const BLUE_BRAIN_FIRST_ANATOMICAL_REGION_CURRENT_MODEL_MODE:
     BlueBrainFirstAnatomicalRegionModelModeClass =
     BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode;
@@ -5196,6 +5225,37 @@ mod tests {
     }
 
     #[test]
+    fn cerebellum_br5_prompt4_readiness_map_and_next_direction_are_pinned() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_CEREBELLUM_EXPANSION_READINESS_MAP,
+            [
+                BlueBrainCerebellumExpansionReadinessClass::StableCerebellumOperationalSurface,
+                BlueBrainCerebellumExpansionReadinessClass::UsableWithCaveats,
+                BlueBrainCerebellumExpansionReadinessClass::AdvisoryOnly,
+                BlueBrainCerebellumExpansionReadinessClass::DeferredBlockedInsufficientDiagnosticOnlyReferenceOnly,
+                BlueBrainCerebellumExpansionReadinessClass::StableCurrentModelMode,
+                BlueBrainCerebellumExpansionReadinessClass::NonCanonicalInternalOnly,
+            ]
+        );
+        assert_ne!(
+            BlueBrainCerebellumExpansionReadinessClass::AdvisoryOnly,
+            BlueBrainCerebellumExpansionReadinessClass::UsableWithCaveats
+        );
+        assert_ne!(
+            BlueBrainCerebellumExpansionReadinessClass::DeferredBlockedInsufficientDiagnosticOnlyReferenceOnly,
+            BlueBrainCerebellumExpansionReadinessClass::NonCanonicalInternalOnly
+        );
+        assert_eq!(
+            BLUE_BRAIN_POST_BR5_PRIORITIZED_NEXT_DIRECTION,
+            BlueBrainPostBr5NextDirection::InterRegionArchitectureStage
+        );
+        assert_ne!(
+            BLUE_BRAIN_POST_BR5_PRIORITIZED_NEXT_DIRECTION,
+            BlueBrainPostBr5NextDirection::Hypothalamus
+        );
+    }
+
+    #[test]
     fn cerebellum_br5_prompt2_integration_map_surfaces_are_canonical_and_distinct() {
         assert_eq!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP.len(), 6);
         assert!(CANONICAL_BLUE_BRAIN_CEREBELLUM_INTEGRATION_MAP
@@ -5574,6 +5634,42 @@ mod tests {
         assert!(doc.contains("no direct compute invocation"));
         assert!(doc.contains("no safety override"));
         assert!(doc.contains("öffnet keine sechste Region"));
+    }
+
+    #[test]
+    fn cerebellum_br5_prompt4_doc_pins_readiness_expansion_boundary_and_next_stage() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_br5_cerebellum_readiness_sweep_expansion_boundary_serie_br5_prompt4_v1.md"
+        );
+        assert!(doc.contains("BR5-expansion-readiness map"));
+        assert!(doc.contains("stable cerebellum operational surface"));
+        assert!(doc.contains("usable with caveats"));
+        assert!(doc.contains("advisory-only"));
+        assert!(doc.contains("deferred/blocked/insufficient/diagnostic-only/reference-only"));
+        assert!(doc.contains("stable current model mode"));
+        assert!(doc.contains("non-canonical/internal-only"));
+        assert!(doc.contains("fünfte echte anatomische Hirnregion"));
+        assert!(doc.contains("abstract functional current mode"));
+        assert!(doc.contains("bounded Kuramoto-like candidate"));
+        assert!(doc.contains("Hodgkin-Huxley simulation-only/diagnostic-only"));
+        assert!(doc.contains("no direct action execution"));
+        assert!(doc.contains("no retry orchestration"));
+        assert!(doc.contains("no automatic memory persistence"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("keine sechste Hirnregion"));
+        assert!(doc.contains("Compute bleibt maintenance-only"));
+        assert!(doc.contains("inter-region architecture stage"));
+        assert!(doc.contains("Hypothalamus wartet"));
+    }
+
+    #[test]
+    fn docs_indexes_expose_br5_cerebellum_readiness_sweep() {
+        let readme = include_str!("../../../docs/README.md");
+        assert!(readme.contains("Cerebellum-next role consolidation (BR5)"));
+        assert!(readme.contains(
+            "docs/blue_brain_br5_cerebellum_readiness_sweep_expansion_boundary_serie_br5_prompt4_v1.md"
+        ));
     }
 
     #[test]
