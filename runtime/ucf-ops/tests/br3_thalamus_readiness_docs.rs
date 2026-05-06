@@ -114,7 +114,7 @@ fn br3_thalamus_closeout_preserves_no_direct_out_of_scope_and_bluebrain_contract
 }
 
 #[test]
-fn br3_next_region_decision_prioritizes_exactly_one_later_candidate_without_opening_it() {
+fn br3_next_region_handoff_prioritizes_basal_ganglia_without_opening_region_four_in_br3() {
     let doc = read_doc(
         "docs/blue_brain_br3_thalamus_readiness_sweep_expansion_boundary_serie_br3_prompt4_v1.md",
     );
@@ -122,11 +122,11 @@ fn br3_next_region_decision_prioritizes_exactly_one_later_candidate_without_open
     assert_contains_all(
         &doc,
         &[
-            "Decision: **prioritize Cerebellum as the next single anatomical-region candidate; keep Basal Ganglia deferred.**",
-            "Cerebellum can be evaluated as diagnostic/advisory calibration",
-            "Basal Ganglia waits",
-            "does not start Cerebellum implementation in BR3",
-            "does not authorize concurrent Basal Ganglia work",
+            "Decision handoff: **prioritize Basal Ganglia as the next single anatomical-region candidate; keep Cerebellum deferred.**",
+            "Direct attachment to existing Selection/Action-gating substance",
+            "Authority risk is contained by BR4 boundaries",
+            "Cerebellum remains deferred",
+            "does not retroactively open a fourth region inside BR3",
         ],
     );
 }

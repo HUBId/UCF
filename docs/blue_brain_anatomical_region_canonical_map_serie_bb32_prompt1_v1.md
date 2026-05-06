@@ -29,12 +29,12 @@ The following set is the canonical anatomical region map for this phase:
 - hippocampus: abstract (current default, first operational region).
 - amygdala: bounded kuramoto-like.
 - anterior cingulate cortex: bounded kuramoto-like.
-- thalamus: bounded kuramoto-like.
-- basal ganglia: HH simulation-only/diagnostic-only.
+- thalamus: abstract functional current mode.
+- basal ganglia: abstract functional current mode.
 - prefrontal cortex: later selective HH deepening.
 - insula: deferred.
 
-This keeps the current architecture bounded and deterministic while preserving explicit deepening options.
+This keeps the current architecture bounded and deterministic while preserving explicit deepening options; HH simulation-only/diagnostic-only remains available only as a non-operative diagnostic lane, not as a current default.
 
 ## 4) first real anatomical region consolidation
 

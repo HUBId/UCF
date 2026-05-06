@@ -119,19 +119,21 @@ BR3 has not reopened compute. Compute remains:
 
 Any wording that would imply new compute authority, direct compute invocation, or compute-core expansion from Thalamus is outside BR3 and invalid for this closure.
 
-## 8) Next anatomical region decision: Cerebellum before Basal Ganglia
+## 8) Next anatomical region decision handoff: Basal Ganglia before Cerebellum in BR4
 
-Decision: **prioritize Cerebellum as the next single anatomical-region candidate; keep Basal Ganglia deferred.**
+BR3 itself still opens no fourth anatomical region. The earlier BR3-local caution around Basal Ganglia is now explicitly resolved by BR4 Prompt 1 as a narrow, no-direct, abstract-functional role decision.
 
-Technical rationale:
+Decision handoff: **prioritize Basal Ganglia as the next single anatomical-region candidate; keep Cerebellum deferred.**
 
-1. **Cleaner attachment to the existing basis:** a Cerebellum-like line can be scoped as bounded error-correction/calibration/timing advisory semantics, which fits the current no-direct Runtime/Selection/Reference contract envelope.
-2. **Lower immediate authority risk:** Basal Ganglia would naturally pull toward action selection, inhibition/disinhibition, retry gating, and policy-like control. Those are precisely the no-direct areas BR3 keeps closed.
-3. **Less scope pressure:** Cerebellum can be evaluated as diagnostic/advisory calibration without opening Planner, Agent, Retry, Safety-Override, or Compute-Core work.
-4. **Why Basal Ganglia waits:** its technical leverage is real for selection/action gating, but that leverage currently collides with no-direct action/retry boundaries and would require a separate explicit policy/spec decision.
+Repo-side reason for the BR4 handoff:
+
+1. **Direct attachment to existing Selection/Action-gating substance:** Basal Ganglia maps to action-gating mediation, suppression/inhibition hints, bounded selection-channel arbitration, and execution-readiness modulation already present as guarded contract semantics.
+2. **Authority risk is contained by BR4 boundaries:** no direct action selection, no direct execution trigger, no retry trigger, no safety override, no policy/governance platform, and no compute-core work remain hard limits.
+3. **Cerebellum remains deferred:** Cerebellum can still be evaluated later as diagnostic/advisory calibration or timing support, but it is not the next active BR4 region.
+4. **No concurrent rollout:** the handoff authorizes only the Basal-Ganglia role-definition line in BR4, not a broad platform or parallel Cerebellum implementation.
 5. **Why HH-heavy regions wait:** HH-heavy or production-biophysics candidates would increase model-platform and compute-core pressure before the abstract functional anatomical baseline is stable enough.
 
-This is a single-direction prioritization only. It does not start Cerebellum implementation in BR3 and does not authorize concurrent Basal Ganglia work.
+This handoff is a single-direction prioritization only. It does not retroactively open a fourth region inside BR3; it points BR4 to the controlled Basal-Ganglia role map.
 
 ## 9) Targeted consistency checks required by this closure
 
@@ -144,4 +146,4 @@ A BR3-consistent repo state must preserve all of the following:
 - No direct Action Execution, Retry orchestration, automatic Memory persistence, Safety Override, or Compute trigger emerges from Thalamus text or tests.
 - BR3 docs remain compatible with BB19 Runtime/Selection contracts, BB21 Execution/Reference boundaries, BB17 Context/Memory/Reference hardening, and BB12 advisory-only dynamics.
 - Internal/expert-only paths do not appear as canonical Thalamus expansion.
-- Basal Ganglia and Cerebellum remain out of scope for BR3, with only Cerebellum prioritized as a later explicit candidate.
+- Basal Ganglia and Cerebellum remain out of scope for BR3; BR4 supersedes the next-candidate handoff by prioritizing Basal Ganglia and keeping Cerebellum deferred.
