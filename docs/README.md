@@ -203,3 +203,6 @@ Wenn einzelne ältere Dateien weiterhin gebraucht werden, müssen sie gegen die 
   - `docs/blue_brain_cerebellum_minimal_bounded_integration_serie_br5_prompt2_v1.md`
   - `docs/blue_brain_cerebellum_surface_diagnostics_contracts_hardening_serie_br5_prompt3_v1.md`
   - `docs/blue_brain_br5_cerebellum_readiness_sweep_expansion_boundary_serie_br5_prompt4_v1.md`
+
+- **Inter-region architecture consolidation (IR1):**
+  - `docs/blue_brain_inter_region_architecture_serie_ir1_prompt1_v1.md`
