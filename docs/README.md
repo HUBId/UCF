@@ -185,3 +185,9 @@ Wenn einzelne ältere Dateien weiterhin gebraucht werden, müssen sie gegen die 
   - `docs/blue_brain_amygdala_region_role_map_serie_br2_prompt1_v1.md`
   - `docs/blue_brain_amygdala_surface_diagnostics_contracts_hardening_serie_br2_prompt3_v1.md`
   - `docs/blue_brain_br2_amygdala_readiness_sweep_expansion_boundary_serie_br2_prompt4_v1.md`
+
+- **Thalamus-third role consolidation (BR3):**
+  - `docs/blue_brain_thalamus_region_role_map_serie_br3_prompt1_v1.md`
+  - `docs/blue_brain_thalamus_minimal_bounded_integration_serie_br3_prompt2_v1.md`
+  - `docs/blue_brain_thalamus_surface_diagnostics_contracts_hardening_serie_br3_prompt3_v1.md`
+  - `docs/blue_brain_br3_thalamus_readiness_sweep_expansion_boundary_serie_br3_prompt4_v1.md`
