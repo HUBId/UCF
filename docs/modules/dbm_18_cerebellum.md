@@ -33,3 +33,7 @@ Observability bleibt diagnostisch: Cerebellum markers dürfen Prediction-/Timing
 
 ## Microcircuit
 Microcircuit-Details wie Purkinje-/Granule-/Deep-Nuclei-/Spiking-Pfade bleiben deferred. Ein späterer Microcircuit-Pfad muss separat als simulation-only/diagnostic-only oder later selective HH deepening begründet werden.
+
+## BR5 Prompt 3 diagnostics/contract hardening
+
+Die gehärtete Cerebellum-Schnitt verwendet die kanonische diagnostics/contract map aus `docs/blue_brain_cerebellum_surface_diagnostics_contracts_hardening_serie_br5_prompt3_v1.md`: advisory-only, caveated, deferred, blocked, insufficient, diagnostic-only, bounded contract signal und non-canonical/internal-only. Runtime, Selection, Execution-interface und Reference lesen denselben canonical contract read. Cerebellum bleibt prediction/timing/correction/mismatch-lastig, advisory-only oder caveated, und erzeugt keine direkte Action-, Execution-, Retry-, Memory-, Compute- oder Safety-Autorität.
