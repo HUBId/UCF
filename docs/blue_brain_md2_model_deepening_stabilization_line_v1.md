@@ -62,10 +62,14 @@ The bounded advisory dynamics line remains compatible with BB10/BB12; bounded dy
 
 Residual references to helper, test-only, shortcut, or research paths must either point back to the canonical first deepening or be marked non-canonical/internal-only. Documentation must not describe broader authority than the code exposes. Any future second deepening requires explicit re-scope after this first deepening remains stable under maintenance.
 
-## 6) MD2 next steps
+## 6) MD2 maintenance reference handoff
+
+The maintenance-facing Doku/Test/Referenz entrypoint for this stabilized baseline is `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`. That map keeps this MD2 Prompt 1 stabilization line as the canonical frozen baseline and classifies MD1 decision/implementation/hardening/closure docs as supporting references, not competing current authority.
+
+## 7) MD2 next steps
 
 1. Keep targeted regression checks around model/diagnostic/contract/surface distinctions.
-2. Keep docs lint anchored to this single stabilized first-deepening line.
+2. Keep docs lint anchored to this single stabilized first-deepening line and the MD2 Prompt 2 maintenance reference map.
 3. Review future Runtime/Selection/Reference changes against the stabilization map before merging them.
 4. If a second candidate is later proposed, require explicit re-scope and no-direct-* proof before implementation.
 5. Continue reducing non-canonical/internal-only residual wording rather than adding new model surfaces.
