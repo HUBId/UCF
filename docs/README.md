@@ -207,3 +207,4 @@ Wenn einzelne ältere Dateien weiterhin gebraucht werden, müssen sie gegen die 
 - **Inter-region architecture consolidation (IR1):**
   - `docs/blue_brain_inter_region_architecture_serie_ir1_prompt1_v1.md`
   - `docs/blue_brain_first_inter_region_implementation_serie_ir1_prompt2_v1.md`
+  - `docs/blue_brain_inter_region_diagnostics_contracts_serie_ir1_prompt3_v1.md`
