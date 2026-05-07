@@ -107,7 +107,7 @@ Autoritätsklassen im Repo-Kontext:
 - **Model-deepening hardening line (MD1 Prompt 3):** `docs/blue_brain_md1_model_deepening_hardening_line_v1.md`
 - **Model-deepening readiness/closure line (MD1 Prompt 4):** `docs/blue_brain_md1_readiness_sweep_model_deepening_closure_v1.md`
 - **Model-deepening stabilization line (MD2 Prompt 1):** `docs/blue_brain_md2_model_deepening_stabilization_line_v1.md`
-- **Model-deepening maintenance reference map (MD2 Prompt 2, canonical entry):** `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`
+- **Final model-deepening maintenance reference map (MD2 Prompt 2/3, canonical entry):** `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`
 - **Real compute final reference line:**
   - `docs/final_reference_line_serie_j_v1.md`
   - `docs/final_production_readiness_evidence_pack_serie_j_v1.md`
@@ -119,7 +119,7 @@ Autoritätsklassen im Repo-Kontext:
 - **advisory-only / bounded:** BB10/BB11/BB16 bleiben advisory-only.
 - **usable-with-caveats (frozen semantics):** BB6/BB7/BB9/BB15 candidate/caveat slices ohne Promotion.
 - **deferred / test-only / non-canonical:** nicht Teil der operativen Baseline, keine implizite Reaktivierung.
-- **model-deepening maintenance-facing:** genau `Amygdala ↔ Thalamus` bleibt als erste bounded Kuramoto-like advisory/diagnostic Fläche stabilisiert; `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md` ist der kanonische Schnellzugriff für Doku/Test/Referenz, ohne zweiten Vertiefungskandidaten.
+- **model-deepening maintenance-facing:** genau `Amygdala ↔ Thalamus` bleibt als erste bounded Kuramoto-like advisory/diagnostic Fläche maintenance-hardened; `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md` ist der kanonische Schnellzugriff für finale Stabilitätskarte, Doku/Test/Referenz und die Entscheidung `MaintenanceSufficientNoSecondCandidateNow`, ohne zweiten Vertiefungskandidaten.
 
 Referenzpunkte für die technische Scope-Grenze:
 - `docs/supported_scope_execution_v13.md`
