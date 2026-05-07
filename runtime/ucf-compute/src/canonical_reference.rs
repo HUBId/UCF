@@ -137,6 +137,8 @@ pub fn execution_reference_interaction_class(
 pub fn canonical_reference_validity_state(
     classified: &BlueBrainCanonicalReference,
 ) -> BlueBrainReferenceValidity {
+    let lowered = classified.raw.to_ascii_lowercase();
+
     if matches!(
         classified.kind,
         BlueBrainCanonicalReferenceKind::NonCanonicalInternalOnlyPath
@@ -145,18 +147,10 @@ pub fn canonical_reference_validity_state(
     }
 
     if matches!(
-        classified.kind,
-        BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
-            | BlueBrainCanonicalReferenceKind::DiagnosticReference
-    ) {
-        return BlueBrainReferenceValidity::ReferenceOnly;
-    }
-
-    if matches!(
         classified.execution_outcome,
         BlueBrainExecutionReferenceOutcome::Blocked
-    ) || classified.raw.contains("maintenance_blocked")
-        || classified.raw.contains(":blocked")
+    ) || lowered.contains("maintenance_blocked")
+        || lowered.contains(":blocked")
     {
         return BlueBrainReferenceValidity::Blocked;
     }
@@ -170,21 +164,21 @@ pub fn canonical_reference_validity_state(
             | BlueBrainExecutionReferenceOutcome::Unsupported
             | BlueBrainExecutionReferenceOutcome::PlaceholderOnly
             | BlueBrainExecutionReferenceOutcome::NotExecutionResult
-    )) || classified.raw.contains("missing")
-        || classified.raw.contains("unavailable")
-        || classified.raw.contains("insufficient")
+    )) || lowered.contains("missing")
+        || lowered.contains("unavailable")
+        || lowered.contains("insufficient")
     {
         return BlueBrainReferenceValidity::Insufficient;
     }
 
-    if classified.raw.contains("invalidated") {
+    if lowered.contains("invalidated") {
         return BlueBrainReferenceValidity::Invalidated;
     }
-    if classified.raw.contains("stale") {
+    if lowered.contains("stale") {
         return BlueBrainReferenceValidity::Stale;
     }
-    if classified.raw.contains("caveat")
-        || classified.raw.contains("caveated")
+    if lowered.contains("caveat")
+        || lowered.contains("caveated")
         || matches!(
             classified.execution_outcome,
             BlueBrainExecutionReferenceOutcome::Failed
@@ -192,6 +186,14 @@ pub fn canonical_reference_validity_state(
         )
     {
         return BlueBrainReferenceValidity::Caveated;
+    }
+
+    if matches!(
+        classified.kind,
+        BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
+            | BlueBrainCanonicalReferenceKind::DiagnosticReference
+    ) {
+        return BlueBrainReferenceValidity::ReferenceOnly;
     }
 
     BlueBrainReferenceValidity::Current
@@ -493,10 +495,17 @@ mod tests {
             BlueBrainReferenceValidity::Insufficient
         );
 
-        let reference_only = classify_blue_brain_reference_path("diag:runtime:insufficient_basis");
+        let reference_only = classify_blue_brain_reference_path("diag:runtime:summary");
         assert_eq!(
             reference_only.validity,
             BlueBrainReferenceValidity::ReferenceOnly
+        );
+
+        let diagnostic_insufficient =
+            classify_blue_brain_reference_path("diag:runtime:insufficient_basis");
+        assert_eq!(
+            diagnostic_insufficient.validity,
+            BlueBrainReferenceValidity::Insufficient
         );
 
         let blocked_memory =
@@ -509,6 +518,42 @@ mod tests {
         assert_eq!(
             unavailable_execution.validity,
             BlueBrainReferenceValidity::Insufficient
+        );
+    }
+
+    #[test]
+    fn explicit_guard_markers_override_generic_diagnostic_and_reference_only_paths() {
+        let diagnostic_insufficient =
+            classify_blue_brain_reference_path("diag:runtime:INSUFFICIENT_basis");
+        assert_eq!(
+            diagnostic_insufficient.kind,
+            BlueBrainCanonicalReferenceKind::DiagnosticReference
+        );
+        assert_eq!(
+            diagnostic_insufficient.validity,
+            BlueBrainReferenceValidity::Insufficient
+        );
+
+        let diagnostic_blocked = classify_blue_brain_reference_path("diag:runtime:BLOCKED");
+        assert_eq!(
+            diagnostic_blocked.validity,
+            BlueBrainReferenceValidity::Blocked
+        );
+
+        let external_reference_stale = classify_blue_brain_reference_path("external:ref:stale");
+        assert_eq!(
+            external_reference_stale.kind,
+            BlueBrainCanonicalReferenceKind::ReferenceOnlyNotMemoryOrResult
+        );
+        assert_eq!(
+            external_reference_stale.validity,
+            BlueBrainReferenceValidity::Stale
+        );
+
+        let plain_diagnostic = classify_blue_brain_reference_path("diag:runtime:summary");
+        assert_eq!(
+            plain_diagnostic.validity,
+            BlueBrainReferenceValidity::ReferenceOnly
         );
     }
 
@@ -642,10 +687,17 @@ mod tests {
             BlueBrainReferenceValidity::Insufficient
         );
 
-        let reference_only = classify_blue_brain_reference_path("diag:runtime:insufficient_basis");
+        let reference_only = classify_blue_brain_reference_path("diag:runtime:summary");
         assert_eq!(
             reference_only.validity,
             BlueBrainReferenceValidity::ReferenceOnly
+        );
+
+        let diagnostic_insufficient =
+            classify_blue_brain_reference_path("diag:runtime:insufficient_basis");
+        assert_eq!(
+            diagnostic_insufficient.validity,
+            BlueBrainReferenceValidity::Insufficient
         );
 
         let non_canonical =

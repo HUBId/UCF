@@ -6206,7 +6206,9 @@ mod tests {
         assert!(doc.contains(
             "docs/blue_brain_region1_final_stabilization_sweep_serie_bb25_prompt3_v1.md"
         ));
-        assert!(doc.contains("Region 1 bleibt die einzige geöffnete Regionenklasse"));
+        assert!(doc.contains("historische Hippocampus-first-Stabilisierung"));
+        assert!(doc.contains("genau fünf bounded anatomische Regionen"));
+        assert!(doc.contains("keine Region 6 und keine globale Modellplattform"));
     }
 
     #[test]
