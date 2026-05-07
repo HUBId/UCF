@@ -1,8 +1,8 @@
 # Blue-Brain IR1 Prompt 1: bounded inter-region architecture map
 
-Status: **bounded inter-region architecture line** over the already opened anatomical regions: `hippocampus_like_region`, `amygdala_like_region`, `thalamus_like_region`, `basal_ganglia_like_region`, and `cerebellum_like_region`.
+Status: **bounded inter-region architecture line** over the already opened anatomical regions: `hippocampus_like_region`, `amygdala_like_region`, `thalamus_like_region`, `basal_ganglia_like_region`, `cerebellum_like_region`, and the BR6 `hypothalamus_like_region` adjunct line.
 
-This document is the canonical IR1 architecture map for these five regions. It consolidates the existing BR1-BR5 surfaces and the BB2/BB4/BB8/BB12/BB17/BB19/BB21 contract lines without creating a global region orchestration platform, a planner/agent layer, a retry platform, a policy-governance platform, or new compute-core behavior.
+This document is the canonical IR1 architecture map for the original five regions plus the BR6 hypothalamus adjunct relation line. It consolidates the existing BR1-BR5 surfaces and the BB2/BB4/BB8/BB12/BB17/BB19/BB21 contract lines without creating a global region orchestration platform, a planner/agent layer, a retry platform, a policy-governance platform, or new compute-core behavior.
 
 ## 1) Region roles used by IR1
 
@@ -15,8 +15,9 @@ IR1 uses UCF functional roles, not neurobiological completeness:
 | `thalamus_like_region` | relay/gating/routing-heavy | Runtime/Selection contract reads, BB2/BB19 |
 | `basal_ganglia_like_region` | action-channel/suppression/readiness-heavy | Selection/Execution-interface diagnostics, BB4/BB19/BB21 |
 | `cerebellum_like_region` | timing/prediction/correction/mismatch-heavy | Bounded dynamics and Execution-interface diagnostics, BB12/BB16/BB21 |
+| `hypothalamus_like_region` | bounded drive/homeostasis/urgency modulation-heavy | Runtime/Selection/Context/Reference caveats, BB2/BB4/BB8/BB12/BB17/BB19/BB21 |
 
-The current model modes remain unchanged: `abstract functional current mode` stays current for Hippocampus, Thalamus, Basal Ganglia, and Cerebellum; Amygdala stays on its bounded current line. IR1 does not imply a Kuramoto expansion, a Hodgkin-Huxley production integration, or a new model-depth mandate.
+The current model modes remain unchanged: `abstract functional current mode` stays current for Hippocampus, Thalamus, Basal Ganglia, Cerebellum, and Hypothalamus; Amygdala stays on its bounded current line. IR1 does not imply a Kuramoto expansion, a Hodgkin-Huxley production integration, or a new model-depth mandate.
 
 ## 2) Relation classes
 
@@ -47,17 +48,22 @@ No other relation class is canonical in IR1.
 | Thalamus ↔ Basal Ganglia | `selection-mediated relation` | Relay/routing and channel suppression meet only at bounded Selection/Contract reads. | Selection/Contract mediated only. |
 | Thalamus ↔ Cerebellum | `direct bounded advisory relation` | Relay/routing can advisory-coordinate timing/mismatch diagnostics. | Direct bounded advisory-only relation. |
 | Basal Ganglia ↔ Cerebellum | `execution-interface-mediated relation` | Action-channel/readiness and timing/correction intersect near execution eligibility diagnostics. | Execution-interface-mediated diagnostic read only. |
+| Hippocampus ↔ Hypothalamus | `reference-mediated relation` | Context/reference can carry bounded state-pressure caveats without granting memory authority. | Reference/Context mediated only. |
+| Amygdala ↔ Hypothalamus | `caveated inter-region relation` | Salience/valence caveats and urgency/homeostasis caveats may annotate each other but must not merge into motivational control. | Caveated Runtime/Selection read only. |
+| Thalamus ↔ Hypothalamus | `direct bounded advisory relation` | Relay/routing diagnostics may read bounded urgency/regulation pressure without changing routing authority. | Direct bounded advisory-only relation. |
+| Basal Ganglia ↔ Hypothalamus | `selection-mediated relation` | Action-channel posture may read urgency modulation only through Selection/Contract diagnostics. | Selection/Contract mediated only. |
+| Cerebellum ↔ Hypothalamus | `deferred/not-yet-active relation` | Timing/prediction to homeostasis coupling is not needed for the current UCF surface. | Deferred; not blocked, not failed. |
 
 This map is intentionally not an all-to-all coupling engine. The pair labels identify canonical architecture edges, not autonomous region-to-region messages.
 
 ## 4) Mediation rules
 
-- Direct bounded advisory-only relations: Amygdala ↔ Thalamus, Thalamus ↔ Cerebellum.
-- Reference-mediated only relations: Hippocampus ↔ Thalamus, Hippocampus ↔ Cerebellum.
-- Caveated relation: Hippocampus ↔ Amygdala.
-- Selection/Contract mediated only relations: Amygdala ↔ Basal Ganglia, Thalamus ↔ Basal Ganglia.
+- Direct bounded advisory-only relations: Amygdala ↔ Thalamus, Thalamus ↔ Cerebellum, Thalamus ↔ Hypothalamus.
+- Reference-mediated only relations: Hippocampus ↔ Thalamus, Hippocampus ↔ Cerebellum, Hippocampus ↔ Hypothalamus.
+- Caveated relation: Hippocampus ↔ Amygdala, Amygdala ↔ Hypothalamus.
+- Selection/Contract mediated only relations: Amygdala ↔ Basal Ganglia, Thalamus ↔ Basal Ganglia, Basal Ganglia ↔ Hypothalamus.
 - Execution-interface-mediated only relation: Basal Ganglia ↔ Cerebellum.
-- Deferred/not-yet-active relation: Amygdala ↔ Cerebellum.
+- Deferred/not-yet-active relation: Amygdala ↔ Cerebellum, Cerebellum ↔ Hypothalamus.
 - Blocked relation: Hippocampus ↔ Basal Ganglia direct relation.
 - Non-canonical/internal-only relation path: any unlisted direct path, any raw internal state path, and any test helper path outside the canonical map.
 
@@ -88,6 +94,7 @@ The architecture map provides no authority for:
 - no safety override.
 - no allowed-actions extension.
 - no implicit global region orchestration.
+- no motivational/agentic control layer.
 - no new inter-region platform formation.
 - no policy/governance platform.
 - no planner/agent platform.
@@ -105,11 +112,12 @@ Blocked relation is represented as architectural unavailability, not as failed e
 - BB19 Runtime/Selection contracts remain the common contract read layer.
 - BB21 Execution/Reference interaction remains diagnostic and reference-bounded; IR1 adds no direct execution or retry trigger.
 - Real Compute remains maintenance-only; IR1 performs no compute-core work.
+- BR6 Hypothalamus informs drive/homeostasis/urgency caveats only; it has no direct action, retry, memory, safety, policy, planner, agent, or compute authority.
 
 ## 8) IR1 next steps
 
-1. Add narrow consumer-facing diagnostics that report the IR1 relation class without changing action/execution authority.
-2. Add fixture/golden coverage for the ten canonical pair entries if an external artifact starts consuming the map.
-3. Review whether Amygdala ↔ Cerebellum should stay deferred or become caveated after a separate model-depth decision.
-4. Review whether Hippocampus ↔ Basal Ganglia needs a mediated future edge; direct coupling remains blocked.
+1. Add narrow consumer-facing diagnostics that report the IR1 relation class, including the BR6 Hypothalamus adjunct relation class, without changing action/execution authority.
+2. Add fixture/golden coverage for the fifteen canonical pair entries if an external artifact starts consuming the map.
+3. Review whether Cerebellum ↔ Hypothalamus should stay deferred after a separate timing/homeostasis model-depth decision.
+4. Review whether Amygdala ↔ Cerebellum should stay deferred or become caveated after a separate model-depth decision.
 5. Keep all future work behind explicit policy/spec intent rather than implicit all-to-all region coupling.
