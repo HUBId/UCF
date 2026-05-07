@@ -1759,6 +1759,151 @@ pub const BLUE_BRAIN_MD1_NEXT_MODEL_DEEPENING_DIRECTION: BlueBrainMd1NextModelDe
     BlueBrainMd1NextModelDeepeningDirection::MaintainFirstDeepeningBeforeSecondCandidate;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd2ModelDeepeningStabilizationClass {
+    StableDeepenedBaseline,
+    MaintenanceHardenedModelSurface,
+    MaintenanceHardenedDiagnosticsPath,
+    MaintenanceHardenedContractPath,
+    MaintenanceHardenedModelBoundary,
+    NonCanonicalInternalOnlyResidualPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainMd2ModelDeepeningStabilizationMapEntry {
+    pub stabilization_class: BlueBrainMd2ModelDeepeningStabilizationClass,
+    pub candidate_class: BlueBrainMd1FirstDeepeningCandidateClass,
+    pub current_model_mode: BlueBrainFirstAnatomicalRegionModelModeClass,
+    pub canonical_first_deepening_surface: bool,
+    pub maintenance_only: bool,
+    pub frozen_semantics: bool,
+    pub model_state_is_contract_state: bool,
+    pub diagnostic_output_is_operational_authority: bool,
+    pub contract_path_overwrites_model_boundary: bool,
+    pub non_canonical_internal_only: bool,
+    pub opens_second_model_deepening: bool,
+    pub creates_direct_authority: bool,
+    pub requires_compute_core_work: bool,
+}
+
+/// Canonical MD2 stabilization map for maintaining the first selective model
+/// deepening without broadening it into a model platform.
+///
+/// The map is intentionally narrow: every canonical entry points back to the
+/// existing Amygdala-Thalamus bounded Kuramoto-like advisory relation, keeps the
+/// current model mode frozen, and records that model, diagnostics, contract, and
+/// boundary states stay separate under maintenance.
+pub const CANONICAL_BLUE_BRAIN_MD2_MODEL_DEEPENING_STABILIZATION_MAP:
+    [BlueBrainMd2ModelDeepeningStabilizationMapEntry; 6] = [
+    BlueBrainMd2ModelDeepeningStabilizationMapEntry {
+        stabilization_class: BlueBrainMd2ModelDeepeningStabilizationClass::StableDeepenedBaseline,
+        candidate_class:
+            BlueBrainMd1FirstDeepeningCandidateClass::AmygdalaThalamusBoundedKuramotoLikeAdvisory,
+        current_model_mode:
+            BlueBrainFirstAnatomicalRegionModelModeClass::BoundedKuramotoLikeCurrentMode,
+        canonical_first_deepening_surface: true,
+        maintenance_only: true,
+        frozen_semantics: true,
+        model_state_is_contract_state: false,
+        diagnostic_output_is_operational_authority: false,
+        contract_path_overwrites_model_boundary: false,
+        non_canonical_internal_only: false,
+        opens_second_model_deepening: false,
+        creates_direct_authority: false,
+        requires_compute_core_work: false,
+    },
+    BlueBrainMd2ModelDeepeningStabilizationMapEntry {
+        stabilization_class:
+            BlueBrainMd2ModelDeepeningStabilizationClass::MaintenanceHardenedModelSurface,
+        candidate_class:
+            BlueBrainMd1FirstDeepeningCandidateClass::AmygdalaThalamusBoundedKuramotoLikeAdvisory,
+        current_model_mode:
+            BlueBrainFirstAnatomicalRegionModelModeClass::BoundedKuramotoLikeCurrentMode,
+        canonical_first_deepening_surface: true,
+        maintenance_only: true,
+        frozen_semantics: true,
+        model_state_is_contract_state: false,
+        diagnostic_output_is_operational_authority: false,
+        contract_path_overwrites_model_boundary: false,
+        non_canonical_internal_only: false,
+        opens_second_model_deepening: false,
+        creates_direct_authority: false,
+        requires_compute_core_work: false,
+    },
+    BlueBrainMd2ModelDeepeningStabilizationMapEntry {
+        stabilization_class:
+            BlueBrainMd2ModelDeepeningStabilizationClass::MaintenanceHardenedDiagnosticsPath,
+        candidate_class:
+            BlueBrainMd1FirstDeepeningCandidateClass::AmygdalaThalamusBoundedKuramotoLikeAdvisory,
+        current_model_mode:
+            BlueBrainFirstAnatomicalRegionModelModeClass::BoundedKuramotoLikeCurrentMode,
+        canonical_first_deepening_surface: true,
+        maintenance_only: true,
+        frozen_semantics: true,
+        model_state_is_contract_state: false,
+        diagnostic_output_is_operational_authority: false,
+        contract_path_overwrites_model_boundary: false,
+        non_canonical_internal_only: false,
+        opens_second_model_deepening: false,
+        creates_direct_authority: false,
+        requires_compute_core_work: false,
+    },
+    BlueBrainMd2ModelDeepeningStabilizationMapEntry {
+        stabilization_class:
+            BlueBrainMd2ModelDeepeningStabilizationClass::MaintenanceHardenedContractPath,
+        candidate_class:
+            BlueBrainMd1FirstDeepeningCandidateClass::AmygdalaThalamusBoundedKuramotoLikeAdvisory,
+        current_model_mode:
+            BlueBrainFirstAnatomicalRegionModelModeClass::BoundedKuramotoLikeCurrentMode,
+        canonical_first_deepening_surface: true,
+        maintenance_only: true,
+        frozen_semantics: true,
+        model_state_is_contract_state: false,
+        diagnostic_output_is_operational_authority: false,
+        contract_path_overwrites_model_boundary: false,
+        non_canonical_internal_only: false,
+        opens_second_model_deepening: false,
+        creates_direct_authority: false,
+        requires_compute_core_work: false,
+    },
+    BlueBrainMd2ModelDeepeningStabilizationMapEntry {
+        stabilization_class:
+            BlueBrainMd2ModelDeepeningStabilizationClass::MaintenanceHardenedModelBoundary,
+        candidate_class:
+            BlueBrainMd1FirstDeepeningCandidateClass::AmygdalaThalamusBoundedKuramotoLikeAdvisory,
+        current_model_mode:
+            BlueBrainFirstAnatomicalRegionModelModeClass::BoundedKuramotoLikeCurrentMode,
+        canonical_first_deepening_surface: true,
+        maintenance_only: true,
+        frozen_semantics: true,
+        model_state_is_contract_state: false,
+        diagnostic_output_is_operational_authority: false,
+        contract_path_overwrites_model_boundary: false,
+        non_canonical_internal_only: false,
+        opens_second_model_deepening: false,
+        creates_direct_authority: false,
+        requires_compute_core_work: false,
+    },
+    BlueBrainMd2ModelDeepeningStabilizationMapEntry {
+        stabilization_class:
+            BlueBrainMd2ModelDeepeningStabilizationClass::NonCanonicalInternalOnlyResidualPath,
+        candidate_class:
+            BlueBrainMd1FirstDeepeningCandidateClass::NonCanonicalInternalOnlyCandidate,
+        current_model_mode:
+            BlueBrainFirstAnatomicalRegionModelModeClass::BoundedKuramotoLikeCurrentMode,
+        canonical_first_deepening_surface: false,
+        maintenance_only: true,
+        frozen_semantics: true,
+        model_state_is_contract_state: false,
+        diagnostic_output_is_operational_authority: false,
+        contract_path_overwrites_model_boundary: false,
+        non_canonical_internal_only: true,
+        opens_second_model_deepening: false,
+        creates_direct_authority: false,
+        requires_compute_core_work: false,
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlueBrainMd1FirstDeepeningBoundaryState {
     pub model_state_is_contract_state: bool,
     pub diagnostic_output_is_advisory_support: bool,
@@ -10093,6 +10238,121 @@ mod tests {
     }
 
     #[test]
+    fn md2_stabilization_map_hardens_first_deepening_without_scope_expansion() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_MD2_MODEL_DEEPENING_STABILIZATION_MAP.len(),
+            6
+        );
+        for stabilization_class in [
+            BlueBrainMd2ModelDeepeningStabilizationClass::StableDeepenedBaseline,
+            BlueBrainMd2ModelDeepeningStabilizationClass::MaintenanceHardenedModelSurface,
+            BlueBrainMd2ModelDeepeningStabilizationClass::MaintenanceHardenedDiagnosticsPath,
+            BlueBrainMd2ModelDeepeningStabilizationClass::MaintenanceHardenedContractPath,
+            BlueBrainMd2ModelDeepeningStabilizationClass::MaintenanceHardenedModelBoundary,
+            BlueBrainMd2ModelDeepeningStabilizationClass::NonCanonicalInternalOnlyResidualPath,
+        ] {
+            assert!(CANONICAL_BLUE_BRAIN_MD2_MODEL_DEEPENING_STABILIZATION_MAP
+                .iter()
+                .any(|entry| entry.stabilization_class == stabilization_class));
+        }
+
+        let canonical_entries: Vec<_> = CANONICAL_BLUE_BRAIN_MD2_MODEL_DEEPENING_STABILIZATION_MAP
+            .iter()
+            .filter(|entry| !entry.non_canonical_internal_only)
+            .collect();
+        assert_eq!(canonical_entries.len(), 5);
+        for entry in canonical_entries {
+            assert_eq!(
+                entry.candidate_class,
+                BlueBrainMd1FirstDeepeningCandidateClass::AmygdalaThalamusBoundedKuramotoLikeAdvisory
+            );
+            assert_eq!(
+                entry.current_model_mode,
+                BlueBrainFirstAnatomicalRegionModelModeClass::BoundedKuramotoLikeCurrentMode
+            );
+            assert!(entry.canonical_first_deepening_surface);
+            assert!(entry.maintenance_only);
+            assert!(entry.frozen_semantics);
+            assert!(!entry.model_state_is_contract_state);
+            assert!(!entry.diagnostic_output_is_operational_authority);
+            assert!(!entry.contract_path_overwrites_model_boundary);
+            assert!(!entry.opens_second_model_deepening);
+            assert!(!entry.creates_direct_authority);
+            assert!(!entry.requires_compute_core_work);
+        }
+
+        let residual = CANONICAL_BLUE_BRAIN_MD2_MODEL_DEEPENING_STABILIZATION_MAP
+            .iter()
+            .find(|entry| {
+                entry.stabilization_class
+                    == BlueBrainMd2ModelDeepeningStabilizationClass::NonCanonicalInternalOnlyResidualPath
+            })
+            .expect("MD2 residual path entry");
+        assert_eq!(
+            residual.candidate_class,
+            BlueBrainMd1FirstDeepeningCandidateClass::NonCanonicalInternalOnlyCandidate
+        );
+        assert!(!residual.canonical_first_deepening_surface);
+        assert!(residual.non_canonical_internal_only);
+        assert!(!residual.creates_direct_authority);
+    }
+
+    #[test]
+    fn md2_stabilization_keeps_runtime_selection_reference_states_from_becoming_authority() {
+        let diagnostic_only =
+            evaluate_blue_brain_md1_first_model_deepening(md1_first_deepening_kuramoto_input(
+                BlueBrainInterRegionArchitecturePair::AmygdalaThalamus,
+                BlueBrainKuramotoScopeState::DiagnosticOnly,
+            ));
+        assert_eq!(
+            diagnostic_only.output_class,
+            BlueBrainMd1FirstDeepeningOutputClass::DiagnosticOnly
+        );
+        assert_eq!(
+            diagnostic_only.contract_support_class,
+            BlueBrainMd1FirstDeepeningContractSupportClass::DiagnosticOnlyNoAdvisorySupport
+        );
+        assert!(!diagnostic_only.boundary_state.model_state_is_contract_state);
+        assert!(
+            !diagnostic_only
+                .boundary_state
+                .diagnostic_output_is_advisory_support
+        );
+        assert!(
+            !diagnostic_only
+                .boundary_state
+                .model_deepening_state_is_region_authority
+        );
+        assert!(!diagnostic_only.direct_action_trigger);
+        assert!(!diagnostic_only.direct_execution_trigger);
+        assert!(!diagnostic_only.direct_retry_trigger);
+        assert!(!diagnostic_only.direct_memory_commit);
+        assert!(!diagnostic_only.direct_compute_invocation);
+        assert!(!diagnostic_only.safety_override);
+        assert!(!diagnostic_only.global_model_platform);
+
+        let deferred_second_priority =
+            evaluate_blue_brain_md1_first_model_deepening(md1_first_deepening_kuramoto_input(
+                BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia,
+                BlueBrainKuramotoScopeState::SelectionModulating,
+            ));
+        assert_eq!(
+            deferred_second_priority.state_surface.candidate_class,
+            BlueBrainMd1FirstDeepeningCandidateClass::DeferredPrioritizedCandidateNotDeepenedNow
+        );
+        assert_eq!(
+            deferred_second_priority.runtime_read_class,
+            BlueBrainMd1FirstDeepeningConsumerReadClass::NoCanonicalConsumerRead
+        );
+        assert!(deferred_second_priority.kuramoto_result.is_none());
+        assert!(
+            !deferred_second_priority
+                .boundary_state
+                .second_model_deepening_opened
+        );
+    }
+
+    #[test]
     fn md1_doc_pins_selective_model_deepening_decision_line() {
         let doc = include_str!(
             "../../../docs/blue_brain_md1_selective_model_deepening_decision_line_v1.md"
@@ -10180,5 +10440,22 @@ mod tests {
         assert!(
             readme.contains("docs/blue_brain_md1_readiness_sweep_model_deepening_closure_v1.md")
         );
+
+        let md2_doc =
+            include_str!("../../../docs/blue_brain_md2_model_deepening_stabilization_line_v1.md");
+        assert!(md2_doc.contains("model-deepening stabilization line"));
+        assert!(md2_doc.contains("CANONICAL_BLUE_BRAIN_MD2_MODEL_DEEPENING_STABILIZATION_MAP"));
+        assert!(md2_doc.contains("stable deepened baseline"));
+        assert!(md2_doc.contains("maintenance-hardened model surface"));
+        assert!(md2_doc.contains("maintenance-hardened diagnostics path"));
+        assert!(md2_doc.contains("maintenance-hardened contract path"));
+        assert!(md2_doc.contains("maintenance-hardened model boundary"));
+        assert!(md2_doc.contains("non-canonical/internal-only residual path"));
+        assert!(md2_doc.contains("no direct action trigger"));
+        assert!(md2_doc.contains("no direct compute invocation"));
+        assert!(md2_doc.contains("no implicit second model-deepening candidate"));
+        assert!(md2_doc.contains("no implicit global model platform"));
+        assert!(readme.contains("Model-deepening stabilization line (MD2 Prompt 1)"));
+        assert!(readme.contains("docs/blue_brain_md2_model_deepening_stabilization_line_v1.md"));
     }
 }
