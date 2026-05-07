@@ -778,6 +778,309 @@ pub const CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP:
     ),
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainInterRegionDiagnosticsContractClass {
+    AdvisoryOnlyRelationDiagnostic,
+    CaveatedRelationDiagnostic,
+    DeferredRelationDiagnostic,
+    BlockedRelationDiagnostic,
+    InsufficientRelationDiagnostic,
+    DiagnosticOnlyRelationState,
+    BoundedRelationContractSignal,
+    NonCanonicalInternalOnlyRelationPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_INTER_REGION_DIAGNOSTICS_CONTRACT_CLASS_MAP:
+    [BlueBrainInterRegionDiagnosticsContractClass; 8] = [
+    BlueBrainInterRegionDiagnosticsContractClass::AdvisoryOnlyRelationDiagnostic,
+    BlueBrainInterRegionDiagnosticsContractClass::CaveatedRelationDiagnostic,
+    BlueBrainInterRegionDiagnosticsContractClass::DeferredRelationDiagnostic,
+    BlueBrainInterRegionDiagnosticsContractClass::BlockedRelationDiagnostic,
+    BlueBrainInterRegionDiagnosticsContractClass::InsufficientRelationDiagnostic,
+    BlueBrainInterRegionDiagnosticsContractClass::DiagnosticOnlyRelationState,
+    BlueBrainInterRegionDiagnosticsContractClass::BoundedRelationContractSignal,
+    BlueBrainInterRegionDiagnosticsContractClass::NonCanonicalInternalOnlyRelationPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainInterRegionDiagnosticsRelationState {
+    AdvisoryOnlyActive,
+    CaveatedNoStrongPositiveSignal,
+    DeferredNotYetUsable,
+    BlockedByContractSafetyOrReference,
+    InsufficientRelationalBasis,
+    DiagnosticOnlyVisible,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainInterRegionContractSignalClass {
+    BoundedRelationContractSignal,
+    CaveatedRelationDiagnosticSignal,
+    DeferredRelationDiagnosticSignal,
+    BlockedRelationDiagnosticSignal,
+    InsufficientRelationDiagnosticSignal,
+    DiagnosticOnlyRelationSignal,
+    NonCanonicalInternalOnlyRelationSignal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainInterRegionConsumerLayer {
+    Runtime,
+    Selection,
+    Reference,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainInterRegionDiagnosticsContractRead {
+    pub pair: BlueBrainInterRegionArchitecturePair,
+    pub consumer_layer: BlueBrainInterRegionConsumerLayer,
+    pub implementation_relation_class: BlueBrainInterRegionImplementationRelationClass,
+    pub mediation_path: BlueBrainInterRegionImplementationMediationPath,
+    pub relation_state: BlueBrainInterRegionDiagnosticsRelationState,
+    pub relation_diagnostic_class: BlueBrainInterRegionDiagnosticsContractClass,
+    pub contract_signal_class: BlueBrainInterRegionContractSignalClass,
+    pub bounded_contract_signal: bool,
+    pub advisory_only: bool,
+    pub caveated: bool,
+    pub deferred: bool,
+    pub blocked: bool,
+    pub insufficient: bool,
+    pub diagnostic_only: bool,
+    pub non_canonical_internal_only: bool,
+    pub direct_action_trigger: bool,
+    pub direct_execution_trigger: bool,
+    pub direct_retry_trigger: bool,
+    pub direct_memory_commit: bool,
+    pub direct_compute_invocation: bool,
+    pub safety_override: bool,
+    pub global_region_orchestration: bool,
+}
+
+const fn blue_brain_inter_region_relation_state_for_implementation_class(
+    implementation_relation_class: BlueBrainInterRegionImplementationRelationClass,
+) -> BlueBrainInterRegionDiagnosticsRelationState {
+    match implementation_relation_class {
+        BlueBrainInterRegionImplementationRelationClass::ImplementedDirectBoundedAdvisoryRelation
+        | BlueBrainInterRegionImplementationRelationClass::ImplementedReferenceMediatedRelation
+        | BlueBrainInterRegionImplementationRelationClass::ImplementedSelectionMediatedRelation => {
+            BlueBrainInterRegionDiagnosticsRelationState::AdvisoryOnlyActive
+        }
+        BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation => {
+            BlueBrainInterRegionDiagnosticsRelationState::DeferredNotYetUsable
+        }
+        BlueBrainInterRegionImplementationRelationClass::BlockedRelation => {
+            BlueBrainInterRegionDiagnosticsRelationState::BlockedByContractSafetyOrReference
+        }
+        BlueBrainInterRegionImplementationRelationClass::NonCanonicalInternalOnlyRelationPath => {
+            BlueBrainInterRegionDiagnosticsRelationState::NonCanonicalInternalOnly
+        }
+    }
+}
+
+pub const fn blue_brain_inter_region_diagnostics_contract_class_for_state(
+    relation_state: BlueBrainInterRegionDiagnosticsRelationState,
+) -> BlueBrainInterRegionDiagnosticsContractClass {
+    match relation_state {
+        BlueBrainInterRegionDiagnosticsRelationState::AdvisoryOnlyActive => {
+            BlueBrainInterRegionDiagnosticsContractClass::AdvisoryOnlyRelationDiagnostic
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::CaveatedNoStrongPositiveSignal => {
+            BlueBrainInterRegionDiagnosticsContractClass::CaveatedRelationDiagnostic
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::DeferredNotYetUsable => {
+            BlueBrainInterRegionDiagnosticsContractClass::DeferredRelationDiagnostic
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::BlockedByContractSafetyOrReference => {
+            BlueBrainInterRegionDiagnosticsContractClass::BlockedRelationDiagnostic
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::InsufficientRelationalBasis => {
+            BlueBrainInterRegionDiagnosticsContractClass::InsufficientRelationDiagnostic
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::DiagnosticOnlyVisible => {
+            BlueBrainInterRegionDiagnosticsContractClass::DiagnosticOnlyRelationState
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::NonCanonicalInternalOnly => {
+            BlueBrainInterRegionDiagnosticsContractClass::NonCanonicalInternalOnlyRelationPath
+        }
+    }
+}
+
+pub const fn blue_brain_inter_region_contract_signal_for_state(
+    relation_state: BlueBrainInterRegionDiagnosticsRelationState,
+) -> BlueBrainInterRegionContractSignalClass {
+    match relation_state {
+        BlueBrainInterRegionDiagnosticsRelationState::AdvisoryOnlyActive => {
+            BlueBrainInterRegionContractSignalClass::BoundedRelationContractSignal
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::CaveatedNoStrongPositiveSignal => {
+            BlueBrainInterRegionContractSignalClass::CaveatedRelationDiagnosticSignal
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::DeferredNotYetUsable => {
+            BlueBrainInterRegionContractSignalClass::DeferredRelationDiagnosticSignal
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::BlockedByContractSafetyOrReference => {
+            BlueBrainInterRegionContractSignalClass::BlockedRelationDiagnosticSignal
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::InsufficientRelationalBasis => {
+            BlueBrainInterRegionContractSignalClass::InsufficientRelationDiagnosticSignal
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::DiagnosticOnlyVisible => {
+            BlueBrainInterRegionContractSignalClass::DiagnosticOnlyRelationSignal
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::NonCanonicalInternalOnly => {
+            BlueBrainInterRegionContractSignalClass::NonCanonicalInternalOnlyRelationSignal
+        }
+    }
+}
+
+const fn blue_brain_inter_region_diagnostics_contract_read(
+    relation: BlueBrainInterRegionImplementationRelation,
+    consumer_layer: BlueBrainInterRegionConsumerLayer,
+) -> BlueBrainInterRegionDiagnosticsContractRead {
+    let relation_state = blue_brain_inter_region_relation_state_for_implementation_class(
+        relation.implementation_relation_class,
+    );
+    let relation_diagnostic_class =
+        blue_brain_inter_region_diagnostics_contract_class_for_state(relation_state);
+    let contract_signal_class = blue_brain_inter_region_contract_signal_for_state(relation_state);
+
+    BlueBrainInterRegionDiagnosticsContractRead {
+        pair: relation.pair,
+        consumer_layer,
+        implementation_relation_class: relation.implementation_relation_class,
+        mediation_path: relation.mediation_path,
+        relation_state,
+        relation_diagnostic_class,
+        contract_signal_class,
+        bounded_contract_signal: matches!(
+            contract_signal_class,
+            BlueBrainInterRegionContractSignalClass::BoundedRelationContractSignal
+        ),
+        advisory_only: matches!(
+            relation_state,
+            BlueBrainInterRegionDiagnosticsRelationState::AdvisoryOnlyActive
+        ),
+        caveated: matches!(
+            relation_state,
+            BlueBrainInterRegionDiagnosticsRelationState::CaveatedNoStrongPositiveSignal
+        ),
+        deferred: matches!(
+            relation_state,
+            BlueBrainInterRegionDiagnosticsRelationState::DeferredNotYetUsable
+        ),
+        blocked: matches!(
+            relation_state,
+            BlueBrainInterRegionDiagnosticsRelationState::BlockedByContractSafetyOrReference
+        ),
+        insufficient: matches!(
+            relation_state,
+            BlueBrainInterRegionDiagnosticsRelationState::InsufficientRelationalBasis
+        ),
+        diagnostic_only: matches!(
+            relation_state,
+            BlueBrainInterRegionDiagnosticsRelationState::DiagnosticOnlyVisible
+                | BlueBrainInterRegionDiagnosticsRelationState::DeferredNotYetUsable
+                | BlueBrainInterRegionDiagnosticsRelationState::BlockedByContractSafetyOrReference
+                | BlueBrainInterRegionDiagnosticsRelationState::InsufficientRelationalBasis
+                | BlueBrainInterRegionDiagnosticsRelationState::NonCanonicalInternalOnly
+        ),
+        non_canonical_internal_only: matches!(
+            relation_state,
+            BlueBrainInterRegionDiagnosticsRelationState::NonCanonicalInternalOnly
+        ),
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        safety_override: false,
+        global_region_orchestration: false,
+    }
+}
+
+pub fn blue_brain_inter_region_diagnostics_contract_read_for_pair(
+    pair: BlueBrainInterRegionArchitecturePair,
+    consumer_layer: BlueBrainInterRegionConsumerLayer,
+) -> BlueBrainInterRegionDiagnosticsContractRead {
+    blue_brain_inter_region_diagnostics_contract_read(
+        blue_brain_first_inter_region_implementation_relation_for_pair(pair),
+        consumer_layer,
+    )
+}
+
+pub fn blue_brain_inter_region_consumer_contract_reads_are_aligned(
+    pair: BlueBrainInterRegionArchitecturePair,
+) -> bool {
+    let runtime = blue_brain_inter_region_diagnostics_contract_read_for_pair(
+        pair,
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    );
+    let selection = blue_brain_inter_region_diagnostics_contract_read_for_pair(
+        pair,
+        BlueBrainInterRegionConsumerLayer::Selection,
+    );
+    let reference = blue_brain_inter_region_diagnostics_contract_read_for_pair(
+        pair,
+        BlueBrainInterRegionConsumerLayer::Reference,
+    );
+
+    runtime.implementation_relation_class == selection.implementation_relation_class
+        && runtime.implementation_relation_class == reference.implementation_relation_class
+        && runtime.mediation_path == selection.mediation_path
+        && runtime.mediation_path == reference.mediation_path
+        && runtime.relation_state == selection.relation_state
+        && runtime.relation_state == reference.relation_state
+        && runtime.relation_diagnostic_class == selection.relation_diagnostic_class
+        && runtime.relation_diagnostic_class == reference.relation_diagnostic_class
+        && runtime.contract_signal_class == selection.contract_signal_class
+        && runtime.contract_signal_class == reference.contract_signal_class
+}
+
+pub const CANONICAL_BLUE_BRAIN_INTER_REGION_DIAGNOSTICS_CONTRACT_MAP:
+    [BlueBrainInterRegionDiagnosticsContractRead; 10] = [
+    blue_brain_inter_region_diagnostics_contract_read(
+        CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[0],
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    ),
+    blue_brain_inter_region_diagnostics_contract_read(
+        CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[1],
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    ),
+    blue_brain_inter_region_diagnostics_contract_read(
+        CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[2],
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    ),
+    blue_brain_inter_region_diagnostics_contract_read(
+        CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[3],
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    ),
+    blue_brain_inter_region_diagnostics_contract_read(
+        CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[4],
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    ),
+    blue_brain_inter_region_diagnostics_contract_read(
+        CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[5],
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    ),
+    blue_brain_inter_region_diagnostics_contract_read(
+        CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[6],
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    ),
+    blue_brain_inter_region_diagnostics_contract_read(
+        CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[7],
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    ),
+    blue_brain_inter_region_diagnostics_contract_read(
+        CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[8],
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    ),
+    blue_brain_inter_region_diagnostics_contract_read(
+        CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[9],
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    ),
+];
+
 pub fn blue_brain_first_inter_region_implementation_relation_for_pair(
     pair: BlueBrainInterRegionArchitecturePair,
 ) -> BlueBrainInterRegionImplementationRelation {
@@ -8002,5 +8305,226 @@ mod tests {
         assert!(doc.contains("no automatic memory persistence"));
         assert!(doc.contains("no direct compute invocation"));
         assert!(doc.contains("no new inter-region platform formation"));
+    }
+
+    #[test]
+    fn inter_region_diagnostics_contract_map_separates_canonical_states() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_INTER_REGION_DIAGNOSTICS_CONTRACT_MAP.len(),
+            10
+        );
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_INTER_REGION_DIAGNOSTICS_CONTRACT_CLASS_MAP.len(),
+            8
+        );
+        for class in [
+            BlueBrainInterRegionDiagnosticsContractClass::AdvisoryOnlyRelationDiagnostic,
+            BlueBrainInterRegionDiagnosticsContractClass::CaveatedRelationDiagnostic,
+            BlueBrainInterRegionDiagnosticsContractClass::DeferredRelationDiagnostic,
+            BlueBrainInterRegionDiagnosticsContractClass::BlockedRelationDiagnostic,
+            BlueBrainInterRegionDiagnosticsContractClass::InsufficientRelationDiagnostic,
+            BlueBrainInterRegionDiagnosticsContractClass::DiagnosticOnlyRelationState,
+            BlueBrainInterRegionDiagnosticsContractClass::BoundedRelationContractSignal,
+            BlueBrainInterRegionDiagnosticsContractClass::NonCanonicalInternalOnlyRelationPath,
+        ] {
+            assert!(
+                CANONICAL_BLUE_BRAIN_INTER_REGION_DIAGNOSTICS_CONTRACT_CLASS_MAP.contains(&class)
+            );
+        }
+
+        assert_ne!(
+            BlueBrainInterRegionDiagnosticsRelationState::AdvisoryOnlyActive,
+            BlueBrainInterRegionDiagnosticsRelationState::CaveatedNoStrongPositiveSignal
+        );
+        assert_ne!(
+            BlueBrainInterRegionDiagnosticsRelationState::DeferredNotYetUsable,
+            BlueBrainInterRegionDiagnosticsRelationState::BlockedByContractSafetyOrReference
+        );
+        assert_ne!(
+            BlueBrainInterRegionDiagnosticsRelationState::BlockedByContractSafetyOrReference,
+            BlueBrainInterRegionDiagnosticsRelationState::InsufficientRelationalBasis
+        );
+        assert_ne!(
+            BlueBrainInterRegionDiagnosticsRelationState::DiagnosticOnlyVisible,
+            BlueBrainInterRegionDiagnosticsRelationState::AdvisoryOnlyActive
+        );
+
+        assert_eq!(
+            blue_brain_inter_region_diagnostics_contract_class_for_state(
+                BlueBrainInterRegionDiagnosticsRelationState::CaveatedNoStrongPositiveSignal
+            ),
+            BlueBrainInterRegionDiagnosticsContractClass::CaveatedRelationDiagnostic
+        );
+        assert_eq!(
+            blue_brain_inter_region_contract_signal_for_state(
+                BlueBrainInterRegionDiagnosticsRelationState::AdvisoryOnlyActive
+            ),
+            BlueBrainInterRegionContractSignalClass::BoundedRelationContractSignal
+        );
+        assert_eq!(
+            blue_brain_inter_region_contract_signal_for_state(
+                BlueBrainInterRegionDiagnosticsRelationState::InsufficientRelationalBasis
+            ),
+            BlueBrainInterRegionContractSignalClass::InsufficientRelationDiagnosticSignal
+        );
+    }
+
+    #[test]
+    fn implemented_inter_region_relations_share_one_runtime_selection_reference_read() {
+        for pair in [
+            BlueBrainInterRegionArchitecturePair::AmygdalaThalamus,
+            BlueBrainInterRegionArchitecturePair::HippocampusThalamus,
+            BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia,
+        ] {
+            assert!(blue_brain_inter_region_consumer_contract_reads_are_aligned(
+                pair
+            ));
+            let runtime = blue_brain_inter_region_diagnostics_contract_read_for_pair(
+                pair,
+                BlueBrainInterRegionConsumerLayer::Runtime,
+            );
+            let selection = blue_brain_inter_region_diagnostics_contract_read_for_pair(
+                pair,
+                BlueBrainInterRegionConsumerLayer::Selection,
+            );
+            let reference = blue_brain_inter_region_diagnostics_contract_read_for_pair(
+                pair,
+                BlueBrainInterRegionConsumerLayer::Reference,
+            );
+
+            assert_eq!(runtime.relation_state, selection.relation_state);
+            assert_eq!(runtime.relation_state, reference.relation_state);
+            assert_eq!(
+                runtime.relation_state,
+                BlueBrainInterRegionDiagnosticsRelationState::AdvisoryOnlyActive
+            );
+            assert_eq!(
+                runtime.contract_signal_class,
+                BlueBrainInterRegionContractSignalClass::BoundedRelationContractSignal
+            );
+            assert!(runtime.bounded_contract_signal);
+            assert!(runtime.advisory_only);
+            assert!(!runtime.caveated);
+            assert!(!runtime.deferred);
+            assert!(!runtime.blocked);
+            assert!(!runtime.insufficient);
+            assert!(!runtime.diagnostic_only);
+        }
+    }
+
+    #[test]
+    fn deferred_blocked_and_noncanonical_inter_region_reads_do_not_blur() {
+        let deferred = blue_brain_inter_region_diagnostics_contract_read_for_pair(
+            BlueBrainInterRegionArchitecturePair::ThalamusCerebellum,
+            BlueBrainInterRegionConsumerLayer::Runtime,
+        );
+        assert_eq!(
+            deferred.relation_state,
+            BlueBrainInterRegionDiagnosticsRelationState::DeferredNotYetUsable
+        );
+        assert!(deferred.deferred);
+        assert!(deferred.diagnostic_only);
+        assert!(!deferred.blocked);
+        assert!(!deferred.insufficient);
+        assert!(!deferred.bounded_contract_signal);
+
+        let blocked = blue_brain_inter_region_diagnostics_contract_read_for_pair(
+            BlueBrainInterRegionArchitecturePair::HippocampusBasalGanglia,
+            BlueBrainInterRegionConsumerLayer::Runtime,
+        );
+        assert_eq!(
+            blocked.relation_state,
+            BlueBrainInterRegionDiagnosticsRelationState::BlockedByContractSafetyOrReference
+        );
+        assert!(blocked.blocked);
+        assert!(blocked.diagnostic_only);
+        assert!(!blocked.deferred);
+        assert!(!blocked.insufficient);
+        assert!(!blocked.bounded_contract_signal);
+
+        assert_eq!(
+            blue_brain_inter_region_diagnostics_contract_class_for_state(
+                BlueBrainInterRegionDiagnosticsRelationState::NonCanonicalInternalOnly
+            ),
+            BlueBrainInterRegionDiagnosticsContractClass::NonCanonicalInternalOnlyRelationPath
+        );
+    }
+
+    #[test]
+    fn inter_region_contract_reads_cannot_create_direct_authority_or_shortcuts() {
+        for read in CANONICAL_BLUE_BRAIN_INTER_REGION_DIAGNOSTICS_CONTRACT_MAP {
+            assert!(!read.direct_action_trigger);
+            assert!(!read.direct_execution_trigger);
+            assert!(!read.direct_retry_trigger);
+            assert!(!read.direct_memory_commit);
+            assert!(!read.direct_compute_invocation);
+            assert!(!read.safety_override);
+            assert!(!read.global_region_orchestration);
+
+            match read.implementation_relation_class {
+                BlueBrainInterRegionImplementationRelationClass::ImplementedDirectBoundedAdvisoryRelation => {
+                    assert_eq!(
+                        read.mediation_path,
+                        BlueBrainInterRegionImplementationMediationPath::DirectBoundedAdvisoryOnly
+                    );
+                }
+                BlueBrainInterRegionImplementationRelationClass::ImplementedReferenceMediatedRelation => {
+                    assert_eq!(
+                        read.mediation_path,
+                        BlueBrainInterRegionImplementationMediationPath::ReferenceContextMediatedOnly
+                    );
+                }
+                BlueBrainInterRegionImplementationRelationClass::ImplementedSelectionMediatedRelation => {
+                    assert_eq!(
+                        read.mediation_path,
+                        BlueBrainInterRegionImplementationMediationPath::SelectionContractMediatedOnly
+                    );
+                }
+                BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation => {
+                    assert_eq!(
+                        read.mediation_path,
+                        BlueBrainInterRegionImplementationMediationPath::NotYetImplemented
+                    );
+                }
+                BlueBrainInterRegionImplementationRelationClass::BlockedRelation => {
+                    assert_eq!(
+                        read.mediation_path,
+                        BlueBrainInterRegionImplementationMediationPath::BlockedUnavailable
+                    );
+                }
+                BlueBrainInterRegionImplementationRelationClass::NonCanonicalInternalOnlyRelationPath => {
+                    assert_eq!(
+                        read.mediation_path,
+                        BlueBrainInterRegionImplementationMediationPath::NonCanonicalInternalOnly
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn inter_region_diagnostics_contract_doc_pins_prompt3_semantics() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_inter_region_diagnostics_contracts_serie_ir1_prompt3_v1.md"
+        );
+        assert!(doc.contains("advisory-only relation diagnostic"));
+        assert!(doc.contains("caveated relation diagnostic"));
+        assert!(doc.contains("deferred relation diagnostic"));
+        assert!(doc.contains("blocked relation diagnostic"));
+        assert!(doc.contains("insufficient relation diagnostic"));
+        assert!(doc.contains("diagnostic-only relation state"));
+        assert!(doc.contains("bounded relation contract signal"));
+        assert!(doc.contains("non-canonical/internal-only relation path"));
+        assert!(doc.contains("Runtime, Selection, and Reference read the same relation_state"));
+        assert!(doc.contains("relation contract signal is not an action request"));
+        assert!(doc.contains("not an execution trigger"));
+        assert!(doc.contains("not a retry trigger"));
+        assert!(doc.contains("not a memory commit"));
+        assert!(doc.contains("not a compute trigger"));
+        assert!(doc.contains("not a safety override"));
+        assert!(doc.contains("DirectBoundedAdvisoryOnly"));
+        assert!(doc.contains("ReferenceContextMediatedOnly"));
+        assert!(doc.contains("SelectionContractMediatedOnly"));
+        assert!(doc.contains("exactly the three Prompt 2 implemented relations"));
     }
 }
