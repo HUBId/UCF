@@ -1769,8 +1769,26 @@ pub enum BlueBrainMd2ModelDeepeningStabilizationClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd2ModelDeepeningFinalStatusClass {
+    StableMaintenanceHardenedModelDeepeningBaseline,
+    UsableWithCaveats,
+    AdvisoryOnly,
+    DiagnosticOnlyDeferred,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd2PostStabilizationDecision {
+    MaintenanceSufficientNoSecondCandidateNow,
+}
+
+pub const BLUE_BRAIN_MD2_POST_STABILIZATION_DECISION: BlueBrainMd2PostStabilizationDecision =
+    BlueBrainMd2PostStabilizationDecision::MaintenanceSufficientNoSecondCandidateNow;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlueBrainMd2ModelDeepeningStabilizationMapEntry {
     pub stabilization_class: BlueBrainMd2ModelDeepeningStabilizationClass,
+    pub final_status_class: BlueBrainMd2ModelDeepeningFinalStatusClass,
     pub candidate_class: BlueBrainMd1FirstDeepeningCandidateClass,
     pub current_model_mode: BlueBrainFirstAnatomicalRegionModelModeClass,
     pub canonical_first_deepening_surface: bool,
@@ -1798,6 +1816,8 @@ pub const CANONICAL_BLUE_BRAIN_MD2_MODEL_DEEPENING_STABILIZATION_MAP:
     [BlueBrainMd2ModelDeepeningStabilizationMapEntry; 6] = [
     BlueBrainMd2ModelDeepeningStabilizationMapEntry {
         stabilization_class: BlueBrainMd2ModelDeepeningStabilizationClass::StableDeepenedBaseline,
+        final_status_class:
+            BlueBrainMd2ModelDeepeningFinalStatusClass::StableMaintenanceHardenedModelDeepeningBaseline,
         candidate_class:
             BlueBrainMd1FirstDeepeningCandidateClass::AmygdalaThalamusBoundedKuramotoLikeAdvisory,
         current_model_mode:
@@ -1816,6 +1836,7 @@ pub const CANONICAL_BLUE_BRAIN_MD2_MODEL_DEEPENING_STABILIZATION_MAP:
     BlueBrainMd2ModelDeepeningStabilizationMapEntry {
         stabilization_class:
             BlueBrainMd2ModelDeepeningStabilizationClass::MaintenanceHardenedModelSurface,
+        final_status_class: BlueBrainMd2ModelDeepeningFinalStatusClass::AdvisoryOnly,
         candidate_class:
             BlueBrainMd1FirstDeepeningCandidateClass::AmygdalaThalamusBoundedKuramotoLikeAdvisory,
         current_model_mode:
@@ -1834,6 +1855,7 @@ pub const CANONICAL_BLUE_BRAIN_MD2_MODEL_DEEPENING_STABILIZATION_MAP:
     BlueBrainMd2ModelDeepeningStabilizationMapEntry {
         stabilization_class:
             BlueBrainMd2ModelDeepeningStabilizationClass::MaintenanceHardenedDiagnosticsPath,
+        final_status_class: BlueBrainMd2ModelDeepeningFinalStatusClass::DiagnosticOnlyDeferred,
         candidate_class:
             BlueBrainMd1FirstDeepeningCandidateClass::AmygdalaThalamusBoundedKuramotoLikeAdvisory,
         current_model_mode:
@@ -1852,6 +1874,7 @@ pub const CANONICAL_BLUE_BRAIN_MD2_MODEL_DEEPENING_STABILIZATION_MAP:
     BlueBrainMd2ModelDeepeningStabilizationMapEntry {
         stabilization_class:
             BlueBrainMd2ModelDeepeningStabilizationClass::MaintenanceHardenedContractPath,
+        final_status_class: BlueBrainMd2ModelDeepeningFinalStatusClass::AdvisoryOnly,
         candidate_class:
             BlueBrainMd1FirstDeepeningCandidateClass::AmygdalaThalamusBoundedKuramotoLikeAdvisory,
         current_model_mode:
@@ -1870,6 +1893,7 @@ pub const CANONICAL_BLUE_BRAIN_MD2_MODEL_DEEPENING_STABILIZATION_MAP:
     BlueBrainMd2ModelDeepeningStabilizationMapEntry {
         stabilization_class:
             BlueBrainMd2ModelDeepeningStabilizationClass::MaintenanceHardenedModelBoundary,
+        final_status_class: BlueBrainMd2ModelDeepeningFinalStatusClass::UsableWithCaveats,
         candidate_class:
             BlueBrainMd1FirstDeepeningCandidateClass::AmygdalaThalamusBoundedKuramotoLikeAdvisory,
         current_model_mode:
@@ -1888,6 +1912,7 @@ pub const CANONICAL_BLUE_BRAIN_MD2_MODEL_DEEPENING_STABILIZATION_MAP:
     BlueBrainMd2ModelDeepeningStabilizationMapEntry {
         stabilization_class:
             BlueBrainMd2ModelDeepeningStabilizationClass::NonCanonicalInternalOnlyResidualPath,
+        final_status_class: BlueBrainMd2ModelDeepeningFinalStatusClass::NonCanonicalInternalOnly,
         candidate_class:
             BlueBrainMd1FirstDeepeningCandidateClass::NonCanonicalInternalOnlyCandidate,
         current_model_mode:
@@ -10265,6 +10290,21 @@ mod tests {
                 .iter()
                 .any(|entry| entry.stabilization_class == stabilization_class));
         }
+        for final_status_class in [
+            BlueBrainMd2ModelDeepeningFinalStatusClass::StableMaintenanceHardenedModelDeepeningBaseline,
+            BlueBrainMd2ModelDeepeningFinalStatusClass::UsableWithCaveats,
+            BlueBrainMd2ModelDeepeningFinalStatusClass::AdvisoryOnly,
+            BlueBrainMd2ModelDeepeningFinalStatusClass::DiagnosticOnlyDeferred,
+            BlueBrainMd2ModelDeepeningFinalStatusClass::NonCanonicalInternalOnly,
+        ] {
+            assert!(CANONICAL_BLUE_BRAIN_MD2_MODEL_DEEPENING_STABILIZATION_MAP
+                .iter()
+                .any(|entry| entry.final_status_class == final_status_class));
+        }
+        assert_eq!(
+            BLUE_BRAIN_MD2_POST_STABILIZATION_DECISION,
+            BlueBrainMd2PostStabilizationDecision::MaintenanceSufficientNoSecondCandidateNow
+        );
 
         let canonical_entries: Vec<_> = CANONICAL_BLUE_BRAIN_MD2_MODEL_DEEPENING_STABILIZATION_MAP
             .iter()
@@ -10372,6 +10412,14 @@ mod tests {
             include_str!("../../../docs/blue_brain_md2_model_deepening_stabilization_line_v1.md");
 
         assert!(map_doc.contains("canonical model-deepening reference doc"));
+        assert!(map_doc.contains("Final MD2 model-deepening stabilization map"));
+        assert!(map_doc.contains("stable maintenance-hardened model-deepening baseline"));
+        assert!(map_doc.contains("usable with caveats"));
+        assert!(map_doc.contains("advisory-only"));
+        assert!(map_doc.contains("diagnostic-only/deferred"));
+        assert!(map_doc.contains("non-canonical/internal-only"));
+        assert!(map_doc.contains("MaintenanceSufficientNoSecondCandidateNow"));
+        assert!(map_doc.contains("Maintenance is sufficient after MD2"));
         assert!(map_doc.contains("canonical model-deepening test surface"));
         assert!(map_doc.contains("maintenance-facing index/reference path"));
         assert!(map_doc.contains("non-canonical/internal-only or legacy model path"));
@@ -10393,11 +10441,13 @@ mod tests {
         ));
         assert!(map_doc.contains("`Amygdala ↔ Basal Ganglia` is deferred and not opened in MD2"));
 
-        assert!(readme
-            .contains("Model-deepening maintenance reference map (MD2 Prompt 2, canonical entry)"));
+        assert!(readme.contains(
+            "Final model-deepening maintenance reference map (MD2 Prompt 2/3, canonical entry)"
+        ));
         assert!(readme
             .contains("docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md"));
         assert!(readme.contains("genau `Amygdala ↔ Thalamus` bleibt"));
+        assert!(readme.contains("MaintenanceSufficientNoSecondCandidateNow"));
         assert!(md2_stabilization_doc
             .contains("docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md"));
     }
