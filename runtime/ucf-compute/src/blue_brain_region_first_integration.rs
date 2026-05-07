@@ -1505,6 +1505,28 @@ pub const CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_INTEGRATION_MAP:
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd1FirstDeepeningHardeningClass {
+    HardenedDeepenedInputSurface,
+    HardenedDeepenedStateSurface,
+    HardenedDeepenedOutputAdvisorySurface,
+    HardenedDiagnosticModelBoundary,
+    HardenedRegionRelationContractBoundary,
+    BlockedForbiddenAuthorityPath,
+    NonCanonicalInternalOnlyDeepeningPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_HARDENING_MAP:
+    [BlueBrainMd1FirstDeepeningHardeningClass; 7] = [
+    BlueBrainMd1FirstDeepeningHardeningClass::HardenedDeepenedInputSurface,
+    BlueBrainMd1FirstDeepeningHardeningClass::HardenedDeepenedStateSurface,
+    BlueBrainMd1FirstDeepeningHardeningClass::HardenedDeepenedOutputAdvisorySurface,
+    BlueBrainMd1FirstDeepeningHardeningClass::HardenedDiagnosticModelBoundary,
+    BlueBrainMd1FirstDeepeningHardeningClass::HardenedRegionRelationContractBoundary,
+    BlueBrainMd1FirstDeepeningHardeningClass::BlockedForbiddenAuthorityPath,
+    BlueBrainMd1FirstDeepeningHardeningClass::NonCanonicalInternalOnlyDeepeningPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainMd1FirstDeepeningCandidateClass {
     AmygdalaThalamusBoundedKuramotoLikeAdvisory,
     DeferredPrioritizedCandidateNotDeepenedNow,
@@ -1535,6 +1557,34 @@ pub enum BlueBrainMd1FirstDeepeningDiagnosticClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd1FirstDeepeningContractSupportClass {
+    AdvisoryOnlyBoundedSupport,
+    CaveatedBoundedSupport,
+    DeferredNoSupport,
+    BlockedNoSupport,
+    InsufficientNoSupport,
+    DiagnosticOnlyNoAdvisorySupport,
+    NonCanonicalInternalOnlyNoSupport,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd1FirstDeepeningConsumerReadClass {
+    ConsistentBoundedAdvisoryDiagnosticRead,
+    NoCanonicalConsumerRead,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainMd1FirstDeepeningBoundaryState {
+    pub model_state_is_contract_state: bool,
+    pub diagnostic_output_is_advisory_support: bool,
+    pub caveated_signal_is_strong_operational_input: bool,
+    pub model_deepening_state_is_region_authority: bool,
+    pub region_relation_contracts_remain_leading: bool,
+    pub inter_region_architecture_rewritten: bool,
+    pub second_model_deepening_opened: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlueBrainMd1FirstDeepeningStateSurface {
     pub pair: BlueBrainInterRegionArchitecturePair,
     pub candidate_class: BlueBrainMd1FirstDeepeningCandidateClass,
@@ -1558,6 +1608,11 @@ pub struct BlueBrainMd1FirstDeepeningResult {
     pub state_surface: BlueBrainMd1FirstDeepeningStateSurface,
     pub output_class: BlueBrainMd1FirstDeepeningOutputClass,
     pub diagnostic_class: BlueBrainMd1FirstDeepeningDiagnosticClass,
+    pub contract_support_class: BlueBrainMd1FirstDeepeningContractSupportClass,
+    pub boundary_state: BlueBrainMd1FirstDeepeningBoundaryState,
+    pub runtime_read_class: BlueBrainMd1FirstDeepeningConsumerReadClass,
+    pub selection_read_class: BlueBrainMd1FirstDeepeningConsumerReadClass,
+    pub reference_read_class: BlueBrainMd1FirstDeepeningConsumerReadClass,
     pub kuramoto_result: Option<BlueBrainKuramotoModulationResult>,
     pub runtime_bounded_read: bool,
     pub selection_bounded_read: bool,
@@ -1608,6 +1663,34 @@ fn blue_brain_md1_first_deepening_state_surface(
     }
 }
 
+fn blue_brain_md1_first_deepening_contract_support_class(
+    output_class: BlueBrainMd1FirstDeepeningOutputClass,
+) -> BlueBrainMd1FirstDeepeningContractSupportClass {
+    match output_class {
+        BlueBrainMd1FirstDeepeningOutputClass::AdvisoryOnly => {
+            BlueBrainMd1FirstDeepeningContractSupportClass::AdvisoryOnlyBoundedSupport
+        }
+        BlueBrainMd1FirstDeepeningOutputClass::CaveatedAdvisoryOnly => {
+            BlueBrainMd1FirstDeepeningContractSupportClass::CaveatedBoundedSupport
+        }
+        BlueBrainMd1FirstDeepeningOutputClass::Deferred => {
+            BlueBrainMd1FirstDeepeningContractSupportClass::DeferredNoSupport
+        }
+        BlueBrainMd1FirstDeepeningOutputClass::Blocked => {
+            BlueBrainMd1FirstDeepeningContractSupportClass::BlockedNoSupport
+        }
+        BlueBrainMd1FirstDeepeningOutputClass::Insufficient => {
+            BlueBrainMd1FirstDeepeningContractSupportClass::InsufficientNoSupport
+        }
+        BlueBrainMd1FirstDeepeningOutputClass::DiagnosticOnly => {
+            BlueBrainMd1FirstDeepeningContractSupportClass::DiagnosticOnlyNoAdvisorySupport
+        }
+        BlueBrainMd1FirstDeepeningOutputClass::NonCanonicalInternalOnly => {
+            BlueBrainMd1FirstDeepeningContractSupportClass::NonCanonicalInternalOnlyNoSupport
+        }
+    }
+}
+
 pub fn evaluate_blue_brain_md1_first_model_deepening(
     input: BlueBrainMd1FirstDeepeningInputSurface,
 ) -> BlueBrainMd1FirstDeepeningResult {
@@ -1616,6 +1699,19 @@ pub fn evaluate_blue_brain_md1_first_model_deepening(
         state_surface,
         output_class: BlueBrainMd1FirstDeepeningOutputClass::Deferred,
         diagnostic_class: BlueBrainMd1FirstDeepeningDiagnosticClass::DeferredModelDiagnostic,
+        contract_support_class: BlueBrainMd1FirstDeepeningContractSupportClass::DeferredNoSupport,
+        boundary_state: BlueBrainMd1FirstDeepeningBoundaryState {
+            model_state_is_contract_state: false,
+            diagnostic_output_is_advisory_support: false,
+            caveated_signal_is_strong_operational_input: false,
+            model_deepening_state_is_region_authority: false,
+            region_relation_contracts_remain_leading: true,
+            inter_region_architecture_rewritten: false,
+            second_model_deepening_opened: false,
+        },
+        runtime_read_class: BlueBrainMd1FirstDeepeningConsumerReadClass::NoCanonicalConsumerRead,
+        selection_read_class: BlueBrainMd1FirstDeepeningConsumerReadClass::NoCanonicalConsumerRead,
+        reference_read_class: BlueBrainMd1FirstDeepeningConsumerReadClass::NoCanonicalConsumerRead,
         kuramoto_result: None,
         runtime_bounded_read: false,
         selection_bounded_read: false,
@@ -1655,7 +1751,12 @@ pub fn evaluate_blue_brain_md1_first_model_deepening(
                     BlueBrainMd1FirstDeepeningOutputClass::NonCanonicalInternalOnly
                 }
             };
-            if matches!(kuramoto_scope, BlueBrainKuramotoScopeState::DiagnosticOnly) {
+            if matches!(kuramoto_scope, BlueBrainKuramotoScopeState::DiagnosticOnly)
+                && !matches!(
+                    result.output_class,
+                    BlueBrainMd1FirstDeepeningOutputClass::NonCanonicalInternalOnly
+                )
+            {
                 result.output_class = BlueBrainMd1FirstDeepeningOutputClass::DiagnosticOnly;
                 result.diagnostic_class =
                     BlueBrainMd1FirstDeepeningDiagnosticClass::DiagnosticOnlyModelRead;
@@ -1705,6 +1806,29 @@ pub fn evaluate_blue_brain_md1_first_model_deepening(
                 BlueBrainMd1FirstDeepeningDiagnosticClass::NonCanonicalInternalOnlyModelDiagnostic;
         }
     }
+
+    result.contract_support_class =
+        blue_brain_md1_first_deepening_contract_support_class(result.output_class);
+    if matches!(
+        result.output_class,
+        BlueBrainMd1FirstDeepeningOutputClass::NonCanonicalInternalOnly
+    ) {
+        result.runtime_bounded_read = false;
+        result.selection_bounded_read = false;
+        result.reference_bounded_read = false;
+    }
+
+    let consumer_read_class = if result.runtime_bounded_read
+        && result.selection_bounded_read
+        && result.reference_bounded_read
+    {
+        BlueBrainMd1FirstDeepeningConsumerReadClass::ConsistentBoundedAdvisoryDiagnosticRead
+    } else {
+        BlueBrainMd1FirstDeepeningConsumerReadClass::NoCanonicalConsumerRead
+    };
+    result.runtime_read_class = consumer_read_class;
+    result.selection_read_class = consumer_read_class;
+    result.reference_read_class = consumer_read_class;
 
     result
 }
@@ -9377,6 +9501,33 @@ mod tests {
             CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_INTEGRATION_MAP.len(),
             6
         );
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_HARDENING_MAP.len(),
+            7
+        );
+        assert!(CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_HARDENING_MAP
+            .contains(&BlueBrainMd1FirstDeepeningHardeningClass::HardenedDeepenedInputSurface));
+        assert!(CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_HARDENING_MAP
+            .contains(&BlueBrainMd1FirstDeepeningHardeningClass::HardenedDeepenedStateSurface));
+        assert!(
+            CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_HARDENING_MAP.contains(
+                &BlueBrainMd1FirstDeepeningHardeningClass::HardenedDeepenedOutputAdvisorySurface
+            )
+        );
+        assert!(CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_HARDENING_MAP
+            .contains(&BlueBrainMd1FirstDeepeningHardeningClass::HardenedDiagnosticModelBoundary));
+        assert!(
+            CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_HARDENING_MAP.contains(
+                &BlueBrainMd1FirstDeepeningHardeningClass::HardenedRegionRelationContractBoundary
+            )
+        );
+        assert!(CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_HARDENING_MAP
+            .contains(&BlueBrainMd1FirstDeepeningHardeningClass::BlockedForbiddenAuthorityPath));
+        assert!(
+            CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_HARDENING_MAP.contains(
+                &BlueBrainMd1FirstDeepeningHardeningClass::NonCanonicalInternalOnlyDeepeningPath
+            )
+        );
         assert!(
             CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_INTEGRATION_MAP.contains(
                 &BlueBrainMd1FirstDeepeningIntegrationPathClass::DeepenedCandidateInputSurface
@@ -9529,6 +9680,94 @@ mod tests {
     }
 
     #[test]
+    fn md1_first_deepening_hardening_keeps_model_diagnostic_contract_and_consumer_reads_separate() {
+        let advisory =
+            evaluate_blue_brain_md1_first_model_deepening(md1_first_deepening_kuramoto_input(
+                BlueBrainInterRegionArchitecturePair::AmygdalaThalamus,
+                BlueBrainKuramotoScopeState::RuntimeCaveatModulating,
+            ));
+        assert_eq!(
+            advisory.contract_support_class,
+            BlueBrainMd1FirstDeepeningContractSupportClass::AdvisoryOnlyBoundedSupport
+        );
+        assert_eq!(
+            advisory.runtime_read_class,
+            BlueBrainMd1FirstDeepeningConsumerReadClass::ConsistentBoundedAdvisoryDiagnosticRead
+        );
+        assert_eq!(advisory.runtime_read_class, advisory.selection_read_class);
+        assert_eq!(advisory.selection_read_class, advisory.reference_read_class);
+        assert!(!advisory.boundary_state.model_state_is_contract_state);
+        assert!(
+            !advisory
+                .boundary_state
+                .diagnostic_output_is_advisory_support
+        );
+        assert!(
+            !advisory
+                .boundary_state
+                .caveated_signal_is_strong_operational_input
+        );
+        assert!(
+            !advisory
+                .boundary_state
+                .model_deepening_state_is_region_authority
+        );
+        assert!(
+            advisory
+                .boundary_state
+                .region_relation_contracts_remain_leading
+        );
+        assert!(!advisory.boundary_state.inter_region_architecture_rewritten);
+        assert!(!advisory.boundary_state.second_model_deepening_opened);
+
+        let diagnostic_only =
+            evaluate_blue_brain_md1_first_model_deepening(md1_first_deepening_kuramoto_input(
+                BlueBrainInterRegionArchitecturePair::AmygdalaThalamus,
+                BlueBrainKuramotoScopeState::DiagnosticOnly,
+            ));
+        assert_eq!(
+            diagnostic_only.contract_support_class,
+            BlueBrainMd1FirstDeepeningContractSupportClass::DiagnosticOnlyNoAdvisorySupport
+        );
+        assert_eq!(
+            diagnostic_only.runtime_read_class,
+            BlueBrainMd1FirstDeepeningConsumerReadClass::ConsistentBoundedAdvisoryDiagnosticRead
+        );
+
+        let mut non_canonical = md1_first_deepening_kuramoto_input(
+            BlueBrainInterRegionArchitecturePair::AmygdalaThalamus,
+            BlueBrainKuramotoScopeState::DiagnosticOnly,
+        );
+        non_canonical
+            .kuramoto_input
+            .non_canonical_internal_only_path = true;
+        let non_canonical_result = evaluate_blue_brain_md1_first_model_deepening(non_canonical);
+        assert_eq!(
+            non_canonical_result.output_class,
+            BlueBrainMd1FirstDeepeningOutputClass::NonCanonicalInternalOnly
+        );
+        assert_eq!(
+            non_canonical_result.contract_support_class,
+            BlueBrainMd1FirstDeepeningContractSupportClass::NonCanonicalInternalOnlyNoSupport
+        );
+        assert_eq!(
+            non_canonical_result.runtime_read_class,
+            BlueBrainMd1FirstDeepeningConsumerReadClass::NoCanonicalConsumerRead
+        );
+        assert_eq!(
+            non_canonical_result.runtime_read_class,
+            non_canonical_result.selection_read_class
+        );
+        assert_eq!(
+            non_canonical_result.selection_read_class,
+            non_canonical_result.reference_read_class
+        );
+        assert!(!non_canonical_result.runtime_bounded_read);
+        assert!(!non_canonical_result.selection_bounded_read);
+        assert!(!non_canonical_result.reference_bounded_read);
+    }
+
+    #[test]
     fn md1_first_deepening_preserves_no_direct_authority_and_no_extra_model_platform() {
         let mut cases = vec![
             evaluate_blue_brain_md1_first_model_deepening(md1_first_deepening_kuramoto_input(
@@ -9627,5 +9866,21 @@ mod tests {
         assert!(
             readme.contains("docs/blue_brain_md1_first_model_deepening_implementation_line_v1.md")
         );
+
+        let prompt3_doc =
+            include_str!("../../../docs/blue_brain_md1_model_deepening_hardening_line_v1.md");
+        assert!(prompt3_doc.contains("hardened deepened input surface"));
+        assert!(prompt3_doc.contains("hardened deepened state surface"));
+        assert!(prompt3_doc.contains("hardened deepened output/advisory surface"));
+        assert!(prompt3_doc.contains("hardened diagnostic/model boundary"));
+        assert!(prompt3_doc.contains("hardened region/relation contract boundary"));
+        assert!(prompt3_doc.contains("blocked forbidden authority path"));
+        assert!(prompt3_doc.contains("non-canonical/internal-only deepening path"));
+        assert!(prompt3_doc.contains("Modellzustand ist kein Contract-Zustand"));
+        assert!(prompt3_doc.contains("diagnostic-only no support"));
+        assert!(prompt3_doc.contains("kein direct action trigger"));
+        assert!(prompt3_doc.contains("kein direct compute invocation"));
+        assert!(readme.contains("Model-deepening hardening line (MD1 Prompt 3)"));
+        assert!(readme.contains("docs/blue_brain_md1_model_deepening_hardening_line_v1.md"));
     }
 }

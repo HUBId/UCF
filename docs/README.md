@@ -104,6 +104,7 @@ Autoritätsklassen im Repo-Kontext:
 - **Execution guard rails (BB18):** `docs/blue_brain_execution_guard_rails_production_facing_serie_bb18_prompt3_v1.md`
 - **Selective model-deepening decision line (MD1):** `docs/blue_brain_md1_selective_model_deepening_decision_line_v1.md`
 - **First model-deepening implementation line (MD1 Prompt 2):** `docs/blue_brain_md1_first_model_deepening_implementation_line_v1.md`
+- **Model-deepening hardening line (MD1 Prompt 3):** `docs/blue_brain_md1_model_deepening_hardening_line_v1.md`
 - **Real compute final reference line:**
   - `docs/final_reference_line_serie_j_v1.md`
   - `docs/final_production_readiness_evidence_pack_serie_j_v1.md`
