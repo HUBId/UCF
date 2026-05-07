@@ -2,7 +2,7 @@
 
 Status: **first inter-region implementation line** over the bounded IR1 architecture map. This document is the implementation companion to `docs/blue_brain_inter_region_architecture_serie_ir1_prompt1_v1.md`; it does not replace that architecture map and does not create a second truth source for relation classes.
 
-IR1 Prompt 2 implements exactly three implemented relations from the IR1 map. Every other architecture-map relation remains deferred/not-yet-implemented or blocked for this step.
+IR1 Prompt 2 implements exactly three implemented relations from the original five-region IR1 map. Every other original architecture-map relation remains deferred/not-yet-implemented or blocked for this step. BR6 Prompt 2 appends a bounded Hypothalamus adjunct relation set to the same code anchor without changing the original IR1 base-three decision.
 
 ## 1) Implementation classes
 
@@ -71,7 +71,7 @@ Reference-mediated remains Reference/Context-mediated; selection-mediated remain
 
 ## 5) Repo anchoring
 
-The canonical code anchor for Prompt 2 is `CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP` in `runtime/ucf-compute/src/blue_brain_region_first_integration.rs`. It records relation class, source role, target role, signal types, mediation path, and no-direct guard booleans for the ten Prompt 1 pairs while implementing only the three pairs listed above.
+The canonical code anchor for Prompt 2 is `CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP` in `runtime/ucf-compute/src/blue_brain_region_first_integration.rs`. It records relation class, source role, target role, signal types, mediation path, and no-direct guard booleans for the ten original Prompt 1 pairs while implementing only the three base pairs listed above. BR6 Prompt 2 extends that anchor to fifteen entries by adding the five Hypothalamus adjunct relations: Hippocampus ↔ Hypothalamus, Amygdala ↔ Hypothalamus, Thalamus ↔ Hypothalamus, Basal Ganglia ↔ Hypothalamus, and Cerebellum ↔ Hypothalamus. Those adjunct entries remain bounded/advisory-only and do not create direct action, execution, retry, memory, compute, or safety authority.
 
 ## 6) IR1 next steps
 
@@ -80,3 +80,7 @@ The canonical code anchor for Prompt 2 is `CANONICAL_BLUE_BRAIN_FIRST_INTER_REGI
 3. Decide whether the next implementation should be `Hippocampus ↔ Cerebellum` reference-mediated or `Thalamus ↔ Basal Ganglia` selection-mediated; do not activate both by default.
 4. Keep `Basal Ganglia ↔ Cerebellum` execution-interface-mediated diagnostics deferred until a separate execution-interface guard review.
 5. Keep `Hippocampus ↔ Basal Ganglia` direct relation blocked unless an explicit future mediated scope replaces the blocked direct edge.
+
+## BR6 adjunct update
+
+After BR6 Prompt 2, the original IR1 base-three implementation remains historically intact, but the runtime code map also carries the bounded Hypothalamus adjunct relation set. This update is not a new inter-region platform and not a rewrite of the original three high-leverage relations.

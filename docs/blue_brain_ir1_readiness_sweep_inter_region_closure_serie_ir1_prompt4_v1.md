@@ -2,7 +2,7 @@
 
 Status: **IR1 closeout reference** for the initial bounded inter-region architecture. This file closes the Prompt-1 map, Prompt-2 implementation line, and Prompt-3 diagnostics/contract hardening without creating a second truth source: the canonical code anchor remains `CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP`, and this document only records the readiness reading of that map.
 
-Scope: only the already opened anatomical regions `hippocampus_like_region`, `amygdala_like_region`, `thalamus_like_region`, `basal_ganglia_like_region`, and `cerebellum_like_region`. Hypothalamus is considered only as a next-direction decision, not opened by IR1.
+Scope: only the already opened anatomical regions `hippocampus_like_region`, `amygdala_like_region`, `thalamus_like_region`, `basal_ganglia_like_region`, and `cerebellum_like_region`. Hypothalamus is considered only as a next-direction decision, not opened by IR1. BR6 Prompt 2 supersedes that historical waiting state by adding a separate bounded Hypothalamus adjunct integration line.
 
 ## 1) IR1-readiness map
 
@@ -103,3 +103,7 @@ Technical rationale:
 4. No broad expansion is justified: the highest-leverage next step is one narrow model-depth improvement on an existing region or relation surface, not an additional all-to-all relation stage.
 
 This decision does not reopen Compute and does not authorize a Hypothalamus integration in IR1.
+
+## BR6 Prompt 2 supersession note
+
+The IR1 readiness counts remain the historical five-region closeout basis. BR6 Prompt 2 separately extends the code-level inter-region diagnostics map to include Hypothalamus adjunct relations. That later extension keeps the same no-direct guards and does not reopen Compute, policy/governance, planner/agent, retry/orchestration or memory persistence scope.

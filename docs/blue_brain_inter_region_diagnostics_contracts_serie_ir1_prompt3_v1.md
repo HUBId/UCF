@@ -1,6 +1,6 @@
 # Blue-Brain IR1 Prompt 3: inter-region diagnostics and contract semantics
 
-Status: **bounded diagnostics/contract hardening line** for exactly the three Prompt 2 implemented relations. This document hardens how Runtime, Selection, and Reference read relation diagnostics without adding a global inter-region platform, a planner/agent layer, retry orchestration, policy governance, new memory persistence, or compute-core work.
+Status: **bounded diagnostics/contract hardening line** for exactly the three original Prompt 2 implemented relations. This document hardens how Runtime, Selection, and Reference read relation diagnostics without adding a global inter-region platform, a planner/agent layer, retry orchestration, policy governance, new memory persistence, or compute-core work.
 
 Canonical code anchor: `CANONICAL_BLUE_BRAIN_INTER_REGION_DIAGNOSTICS_CONTRACT_MAP` in `runtime/ucf-compute/src/blue_brain_region_first_integration.rs`. It is derived from `CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP`; it does not open additional relations.
 
@@ -104,3 +104,7 @@ Loose helper paths, test-only signals, raw region internals, and unlisted relati
 3. Decide one next relation candidate in a later prompt; do not activate multiple deferred relations together.
 4. Review execution-interface-mediated diagnostics separately before opening `Basal Ganglia ↔ Cerebellum`.
 5. Keep non-canonical/internal-only paths non-operational and visible only as diagnostics.
+
+## BR6 Hypothalamus adjunct note
+
+BR6 Prompt 2 adds bounded Hypothalamus adjunct contract reads to the same diagnostics map. Runtime, Selection and Reference continue to read those entries as bounded Contract-/Diagnostic-Reads only; deferred, blocked, insufficient, diagnostic-only and non-canonical states remain distinct and no direct action, execution, retry, memory, compute or safety authority is added.
