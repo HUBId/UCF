@@ -1164,6 +1164,322 @@ pub fn is_blue_brain_first_inter_region_relation_implemented(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd1ModelDeepeningClass {
+    AbstractSufficient,
+    BoundedKuramotoLikeCandidate,
+    HodgkinHuxleySimulationOnlyDiagnosticOnlyCandidate,
+    LaterSelectiveHodgkinHuxleyDeepening,
+    NoDeepeningNeededNow,
+    NonCanonicalInternalOnlyModelPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_MD1_MODEL_DEEPENING_CLASS_MAP: [BlueBrainMd1ModelDeepeningClass; 6] = [
+    BlueBrainMd1ModelDeepeningClass::AbstractSufficient,
+    BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate,
+    BlueBrainMd1ModelDeepeningClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCandidate,
+    BlueBrainMd1ModelDeepeningClass::LaterSelectiveHodgkinHuxleyDeepening,
+    BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow,
+    BlueBrainMd1ModelDeepeningClass::NonCanonicalInternalOnlyModelPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd1DeepeningSurfaceKind {
+    Region,
+    Relation,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd1DeepeningPriorityClass {
+    NextConcreteDeepeningCandidate,
+    CandidateButWait,
+    KeepAbstractOrDeferred,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainMd1RegionDeepeningDecision {
+    pub region: BlueBrainAnatomicalRegionClass,
+    pub system_role: BlueBrainAnatomicalRegionSystemRoleClass,
+    pub current_model_mode: BlueBrainFirstAnatomicalRegionModelModeClass,
+    pub deepening_class: BlueBrainMd1ModelDeepeningClass,
+    pub priority_class: BlueBrainMd1DeepeningPriorityClass,
+    pub coupling_synchrony_gating_timing_leverage: bool,
+    pub excitability_spiking_membrane_leverage: bool,
+    pub advisory_only: bool,
+    pub direct_action_trigger: bool,
+    pub direct_execution_trigger: bool,
+    pub direct_retry_trigger: bool,
+    pub direct_memory_commit: bool,
+    pub direct_compute_invocation: bool,
+    pub global_model_platform: bool,
+}
+
+const fn blue_brain_md1_region_deepening_decision_const(
+    region: BlueBrainAnatomicalRegionClass,
+    system_role: BlueBrainAnatomicalRegionSystemRoleClass,
+    current_model_mode: BlueBrainFirstAnatomicalRegionModelModeClass,
+    deepening_class: BlueBrainMd1ModelDeepeningClass,
+    priority_class: BlueBrainMd1DeepeningPriorityClass,
+    coupling_synchrony_gating_timing_leverage: bool,
+    excitability_spiking_membrane_leverage: bool,
+) -> BlueBrainMd1RegionDeepeningDecision {
+    BlueBrainMd1RegionDeepeningDecision {
+        region,
+        system_role,
+        current_model_mode,
+        deepening_class,
+        priority_class,
+        coupling_synchrony_gating_timing_leverage,
+        excitability_spiking_membrane_leverage,
+        advisory_only: true,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        global_model_platform: false,
+    }
+}
+
+pub const CANONICAL_BLUE_BRAIN_MD1_REGION_DEEPENING_DECISION_MAP:
+    [BlueBrainMd1RegionDeepeningDecision; 5] = [
+    blue_brain_md1_region_deepening_decision_const(
+        BlueBrainAnatomicalRegionClass::Hippocampus,
+        BlueBrainAnatomicalRegionSystemRoleClass::AttentionSelectionMediation,
+        BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode,
+        BlueBrainMd1ModelDeepeningClass::AbstractSufficient,
+        BlueBrainMd1DeepeningPriorityClass::KeepAbstractOrDeferred,
+        false,
+        false,
+    ),
+    blue_brain_md1_region_deepening_decision_const(
+        BlueBrainAnatomicalRegionClass::Amygdala,
+        BlueBrainAnatomicalRegionSystemRoleClass::ThreatSalienceCaveatMediation,
+        BlueBrainFirstAnatomicalRegionModelModeClass::BoundedKuramotoLikeCurrentMode,
+        BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate,
+        BlueBrainMd1DeepeningPriorityClass::CandidateButWait,
+        true,
+        false,
+    ),
+    blue_brain_md1_region_deepening_decision_const(
+        BlueBrainAnatomicalRegionClass::Thalamus,
+        BlueBrainAnatomicalRegionSystemRoleClass::RelayIntegrationMediation,
+        BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode,
+        BlueBrainMd1ModelDeepeningClass::AbstractSufficient,
+        BlueBrainMd1DeepeningPriorityClass::KeepAbstractOrDeferred,
+        false,
+        false,
+    ),
+    blue_brain_md1_region_deepening_decision_const(
+        BlueBrainAnatomicalRegionClass::BasalGanglia,
+        BlueBrainAnatomicalRegionSystemRoleClass::ActionGatingMediation,
+        BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode,
+        BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow,
+        BlueBrainMd1DeepeningPriorityClass::KeepAbstractOrDeferred,
+        false,
+        false,
+    ),
+    blue_brain_md1_region_deepening_decision_const(
+        BlueBrainAnatomicalRegionClass::Cerebellum,
+        BlueBrainAnatomicalRegionSystemRoleClass::PredictionTimingCorrectionMediation,
+        BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode,
+        BlueBrainMd1ModelDeepeningClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCandidate,
+        BlueBrainMd1DeepeningPriorityClass::CandidateButWait,
+        false,
+        true,
+    ),
+];
+
+pub fn blue_brain_md1_region_deepening_decision(
+    region: BlueBrainAnatomicalRegionClass,
+) -> BlueBrainMd1RegionDeepeningDecision {
+    CANONICAL_BLUE_BRAIN_MD1_REGION_DEEPENING_DECISION_MAP
+        .iter()
+        .copied()
+        .find(|decision| decision.region == region)
+        .unwrap_or_else(|| {
+            blue_brain_md1_region_deepening_decision_const(
+                region,
+                blue_brain_anatomical_region_system_role(region),
+                blue_brain_anatomical_region_model_mode(region),
+                BlueBrainMd1ModelDeepeningClass::NonCanonicalInternalOnlyModelPath,
+                BlueBrainMd1DeepeningPriorityClass::NonCanonicalInternalOnly,
+                false,
+                false,
+            )
+        })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainMd1RelationDeepeningDecision {
+    pub pair: BlueBrainInterRegionArchitecturePair,
+    pub implementation_relation_class: BlueBrainInterRegionImplementationRelationClass,
+    pub mediation_path: BlueBrainInterRegionImplementationMediationPath,
+    pub deepening_class: BlueBrainMd1ModelDeepeningClass,
+    pub priority_class: BlueBrainMd1DeepeningPriorityClass,
+    pub coupling_synchrony_gating_timing_leverage: bool,
+    pub excitability_spiking_membrane_leverage: bool,
+    pub advisory_only: bool,
+    pub direct_action_trigger: bool,
+    pub direct_execution_trigger: bool,
+    pub direct_retry_trigger: bool,
+    pub direct_memory_commit: bool,
+    pub direct_compute_invocation: bool,
+    pub global_model_platform: bool,
+}
+
+const fn blue_brain_md1_relation_deepening_decision_const(
+    pair: BlueBrainInterRegionArchitecturePair,
+    implementation_relation_class: BlueBrainInterRegionImplementationRelationClass,
+    mediation_path: BlueBrainInterRegionImplementationMediationPath,
+    deepening_class: BlueBrainMd1ModelDeepeningClass,
+    priority_class: BlueBrainMd1DeepeningPriorityClass,
+    coupling_synchrony_gating_timing_leverage: bool,
+    excitability_spiking_membrane_leverage: bool,
+) -> BlueBrainMd1RelationDeepeningDecision {
+    BlueBrainMd1RelationDeepeningDecision {
+        pair,
+        implementation_relation_class,
+        mediation_path,
+        deepening_class,
+        priority_class,
+        coupling_synchrony_gating_timing_leverage,
+        excitability_spiking_membrane_leverage,
+        advisory_only: true,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        global_model_platform: false,
+    }
+}
+
+pub const CANONICAL_BLUE_BRAIN_MD1_RELATION_DEEPENING_DECISION_MAP:
+    [BlueBrainMd1RelationDeepeningDecision; 10] = [
+    blue_brain_md1_relation_deepening_decision_const(
+        BlueBrainInterRegionArchitecturePair::HippocampusAmygdala,
+        BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+        BlueBrainInterRegionImplementationMediationPath::NotYetImplemented,
+        BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow,
+        BlueBrainMd1DeepeningPriorityClass::KeepAbstractOrDeferred,
+        false,
+        false,
+    ),
+    blue_brain_md1_relation_deepening_decision_const(
+        BlueBrainInterRegionArchitecturePair::HippocampusThalamus,
+        BlueBrainInterRegionImplementationRelationClass::ImplementedReferenceMediatedRelation,
+        BlueBrainInterRegionImplementationMediationPath::ReferenceContextMediatedOnly,
+        BlueBrainMd1ModelDeepeningClass::AbstractSufficient,
+        BlueBrainMd1DeepeningPriorityClass::KeepAbstractOrDeferred,
+        false,
+        false,
+    ),
+    blue_brain_md1_relation_deepening_decision_const(
+        BlueBrainInterRegionArchitecturePair::HippocampusBasalGanglia,
+        BlueBrainInterRegionImplementationRelationClass::BlockedRelation,
+        BlueBrainInterRegionImplementationMediationPath::BlockedUnavailable,
+        BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow,
+        BlueBrainMd1DeepeningPriorityClass::KeepAbstractOrDeferred,
+        false,
+        false,
+    ),
+    blue_brain_md1_relation_deepening_decision_const(
+        BlueBrainInterRegionArchitecturePair::HippocampusCerebellum,
+        BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+        BlueBrainInterRegionImplementationMediationPath::NotYetImplemented,
+        BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow,
+        BlueBrainMd1DeepeningPriorityClass::KeepAbstractOrDeferred,
+        false,
+        false,
+    ),
+    blue_brain_md1_relation_deepening_decision_const(
+        BlueBrainInterRegionArchitecturePair::AmygdalaThalamus,
+        BlueBrainInterRegionImplementationRelationClass::ImplementedDirectBoundedAdvisoryRelation,
+        BlueBrainInterRegionImplementationMediationPath::DirectBoundedAdvisoryOnly,
+        BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate,
+        BlueBrainMd1DeepeningPriorityClass::NextConcreteDeepeningCandidate,
+        true,
+        false,
+    ),
+    blue_brain_md1_relation_deepening_decision_const(
+        BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia,
+        BlueBrainInterRegionImplementationRelationClass::ImplementedSelectionMediatedRelation,
+        BlueBrainInterRegionImplementationMediationPath::SelectionContractMediatedOnly,
+        BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate,
+        BlueBrainMd1DeepeningPriorityClass::NextConcreteDeepeningCandidate,
+        true,
+        false,
+    ),
+    blue_brain_md1_relation_deepening_decision_const(
+        BlueBrainInterRegionArchitecturePair::AmygdalaCerebellum,
+        BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+        BlueBrainInterRegionImplementationMediationPath::NotYetImplemented,
+        BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow,
+        BlueBrainMd1DeepeningPriorityClass::KeepAbstractOrDeferred,
+        false,
+        false,
+    ),
+    blue_brain_md1_relation_deepening_decision_const(
+        BlueBrainInterRegionArchitecturePair::ThalamusBasalGanglia,
+        BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+        BlueBrainInterRegionImplementationMediationPath::NotYetImplemented,
+        BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow,
+        BlueBrainMd1DeepeningPriorityClass::KeepAbstractOrDeferred,
+        false,
+        false,
+    ),
+    blue_brain_md1_relation_deepening_decision_const(
+        BlueBrainInterRegionArchitecturePair::ThalamusCerebellum,
+        BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+        BlueBrainInterRegionImplementationMediationPath::NotYetImplemented,
+        BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow,
+        BlueBrainMd1DeepeningPriorityClass::KeepAbstractOrDeferred,
+        false,
+        false,
+    ),
+    blue_brain_md1_relation_deepening_decision_const(
+        BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum,
+        BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+        BlueBrainInterRegionImplementationMediationPath::NotYetImplemented,
+        BlueBrainMd1ModelDeepeningClass::LaterSelectiveHodgkinHuxleyDeepening,
+        BlueBrainMd1DeepeningPriorityClass::CandidateButWait,
+        false,
+        true,
+    ),
+];
+
+pub fn blue_brain_md1_relation_deepening_decision(
+    pair: BlueBrainInterRegionArchitecturePair,
+) -> BlueBrainMd1RelationDeepeningDecision {
+    CANONICAL_BLUE_BRAIN_MD1_RELATION_DEEPENING_DECISION_MAP
+        .iter()
+        .copied()
+        .find(|decision| decision.pair == pair)
+        .unwrap_or_else(|| {
+            let relation = blue_brain_first_inter_region_implementation_relation_for_pair(pair);
+            blue_brain_md1_relation_deepening_decision_const(
+                pair,
+                relation.implementation_relation_class,
+                relation.mediation_path,
+                BlueBrainMd1ModelDeepeningClass::NonCanonicalInternalOnlyModelPath,
+                BlueBrainMd1DeepeningPriorityClass::NonCanonicalInternalOnly,
+                false,
+                false,
+            )
+        })
+}
+
+pub fn blue_brain_md1_relation_deepening_is_consistent_with_implementation(
+    decision: BlueBrainMd1RelationDeepeningDecision,
+) -> bool {
+    let relation = blue_brain_first_inter_region_implementation_relation_for_pair(decision.pair);
+    decision.implementation_relation_class == relation.implementation_relation_class
+        && decision.mediation_path == relation.mediation_path
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainInterRegionArchitectureOutputClass {
     BoundedAdvisoryRead,
     ReferenceContextRead,
@@ -8646,5 +8962,166 @@ mod tests {
         assert!(doc.contains("ReferenceContextMediatedOnly"));
         assert!(doc.contains("SelectionContractMediatedOnly"));
         assert!(doc.contains("exactly the three Prompt 2 implemented relations"));
+    }
+
+    #[test]
+    fn md1_model_deepening_classes_regions_and_relations_are_distinct() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_MD1_MODEL_DEEPENING_CLASS_MAP.len(), 6);
+        assert!(CANONICAL_BLUE_BRAIN_MD1_MODEL_DEEPENING_CLASS_MAP
+            .contains(&BlueBrainMd1ModelDeepeningClass::AbstractSufficient));
+        assert!(CANONICAL_BLUE_BRAIN_MD1_MODEL_DEEPENING_CLASS_MAP
+            .contains(&BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate));
+        assert!(CANONICAL_BLUE_BRAIN_MD1_MODEL_DEEPENING_CLASS_MAP.contains(
+            &BlueBrainMd1ModelDeepeningClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCandidate
+        ));
+        assert!(CANONICAL_BLUE_BRAIN_MD1_MODEL_DEEPENING_CLASS_MAP
+            .contains(&BlueBrainMd1ModelDeepeningClass::LaterSelectiveHodgkinHuxleyDeepening));
+        assert!(CANONICAL_BLUE_BRAIN_MD1_MODEL_DEEPENING_CLASS_MAP
+            .contains(&BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow));
+        assert!(CANONICAL_BLUE_BRAIN_MD1_MODEL_DEEPENING_CLASS_MAP
+            .contains(&BlueBrainMd1ModelDeepeningClass::NonCanonicalInternalOnlyModelPath));
+
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_MD1_REGION_DEEPENING_DECISION_MAP.len(),
+            5
+        );
+        assert_eq!(
+            blue_brain_md1_region_deepening_decision(BlueBrainAnatomicalRegionClass::Hippocampus)
+                .deepening_class,
+            BlueBrainMd1ModelDeepeningClass::AbstractSufficient
+        );
+        assert_eq!(
+            blue_brain_md1_region_deepening_decision(BlueBrainAnatomicalRegionClass::Amygdala)
+                .deepening_class,
+            BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate
+        );
+        assert_eq!(
+            blue_brain_md1_region_deepening_decision(BlueBrainAnatomicalRegionClass::Thalamus)
+                .deepening_class,
+            BlueBrainMd1ModelDeepeningClass::AbstractSufficient
+        );
+        assert_eq!(
+            blue_brain_md1_region_deepening_decision(BlueBrainAnatomicalRegionClass::BasalGanglia)
+                .deepening_class,
+            BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow
+        );
+        assert_eq!(
+            blue_brain_md1_region_deepening_decision(BlueBrainAnatomicalRegionClass::Cerebellum)
+                .deepening_class,
+            BlueBrainMd1ModelDeepeningClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCandidate
+        );
+        assert_eq!(
+            blue_brain_md1_region_deepening_decision(
+                BlueBrainAnatomicalRegionClass::PrefrontalCortex
+            )
+            .deepening_class,
+            BlueBrainMd1ModelDeepeningClass::NonCanonicalInternalOnlyModelPath
+        );
+
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_MD1_RELATION_DEEPENING_DECISION_MAP.len(),
+            10
+        );
+        for decision in CANONICAL_BLUE_BRAIN_MD1_RELATION_DEEPENING_DECISION_MAP {
+            assert!(blue_brain_md1_relation_deepening_is_consistent_with_implementation(decision));
+        }
+    }
+
+    #[test]
+    fn md1_prioritizes_only_two_bounded_relation_deepening_candidates() {
+        let prioritized: Vec<_> = CANONICAL_BLUE_BRAIN_MD1_RELATION_DEEPENING_DECISION_MAP
+            .iter()
+            .copied()
+            .filter(|decision| {
+                decision.priority_class
+                    == BlueBrainMd1DeepeningPriorityClass::NextConcreteDeepeningCandidate
+            })
+            .collect();
+
+        assert_eq!(prioritized.len(), 2);
+        assert!(prioritized.iter().any(|decision| {
+            decision.pair == BlueBrainInterRegionArchitecturePair::AmygdalaThalamus
+                && decision.deepening_class
+                    == BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate
+                && decision.coupling_synchrony_gating_timing_leverage
+                && !decision.excitability_spiking_membrane_leverage
+        }));
+        assert!(prioritized.iter().any(|decision| {
+            decision.pair == BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia
+                && decision.deepening_class
+                    == BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate
+                && decision.coupling_synchrony_gating_timing_leverage
+                && !decision.excitability_spiking_membrane_leverage
+        }));
+
+        assert_eq!(
+            blue_brain_md1_relation_deepening_decision(
+                BlueBrainInterRegionArchitecturePair::HippocampusThalamus
+            )
+            .deepening_class,
+            BlueBrainMd1ModelDeepeningClass::AbstractSufficient
+        );
+        assert_eq!(
+            blue_brain_md1_relation_deepening_decision(
+                BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum
+            )
+            .deepening_class,
+            BlueBrainMd1ModelDeepeningClass::LaterSelectiveHodgkinHuxleyDeepening
+        );
+    }
+
+    #[test]
+    fn md1_model_deepening_cannot_expand_no_direct_scope() {
+        for decision in CANONICAL_BLUE_BRAIN_MD1_REGION_DEEPENING_DECISION_MAP {
+            assert!(decision.advisory_only);
+            assert!(!decision.direct_action_trigger);
+            assert!(!decision.direct_execution_trigger);
+            assert!(!decision.direct_retry_trigger);
+            assert!(!decision.direct_memory_commit);
+            assert!(!decision.direct_compute_invocation);
+            assert!(!decision.global_model_platform);
+        }
+
+        for decision in CANONICAL_BLUE_BRAIN_MD1_RELATION_DEEPENING_DECISION_MAP {
+            assert!(decision.advisory_only);
+            assert!(!decision.direct_action_trigger);
+            assert!(!decision.direct_execution_trigger);
+            assert!(!decision.direct_retry_trigger);
+            assert!(!decision.direct_memory_commit);
+            assert!(!decision.direct_compute_invocation);
+            assert!(!decision.global_model_platform);
+        }
+    }
+
+    #[test]
+    fn md1_doc_pins_selective_model_deepening_decision_line() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_md1_selective_model_deepening_decision_line_v1.md"
+        );
+        assert!(doc.contains("abstract sufficient"));
+        assert!(doc.contains("bounded Kuramoto-like candidate"));
+        assert!(doc.contains("HH simulation-only/diagnostic-only candidate"));
+        assert!(doc.contains("later selective HH deepening"));
+        assert!(doc.contains("no-deepening-needed-now"));
+        assert!(doc.contains("non-canonical/internal-only model path"));
+        assert!(doc.contains("Hippocampus"));
+        assert!(doc.contains("Amygdala"));
+        assert!(doc.contains("Thalamus"));
+        assert!(doc.contains("Basal Ganglia"));
+        assert!(doc.contains("Cerebellum"));
+        assert!(doc.contains("Priority 1: `Amygdala ↔ Thalamus`"));
+        assert!(doc.contains("Priority 2: `Amygdala ↔ Basal Ganglia`"));
+        assert!(doc.contains("not direct Action control"));
+        assert!(doc.contains("not direct Execution control"));
+        assert!(doc.contains("not Retry orchestration"));
+        assert!(doc.contains("not Memory mutation"));
+        assert!(doc.contains("Compute-Core expansion"));
+        assert!(doc.contains("global HH adoption"));
+
+        let readme = include_str!("../../../docs/README.md");
+        assert!(readme.contains("Selective model-deepening decision line (MD1)"));
+        assert!(
+            readme.contains("docs/blue_brain_md1_selective_model_deepening_decision_line_v1.md")
+        );
     }
 }
