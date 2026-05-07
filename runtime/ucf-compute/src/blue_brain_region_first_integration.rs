@@ -352,6 +352,34 @@ pub const BLUE_BRAIN_POST_BR5_PRIORITIZED_NEXT_DIRECTION: BlueBrainPostBr5NextDi
     BlueBrainPostBr5NextDirection::InterRegionArchitectureStage;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainPostIr1NextDirection {
+    Hypothalamus,
+    SelectiveModelDeepening,
+}
+
+pub const BLUE_BRAIN_POST_IR1_PRIORITIZED_NEXT_DIRECTION: BlueBrainPostIr1NextDirection =
+    BlueBrainPostIr1NextDirection::SelectiveModelDeepening;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainIr1ReadinessClass {
+    StableImplementedRelation,
+    UsableWithCaveats,
+    AdvisoryOnly,
+    DeferredNotYetActive,
+    BlockedInsufficientDiagnosticOnly,
+    NonCanonicalInternalOnly,
+}
+
+pub const CANONICAL_BLUE_BRAIN_IR1_READINESS_CLASS_MAP: [BlueBrainIr1ReadinessClass; 6] = [
+    BlueBrainIr1ReadinessClass::StableImplementedRelation,
+    BlueBrainIr1ReadinessClass::UsableWithCaveats,
+    BlueBrainIr1ReadinessClass::AdvisoryOnly,
+    BlueBrainIr1ReadinessClass::DeferredNotYetActive,
+    BlueBrainIr1ReadinessClass::BlockedInsufficientDiagnosticOnly,
+    BlueBrainIr1ReadinessClass::NonCanonicalInternalOnly,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainInterRegionArchitectureRegionRoleClass {
     ContextReferenceEpisodeIndexing,
     SaliencePriorityCaveat,
@@ -930,6 +958,30 @@ pub const fn blue_brain_inter_region_contract_signal_for_state(
         }
         BlueBrainInterRegionDiagnosticsRelationState::NonCanonicalInternalOnly => {
             BlueBrainInterRegionContractSignalClass::NonCanonicalInternalOnlyRelationSignal
+        }
+    }
+}
+
+pub const fn blue_brain_ir1_readiness_class_for_contract_read(
+    read: BlueBrainInterRegionDiagnosticsContractRead,
+) -> BlueBrainIr1ReadinessClass {
+    match read.relation_state {
+        BlueBrainInterRegionDiagnosticsRelationState::AdvisoryOnlyActive => {
+            BlueBrainIr1ReadinessClass::StableImplementedRelation
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::CaveatedNoStrongPositiveSignal => {
+            BlueBrainIr1ReadinessClass::UsableWithCaveats
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::DeferredNotYetUsable => {
+            BlueBrainIr1ReadinessClass::DeferredNotYetActive
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::BlockedByContractSafetyOrReference
+        | BlueBrainInterRegionDiagnosticsRelationState::InsufficientRelationalBasis
+        | BlueBrainInterRegionDiagnosticsRelationState::DiagnosticOnlyVisible => {
+            BlueBrainIr1ReadinessClass::BlockedInsufficientDiagnosticOnly
+        }
+        BlueBrainInterRegionDiagnosticsRelationState::NonCanonicalInternalOnly => {
+            BlueBrainIr1ReadinessClass::NonCanonicalInternalOnly
         }
     }
 }
@@ -8500,6 +8552,74 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn ir1_readiness_sweep_keeps_operational_deferred_blocked_and_caveat_slots_explicit() {
+        let mut stable_implemented = 0;
+        let mut deferred = 0;
+        let mut blocked_or_diagnostic = 0;
+        let mut usable_with_caveats = 0;
+
+        for read in CANONICAL_BLUE_BRAIN_INTER_REGION_DIAGNOSTICS_CONTRACT_MAP {
+            match blue_brain_ir1_readiness_class_for_contract_read(read) {
+                BlueBrainIr1ReadinessClass::StableImplementedRelation => {
+                    stable_implemented += 1;
+                    assert!(read.advisory_only);
+                    assert!(read.bounded_contract_signal);
+                    assert!(!read.diagnostic_only);
+                }
+                BlueBrainIr1ReadinessClass::DeferredNotYetActive => {
+                    deferred += 1;
+                    assert!(read.deferred);
+                    assert!(read.diagnostic_only);
+                    assert!(!read.blocked);
+                    assert!(!read.bounded_contract_signal);
+                }
+                BlueBrainIr1ReadinessClass::BlockedInsufficientDiagnosticOnly => {
+                    blocked_or_diagnostic += 1;
+                    assert!(read.blocked || read.insufficient || read.diagnostic_only);
+                    assert!(!read.bounded_contract_signal);
+                }
+                BlueBrainIr1ReadinessClass::UsableWithCaveats => {
+                    usable_with_caveats += 1;
+                }
+                BlueBrainIr1ReadinessClass::AdvisoryOnly
+                | BlueBrainIr1ReadinessClass::NonCanonicalInternalOnly => {}
+            }
+        }
+
+        assert_eq!(stable_implemented, 3);
+        assert_eq!(deferred, 6);
+        assert_eq!(blocked_or_diagnostic, 1);
+        assert_eq!(usable_with_caveats, 0);
+    }
+
+    #[test]
+    fn ir1_readiness_doc_pins_closeout_next_direction_and_out_of_scope_boundary() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_ir1_readiness_sweep_inter_region_closure_serie_ir1_prompt4_v1.md"
+        );
+        assert!(doc.contains("IR1-readiness map"));
+        assert!(doc.contains("Stable implemented relation"));
+        assert!(doc.contains("Usable with caveats"));
+        assert!(doc.contains("No Prompt-4 pair is operationally usable-with-caveats"));
+        assert!(doc.contains("Amygdala ↔ Thalamus"));
+        assert!(doc.contains("Hippocampus ↔ Thalamus"));
+        assert!(doc.contains("Amygdala ↔ Basal Ganglia"));
+        assert!(doc.contains("DirectBoundedAdvisoryOnly"));
+        assert!(doc.contains("ReferenceContextMediatedOnly"));
+        assert!(doc.contains("SelectionContractMediatedOnly"));
+        assert!(doc.contains("no direct Action Execution"));
+        assert!(doc.contains("no Retry-Orchestrierung"));
+        assert!(doc.contains("no automatische Memory-Persistenz"));
+        assert!(doc.contains("keine implizite globale Inter-Region-Plattform"));
+        assert!(doc.contains("Compute bleibt maintenance-only"));
+        assert!(doc.contains("selektive Modellvertiefung"));
+        assert_eq!(
+            BLUE_BRAIN_POST_IR1_PRIORITIZED_NEXT_DIRECTION,
+            BlueBrainPostIr1NextDirection::SelectiveModelDeepening
+        );
     }
 
     #[test]
