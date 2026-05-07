@@ -51,6 +51,12 @@ Zweck: schneller, repo-treuer Einstieg in die **aktuell operativen** Linien ohne
   - `docs/blue_brain_inter_region_architecture_serie_ir1_prompt1_v1.md`
   - `docs/blue_brain_first_inter_region_implementation_serie_ir1_prompt2_v1.md`
   - `docs/blue_brain_inter_region_diagnostics_contracts_serie_ir1_prompt3_v1.md`
+- **BR4/BR5 bounded anatomical region closures:**
+  - `docs/blue_brain_basal_ganglia_minimal_bounded_integration_serie_br4_prompt2_v1.md`
+  - `docs/blue_brain_br4_basal_ganglia_readiness_sweep_expansion_boundary_serie_br4_prompt4_v1.md`
+  - `docs/blue_brain_cerebellum_minimal_bounded_integration_serie_br5_prompt2_v1.md`
+  - `docs/blue_brain_br5_cerebellum_readiness_sweep_expansion_boundary_serie_br5_prompt4_v1.md`
+- **Current maintenance findings map:** `docs/blue_brain_maintenance_findings_map_serie_maint_prompt1_v1.md`
 - **Docs operational index:** `docs/README.md`
 
 ## Runtime / compute core
@@ -74,12 +80,11 @@ Maintenance-Interpretation folgt der BB23 Allowed-Change-Map: maintenance-safe, 
 - `advisory-only` / `bounded` Linien bleiben ohne direkte Ausführungsautorität.
 - `candidate-only`, `test-only`, `deferred`, `non-canonical` markieren nicht-operative oder nicht-hochgestufte Pfade.
 - `no-direct-*` Guard Rails bleiben verpflichtend.
-- First-anatomical maintenance reference surface (BB31) bleibt auf `hippocampus_like_region` begrenzt; keine zweite anatomische Region ohne expliziten Re-Scope.
+- First-anatomical maintenance reference surface (BB31) bleibt als historische Hippocampus-first-Stabilisierung erhalten; der aktuelle BR5-Maintenance-Stand umfasst jedoch genau fünf bounded anatomische Regionen: `hippocampus_like_region`, `amygdala_like_region`, `thalamus_like_region`, `basal_ganglia_like_region`, `cerebellum_like_region`.
 - Canonical first-anatomical maintenance docs/tests/index path: `docs/blue_brain_first_anatomical_stabilization_line_serie_bb31_prompt1_v1.md` + `docs/blue_brain_first_anatomical_docs_tests_index_cleanup_serie_bb31_prompt2_v1.md` + `docs/blue_brain_bb31_final_first_anatomical_stabilization_sweep_serie_bb31_prompt3_v1.md`.
-- Region 1 bleibt die einzige geöffnete Regionenklasse in der BB25-Freeze-Lesart; der aktuelle Maintenance-Betrieb führt zusätzlich die maintenance-gehärtete Drei-Regionen-Basis (Region 1 + Region 2 + Region 3) mit bounded Relations aus BB28/BB29.
-- Die operative Regionenbasis nach BB29 ist explizit auf Region 1, Region 2 und Region 3 begrenzt (maintenance-gehärtet, bounded Relations).
-- Nach BB29 ist **Maintenance/Bugfix/Cleanup ohne neue Serie** der explizite Default.
-- Region 4 bleibt bewusst nicht aktiv und ist nur per explizitem Re-Scope möglich (kein automatischer nächster Schritt).
+- Der aktuelle Maintenance-Betrieb führt die fünf bounded Regionen nur als advisory/reference/diagnostic contract surfaces mit bounded inter-region relations; daraus folgt keine Region 6 und keine globale Modellplattform.
+- Nach BR5 ist **Maintenance/Bugfix/Cleanup ohne neue Serie** der explizite Default.
+- Ein weiterer Regions- oder Modellvertiefungsschritt bleibt bewusst nicht aktiv und ist nur per explizitem Re-Scope möglich (kein automatischer nächster Schritt).
 
 Primäre Referenzen:
 - `docs/blue_brain_execution_guard_rails_production_facing_serie_bb18_prompt3_v1.md`
