@@ -1791,7 +1791,9 @@ pub struct BlueBrainMd2ModelDeepeningStabilizationMapEntry {
 /// The map is intentionally narrow: every canonical entry points back to the
 /// existing Amygdala-Thalamus bounded Kuramoto-like advisory relation, keeps the
 /// current model mode frozen, and records that model, diagnostics, contract, and
-/// boundary states stay separate under maintenance.
+/// boundary states stay separate under maintenance. The maintenance-facing docs
+/// entrypoint for this surface is
+/// `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`.
 pub const CANONICAL_BLUE_BRAIN_MD2_MODEL_DEEPENING_STABILIZATION_MAP:
     [BlueBrainMd2ModelDeepeningStabilizationMapEntry; 6] = [
     BlueBrainMd2ModelDeepeningStabilizationMapEntry {
@@ -2021,6 +2023,14 @@ fn blue_brain_md1_first_deepening_contract_support_class(
     }
 }
 
+/// Evaluates the single maintenance-supported first model-deepening surface.
+///
+/// This function is intentionally not a model platform: it only deepens the
+/// canonical `Amygdala ↔ Thalamus` relation as bounded Kuramoto-like
+/// advisory/diagnostic evidence. Deferred, blocked, diagnostic-only, and
+/// non-canonical/internal-only paths keep no canonical consumer read and cannot
+/// open a second deepening candidate or any direct action/execution/retry/
+/// memory/compute/safety authority.
 pub fn evaluate_blue_brain_md1_first_model_deepening(
     input: BlueBrainMd1FirstDeepeningInputSurface,
 ) -> BlueBrainMd1FirstDeepeningResult {
@@ -10350,6 +10360,46 @@ mod tests {
                 .boundary_state
                 .second_model_deepening_opened
         );
+    }
+
+    #[test]
+    fn md2_docs_tests_reference_map_is_canonical_maintenance_entrypoint() {
+        let map_doc = include_str!(
+            "../../../docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md"
+        );
+        let readme = include_str!("../../../docs/README.md");
+        let md2_stabilization_doc =
+            include_str!("../../../docs/blue_brain_md2_model_deepening_stabilization_line_v1.md");
+
+        assert!(map_doc.contains("canonical model-deepening reference doc"));
+        assert!(map_doc.contains("canonical model-deepening test surface"));
+        assert!(map_doc.contains("maintenance-facing index/reference path"));
+        assert!(map_doc.contains("non-canonical/internal-only or legacy model path"));
+        assert!(map_doc.contains("Amygdala ↔ Thalamus"));
+        assert!(map_doc.contains("bounded Kuramoto-like current mode"));
+        assert!(map_doc.contains("model state is not contract state"));
+        assert!(map_doc.contains("diagnostic model output is not operational authority"));
+        assert!(map_doc.contains("no direct action trigger"));
+        assert!(map_doc.contains("no direct execution trigger"));
+        assert!(map_doc.contains("no direct retry trigger"));
+        assert!(map_doc.contains("no direct memory commit"));
+        assert!(map_doc.contains("no direct compute invocation"));
+        assert!(map_doc.contains("no safety override"));
+        assert!(map_doc.contains("no implicit second model-deepening candidate"));
+        assert!(map_doc.contains("explicit re-scope package"));
+        assert!(map_doc.contains("no global Kuramoto, HH, or general model platform"));
+        assert!(map_doc.contains(
+            "unit tests in `runtime/ucf-compute/src/blue_brain_region_first_integration.rs`"
+        ));
+        assert!(map_doc.contains("`Amygdala ↔ Basal Ganglia` is deferred and not opened in MD2"));
+
+        assert!(readme
+            .contains("Model-deepening maintenance reference map (MD2 Prompt 2, canonical entry)"));
+        assert!(readme
+            .contains("docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md"));
+        assert!(readme.contains("genau `Amygdala ↔ Thalamus` bleibt"));
+        assert!(md2_stabilization_doc
+            .contains("docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md"));
     }
 
     #[test]
