@@ -47,6 +47,9 @@ Zweck: schneller, repo-treuer Einstieg in die **aktuell operativen** Linien ohne
   - `docs/blue_brain_bb29_final_maintenance_handoff_map_serie_bb29_prompt6_v1.md`
 - **Cross-line state semantics (BB20 P2):** `docs/blue_brain_bb20_cross_line_terminology_state_harmonization_serie_bb20_prompt2_v1.md`
 - **Final readiness sweep + next-priority lock (BB20 P4):** `docs/blue_brain_bb20_final_readiness_sweep_next_priority_lock_serie_bb20_prompt4_v1.md`
+- **Inter-region architecture consolidation (IR1):**
+  - `docs/blue_brain_inter_region_architecture_serie_ir1_prompt1_v1.md`
+  - `docs/blue_brain_first_inter_region_implementation_serie_ir1_prompt2_v1.md`
 - **Docs operational index:** `docs/README.md`
 
 ## Runtime / compute core

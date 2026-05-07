@@ -577,6 +577,238 @@ pub fn blue_brain_inter_region_architecture_relation_for_pair(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainInterRegionImplementationRelationClass {
+    ImplementedDirectBoundedAdvisoryRelation,
+    ImplementedReferenceMediatedRelation,
+    ImplementedSelectionMediatedRelation,
+    DeferredNotYetImplementedRelation,
+    BlockedRelation,
+    NonCanonicalInternalOnlyRelationPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_INTER_REGION_IMPLEMENTATION_RELATION_CLASS_MAP:
+    [BlueBrainInterRegionImplementationRelationClass; 6] = [
+    BlueBrainInterRegionImplementationRelationClass::ImplementedDirectBoundedAdvisoryRelation,
+    BlueBrainInterRegionImplementationRelationClass::ImplementedReferenceMediatedRelation,
+    BlueBrainInterRegionImplementationRelationClass::ImplementedSelectionMediatedRelation,
+    BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+    BlueBrainInterRegionImplementationRelationClass::BlockedRelation,
+    BlueBrainInterRegionImplementationRelationClass::NonCanonicalInternalOnlyRelationPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainInterRegionImplementationSignal {
+    SalienceCaveatAdvisory,
+    RelayRoutingDiagnostic,
+    ContextReferenceDiagnostic,
+    SelectionReadinessDiagnostic,
+    DeferredDiagnosticOnly,
+    BlockedDiagnosticOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainInterRegionImplementationMediationPath {
+    DirectBoundedAdvisoryOnly,
+    ReferenceContextMediatedOnly,
+    SelectionContractMediatedOnly,
+    NotYetImplemented,
+    BlockedUnavailable,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainInterRegionImplementationRelation {
+    pub pair: BlueBrainInterRegionArchitecturePair,
+    pub architecture_relation_class: BlueBrainInterRegionArchitectureRelationClass,
+    pub implementation_relation_class: BlueBrainInterRegionImplementationRelationClass,
+    pub source_role: BlueBrainInterRegionArchitectureRegionRoleClass,
+    pub target_role: BlueBrainInterRegionArchitectureRegionRoleClass,
+    pub bidirectional_pair_label: bool,
+    pub source_to_target_signal: BlueBrainInterRegionImplementationSignal,
+    pub target_to_source_signal: BlueBrainInterRegionImplementationSignal,
+    pub mediation_path: BlueBrainInterRegionImplementationMediationPath,
+    pub advisory_only: bool,
+    pub direct_action_trigger: bool,
+    pub direct_execution_trigger: bool,
+    pub direct_retry_trigger: bool,
+    pub direct_memory_commit: bool,
+    pub direct_compute_invocation: bool,
+    pub safety_override: bool,
+    pub global_region_orchestration: bool,
+}
+
+const fn blue_brain_inter_region_implementation_relation(
+    pair: BlueBrainInterRegionArchitecturePair,
+    implementation_relation_class: BlueBrainInterRegionImplementationRelationClass,
+    source_to_target_signal: BlueBrainInterRegionImplementationSignal,
+    target_to_source_signal: BlueBrainInterRegionImplementationSignal,
+    mediation_path: BlueBrainInterRegionImplementationMediationPath,
+) -> BlueBrainInterRegionImplementationRelation {
+    let architecture_relation = blue_brain_inter_region_architecture_relation_for_pair_const(pair);
+
+    BlueBrainInterRegionImplementationRelation {
+        pair,
+        architecture_relation_class: architecture_relation.relation_class,
+        implementation_relation_class,
+        source_role: architecture_relation.source_role,
+        target_role: architecture_relation.target_role,
+        bidirectional_pair_label: true,
+        source_to_target_signal,
+        target_to_source_signal,
+        mediation_path,
+        advisory_only: true,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        safety_override: false,
+        global_region_orchestration: false,
+    }
+}
+
+const fn blue_brain_inter_region_architecture_relation_for_pair_const(
+    pair: BlueBrainInterRegionArchitecturePair,
+) -> BlueBrainInterRegionArchitectureRelation {
+    match pair {
+        BlueBrainInterRegionArchitecturePair::HippocampusAmygdala => {
+            CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[0]
+        }
+        BlueBrainInterRegionArchitecturePair::HippocampusThalamus => {
+            CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[1]
+        }
+        BlueBrainInterRegionArchitecturePair::HippocampusBasalGanglia => {
+            CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[2]
+        }
+        BlueBrainInterRegionArchitecturePair::HippocampusCerebellum => {
+            CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[3]
+        }
+        BlueBrainInterRegionArchitecturePair::AmygdalaThalamus => {
+            CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[4]
+        }
+        BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia => {
+            CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[5]
+        }
+        BlueBrainInterRegionArchitecturePair::AmygdalaCerebellum => {
+            CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[6]
+        }
+        BlueBrainInterRegionArchitecturePair::ThalamusBasalGanglia => {
+            CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[7]
+        }
+        BlueBrainInterRegionArchitecturePair::ThalamusCerebellum => {
+            CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[8]
+        }
+        BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum => {
+            CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[9]
+        }
+    }
+}
+
+pub const CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP:
+    [BlueBrainInterRegionImplementationRelation; 10] = [
+    blue_brain_inter_region_implementation_relation(
+        BlueBrainInterRegionArchitecturePair::HippocampusAmygdala,
+        BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+        BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
+        BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
+        BlueBrainInterRegionImplementationMediationPath::NotYetImplemented,
+    ),
+    blue_brain_inter_region_implementation_relation(
+        BlueBrainInterRegionArchitecturePair::HippocampusThalamus,
+        BlueBrainInterRegionImplementationRelationClass::ImplementedReferenceMediatedRelation,
+        BlueBrainInterRegionImplementationSignal::ContextReferenceDiagnostic,
+        BlueBrainInterRegionImplementationSignal::RelayRoutingDiagnostic,
+        BlueBrainInterRegionImplementationMediationPath::ReferenceContextMediatedOnly,
+    ),
+    blue_brain_inter_region_implementation_relation(
+        BlueBrainInterRegionArchitecturePair::HippocampusBasalGanglia,
+        BlueBrainInterRegionImplementationRelationClass::BlockedRelation,
+        BlueBrainInterRegionImplementationSignal::BlockedDiagnosticOnly,
+        BlueBrainInterRegionImplementationSignal::BlockedDiagnosticOnly,
+        BlueBrainInterRegionImplementationMediationPath::BlockedUnavailable,
+    ),
+    blue_brain_inter_region_implementation_relation(
+        BlueBrainInterRegionArchitecturePair::HippocampusCerebellum,
+        BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+        BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
+        BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
+        BlueBrainInterRegionImplementationMediationPath::NotYetImplemented,
+    ),
+    blue_brain_inter_region_implementation_relation(
+        BlueBrainInterRegionArchitecturePair::AmygdalaThalamus,
+        BlueBrainInterRegionImplementationRelationClass::ImplementedDirectBoundedAdvisoryRelation,
+        BlueBrainInterRegionImplementationSignal::SalienceCaveatAdvisory,
+        BlueBrainInterRegionImplementationSignal::RelayRoutingDiagnostic,
+        BlueBrainInterRegionImplementationMediationPath::DirectBoundedAdvisoryOnly,
+    ),
+    blue_brain_inter_region_implementation_relation(
+        BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia,
+        BlueBrainInterRegionImplementationRelationClass::ImplementedSelectionMediatedRelation,
+        BlueBrainInterRegionImplementationSignal::SalienceCaveatAdvisory,
+        BlueBrainInterRegionImplementationSignal::SelectionReadinessDiagnostic,
+        BlueBrainInterRegionImplementationMediationPath::SelectionContractMediatedOnly,
+    ),
+    blue_brain_inter_region_implementation_relation(
+        BlueBrainInterRegionArchitecturePair::AmygdalaCerebellum,
+        BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+        BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
+        BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
+        BlueBrainInterRegionImplementationMediationPath::NotYetImplemented,
+    ),
+    blue_brain_inter_region_implementation_relation(
+        BlueBrainInterRegionArchitecturePair::ThalamusBasalGanglia,
+        BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+        BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
+        BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
+        BlueBrainInterRegionImplementationMediationPath::NotYetImplemented,
+    ),
+    blue_brain_inter_region_implementation_relation(
+        BlueBrainInterRegionArchitecturePair::ThalamusCerebellum,
+        BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+        BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
+        BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
+        BlueBrainInterRegionImplementationMediationPath::NotYetImplemented,
+    ),
+    blue_brain_inter_region_implementation_relation(
+        BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum,
+        BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+        BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
+        BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
+        BlueBrainInterRegionImplementationMediationPath::NotYetImplemented,
+    ),
+];
+
+pub fn blue_brain_first_inter_region_implementation_relation_for_pair(
+    pair: BlueBrainInterRegionArchitecturePair,
+) -> BlueBrainInterRegionImplementationRelation {
+    CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP
+        .iter()
+        .copied()
+        .find(|relation| relation.pair == pair)
+        .unwrap_or_else(|| {
+            blue_brain_inter_region_implementation_relation(
+                pair,
+                BlueBrainInterRegionImplementationRelationClass::NonCanonicalInternalOnlyRelationPath,
+                BlueBrainInterRegionImplementationSignal::BlockedDiagnosticOnly,
+                BlueBrainInterRegionImplementationSignal::BlockedDiagnosticOnly,
+                BlueBrainInterRegionImplementationMediationPath::NonCanonicalInternalOnly,
+            )
+        })
+}
+
+pub fn is_blue_brain_first_inter_region_relation_implemented(
+    pair: BlueBrainInterRegionArchitecturePair,
+) -> bool {
+    matches!(
+        blue_brain_first_inter_region_implementation_relation_for_pair(pair)
+            .implementation_relation_class,
+        BlueBrainInterRegionImplementationRelationClass::ImplementedDirectBoundedAdvisoryRelation
+            | BlueBrainInterRegionImplementationRelationClass::ImplementedReferenceMediatedRelation
+            | BlueBrainInterRegionImplementationRelationClass::ImplementedSelectionMediatedRelation
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainInterRegionArchitectureOutputClass {
     BoundedAdvisoryRead,
     ReferenceContextRead,
@@ -7601,6 +7833,174 @@ mod tests {
         assert!(doc.contains("no direct compute invocation"));
         assert!(doc.contains("no safety override"));
         assert!(doc.contains("no implicit global region orchestration"));
+        assert!(doc.contains("no new inter-region platform formation"));
+    }
+
+    #[test]
+    fn first_inter_region_implementation_map_anchors_exactly_three_relations() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP.len(),
+            10
+        );
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_INTER_REGION_IMPLEMENTATION_RELATION_CLASS_MAP.len(),
+            6
+        );
+
+        let implemented = CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP
+            .iter()
+            .filter(|relation| is_blue_brain_first_inter_region_relation_implemented(relation.pair))
+            .count();
+        assert_eq!(implemented, 3);
+
+        assert_eq!(
+            blue_brain_first_inter_region_implementation_relation_for_pair(
+                BlueBrainInterRegionArchitecturePair::AmygdalaThalamus
+            )
+            .implementation_relation_class,
+            BlueBrainInterRegionImplementationRelationClass::ImplementedDirectBoundedAdvisoryRelation
+        );
+        assert_eq!(
+            blue_brain_first_inter_region_implementation_relation_for_pair(
+                BlueBrainInterRegionArchitecturePair::HippocampusThalamus
+            )
+            .implementation_relation_class,
+            BlueBrainInterRegionImplementationRelationClass::ImplementedReferenceMediatedRelation
+        );
+        assert_eq!(
+            blue_brain_first_inter_region_implementation_relation_for_pair(
+                BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia
+            )
+            .implementation_relation_class,
+            BlueBrainInterRegionImplementationRelationClass::ImplementedSelectionMediatedRelation
+        );
+    }
+
+    #[test]
+    fn first_inter_region_implementation_preserves_mediated_signal_boundaries() {
+        let direct = blue_brain_first_inter_region_implementation_relation_for_pair(
+            BlueBrainInterRegionArchitecturePair::AmygdalaThalamus,
+        );
+        assert_eq!(
+            direct.mediation_path,
+            BlueBrainInterRegionImplementationMediationPath::DirectBoundedAdvisoryOnly
+        );
+        assert_eq!(
+            direct.source_to_target_signal,
+            BlueBrainInterRegionImplementationSignal::SalienceCaveatAdvisory
+        );
+        assert_eq!(
+            direct.target_to_source_signal,
+            BlueBrainInterRegionImplementationSignal::RelayRoutingDiagnostic
+        );
+
+        let reference = blue_brain_first_inter_region_implementation_relation_for_pair(
+            BlueBrainInterRegionArchitecturePair::HippocampusThalamus,
+        );
+        assert_eq!(
+            reference.mediation_path,
+            BlueBrainInterRegionImplementationMediationPath::ReferenceContextMediatedOnly
+        );
+        assert_eq!(
+            reference.source_to_target_signal,
+            BlueBrainInterRegionImplementationSignal::ContextReferenceDiagnostic
+        );
+        assert_eq!(
+            reference.target_to_source_signal,
+            BlueBrainInterRegionImplementationSignal::RelayRoutingDiagnostic
+        );
+
+        let selection = blue_brain_first_inter_region_implementation_relation_for_pair(
+            BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia,
+        );
+        assert_eq!(
+            selection.mediation_path,
+            BlueBrainInterRegionImplementationMediationPath::SelectionContractMediatedOnly
+        );
+        assert_eq!(
+            selection.source_to_target_signal,
+            BlueBrainInterRegionImplementationSignal::SalienceCaveatAdvisory
+        );
+        assert_eq!(
+            selection.target_to_source_signal,
+            BlueBrainInterRegionImplementationSignal::SelectionReadinessDiagnostic
+        );
+    }
+
+    #[test]
+    fn first_inter_region_implementation_defers_or_blocks_every_other_pair() {
+        for deferred_pair in [
+            BlueBrainInterRegionArchitecturePair::HippocampusAmygdala,
+            BlueBrainInterRegionArchitecturePair::HippocampusCerebellum,
+            BlueBrainInterRegionArchitecturePair::AmygdalaCerebellum,
+            BlueBrainInterRegionArchitecturePair::ThalamusBasalGanglia,
+            BlueBrainInterRegionArchitecturePair::ThalamusCerebellum,
+            BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum,
+        ] {
+            let relation =
+                blue_brain_first_inter_region_implementation_relation_for_pair(deferred_pair);
+            assert_eq!(
+                relation.implementation_relation_class,
+                BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation
+            );
+            assert_eq!(
+                relation.mediation_path,
+                BlueBrainInterRegionImplementationMediationPath::NotYetImplemented
+            );
+            assert!(!is_blue_brain_first_inter_region_relation_implemented(
+                deferred_pair
+            ));
+        }
+
+        let blocked = blue_brain_first_inter_region_implementation_relation_for_pair(
+            BlueBrainInterRegionArchitecturePair::HippocampusBasalGanglia,
+        );
+        assert_eq!(
+            blocked.implementation_relation_class,
+            BlueBrainInterRegionImplementationRelationClass::BlockedRelation
+        );
+        assert_eq!(
+            blocked.mediation_path,
+            BlueBrainInterRegionImplementationMediationPath::BlockedUnavailable
+        );
+    }
+
+    #[test]
+    fn first_inter_region_implementation_cannot_create_direct_authority() {
+        for relation in CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP {
+            assert!(relation.advisory_only);
+            assert!(relation.bidirectional_pair_label);
+            assert!(!relation.direct_action_trigger);
+            assert!(!relation.direct_execution_trigger);
+            assert!(!relation.direct_retry_trigger);
+            assert!(!relation.direct_memory_commit);
+            assert!(!relation.direct_compute_invocation);
+            assert!(!relation.safety_override);
+            assert!(!relation.global_region_orchestration);
+        }
+    }
+
+    #[test]
+    fn first_inter_region_implementation_doc_pins_exact_relations_and_guards() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_first_inter_region_implementation_serie_ir1_prompt2_v1.md"
+        );
+        assert!(doc.contains("implemented direct bounded advisory relation"));
+        assert!(doc.contains("implemented reference-mediated relation"));
+        assert!(doc.contains("implemented selection-mediated relation"));
+        assert!(doc.contains("Hippocampus ↔ Thalamus"));
+        assert!(doc.contains("Amygdala ↔ Thalamus"));
+        assert!(doc.contains("Amygdala ↔ Basal Ganglia"));
+        assert!(doc.contains("exactly three implemented relations"));
+        assert!(doc.contains("SalienceCaveatAdvisory"));
+        assert!(doc.contains("ContextReferenceDiagnostic"));
+        assert!(doc.contains("SelectionReadinessDiagnostic"));
+        assert!(doc.contains("deferred/not-yet-implemented relation"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no automatic memory persistence"));
+        assert!(doc.contains("no direct compute invocation"));
         assert!(doc.contains("no new inter-region platform formation"));
     }
 }
