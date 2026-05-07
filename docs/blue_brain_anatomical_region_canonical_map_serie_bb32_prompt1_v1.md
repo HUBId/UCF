@@ -14,6 +14,7 @@ The following set is the canonical anatomical region map for this phase:
 6. thalamus
 7. cerebellum
 8. insula
+9. hypothalamus
 
 ## 2) mapping from functional base to anatomical regions
 
@@ -25,6 +26,7 @@ The following set is the canonical anatomical region map for this phase:
 - relay integration lane is mapped to thalamus.
 - prediction/timing/correction/mismatch calibration lane is mapped to cerebellum.
 - interoceptive context lane is mapped to insula.
+- bounded drive/homeostasis/urgency modulation lane is mapped to hypothalamus.
 
 ## 3) model mode per anatomical region
 
@@ -36,6 +38,7 @@ The following set is the canonical anatomical region map for this phase:
 - cerebellum: abstract functional current mode.
 - prefrontal cortex: later selective HH deepening.
 - insula: deferred.
+- hypothalamus: abstract functional current mode.
 
 This keeps the current architecture bounded and deterministic while preserving explicit deepening options; HH simulation-only/diagnostic-only remains available only as a non-operative diagnostic lane, not as a current default.
 
@@ -63,6 +66,9 @@ No direct authority is granted from anatomical outputs:
 
 - no full HH production integration
 - no multi-region simultaneous expansion rollout
+- no biological full hypothalamus reconstruction
+- no Hodgkin-Huxley production integration for hypothalamus
+- no motivational/agentic control layer
 - no new global neuro-dynamics platform
 - no planner/agent/policy authority changes
 - no compute-core authority expansion

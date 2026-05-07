@@ -12201,4 +12201,88 @@ mod tests {
         assert!(doc.contains("Kuramoto"));
         assert!(doc.contains("advisory modulation path"));
     }
+
+    #[test]
+    fn serie_br6_prompt1_hypothalamus_doc_keeps_role_mode_and_no_direct_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_hypothalamus_region_role_map_serie_br6_prompt1_v1.md"
+        );
+        assert!(doc.contains("`hypothalamus_like_region`"));
+        assert!(doc.contains("bounded drive-state role"));
+        assert!(doc.contains("bounded homeostasis/regulation role"));
+        assert!(doc.contains("urgency modulation role"));
+        assert!(doc.contains("context-linked state-pressure role"));
+        assert!(doc.contains("non-role / out-of-scope biological detail"));
+        assert!(doc.contains("abstract functional current mode"));
+        assert!(doc.contains("bounded Kuramoto-like candidate"));
+        assert!(doc.contains("Hodgkin-Huxley simulation-only/diagnostic-only"));
+        assert!(doc.contains("later selective HH deepening"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("no planner/agent authority"));
+    }
+
+    #[test]
+    fn serie_br6_prompt1_hypothalamus_doc_separates_existing_region_roles() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_hypothalamus_region_role_map_serie_br6_prompt1_v1.md"
+        );
+        assert!(doc.contains("`hippocampus_like_region`: context/reference/episode/indexing"));
+        assert!(doc.contains("`amygdala_like_region`: salience/valence/caveat/priority"));
+        assert!(doc.contains("`thalamus_like_region`: relay/gating/routing"));
+        assert!(doc
+            .contains("`basal_ganglia_like_region`: action-gating/suppression/channel-selection"));
+        assert!(doc.contains("`cerebellum_like_region`: prediction/timing/correction/mismatch"));
+        assert!(doc
+            .contains("`hypothalamus_like_region`: bounded drive/homeostasis/urgency modulation"));
+        assert!(doc.contains("semantische Dublette"));
+        assert!(doc.contains("keine implizite motivational/agentic control layer"));
+    }
+
+    #[test]
+    fn serie_br6_prompt1_hypothalamus_updates_canonical_region_and_inter_region_docs() {
+        let canonical = include_str!(
+            "../../../docs/blue_brain_anatomical_region_canonical_map_serie_bb32_prompt1_v1.md"
+        );
+        assert!(canonical.contains("9. hypothalamus"));
+        assert!(canonical.contains("bounded drive/homeostasis/urgency modulation lane"));
+        assert!(canonical.contains("hypothalamus: abstract functional current mode"));
+        assert!(canonical.contains("no motivational/agentic control layer"));
+
+        let inter_region = include_str!(
+            "../../../docs/blue_brain_inter_region_architecture_serie_ir1_prompt1_v1.md"
+        );
+        assert!(inter_region.contains("`hypothalamus_like_region`"));
+        assert!(inter_region.contains("Hippocampus ↔ Hypothalamus"));
+        assert!(inter_region.contains("Amygdala ↔ Hypothalamus"));
+        assert!(inter_region.contains("Thalamus ↔ Hypothalamus"));
+        assert!(inter_region.contains("Basal Ganglia ↔ Hypothalamus"));
+        assert!(inter_region.contains("Cerebellum ↔ Hypothalamus"));
+        assert!(inter_region.contains("Reference/Context mediated only"));
+        assert!(inter_region.contains("Selection/Contract mediated only"));
+        assert!(inter_region.contains("Direct bounded advisory-only relation"));
+        assert!(inter_region.contains("Deferred; not blocked, not failed"));
+        assert!(inter_region.contains("no motivational/agentic control layer"));
+    }
+
+    #[test]
+    fn dbm_13_hypothalamus_doc_stays_diagnostic_and_non_authoritative() {
+        let doc = include_str!("../../../docs/modules/dbm_13_hypothalamus.md");
+        assert!(doc.contains("abstract functional current mode"));
+        assert!(doc.contains("bounded drive-state"));
+        assert!(doc.contains("homeostasis/regulation"));
+        assert!(doc.contains("urgency modulation"));
+        assert!(doc.contains("context-linked state-pressure"));
+        assert!(doc.contains("Outputs never grant direct action selection"));
+        assert!(doc.contains("execution"));
+        assert!(doc.contains("retry"));
+        assert!(doc.contains("memory commit"));
+        assert!(doc.contains("compute invocation"));
+        assert!(doc.contains("Hodgkin-Huxley"));
+        assert!(doc.contains("simulation-only/diagnostic-only"));
+    }
 }
