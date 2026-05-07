@@ -348,6 +348,43 @@ pub const CANONICAL_BLUE_BRAIN_CEREBELLUM_EXPANSION_READINESS_MAP:
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHypothalamusRoleClass {
+    BoundedDriveStateRole,
+    BoundedHomeostasisRegulationRole,
+    UrgencyModulationRole,
+    ContextLinkedStatePressureRole,
+    NonRoleOutOfScopeBiologicalDetail,
+}
+
+pub const CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_ROLE_MAP: [BlueBrainHypothalamusRoleClass; 5] = [
+    BlueBrainHypothalamusRoleClass::BoundedDriveStateRole,
+    BlueBrainHypothalamusRoleClass::BoundedHomeostasisRegulationRole,
+    BlueBrainHypothalamusRoleClass::UrgencyModulationRole,
+    BlueBrainHypothalamusRoleClass::ContextLinkedStatePressureRole,
+    BlueBrainHypothalamusRoleClass::NonRoleOutOfScopeBiologicalDetail,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHypothalamusIntegrationClass {
+    HypothalamusInputSurface,
+    HypothalamusStateSurface,
+    HypothalamusOutputAdvisorySurface,
+    HypothalamusReferenceSurface,
+    BlockedDeferredHypothalamusPath,
+    NonCanonicalInternalOnlyHypothalamusPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP:
+    [BlueBrainHypothalamusIntegrationClass; 6] = [
+    BlueBrainHypothalamusIntegrationClass::HypothalamusInputSurface,
+    BlueBrainHypothalamusIntegrationClass::HypothalamusStateSurface,
+    BlueBrainHypothalamusIntegrationClass::HypothalamusOutputAdvisorySurface,
+    BlueBrainHypothalamusIntegrationClass::HypothalamusReferenceSurface,
+    BlueBrainHypothalamusIntegrationClass::BlockedDeferredHypothalamusPath,
+    BlueBrainHypothalamusIntegrationClass::NonCanonicalInternalOnlyHypothalamusPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainPostBr5NextDirection {
     Hypothalamus,
     InterRegionArchitectureStage,
@@ -391,6 +428,7 @@ pub enum BlueBrainInterRegionArchitectureRegionRoleClass {
     RelayGatingRouting,
     ActionChannelSuppression,
     TimingPredictionCorrection,
+    DriveHomeostasisUrgencyStatePressure,
     NonCanonicalDeferredRegionRole,
 }
 
@@ -412,6 +450,9 @@ pub fn blue_brain_inter_region_architecture_region_role(
         }
         BlueBrainAnatomicalRegionClass::Cerebellum => {
             BlueBrainInterRegionArchitectureRegionRoleClass::TimingPredictionCorrection
+        }
+        BlueBrainAnatomicalRegionClass::Hypothalamus => {
+            BlueBrainInterRegionArchitectureRegionRoleClass::DriveHomeostasisUrgencyStatePressure
         }
         BlueBrainAnatomicalRegionClass::PrefrontalCortex
         | BlueBrainAnatomicalRegionClass::AnteriorCingulateCortex
@@ -457,6 +498,11 @@ pub enum BlueBrainInterRegionArchitecturePair {
     ThalamusBasalGanglia,
     ThalamusCerebellum,
     BasalGangliaCerebellum,
+    HippocampusHypothalamus,
+    AmygdalaHypothalamus,
+    ThalamusHypothalamus,
+    BasalGangliaHypothalamus,
+    CerebellumHypothalamus,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -529,7 +575,7 @@ const fn blue_brain_inter_region_architecture_relation(
 }
 
 pub const CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP:
-    [BlueBrainInterRegionArchitectureRelation; 10] = [
+    [BlueBrainInterRegionArchitectureRelation; 15] = [
     blue_brain_inter_region_architecture_relation(
         BlueBrainInterRegionArchitecturePair::HippocampusAmygdala,
         BlueBrainInterRegionArchitectureRelationClass::CaveatedInterRegionRelation,
@@ -590,6 +636,36 @@ pub const CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP:
         BlueBrainInterRegionArchitectureRegionRoleClass::ActionChannelSuppression,
         BlueBrainInterRegionArchitectureRegionRoleClass::TimingPredictionCorrection,
     ),
+    blue_brain_inter_region_architecture_relation(
+        BlueBrainInterRegionArchitecturePair::HippocampusHypothalamus,
+        BlueBrainInterRegionArchitectureRelationClass::ReferenceMediatedRelation,
+        BlueBrainInterRegionArchitectureRegionRoleClass::ContextReferenceEpisodeIndexing,
+        BlueBrainInterRegionArchitectureRegionRoleClass::DriveHomeostasisUrgencyStatePressure,
+    ),
+    blue_brain_inter_region_architecture_relation(
+        BlueBrainInterRegionArchitecturePair::AmygdalaHypothalamus,
+        BlueBrainInterRegionArchitectureRelationClass::CaveatedInterRegionRelation,
+        BlueBrainInterRegionArchitectureRegionRoleClass::SaliencePriorityCaveat,
+        BlueBrainInterRegionArchitectureRegionRoleClass::DriveHomeostasisUrgencyStatePressure,
+    ),
+    blue_brain_inter_region_architecture_relation(
+        BlueBrainInterRegionArchitecturePair::ThalamusHypothalamus,
+        BlueBrainInterRegionArchitectureRelationClass::DirectBoundedAdvisoryRelation,
+        BlueBrainInterRegionArchitectureRegionRoleClass::RelayGatingRouting,
+        BlueBrainInterRegionArchitectureRegionRoleClass::DriveHomeostasisUrgencyStatePressure,
+    ),
+    blue_brain_inter_region_architecture_relation(
+        BlueBrainInterRegionArchitecturePair::BasalGangliaHypothalamus,
+        BlueBrainInterRegionArchitectureRelationClass::SelectionMediatedRelation,
+        BlueBrainInterRegionArchitectureRegionRoleClass::ActionChannelSuppression,
+        BlueBrainInterRegionArchitectureRegionRoleClass::DriveHomeostasisUrgencyStatePressure,
+    ),
+    blue_brain_inter_region_architecture_relation(
+        BlueBrainInterRegionArchitecturePair::CerebellumHypothalamus,
+        BlueBrainInterRegionArchitectureRelationClass::DeferredNotYetActiveRelation,
+        BlueBrainInterRegionArchitectureRegionRoleClass::TimingPredictionCorrection,
+        BlueBrainInterRegionArchitectureRegionRoleClass::DriveHomeostasisUrgencyStatePressure,
+    ),
 ];
 
 pub fn blue_brain_inter_region_architecture_relation_for_pair(
@@ -635,6 +711,7 @@ pub enum BlueBrainInterRegionImplementationSignal {
     RelayRoutingDiagnostic,
     ContextReferenceDiagnostic,
     SelectionReadinessDiagnostic,
+    DriveHomeostasisUrgencyDiagnostic,
     DeferredDiagnosticOnly,
     BlockedDiagnosticOnly,
 }
@@ -734,11 +811,26 @@ const fn blue_brain_inter_region_architecture_relation_for_pair_const(
         BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum => {
             CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[9]
         }
+        BlueBrainInterRegionArchitecturePair::HippocampusHypothalamus => {
+            CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[10]
+        }
+        BlueBrainInterRegionArchitecturePair::AmygdalaHypothalamus => {
+            CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[11]
+        }
+        BlueBrainInterRegionArchitecturePair::ThalamusHypothalamus => {
+            CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[12]
+        }
+        BlueBrainInterRegionArchitecturePair::BasalGangliaHypothalamus => {
+            CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[13]
+        }
+        BlueBrainInterRegionArchitecturePair::CerebellumHypothalamus => {
+            CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP[14]
+        }
     }
 }
 
 pub const CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP:
-    [BlueBrainInterRegionImplementationRelation; 10] = [
+    [BlueBrainInterRegionImplementationRelation; 15] = [
     blue_brain_inter_region_implementation_relation(
         BlueBrainInterRegionArchitecturePair::HippocampusAmygdala,
         BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
@@ -804,6 +896,41 @@ pub const CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP:
     ),
     blue_brain_inter_region_implementation_relation(
         BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum,
+        BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+        BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
+        BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
+        BlueBrainInterRegionImplementationMediationPath::NotYetImplemented,
+    ),
+    blue_brain_inter_region_implementation_relation(
+        BlueBrainInterRegionArchitecturePair::HippocampusHypothalamus,
+        BlueBrainInterRegionImplementationRelationClass::ImplementedReferenceMediatedRelation,
+        BlueBrainInterRegionImplementationSignal::ContextReferenceDiagnostic,
+        BlueBrainInterRegionImplementationSignal::DriveHomeostasisUrgencyDiagnostic,
+        BlueBrainInterRegionImplementationMediationPath::ReferenceContextMediatedOnly,
+    ),
+    blue_brain_inter_region_implementation_relation(
+        BlueBrainInterRegionArchitecturePair::AmygdalaHypothalamus,
+        BlueBrainInterRegionImplementationRelationClass::ImplementedDirectBoundedAdvisoryRelation,
+        BlueBrainInterRegionImplementationSignal::SalienceCaveatAdvisory,
+        BlueBrainInterRegionImplementationSignal::DriveHomeostasisUrgencyDiagnostic,
+        BlueBrainInterRegionImplementationMediationPath::DirectBoundedAdvisoryOnly,
+    ),
+    blue_brain_inter_region_implementation_relation(
+        BlueBrainInterRegionArchitecturePair::ThalamusHypothalamus,
+        BlueBrainInterRegionImplementationRelationClass::ImplementedDirectBoundedAdvisoryRelation,
+        BlueBrainInterRegionImplementationSignal::RelayRoutingDiagnostic,
+        BlueBrainInterRegionImplementationSignal::DriveHomeostasisUrgencyDiagnostic,
+        BlueBrainInterRegionImplementationMediationPath::DirectBoundedAdvisoryOnly,
+    ),
+    blue_brain_inter_region_implementation_relation(
+        BlueBrainInterRegionArchitecturePair::BasalGangliaHypothalamus,
+        BlueBrainInterRegionImplementationRelationClass::ImplementedSelectionMediatedRelation,
+        BlueBrainInterRegionImplementationSignal::SelectionReadinessDiagnostic,
+        BlueBrainInterRegionImplementationSignal::DriveHomeostasisUrgencyDiagnostic,
+        BlueBrainInterRegionImplementationMediationPath::SelectionContractMediatedOnly,
+    ),
+    blue_brain_inter_region_implementation_relation(
+        BlueBrainInterRegionArchitecturePair::CerebellumHypothalamus,
         BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
         BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
         BlueBrainInterRegionImplementationSignal::DeferredDiagnosticOnly,
@@ -1095,7 +1222,7 @@ pub fn blue_brain_inter_region_consumer_contract_reads_are_aligned(
 }
 
 pub const CANONICAL_BLUE_BRAIN_INTER_REGION_DIAGNOSTICS_CONTRACT_MAP:
-    [BlueBrainInterRegionDiagnosticsContractRead; 10] = [
+    [BlueBrainInterRegionDiagnosticsContractRead; 15] = [
     blue_brain_inter_region_diagnostics_contract_read(
         CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[0],
         BlueBrainInterRegionConsumerLayer::Runtime,
@@ -1134,6 +1261,26 @@ pub const CANONICAL_BLUE_BRAIN_INTER_REGION_DIAGNOSTICS_CONTRACT_MAP:
     ),
     blue_brain_inter_region_diagnostics_contract_read(
         CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[9],
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    ),
+    blue_brain_inter_region_diagnostics_contract_read(
+        CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[10],
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    ),
+    blue_brain_inter_region_diagnostics_contract_read(
+        CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[11],
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    ),
+    blue_brain_inter_region_diagnostics_contract_read(
+        CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[12],
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    ),
+    blue_brain_inter_region_diagnostics_contract_read(
+        CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[13],
+        BlueBrainInterRegionConsumerLayer::Runtime,
+    ),
+    blue_brain_inter_region_diagnostics_contract_read(
+        CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[14],
         BlueBrainInterRegionConsumerLayer::Runtime,
     ),
 ];
@@ -2260,10 +2407,11 @@ pub enum BlueBrainAnatomicalRegionClass {
     BasalGanglia,
     Thalamus,
     Cerebellum,
+    Hypothalamus,
     Insula,
 }
 
-pub const CANONICAL_BLUE_BRAIN_ANATOMICAL_REGION_MAP: [BlueBrainAnatomicalRegionClass; 8] = [
+pub const CANONICAL_BLUE_BRAIN_ANATOMICAL_REGION_MAP: [BlueBrainAnatomicalRegionClass; 9] = [
     BlueBrainAnatomicalRegionClass::Hippocampus,
     BlueBrainAnatomicalRegionClass::Amygdala,
     BlueBrainAnatomicalRegionClass::PrefrontalCortex,
@@ -2271,6 +2419,7 @@ pub const CANONICAL_BLUE_BRAIN_ANATOMICAL_REGION_MAP: [BlueBrainAnatomicalRegion
     BlueBrainAnatomicalRegionClass::BasalGanglia,
     BlueBrainAnatomicalRegionClass::Thalamus,
     BlueBrainAnatomicalRegionClass::Cerebellum,
+    BlueBrainAnatomicalRegionClass::Hypothalamus,
     BlueBrainAnatomicalRegionClass::Insula,
 ];
 
@@ -2283,6 +2432,7 @@ pub enum BlueBrainAnatomicalRegionSystemRoleClass {
     ActionGatingMediation,
     RelayIntegrationMediation,
     PredictionTimingCorrectionMediation,
+    DriveHomeostasisUrgencyMediation,
     InteroceptiveContextMediation,
 }
 
@@ -2311,6 +2461,9 @@ pub fn blue_brain_anatomical_region_system_role(
         BlueBrainAnatomicalRegionClass::Cerebellum => {
             BlueBrainAnatomicalRegionSystemRoleClass::PredictionTimingCorrectionMediation
         }
+        BlueBrainAnatomicalRegionClass::Hypothalamus => {
+            BlueBrainAnatomicalRegionSystemRoleClass::DriveHomeostasisUrgencyMediation
+        }
         BlueBrainAnatomicalRegionClass::Insula => {
             BlueBrainAnatomicalRegionSystemRoleClass::InteroceptiveContextMediation
         }
@@ -2335,7 +2488,8 @@ pub fn blue_brain_anatomical_region_model_mode(
             BlueBrainFirstAnatomicalRegionModelModeClass::LaterSelectiveHodgkinHuxleyDeepening
         }
         BlueBrainAnatomicalRegionClass::BasalGanglia
-        | BlueBrainAnatomicalRegionClass::Cerebellum => {
+        | BlueBrainAnatomicalRegionClass::Cerebellum
+        | BlueBrainAnatomicalRegionClass::Hypothalamus => {
             BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode
         }
         BlueBrainAnatomicalRegionClass::Insula => {
@@ -4920,6 +5074,398 @@ pub fn evaluate_blue_brain_cerebellum_prediction_timing_correction(
         runtime_advisory_only: true,
         selection_advisory_only: true,
         execution_support_caveat_only: true,
+        reference_bounded_only: true,
+        direct_action_selection: false,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        safety_override: false,
+    };
+    (state, output)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainHypothalamusInputSurface {
+    pub selection_signal: BlueBrainControlAttentionSelectionClass,
+    pub deferral_class: BlueBrainCandidateDeferralLifecycleClass,
+    pub reference_validity: BlueBrainReferenceValidity,
+    pub context_priority: BlueBrainContextEvidencePriorityClass,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHypothalamusInputSource {
+    RuntimeBoundedStateSignal,
+    SelectionBoundedStateSignal,
+    ContextStatePressureSignal,
+    AdvisoryReferenceSignal,
+    ToolActionControlSignal,
+    ComputeInternalRawState,
+    SafetyOverrideSignal,
+    ImplicitMemoryMutationSignal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHypothalamusInputGuard {
+    AllowedBoundedInput,
+    BlockedForbiddenInput,
+}
+
+pub fn classify_blue_brain_hypothalamus_input_guard(
+    source: BlueBrainHypothalamusInputSource,
+) -> BlueBrainHypothalamusInputGuard {
+    match source {
+        BlueBrainHypothalamusInputSource::RuntimeBoundedStateSignal
+        | BlueBrainHypothalamusInputSource::SelectionBoundedStateSignal
+        | BlueBrainHypothalamusInputSource::ContextStatePressureSignal
+        | BlueBrainHypothalamusInputSource::AdvisoryReferenceSignal => {
+            BlueBrainHypothalamusInputGuard::AllowedBoundedInput
+        }
+        BlueBrainHypothalamusInputSource::ToolActionControlSignal
+        | BlueBrainHypothalamusInputSource::ComputeInternalRawState
+        | BlueBrainHypothalamusInputSource::SafetyOverrideSignal
+        | BlueBrainHypothalamusInputSource::ImplicitMemoryMutationSignal => {
+            BlueBrainHypothalamusInputGuard::BlockedForbiddenInput
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHypothalamusStateSurface {
+    BoundedDriveStateAdvisoryOnly,
+    HomeostasisRegulationCaveatState,
+    UrgencyModulationState,
+    ContextLinkedStatePressureState,
+    DeferredRegulationState,
+    BlockedRegulationState,
+    InsufficientRegulationState,
+    ReferenceOnlyRegulationState,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHypothalamusAdvisoryOutputClass {
+    UrgencyHint,
+    StatePressureHint,
+    BoundedRegulationCaveat,
+    ReferenceBoundedSignal,
+    BlockedDeferred,
+    InsufficientDiagnosticOutput,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHypothalamusContractSignal {
+    HypothalamusToRuntimeUrgencyAdvisory,
+    RuntimeToHypothalamusBoundedStateInput,
+    HypothalamusToSelectionUrgencyAdvisory,
+    SelectionToHypothalamusBoundedStateInput,
+    HypothalamusContextStatePressureSignal,
+    HypothalamusReferenceBoundedSignal,
+    Caveated,
+    Deferred,
+    Blocked,
+    Insufficient,
+    ReferenceOnly,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHypothalamusDiagnosticState {
+    HypothalamusAdvisoryOnlyDiagnostic,
+    HypothalamusCaveatedDiagnostic,
+    HypothalamusDeferredDiagnostic,
+    HypothalamusBlockedDiagnostic,
+    HypothalamusInsufficientDiagnostic,
+    HypothalamusDiagnosticOnlyState,
+    NonCanonicalInternalOnlyHypothalamusDiagnosticPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHypothalamusCanonicalRead {
+    AdvisoryOnly,
+    Caveated,
+    Deferred,
+    Blocked,
+    Insufficient,
+    DiagnosticOnly,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHypothalamusConsumerLayer {
+    Runtime,
+    Selection,
+    Context,
+    Reference,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainHypothalamusOutputSurface {
+    pub advisory_class: BlueBrainHypothalamusAdvisoryOutputClass,
+    pub runtime_contract_signal: BlueBrainHypothalamusContractSignal,
+    pub selection_contract_signal: BlueBrainHypothalamusContractSignal,
+    pub context_contract_signal: BlueBrainHypothalamusContractSignal,
+    pub reference_contract_signal: BlueBrainHypothalamusContractSignal,
+    pub runtime_diagnostic_state: BlueBrainHypothalamusDiagnosticState,
+    pub selection_diagnostic_state: BlueBrainHypothalamusDiagnosticState,
+    pub context_diagnostic_state: BlueBrainHypothalamusDiagnosticState,
+    pub reference_diagnostic_state: BlueBrainHypothalamusDiagnosticState,
+    pub canonical_contract_read: BlueBrainHypothalamusCanonicalRead,
+    pub runtime_advisory_only: bool,
+    pub selection_advisory_only: bool,
+    pub context_state_pressure_only: bool,
+    pub reference_bounded_only: bool,
+    pub direct_action_selection: bool,
+    pub direct_action_trigger: bool,
+    pub direct_execution_trigger: bool,
+    pub direct_retry_trigger: bool,
+    pub direct_memory_commit: bool,
+    pub direct_compute_invocation: bool,
+    pub safety_override: bool,
+}
+
+pub fn blue_brain_hypothalamus_diagnostic_state_for_signal(
+    signal: BlueBrainHypothalamusContractSignal,
+) -> BlueBrainHypothalamusDiagnosticState {
+    match signal {
+        BlueBrainHypothalamusContractSignal::HypothalamusToRuntimeUrgencyAdvisory
+        | BlueBrainHypothalamusContractSignal::RuntimeToHypothalamusBoundedStateInput
+        | BlueBrainHypothalamusContractSignal::HypothalamusToSelectionUrgencyAdvisory
+        | BlueBrainHypothalamusContractSignal::SelectionToHypothalamusBoundedStateInput
+        | BlueBrainHypothalamusContractSignal::HypothalamusContextStatePressureSignal
+        | BlueBrainHypothalamusContractSignal::HypothalamusReferenceBoundedSignal => {
+            BlueBrainHypothalamusDiagnosticState::HypothalamusAdvisoryOnlyDiagnostic
+        }
+        BlueBrainHypothalamusContractSignal::Caveated => {
+            BlueBrainHypothalamusDiagnosticState::HypothalamusCaveatedDiagnostic
+        }
+        BlueBrainHypothalamusContractSignal::Deferred => {
+            BlueBrainHypothalamusDiagnosticState::HypothalamusDeferredDiagnostic
+        }
+        BlueBrainHypothalamusContractSignal::Blocked => {
+            BlueBrainHypothalamusDiagnosticState::HypothalamusBlockedDiagnostic
+        }
+        BlueBrainHypothalamusContractSignal::Insufficient => {
+            BlueBrainHypothalamusDiagnosticState::HypothalamusInsufficientDiagnostic
+        }
+        BlueBrainHypothalamusContractSignal::ReferenceOnly => {
+            BlueBrainHypothalamusDiagnosticState::HypothalamusDiagnosticOnlyState
+        }
+        BlueBrainHypothalamusContractSignal::NonCanonicalInternalOnly => {
+            BlueBrainHypothalamusDiagnosticState::NonCanonicalInternalOnlyHypothalamusDiagnosticPath
+        }
+    }
+}
+
+pub fn blue_brain_hypothalamus_canonical_read_for_state(
+    state: BlueBrainHypothalamusStateSurface,
+) -> BlueBrainHypothalamusCanonicalRead {
+    match state {
+        BlueBrainHypothalamusStateSurface::BoundedDriveStateAdvisoryOnly
+        | BlueBrainHypothalamusStateSurface::UrgencyModulationState
+        | BlueBrainHypothalamusStateSurface::ContextLinkedStatePressureState => {
+            BlueBrainHypothalamusCanonicalRead::AdvisoryOnly
+        }
+        BlueBrainHypothalamusStateSurface::HomeostasisRegulationCaveatState => {
+            BlueBrainHypothalamusCanonicalRead::Caveated
+        }
+        BlueBrainHypothalamusStateSurface::DeferredRegulationState => {
+            BlueBrainHypothalamusCanonicalRead::Deferred
+        }
+        BlueBrainHypothalamusStateSurface::BlockedRegulationState => {
+            BlueBrainHypothalamusCanonicalRead::Blocked
+        }
+        BlueBrainHypothalamusStateSurface::InsufficientRegulationState => {
+            BlueBrainHypothalamusCanonicalRead::Insufficient
+        }
+        BlueBrainHypothalamusStateSurface::ReferenceOnlyRegulationState => {
+            BlueBrainHypothalamusCanonicalRead::DiagnosticOnly
+        }
+        BlueBrainHypothalamusStateSurface::NonCanonicalInternalOnly => {
+            BlueBrainHypothalamusCanonicalRead::NonCanonicalInternalOnly
+        }
+    }
+}
+
+pub fn blue_brain_hypothalamus_output_has_no_direct_authority(
+    output: BlueBrainHypothalamusOutputSurface,
+) -> bool {
+    !output.direct_action_selection
+        && !output.direct_action_trigger
+        && !output.direct_execution_trigger
+        && !output.direct_retry_trigger
+        && !output.direct_memory_commit
+        && !output.direct_compute_invocation
+        && !output.safety_override
+}
+
+pub fn blue_brain_hypothalamus_consumer_contract_read(
+    output: BlueBrainHypothalamusOutputSurface,
+    _layer: BlueBrainHypothalamusConsumerLayer,
+) -> BlueBrainHypothalamusCanonicalRead {
+    output.canonical_contract_read
+}
+
+pub fn blue_brain_hypothalamus_consumer_contract_reads_are_aligned(
+    output: BlueBrainHypothalamusOutputSurface,
+) -> bool {
+    let canonical = output.canonical_contract_read;
+    [
+        BlueBrainHypothalamusConsumerLayer::Runtime,
+        BlueBrainHypothalamusConsumerLayer::Selection,
+        BlueBrainHypothalamusConsumerLayer::Context,
+        BlueBrainHypothalamusConsumerLayer::Reference,
+    ]
+    .into_iter()
+    .all(|layer| blue_brain_hypothalamus_consumer_contract_read(output, layer) == canonical)
+}
+
+pub fn evaluate_blue_brain_hypothalamus_drive_homeostasis_modulation(
+    input: BlueBrainHypothalamusInputSurface,
+) -> (
+    BlueBrainHypothalamusStateSurface,
+    BlueBrainHypothalamusOutputSurface,
+) {
+    let (state, advisory_class, runtime_signal, selection_signal, context_signal, reference_signal) =
+        if input.selection_signal
+            == BlueBrainControlAttentionSelectionClass::NonCanonicalInternalOnlySelectionPath
+            || input.context_priority
+                == BlueBrainContextEvidencePriorityClass::NonCanonicalInternalOnlyPriorityPath
+            || input.reference_validity == BlueBrainReferenceValidity::NonCanonicalInternalOnlyPath
+        {
+            (
+                BlueBrainHypothalamusStateSurface::NonCanonicalInternalOnly,
+                BlueBrainHypothalamusAdvisoryOutputClass::NonCanonicalInternalOnly,
+                BlueBrainHypothalamusContractSignal::NonCanonicalInternalOnly,
+                BlueBrainHypothalamusContractSignal::NonCanonicalInternalOnly,
+                BlueBrainHypothalamusContractSignal::NonCanonicalInternalOnly,
+                BlueBrainHypothalamusContractSignal::NonCanonicalInternalOnly,
+            )
+        } else if input.deferral_class
+            == BlueBrainCandidateDeferralLifecycleClass::CandidateRejected
+            || input.reference_validity == BlueBrainReferenceValidity::Blocked
+            || input.reference_validity == BlueBrainReferenceValidity::Invalidated
+        {
+            (
+                BlueBrainHypothalamusStateSurface::BlockedRegulationState,
+                BlueBrainHypothalamusAdvisoryOutputClass::BlockedDeferred,
+                BlueBrainHypothalamusContractSignal::Blocked,
+                BlueBrainHypothalamusContractSignal::Blocked,
+                BlueBrainHypothalamusContractSignal::Blocked,
+                BlueBrainHypothalamusContractSignal::Blocked,
+            )
+        } else if input.deferral_class
+            == BlueBrainCandidateDeferralLifecycleClass::CandidateInsufficient
+            || input.reference_validity == BlueBrainReferenceValidity::Insufficient
+            || input.context_priority == BlueBrainContextEvidencePriorityClass::InsufficientContext
+        {
+            (
+                BlueBrainHypothalamusStateSurface::InsufficientRegulationState,
+                BlueBrainHypothalamusAdvisoryOutputClass::InsufficientDiagnosticOutput,
+                BlueBrainHypothalamusContractSignal::Insufficient,
+                BlueBrainHypothalamusContractSignal::Insufficient,
+                BlueBrainHypothalamusContractSignal::Insufficient,
+                BlueBrainHypothalamusContractSignal::Insufficient,
+            )
+        } else if matches!(
+            input.deferral_class,
+            BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred
+                | BlueBrainCandidateDeferralLifecycleClass::CandidateDeferredPendingStrongerEvidence
+                | BlueBrainCandidateDeferralLifecycleClass::CandidateDeferredPendingContextUpdate
+                | BlueBrainCandidateDeferralLifecycleClass::CandidateStale
+                | BlueBrainCandidateDeferralLifecycleClass::CandidateNotPersisted
+        ) || input.reference_validity == BlueBrainReferenceValidity::Stale
+        {
+            (
+                BlueBrainHypothalamusStateSurface::DeferredRegulationState,
+                BlueBrainHypothalamusAdvisoryOutputClass::BlockedDeferred,
+                BlueBrainHypothalamusContractSignal::Deferred,
+                BlueBrainHypothalamusContractSignal::Deferred,
+                BlueBrainHypothalamusContractSignal::Deferred,
+                BlueBrainHypothalamusContractSignal::Deferred,
+            )
+        } else if input.reference_validity == BlueBrainReferenceValidity::ReferenceOnly {
+            (
+                BlueBrainHypothalamusStateSurface::ReferenceOnlyRegulationState,
+                BlueBrainHypothalamusAdvisoryOutputClass::ReferenceBoundedSignal,
+                BlueBrainHypothalamusContractSignal::ReferenceOnly,
+                BlueBrainHypothalamusContractSignal::ReferenceOnly,
+                BlueBrainHypothalamusContractSignal::ReferenceOnly,
+                BlueBrainHypothalamusContractSignal::ReferenceOnly,
+            )
+        } else if input.reference_validity == BlueBrainReferenceValidity::Caveated
+            || input.context_priority
+                == BlueBrainContextEvidencePriorityClass::CaveatedEvidenceReference
+        {
+            (
+                BlueBrainHypothalamusStateSurface::HomeostasisRegulationCaveatState,
+                BlueBrainHypothalamusAdvisoryOutputClass::BoundedRegulationCaveat,
+                BlueBrainHypothalamusContractSignal::Caveated,
+                BlueBrainHypothalamusContractSignal::Caveated,
+                BlueBrainHypothalamusContractSignal::Caveated,
+                BlueBrainHypothalamusContractSignal::Caveated,
+            )
+        } else if matches!(
+            input.context_priority,
+            BlueBrainContextEvidencePriorityClass::PrimaryContext
+                | BlueBrainContextEvidencePriorityClass::SupportingContext
+        ) {
+            (
+                BlueBrainHypothalamusStateSurface::ContextLinkedStatePressureState,
+                BlueBrainHypothalamusAdvisoryOutputClass::StatePressureHint,
+                BlueBrainHypothalamusContractSignal::RuntimeToHypothalamusBoundedStateInput,
+                BlueBrainHypothalamusContractSignal::HypothalamusToSelectionUrgencyAdvisory,
+                BlueBrainHypothalamusContractSignal::HypothalamusContextStatePressureSignal,
+                BlueBrainHypothalamusContractSignal::HypothalamusReferenceBoundedSignal,
+            )
+        } else if matches!(
+            input.selection_signal,
+            BlueBrainControlAttentionSelectionClass::AttentionTarget
+                | BlueBrainControlAttentionSelectionClass::ContextSelection
+        ) {
+            (
+                BlueBrainHypothalamusStateSurface::UrgencyModulationState,
+                BlueBrainHypothalamusAdvisoryOutputClass::UrgencyHint,
+                BlueBrainHypothalamusContractSignal::HypothalamusToRuntimeUrgencyAdvisory,
+                BlueBrainHypothalamusContractSignal::HypothalamusToSelectionUrgencyAdvisory,
+                BlueBrainHypothalamusContractSignal::HypothalamusContextStatePressureSignal,
+                BlueBrainHypothalamusContractSignal::HypothalamusReferenceBoundedSignal,
+            )
+        } else {
+            (
+                BlueBrainHypothalamusStateSurface::BoundedDriveStateAdvisoryOnly,
+                BlueBrainHypothalamusAdvisoryOutputClass::StatePressureHint,
+                BlueBrainHypothalamusContractSignal::HypothalamusToRuntimeUrgencyAdvisory,
+                BlueBrainHypothalamusContractSignal::SelectionToHypothalamusBoundedStateInput,
+                BlueBrainHypothalamusContractSignal::HypothalamusContextStatePressureSignal,
+                BlueBrainHypothalamusContractSignal::HypothalamusReferenceBoundedSignal,
+            )
+        };
+
+    let output = BlueBrainHypothalamusOutputSurface {
+        advisory_class,
+        runtime_contract_signal: runtime_signal,
+        selection_contract_signal: selection_signal,
+        context_contract_signal: context_signal,
+        reference_contract_signal: reference_signal,
+        runtime_diagnostic_state: blue_brain_hypothalamus_diagnostic_state_for_signal(
+            runtime_signal,
+        ),
+        selection_diagnostic_state: blue_brain_hypothalamus_diagnostic_state_for_signal(
+            selection_signal,
+        ),
+        context_diagnostic_state: blue_brain_hypothalamus_diagnostic_state_for_signal(
+            context_signal,
+        ),
+        reference_diagnostic_state: blue_brain_hypothalamus_diagnostic_state_for_signal(
+            reference_signal,
+        ),
+        canonical_contract_read: blue_brain_hypothalamus_canonical_read_for_state(state),
+        runtime_advisory_only: true,
+        selection_advisory_only: true,
+        context_state_pressure_only: true,
         reference_bounded_only: true,
         direct_action_selection: false,
         direct_action_trigger: false,
@@ -9040,8 +9586,8 @@ mod tests {
         assert!(doc.contains("no safety override"));
     }
     #[test]
-    fn inter_region_architecture_map_covers_five_region_pair_classes() {
-        assert_eq!(CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP.len(), 10);
+    fn inter_region_architecture_map_covers_five_plus_hypothalamus_pair_classes() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP.len(), 15);
         assert_eq!(
             CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_RELATION_CLASS_MAP.len(),
             8
@@ -9118,6 +9664,20 @@ mod tests {
             )
             .relation_class,
             BlueBrainInterRegionArchitectureRelationClass::ExecutionInterfaceMediatedRelation
+        );
+        assert_eq!(
+            blue_brain_inter_region_architecture_relation_for_pair(
+                BlueBrainInterRegionArchitecturePair::ThalamusHypothalamus
+            )
+            .relation_class,
+            BlueBrainInterRegionArchitectureRelationClass::DirectBoundedAdvisoryRelation
+        );
+        assert_eq!(
+            blue_brain_inter_region_architecture_relation_for_pair(
+                BlueBrainInterRegionArchitecturePair::CerebellumHypothalamus
+            )
+            .relation_class,
+            BlueBrainInterRegionArchitectureRelationClass::DeferredNotYetActiveRelation
         );
     }
 
@@ -9236,7 +9796,7 @@ mod tests {
     fn first_inter_region_implementation_map_anchors_exactly_three_relations() {
         assert_eq!(
             CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP.len(),
-            10
+            15
         );
         assert_eq!(
             CANONICAL_BLUE_BRAIN_INTER_REGION_IMPLEMENTATION_RELATION_CLASS_MAP.len(),
@@ -9247,7 +9807,7 @@ mod tests {
             .iter()
             .filter(|relation| is_blue_brain_first_inter_region_relation_implemented(relation.pair))
             .count();
-        assert_eq!(implemented, 3);
+        assert_eq!(implemented, 7);
 
         assert_eq!(
             blue_brain_first_inter_region_implementation_relation_for_pair(
@@ -9266,6 +9826,20 @@ mod tests {
         assert_eq!(
             blue_brain_first_inter_region_implementation_relation_for_pair(
                 BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia
+            )
+            .implementation_relation_class,
+            BlueBrainInterRegionImplementationRelationClass::ImplementedSelectionMediatedRelation
+        );
+        assert_eq!(
+            blue_brain_first_inter_region_implementation_relation_for_pair(
+                BlueBrainInterRegionArchitecturePair::ThalamusHypothalamus
+            )
+            .implementation_relation_class,
+            BlueBrainInterRegionImplementationRelationClass::ImplementedDirectBoundedAdvisoryRelation
+        );
+        assert_eq!(
+            blue_brain_first_inter_region_implementation_relation_for_pair(
+                BlueBrainInterRegionArchitecturePair::BasalGangliaHypothalamus
             )
             .implementation_relation_class,
             BlueBrainInterRegionImplementationRelationClass::ImplementedSelectionMediatedRelation
@@ -9404,7 +9978,7 @@ mod tests {
     fn inter_region_diagnostics_contract_map_separates_canonical_states() {
         assert_eq!(
             CANONICAL_BLUE_BRAIN_INTER_REGION_DIAGNOSTICS_CONTRACT_MAP.len(),
-            10
+            15
         );
         assert_eq!(
             CANONICAL_BLUE_BRAIN_INTER_REGION_DIAGNOSTICS_CONTRACT_CLASS_MAP.len(),
@@ -9630,8 +10204,8 @@ mod tests {
             }
         }
 
-        assert_eq!(stable_implemented, 3);
-        assert_eq!(deferred, 6);
+        assert_eq!(stable_implemented, 7);
+        assert_eq!(deferred, 7);
         assert_eq!(blocked_or_diagnostic, 1);
         assert_eq!(usable_with_caveats, 0);
     }
@@ -10559,5 +11133,268 @@ mod tests {
         assert!(md2_doc.contains("no implicit global model platform"));
         assert!(readme.contains("Model-deepening stabilization line (MD2 Prompt 1)"));
         assert!(readme.contains("docs/blue_brain_md2_model_deepening_stabilization_line_v1.md"));
+    }
+
+    #[test]
+    fn hypothalamus_br6_prompt2_integration_map_separates_surfaces_and_roles() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_ROLE_MAP.len(), 5);
+        assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_ROLE_MAP
+            .contains(&BlueBrainHypothalamusRoleClass::BoundedDriveStateRole));
+        assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_ROLE_MAP
+            .contains(&BlueBrainHypothalamusRoleClass::BoundedHomeostasisRegulationRole));
+        assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_ROLE_MAP
+            .contains(&BlueBrainHypothalamusRoleClass::UrgencyModulationRole));
+        assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_ROLE_MAP
+            .contains(&BlueBrainHypothalamusRoleClass::ContextLinkedStatePressureRole));
+        assert_eq!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP.len(), 6);
+        assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP
+            .contains(&BlueBrainHypothalamusIntegrationClass::HypothalamusInputSurface));
+        assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP
+            .contains(&BlueBrainHypothalamusIntegrationClass::HypothalamusStateSurface));
+        assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP
+            .contains(&BlueBrainHypothalamusIntegrationClass::HypothalamusOutputAdvisorySurface));
+        assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP
+            .contains(&BlueBrainHypothalamusIntegrationClass::HypothalamusReferenceSurface));
+        assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP
+            .contains(&BlueBrainHypothalamusIntegrationClass::BlockedDeferredHypothalamusPath));
+        assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP.contains(
+            &BlueBrainHypothalamusIntegrationClass::NonCanonicalInternalOnlyHypothalamusPath
+        ));
+    }
+
+    #[test]
+    fn hypothalamus_br6_prompt2_inputs_outputs_are_bounded_and_no_direct() {
+        for allowed in [
+            BlueBrainHypothalamusInputSource::RuntimeBoundedStateSignal,
+            BlueBrainHypothalamusInputSource::SelectionBoundedStateSignal,
+            BlueBrainHypothalamusInputSource::ContextStatePressureSignal,
+            BlueBrainHypothalamusInputSource::AdvisoryReferenceSignal,
+        ] {
+            assert_eq!(
+                classify_blue_brain_hypothalamus_input_guard(allowed),
+                BlueBrainHypothalamusInputGuard::AllowedBoundedInput
+            );
+        }
+        for blocked in [
+            BlueBrainHypothalamusInputSource::ToolActionControlSignal,
+            BlueBrainHypothalamusInputSource::ComputeInternalRawState,
+            BlueBrainHypothalamusInputSource::SafetyOverrideSignal,
+            BlueBrainHypothalamusInputSource::ImplicitMemoryMutationSignal,
+        ] {
+            assert_eq!(
+                classify_blue_brain_hypothalamus_input_guard(blocked),
+                BlueBrainHypothalamusInputGuard::BlockedForbiddenInput
+            );
+        }
+
+        let input = BlueBrainHypothalamusInputSurface {
+            selection_signal: BlueBrainControlAttentionSelectionClass::AttentionTarget,
+            deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+            reference_validity: BlueBrainReferenceValidity::Current,
+            context_priority: BlueBrainContextEvidencePriorityClass::PrimaryEvidenceReference,
+        };
+        let (state, output) = evaluate_blue_brain_hypothalamus_drive_homeostasis_modulation(input);
+        assert_eq!(
+            state,
+            BlueBrainHypothalamusStateSurface::UrgencyModulationState
+        );
+        assert_eq!(
+            output.advisory_class,
+            BlueBrainHypothalamusAdvisoryOutputClass::UrgencyHint
+        );
+        assert!(blue_brain_hypothalamus_output_has_no_direct_authority(
+            output
+        ));
+        assert!(output.runtime_advisory_only);
+        assert!(output.selection_advisory_only);
+        assert!(output.context_state_pressure_only);
+        assert!(output.reference_bounded_only);
+        assert!(blue_brain_hypothalamus_consumer_contract_reads_are_aligned(
+            output
+        ));
+    }
+
+    #[test]
+    fn hypothalamus_br6_prompt2_reference_deferred_blocked_and_noncanonical_do_not_escalate() {
+        let base = BlueBrainHypothalamusInputSurface {
+            selection_signal: BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+            deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+            reference_validity: BlueBrainReferenceValidity::ReferenceOnly,
+            context_priority: BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+        };
+        let (state, output) = evaluate_blue_brain_hypothalamus_drive_homeostasis_modulation(base);
+        assert_eq!(
+            state,
+            BlueBrainHypothalamusStateSurface::ReferenceOnlyRegulationState
+        );
+        assert_eq!(
+            output.reference_diagnostic_state,
+            BlueBrainHypothalamusDiagnosticState::HypothalamusDiagnosticOnlyState
+        );
+        assert!(!output.direct_memory_commit);
+
+        let deferred = BlueBrainHypothalamusInputSurface {
+            deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred,
+            reference_validity: BlueBrainReferenceValidity::Current,
+            ..base
+        };
+        let (state, output) =
+            evaluate_blue_brain_hypothalamus_drive_homeostasis_modulation(deferred);
+        assert_eq!(
+            state,
+            BlueBrainHypothalamusStateSurface::DeferredRegulationState
+        );
+        assert_eq!(
+            output.runtime_diagnostic_state,
+            BlueBrainHypothalamusDiagnosticState::HypothalamusDeferredDiagnostic
+        );
+        assert!(!output.direct_retry_trigger);
+
+        let blocked = BlueBrainHypothalamusInputSurface {
+            deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateRejected,
+            reference_validity: BlueBrainReferenceValidity::Current,
+            ..base
+        };
+        let (state, output) =
+            evaluate_blue_brain_hypothalamus_drive_homeostasis_modulation(blocked);
+        assert_eq!(
+            state,
+            BlueBrainHypothalamusStateSurface::BlockedRegulationState
+        );
+        assert_eq!(
+            output.selection_diagnostic_state,
+            BlueBrainHypothalamusDiagnosticState::HypothalamusBlockedDiagnostic
+        );
+        assert!(!output.direct_execution_trigger);
+
+        let noncanonical = BlueBrainHypothalamusInputSurface {
+            selection_signal:
+                BlueBrainControlAttentionSelectionClass::NonCanonicalInternalOnlySelectionPath,
+            deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+            reference_validity: BlueBrainReferenceValidity::Current,
+            context_priority: BlueBrainContextEvidencePriorityClass::PrimaryContext,
+        };
+        let (state, output) =
+            evaluate_blue_brain_hypothalamus_drive_homeostasis_modulation(noncanonical);
+        assert_eq!(
+            state,
+            BlueBrainHypothalamusStateSurface::NonCanonicalInternalOnly
+        );
+        assert_eq!(output.context_diagnostic_state, BlueBrainHypothalamusDiagnosticState::NonCanonicalInternalOnlyHypothalamusDiagnosticPath);
+        assert!(!output.direct_compute_invocation);
+    }
+
+    #[test]
+    fn hypothalamus_br6_prompt2_inter_region_adjunct_is_bounded() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP.len(), 15);
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP.len(),
+            15
+        );
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_INTER_REGION_DIAGNOSTICS_CONTRACT_MAP.len(),
+            15
+        );
+        assert_eq!(
+            blue_brain_inter_region_architecture_region_role(
+                BlueBrainAnatomicalRegionClass::Hypothalamus
+            ),
+            BlueBrainInterRegionArchitectureRegionRoleClass::DriveHomeostasisUrgencyStatePressure
+        );
+        assert_eq!(
+            blue_brain_inter_region_architecture_relation_for_pair(
+                BlueBrainInterRegionArchitecturePair::HippocampusHypothalamus
+            )
+            .relation_class,
+            BlueBrainInterRegionArchitectureRelationClass::ReferenceMediatedRelation
+        );
+        assert_eq!(
+            blue_brain_inter_region_architecture_relation_for_pair(
+                BlueBrainInterRegionArchitecturePair::AmygdalaHypothalamus
+            )
+            .relation_class,
+            BlueBrainInterRegionArchitectureRelationClass::CaveatedInterRegionRelation
+        );
+        assert_eq!(
+            blue_brain_inter_region_architecture_relation_for_pair(
+                BlueBrainInterRegionArchitecturePair::ThalamusHypothalamus
+            )
+            .relation_class,
+            BlueBrainInterRegionArchitectureRelationClass::DirectBoundedAdvisoryRelation
+        );
+        assert_eq!(
+            blue_brain_inter_region_architecture_relation_for_pair(
+                BlueBrainInterRegionArchitecturePair::BasalGangliaHypothalamus
+            )
+            .relation_class,
+            BlueBrainInterRegionArchitectureRelationClass::SelectionMediatedRelation
+        );
+        assert_eq!(
+            blue_brain_inter_region_architecture_relation_for_pair(
+                BlueBrainInterRegionArchitecturePair::CerebellumHypothalamus
+            )
+            .relation_class,
+            BlueBrainInterRegionArchitectureRelationClass::DeferredNotYetActiveRelation
+        );
+        for pair in [
+            BlueBrainInterRegionArchitecturePair::HippocampusHypothalamus,
+            BlueBrainInterRegionArchitecturePair::AmygdalaHypothalamus,
+            BlueBrainInterRegionArchitecturePair::ThalamusHypothalamus,
+            BlueBrainInterRegionArchitecturePair::BasalGangliaHypothalamus,
+            BlueBrainInterRegionArchitecturePair::CerebellumHypothalamus,
+        ] {
+            let read = blue_brain_inter_region_diagnostics_contract_read_for_pair(
+                pair,
+                BlueBrainInterRegionConsumerLayer::Runtime,
+            );
+            assert!(read.advisory_only || read.deferred);
+            assert!(!read.blocked);
+            assert!(!read.direct_action_trigger);
+            assert!(!read.direct_execution_trigger);
+            assert!(!read.direct_retry_trigger);
+            assert!(!read.direct_memory_commit);
+            assert!(!read.direct_compute_invocation);
+            assert!(!read.safety_override);
+            assert!(blue_brain_inter_region_consumer_contract_reads_are_aligned(
+                pair
+            ));
+        }
+    }
+
+    #[test]
+    fn hypothalamus_br6_prompt2_doc_pins_surfaces_model_and_boundaries() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_hypothalamus_minimal_bounded_integration_serie_br6_prompt2_v1.md"
+        );
+        assert!(doc.contains("hypothalamus input surface"));
+        assert!(doc.contains("hypothalamus state surface"));
+        assert!(doc.contains("hypothalamus output/advisory surface"));
+        assert!(doc.contains("hypothalamus reference surface"));
+        assert!(doc.contains("blocked/deferred hypothalamus path"));
+        assert!(doc.contains("non-canonical/internal-only hypothalamus path"));
+        assert!(doc.contains("urgency-hint"));
+        assert!(doc.contains("state-pressure hint"));
+        assert!(doc.contains("bounded regulation caveat"));
+        assert!(doc.contains("Reference-only, stale, caveated, blocked und insufficient"));
+        assert!(doc.contains("abstract functional current mode"));
+        assert!(doc.contains("keine Hodgkin-Huxley-Produktivintegration"));
+        assert!(doc.contains("keine implizite Kuramoto-Aufweitung"));
+        assert!(doc.contains("Hippocampus ↔ Hypothalamus"));
+        assert!(doc.contains("Amygdala ↔ Hypothalamus"));
+        assert!(doc.contains("Thalamus ↔ Hypothalamus"));
+        assert!(doc.contains("Basal Ganglia ↔ Hypothalamus"));
+        assert!(doc.contains("Cerebellum ↔ Hypothalamus"));
+        assert!(doc.contains("direct action selection"));
+        assert!(doc.contains("direct execution trigger"));
+        assert!(doc.contains("direct retry trigger"));
+        assert!(doc.contains("direct memory commit"));
+        assert!(doc.contains("direct compute invocation"));
+        assert!(doc.contains("safety override"));
+        assert!(doc.contains("no implicit opening of further anatomical regions"));
+        let readme = include_str!("../../../docs/README.md");
+        assert!(readme.contains("Hypothalamus-next integration line (BR6)"));
+        assert!(readme.contains(
+            "docs/blue_brain_hypothalamus_minimal_bounded_integration_serie_br6_prompt2_v1.md"
+        ));
     }
 }
