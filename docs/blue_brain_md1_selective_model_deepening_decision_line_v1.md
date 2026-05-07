@@ -90,3 +90,8 @@ Model depth must never undercut existing bounded contracts from Runtime, Selecti
 3. Only after that, evaluate whether `Amygdala ↔ Basal Ganglia` can reuse the same bounded modulation shape without promoting action-gating authority.
 4. Keep Cerebellum HH as simulation-only/diagnostic-only research evidence; do not wire it into production Runtime or Execution.
 5. Reconcile any future relation work against the IR1 diagnostics/contract map before adding model depth.
+
+
+## 8) Prompt 2 implementation note
+
+MD1 Prompt 2 implements the first model-deepening line for exactly `Amygdala ↔ Thalamus` as a bounded Kuramoto-like advisory relation. See `docs/blue_brain_md1_first_model_deepening_implementation_line_v1.md` for the canonical input/state/output/diagnostic surfaces and the no-direct-* guard line. `Amygdala ↔ Basal Ganglia` remains deferred; HH paths remain simulation-only/diagnostic-only or later-selective only.

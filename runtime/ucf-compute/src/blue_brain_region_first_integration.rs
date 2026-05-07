@@ -1,4 +1,9 @@
 use crate::{
+    blue_brain_dynamics::{
+        evaluate_blue_brain_kuramoto_modulation, BlueBrainKuramotoModulationInput,
+        BlueBrainKuramotoModulationResult, BlueBrainKuramotoModulationState,
+        BlueBrainKuramotoScopeState,
+    },
     BlueBrainCandidateDeferralLifecycleClass, BlueBrainContextEvidencePriorityClass,
     BlueBrainControlAttentionSelectionClass, BlueBrainReferenceValidity,
 };
@@ -1477,6 +1482,231 @@ pub fn blue_brain_md1_relation_deepening_is_consistent_with_implementation(
     let relation = blue_brain_first_inter_region_implementation_relation_for_pair(decision.pair);
     decision.implementation_relation_class == relation.implementation_relation_class
         && decision.mediation_path == relation.mediation_path
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd1FirstDeepeningIntegrationPathClass {
+    DeepenedCandidateInputSurface,
+    DeepenedCandidateStateSurface,
+    DeepenedCandidateOutputAdvisorySurface,
+    DeepenedCandidateDiagnosticModelSurface,
+    BlockedDeferredDeepeningPath,
+    NonCanonicalInternalOnlyDeepeningPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_INTEGRATION_MAP:
+    [BlueBrainMd1FirstDeepeningIntegrationPathClass; 6] = [
+    BlueBrainMd1FirstDeepeningIntegrationPathClass::DeepenedCandidateInputSurface,
+    BlueBrainMd1FirstDeepeningIntegrationPathClass::DeepenedCandidateStateSurface,
+    BlueBrainMd1FirstDeepeningIntegrationPathClass::DeepenedCandidateOutputAdvisorySurface,
+    BlueBrainMd1FirstDeepeningIntegrationPathClass::DeepenedCandidateDiagnosticModelSurface,
+    BlueBrainMd1FirstDeepeningIntegrationPathClass::BlockedDeferredDeepeningPath,
+    BlueBrainMd1FirstDeepeningIntegrationPathClass::NonCanonicalInternalOnlyDeepeningPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd1FirstDeepeningCandidateClass {
+    AmygdalaThalamusBoundedKuramotoLikeAdvisory,
+    DeferredPrioritizedCandidateNotDeepenedNow,
+    BlockedOrAbstractCandidateNotDeepenedNow,
+    NonCanonicalInternalOnlyCandidate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd1FirstDeepeningOutputClass {
+    AdvisoryOnly,
+    CaveatedAdvisoryOnly,
+    Deferred,
+    Blocked,
+    Insufficient,
+    DiagnosticOnly,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd1FirstDeepeningDiagnosticClass {
+    KuramotoLikeModelDiagnostic,
+    CaveatedModelDiagnostic,
+    DeferredModelDiagnostic,
+    BlockedModelDiagnostic,
+    InsufficientModelDiagnostic,
+    DiagnosticOnlyModelRead,
+    NonCanonicalInternalOnlyModelDiagnostic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainMd1FirstDeepeningStateSurface {
+    pub pair: BlueBrainInterRegionArchitecturePair,
+    pub candidate_class: BlueBrainMd1FirstDeepeningCandidateClass,
+    pub current_model_mode: BlueBrainFirstAnatomicalRegionModelModeClass,
+    pub deepening_class: BlueBrainMd1ModelDeepeningClass,
+    pub implementation_relation_class: BlueBrainInterRegionImplementationRelationClass,
+    pub mediation_path: BlueBrainInterRegionImplementationMediationPath,
+    pub coupling_synchrony_gating_timing_leverage: bool,
+    pub excitability_spiking_membrane_leverage: bool,
+    pub advisory_only: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlueBrainMd1FirstDeepeningInputSurface {
+    pub pair: BlueBrainInterRegionArchitecturePair,
+    pub kuramoto_input: BlueBrainKuramotoModulationInput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlueBrainMd1FirstDeepeningResult {
+    pub state_surface: BlueBrainMd1FirstDeepeningStateSurface,
+    pub output_class: BlueBrainMd1FirstDeepeningOutputClass,
+    pub diagnostic_class: BlueBrainMd1FirstDeepeningDiagnosticClass,
+    pub kuramoto_result: Option<BlueBrainKuramotoModulationResult>,
+    pub runtime_bounded_read: bool,
+    pub selection_bounded_read: bool,
+    pub reference_bounded_read: bool,
+    pub direct_action_trigger: bool,
+    pub direct_execution_trigger: bool,
+    pub direct_retry_trigger: bool,
+    pub direct_memory_commit: bool,
+    pub direct_compute_invocation: bool,
+    pub safety_override: bool,
+    pub global_model_platform: bool,
+}
+
+pub const BLUE_BRAIN_MD1_FIRST_DEEPENED_CANDIDATE_PAIR: BlueBrainInterRegionArchitecturePair =
+    BlueBrainInterRegionArchitecturePair::AmygdalaThalamus;
+
+fn blue_brain_md1_first_deepening_state_surface(
+    pair: BlueBrainInterRegionArchitecturePair,
+) -> BlueBrainMd1FirstDeepeningStateSurface {
+    let decision = blue_brain_md1_relation_deepening_decision(pair);
+    let candidate_class = if pair == BLUE_BRAIN_MD1_FIRST_DEEPENED_CANDIDATE_PAIR {
+        BlueBrainMd1FirstDeepeningCandidateClass::AmygdalaThalamusBoundedKuramotoLikeAdvisory
+    } else if decision.priority_class
+        == BlueBrainMd1DeepeningPriorityClass::NextConcreteDeepeningCandidate
+        && decision.deepening_class == BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate
+    {
+        BlueBrainMd1FirstDeepeningCandidateClass::DeferredPrioritizedCandidateNotDeepenedNow
+    } else if decision.priority_class
+        == BlueBrainMd1DeepeningPriorityClass::NonCanonicalInternalOnly
+    {
+        BlueBrainMd1FirstDeepeningCandidateClass::NonCanonicalInternalOnlyCandidate
+    } else {
+        BlueBrainMd1FirstDeepeningCandidateClass::BlockedOrAbstractCandidateNotDeepenedNow
+    };
+
+    BlueBrainMd1FirstDeepeningStateSurface {
+        pair,
+        candidate_class,
+        current_model_mode:
+            BlueBrainFirstAnatomicalRegionModelModeClass::BoundedKuramotoLikeCurrentMode,
+        deepening_class: decision.deepening_class,
+        implementation_relation_class: decision.implementation_relation_class,
+        mediation_path: decision.mediation_path,
+        coupling_synchrony_gating_timing_leverage: decision
+            .coupling_synchrony_gating_timing_leverage,
+        excitability_spiking_membrane_leverage: decision.excitability_spiking_membrane_leverage,
+        advisory_only: decision.advisory_only,
+    }
+}
+
+pub fn evaluate_blue_brain_md1_first_model_deepening(
+    input: BlueBrainMd1FirstDeepeningInputSurface,
+) -> BlueBrainMd1FirstDeepeningResult {
+    let state_surface = blue_brain_md1_first_deepening_state_surface(input.pair);
+    let mut result = BlueBrainMd1FirstDeepeningResult {
+        state_surface,
+        output_class: BlueBrainMd1FirstDeepeningOutputClass::Deferred,
+        diagnostic_class: BlueBrainMd1FirstDeepeningDiagnosticClass::DeferredModelDiagnostic,
+        kuramoto_result: None,
+        runtime_bounded_read: false,
+        selection_bounded_read: false,
+        reference_bounded_read: false,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        safety_override: false,
+        global_model_platform: false,
+    };
+
+    match state_surface.candidate_class {
+        BlueBrainMd1FirstDeepeningCandidateClass::AmygdalaThalamusBoundedKuramotoLikeAdvisory => {
+            let kuramoto_scope = input.kuramoto_input.scope;
+            let kuramoto_result = evaluate_blue_brain_kuramoto_modulation(input.kuramoto_input);
+            result.output_class = match kuramoto_result.modulation_state {
+                BlueBrainKuramotoModulationState::AppliedAdvisoryOnly
+                | BlueBrainKuramotoModulationState::NoOp => {
+                    BlueBrainMd1FirstDeepeningOutputClass::AdvisoryOnly
+                }
+                BlueBrainKuramotoModulationState::Caveated => {
+                    BlueBrainMd1FirstDeepeningOutputClass::CaveatedAdvisoryOnly
+                }
+                BlueBrainKuramotoModulationState::Insufficient => {
+                    BlueBrainMd1FirstDeepeningOutputClass::Insufficient
+                }
+                BlueBrainKuramotoModulationState::Ignored
+                | BlueBrainKuramotoModulationState::Unavailable => {
+                    BlueBrainMd1FirstDeepeningOutputClass::Deferred
+                }
+                BlueBrainKuramotoModulationState::Blocked => {
+                    BlueBrainMd1FirstDeepeningOutputClass::Blocked
+                }
+                BlueBrainKuramotoModulationState::NonCanonicalInternalOnlyPath => {
+                    BlueBrainMd1FirstDeepeningOutputClass::NonCanonicalInternalOnly
+                }
+            };
+            if matches!(kuramoto_scope, BlueBrainKuramotoScopeState::DiagnosticOnly) {
+                result.output_class = BlueBrainMd1FirstDeepeningOutputClass::DiagnosticOnly;
+                result.diagnostic_class =
+                    BlueBrainMd1FirstDeepeningDiagnosticClass::DiagnosticOnlyModelRead;
+            } else {
+                result.diagnostic_class = match result.output_class {
+                    BlueBrainMd1FirstDeepeningOutputClass::AdvisoryOnly => {
+                        BlueBrainMd1FirstDeepeningDiagnosticClass::KuramotoLikeModelDiagnostic
+                    }
+                    BlueBrainMd1FirstDeepeningOutputClass::CaveatedAdvisoryOnly => {
+                        BlueBrainMd1FirstDeepeningDiagnosticClass::CaveatedModelDiagnostic
+                    }
+                    BlueBrainMd1FirstDeepeningOutputClass::Insufficient => {
+                        BlueBrainMd1FirstDeepeningDiagnosticClass::InsufficientModelDiagnostic
+                    }
+                    BlueBrainMd1FirstDeepeningOutputClass::Blocked => {
+                        BlueBrainMd1FirstDeepeningDiagnosticClass::BlockedModelDiagnostic
+                    }
+                    BlueBrainMd1FirstDeepeningOutputClass::Deferred => {
+                        BlueBrainMd1FirstDeepeningDiagnosticClass::DeferredModelDiagnostic
+                    }
+                    BlueBrainMd1FirstDeepeningOutputClass::DiagnosticOnly => {
+                        BlueBrainMd1FirstDeepeningDiagnosticClass::DiagnosticOnlyModelRead
+                    }
+                    BlueBrainMd1FirstDeepeningOutputClass::NonCanonicalInternalOnly => {
+                        BlueBrainMd1FirstDeepeningDiagnosticClass::NonCanonicalInternalOnlyModelDiagnostic
+                    }
+                };
+            }
+            result.runtime_bounded_read = true;
+            result.selection_bounded_read = true;
+            result.reference_bounded_read = true;
+            result.kuramoto_result = Some(kuramoto_result);
+        }
+        BlueBrainMd1FirstDeepeningCandidateClass::DeferredPrioritizedCandidateNotDeepenedNow => {
+            result.output_class = BlueBrainMd1FirstDeepeningOutputClass::Deferred;
+            result.diagnostic_class =
+                BlueBrainMd1FirstDeepeningDiagnosticClass::DeferredModelDiagnostic;
+        }
+        BlueBrainMd1FirstDeepeningCandidateClass::BlockedOrAbstractCandidateNotDeepenedNow => {
+            result.output_class = BlueBrainMd1FirstDeepeningOutputClass::Blocked;
+            result.diagnostic_class =
+                BlueBrainMd1FirstDeepeningDiagnosticClass::BlockedModelDiagnostic;
+        }
+        BlueBrainMd1FirstDeepeningCandidateClass::NonCanonicalInternalOnlyCandidate => {
+            result.output_class = BlueBrainMd1FirstDeepeningOutputClass::NonCanonicalInternalOnly;
+            result.diagnostic_class =
+                BlueBrainMd1FirstDeepeningDiagnosticClass::NonCanonicalInternalOnlyModelDiagnostic;
+        }
+    }
+
+    result
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4565,6 +4795,10 @@ pub fn evaluate_blue_brain_first_region_attention_selection(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        BlueBrainKuramotoPhaseNodeInput, BlueBrainKuramotoRuntimePosture,
+        BlueBrainKuramotoSelectionPosture,
+    };
 
     #[test]
     fn first_region_map_contains_all_required_paths() {
@@ -8964,6 +9198,50 @@ mod tests {
         assert!(doc.contains("exactly the three Prompt 2 implemented relations"));
     }
 
+    fn md1_first_deepening_kuramoto_input(
+        pair: BlueBrainInterRegionArchitecturePair,
+        scope: BlueBrainKuramotoScopeState,
+    ) -> BlueBrainMd1FirstDeepeningInputSurface {
+        BlueBrainMd1FirstDeepeningInputSurface {
+            pair,
+            kuramoto_input: BlueBrainKuramotoModulationInput {
+                scope,
+                selection_posture: BlueBrainKuramotoSelectionPosture::Selected,
+                runtime_posture: BlueBrainKuramotoRuntimePosture::Stable,
+                selected_context_refs: vec!["ctx:thalamus:relay-read".to_string()],
+                selected_evidence_refs: vec!["ev:amygdala:threat-salience".to_string()],
+                memory_caveats: vec![],
+                phase_nodes: vec![
+                    BlueBrainKuramotoPhaseNodeInput {
+                        group_ref: "runtime_state_group".to_string(),
+                        phase_permille: 120,
+                        coupling_permille: 700,
+                    },
+                    BlueBrainKuramotoPhaseNodeInput {
+                        group_ref: "selection_attention_group".to_string(),
+                        phase_permille: 130,
+                        coupling_permille: 700,
+                    },
+                    BlueBrainKuramotoPhaseNodeInput {
+                        group_ref: "context_reference_group".to_string(),
+                        phase_permille: 125,
+                        coupling_permille: 600,
+                    },
+                ],
+                unsupported_input_refs: vec![],
+                blocked_input_refs: vec![],
+                canonical_execution_result_refs: vec![],
+                failed_execution_result_refs: vec![],
+                cancelled_execution_result_refs: vec![],
+                blocked_execution_result_refs: vec![],
+                insufficient_execution_result_refs: vec![],
+                unavailable_execution_result_refs: vec![],
+                diagnostic_only_feedback_refs: vec![],
+                non_canonical_internal_only_path: false,
+            },
+        }
+    }
+
     #[test]
     fn md1_model_deepening_classes_regions_and_relations_are_distinct() {
         assert_eq!(CANONICAL_BLUE_BRAIN_MD1_MODEL_DEEPENING_CLASS_MAP.len(), 6);
@@ -9094,6 +9372,210 @@ mod tests {
     }
 
     #[test]
+    fn md1_first_deepening_integration_map_separates_required_surfaces() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_INTEGRATION_MAP.len(),
+            6
+        );
+        assert!(
+            CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_INTEGRATION_MAP.contains(
+                &BlueBrainMd1FirstDeepeningIntegrationPathClass::DeepenedCandidateInputSurface
+            )
+        );
+        assert!(
+            CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_INTEGRATION_MAP.contains(
+                &BlueBrainMd1FirstDeepeningIntegrationPathClass::DeepenedCandidateStateSurface
+            )
+        );
+        assert!(CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_INTEGRATION_MAP.contains(
+            &BlueBrainMd1FirstDeepeningIntegrationPathClass::DeepenedCandidateOutputAdvisorySurface
+        ));
+        assert!(CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_INTEGRATION_MAP.contains(
+            &BlueBrainMd1FirstDeepeningIntegrationPathClass::DeepenedCandidateDiagnosticModelSurface
+        ));
+        assert!(
+            CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_INTEGRATION_MAP.contains(
+                &BlueBrainMd1FirstDeepeningIntegrationPathClass::BlockedDeferredDeepeningPath
+            )
+        );
+        assert!(CANONICAL_BLUE_BRAIN_MD1_FIRST_DEEPENING_INTEGRATION_MAP.contains(
+            &BlueBrainMd1FirstDeepeningIntegrationPathClass::NonCanonicalInternalOnlyDeepeningPath
+        ));
+    }
+
+    #[test]
+    fn md1_first_deepening_targets_only_amygdala_thalamus_kuramoto_like_candidate() {
+        let result =
+            evaluate_blue_brain_md1_first_model_deepening(md1_first_deepening_kuramoto_input(
+                BlueBrainInterRegionArchitecturePair::AmygdalaThalamus,
+                BlueBrainKuramotoScopeState::RuntimeCaveatModulating,
+            ));
+        assert_eq!(
+            BLUE_BRAIN_MD1_FIRST_DEEPENED_CANDIDATE_PAIR,
+            BlueBrainInterRegionArchitecturePair::AmygdalaThalamus
+        );
+        assert_eq!(
+            result.state_surface.candidate_class,
+            BlueBrainMd1FirstDeepeningCandidateClass::AmygdalaThalamusBoundedKuramotoLikeAdvisory
+        );
+        assert_eq!(
+            result.state_surface.deepening_class,
+            BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate
+        );
+        assert!(
+            result
+                .state_surface
+                .coupling_synchrony_gating_timing_leverage
+        );
+        assert!(!result.state_surface.excitability_spiking_membrane_leverage);
+        assert!(result.runtime_bounded_read);
+        assert!(result.selection_bounded_read);
+        assert!(result.reference_bounded_read);
+        assert!(result.kuramoto_result.is_some());
+
+        let deferred_second_priority =
+            evaluate_blue_brain_md1_first_model_deepening(md1_first_deepening_kuramoto_input(
+                BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia,
+                BlueBrainKuramotoScopeState::SelectionModulating,
+            ));
+        assert_eq!(
+            deferred_second_priority.state_surface.candidate_class,
+            BlueBrainMd1FirstDeepeningCandidateClass::DeferredPrioritizedCandidateNotDeepenedNow
+        );
+        assert_eq!(
+            deferred_second_priority.output_class,
+            BlueBrainMd1FirstDeepeningOutputClass::Deferred
+        );
+        assert!(deferred_second_priority.kuramoto_result.is_none());
+    }
+
+    #[test]
+    fn md1_first_deepening_diagnostics_keep_advisory_caveated_deferred_blocked_insufficient_diagnostic_only_distinct(
+    ) {
+        let advisory =
+            evaluate_blue_brain_md1_first_model_deepening(md1_first_deepening_kuramoto_input(
+                BlueBrainInterRegionArchitecturePair::AmygdalaThalamus,
+                BlueBrainKuramotoScopeState::RuntimeCaveatModulating,
+            ));
+        assert_eq!(
+            advisory.output_class,
+            BlueBrainMd1FirstDeepeningOutputClass::AdvisoryOnly
+        );
+
+        let mut caveated_input = md1_first_deepening_kuramoto_input(
+            BlueBrainInterRegionArchitecturePair::AmygdalaThalamus,
+            BlueBrainKuramotoScopeState::RuntimeCaveatModulating,
+        );
+        caveated_input.kuramoto_input.unsupported_input_refs =
+            vec!["tool:direct_action".to_string()];
+        let caveated = evaluate_blue_brain_md1_first_model_deepening(caveated_input);
+        assert_eq!(
+            caveated.output_class,
+            BlueBrainMd1FirstDeepeningOutputClass::CaveatedAdvisoryOnly
+        );
+        assert_eq!(
+            caveated.diagnostic_class,
+            BlueBrainMd1FirstDeepeningDiagnosticClass::CaveatedModelDiagnostic
+        );
+
+        let deferred =
+            evaluate_blue_brain_md1_first_model_deepening(md1_first_deepening_kuramoto_input(
+                BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia,
+                BlueBrainKuramotoScopeState::SelectionModulating,
+            ));
+        assert_eq!(
+            deferred.output_class,
+            BlueBrainMd1FirstDeepeningOutputClass::Deferred
+        );
+
+        let blocked =
+            evaluate_blue_brain_md1_first_model_deepening(md1_first_deepening_kuramoto_input(
+                BlueBrainInterRegionArchitecturePair::HippocampusThalamus,
+                BlueBrainKuramotoScopeState::RuntimeCaveatModulating,
+            ));
+        assert_eq!(
+            blocked.output_class,
+            BlueBrainMd1FirstDeepeningOutputClass::Blocked
+        );
+
+        let mut insufficient_input = md1_first_deepening_kuramoto_input(
+            BlueBrainInterRegionArchitecturePair::AmygdalaThalamus,
+            BlueBrainKuramotoScopeState::RuntimeCaveatModulating,
+        );
+        insufficient_input.kuramoto_input.phase_nodes.truncate(1);
+        let insufficient = evaluate_blue_brain_md1_first_model_deepening(insufficient_input);
+        assert_eq!(
+            insufficient.output_class,
+            BlueBrainMd1FirstDeepeningOutputClass::Insufficient
+        );
+        assert_eq!(
+            insufficient.diagnostic_class,
+            BlueBrainMd1FirstDeepeningDiagnosticClass::InsufficientModelDiagnostic
+        );
+
+        let diagnostic_only =
+            evaluate_blue_brain_md1_first_model_deepening(md1_first_deepening_kuramoto_input(
+                BlueBrainInterRegionArchitecturePair::AmygdalaThalamus,
+                BlueBrainKuramotoScopeState::DiagnosticOnly,
+            ));
+        assert_eq!(
+            diagnostic_only.output_class,
+            BlueBrainMd1FirstDeepeningOutputClass::DiagnosticOnly
+        );
+        assert_eq!(
+            diagnostic_only.diagnostic_class,
+            BlueBrainMd1FirstDeepeningDiagnosticClass::DiagnosticOnlyModelRead
+        );
+    }
+
+    #[test]
+    fn md1_first_deepening_preserves_no_direct_authority_and_no_extra_model_platform() {
+        let mut cases = vec![
+            evaluate_blue_brain_md1_first_model_deepening(md1_first_deepening_kuramoto_input(
+                BlueBrainInterRegionArchitecturePair::AmygdalaThalamus,
+                BlueBrainKuramotoScopeState::RuntimeCaveatModulating,
+            )),
+            evaluate_blue_brain_md1_first_model_deepening(md1_first_deepening_kuramoto_input(
+                BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia,
+                BlueBrainKuramotoScopeState::SelectionModulating,
+            )),
+            evaluate_blue_brain_md1_first_model_deepening(md1_first_deepening_kuramoto_input(
+                BlueBrainInterRegionArchitecturePair::HippocampusThalamus,
+                BlueBrainKuramotoScopeState::DiagnosticOnly,
+            )),
+        ];
+        let mut non_canonical = md1_first_deepening_kuramoto_input(
+            BlueBrainInterRegionArchitecturePair::HippocampusBasalGanglia,
+            BlueBrainKuramotoScopeState::DiagnosticOnly,
+        );
+        non_canonical
+            .kuramoto_input
+            .non_canonical_internal_only_path = true;
+        cases.push(evaluate_blue_brain_md1_first_model_deepening(non_canonical));
+
+        for result in cases {
+            assert!(!result.direct_action_trigger);
+            assert!(!result.direct_execution_trigger);
+            assert!(!result.direct_retry_trigger);
+            assert!(!result.direct_memory_commit);
+            assert!(!result.direct_compute_invocation);
+            assert!(!result.safety_override);
+            assert!(!result.global_model_platform);
+            if let Some(kuramoto_result) = result.kuramoto_result {
+                assert!(!kuramoto_result.boundary_guard.action_execution_allowed);
+                assert!(
+                    !kuramoto_result
+                        .boundary_guard
+                        .direct_retry_orchestration_allowed
+                );
+                assert!(!kuramoto_result.boundary_guard.memory_commit_allowed);
+                assert!(!kuramoto_result.boundary_guard.compute_invocation_allowed);
+                assert!(!kuramoto_result.boundary_guard.safety_override_allowed);
+            }
+        }
+    }
+
+    #[test]
     fn md1_doc_pins_selective_model_deepening_decision_line() {
         let doc = include_str!(
             "../../../docs/blue_brain_md1_selective_model_deepening_decision_line_v1.md"
@@ -9122,6 +9604,28 @@ mod tests {
         assert!(readme.contains("Selective model-deepening decision line (MD1)"));
         assert!(
             readme.contains("docs/blue_brain_md1_selective_model_deepening_decision_line_v1.md")
+        );
+
+        let prompt2_doc = include_str!(
+            "../../../docs/blue_brain_md1_first_model_deepening_implementation_line_v1.md"
+        );
+        assert!(prompt2_doc.contains("Amygdala ↔ Thalamus"));
+        assert!(prompt2_doc.contains("bounded Kuramoto-like candidate"));
+        assert!(prompt2_doc.contains("deepened candidate input surface"));
+        assert!(prompt2_doc.contains("deepened candidate state surface"));
+        assert!(prompt2_doc.contains("deepened candidate output/advisory surface"));
+        assert!(prompt2_doc.contains("deepened candidate diagnostic/model surface"));
+        assert!(prompt2_doc.contains("blocked/deferred deepening path"));
+        assert!(prompt2_doc.contains("non-canonical/internal-only deepening path"));
+        assert!(prompt2_doc.contains("direct action selection"));
+        assert!(prompt2_doc.contains("direct execution trigger"));
+        assert!(prompt2_doc.contains("direct retry trigger"));
+        assert!(prompt2_doc.contains("direct memory commit"));
+        assert!(prompt2_doc.contains("direct compute invocation"));
+        assert!(prompt2_doc.contains("safety override"));
+        assert!(readme.contains("First model-deepening implementation line (MD1 Prompt 2)"));
+        assert!(
+            readme.contains("docs/blue_brain_md1_first_model_deepening_implementation_line_v1.md")
         );
     }
 }
