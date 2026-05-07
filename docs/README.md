@@ -105,6 +105,7 @@ Autoritätsklassen im Repo-Kontext:
 - **Selective model-deepening decision line (MD1):** `docs/blue_brain_md1_selective_model_deepening_decision_line_v1.md`
 - **First model-deepening implementation line (MD1 Prompt 2):** `docs/blue_brain_md1_first_model_deepening_implementation_line_v1.md`
 - **Model-deepening hardening line (MD1 Prompt 3):** `docs/blue_brain_md1_model_deepening_hardening_line_v1.md`
+- **Model-deepening readiness/closure line (MD1 Prompt 4):** `docs/blue_brain_md1_readiness_sweep_model_deepening_closure_v1.md`
 - **Real compute final reference line:**
   - `docs/final_reference_line_serie_j_v1.md`
   - `docs/final_production_readiness_evidence_pack_serie_j_v1.md`
