@@ -127,7 +127,7 @@ Terminology status:
 - `current model mode`: descriptive model mode; not contract authority.
 - `non-canonical/internal-only`: not consumer-readable as operative behavior.
 
-Semantic drift remaining: medium-low. The terms are mostly harmonized, but relation classes, region status classes and model classes are still spread across many files. A compact glossary/checklist should be the next consolidation lever.
+Semantic drift remaining: low after SC1 Prompt 3. The terms remain distributed across historical documents, but `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md` and `CANONICAL_BLUE_BRAIN_CROSS_LINE_TERMINOLOGY_GUARD_CHECKLIST` now provide the compact maintenance checklist for allowed and forbidden consumer reads.
 
 ## 8) Tests, docs and code consistency
 
@@ -153,7 +153,7 @@ Assessment:
 | stable and maintenance-ready | no-direct guard line, BR1-BR6 region surfaces, IR1 bounded relation map, MD2 single-deepening maintenance map |
 | stable but caveated | Basal Ganglia selection-mediated language; Cerebellum execution-interface diagnostic language; newest Hypothalamus relation lane |
 | doc authority clean | yes after this pass, with BR6/IR1/MD2/System-Audit as current authority |
-| semantic drift remaining | medium-low: terms are consistent but distributed |
+| semantic drift remaining | low after SC1 Prompt 3: terms are still historically distributed, but compact code/doc checklist now pins allowed and forbidden consumer reads |
 | guard weakness remaining | low in guard flags; medium in stale-document discoverability |
 | reproducibility gap | low after SC1 Prompt 2: current root reports pass and `out/blue_brain_audit_baseline_2026-05-08/` provides the post-BR6 versioned Blue-Brain baseline |
 | relation ambiguity | medium-low: fixed pair map exists, but relation class richness needs periodic checklist review |
@@ -173,8 +173,8 @@ No runtime behavior, region implementation, model implementation, policy logic, 
 1. **Repro-/Test-Baseline-Refresh for post-BR6 — implemented by SC1 Prompt 2**  
    Fresh Blue-Brain baseline preserved under `out/blue_brain_audit_baseline_2026-05-08/`; `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md` is the canonical action evidence. Historical 2026-05-02/2026-05-04 baselines remain comparison evidence only.
 
-2. **Cross-line terminology/guard checklist consolidation**  
-   Add one compact maintenance checklist that maps advisory-only/caveated/deferred/blocked/insufficient/diagnostic-only/reference-only/current-model-mode/non-canonical to allowed and forbidden consumer reads. This reduces semantic drift without adding behavior.
+2. **Cross-line terminology/guard checklist consolidation — implemented by SC1 Prompt 3**  
+   `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md` and `CANONICAL_BLUE_BRAIN_CROSS_LINE_TERMINOLOGY_GUARD_CHECKLIST` now map advisory-only/caveated/deferred/blocked/insufficient/diagnostic-only/reference-only/current-model-mode/non-canonical to allowed and forbidden consumer reads without adding behavior.
 
 3. **Relation cleanup/hardening review**  
    Review IR1 relation wording and tests around selection-mediated and execution-interface-mediated relations, especially Basal Ganglia/Cerebellum/Hypothalamus edges, to keep them bounded reads and not accidental orchestration language.
@@ -187,4 +187,4 @@ Geänderte Dateien in diesem Pass:
 - `docs/README.md`
 - `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
 
-Gesamtentscheidung: Der Blue-Brain-Stand ist systemweit **maintenance-ready with caveats**. Die sechs integrierten anatomischen Regionen und die bounded inter-region architecture sind ausreichend klar, sofern BR6/IR1/MD2/System-Audit als aktuelle Authority gelesen werden. Die größte SC1-Restschwäche, die post-BR6 Repro-Baseline-Lücke, wurde in SC1 Prompt 2 geschlossen oder deutlich reduziert; verbleibende Restschwächen sind verteilte Terminologie und relationale Wortlautrisiken. Nach diesen 1-3 Konsolidierungsmaßnahmen genügt Maintenance; weiterer Ausbau ist erst nach Konsolidierung vertretbar.
+Gesamtentscheidung: Der Blue-Brain-Stand ist systemweit **maintenance-ready with caveats**. Die sechs integrierten anatomischen Regionen und die bounded inter-region architecture sind ausreichend klar, sofern BR6/IR1/MD2/System-Audit als aktuelle Authority gelesen werden. Die größte SC1-Restschwäche, die post-BR6 Repro-Baseline-Lücke, wurde in SC1 Prompt 2 geschlossen oder deutlich reduziert; die zweitwichtigste Restschwäche, verteilte Cross-line-Terminologie mit Guard-Drift-Risiko, wurde in SC1 Prompt 3 durch eine kompakte Checklist-Fläche reduziert. Verbleibende Restschwäche ist vor allem relationales Wortlautrisiko. Nach diesen 1-3 Konsolidierungsmaßnahmen genügt Maintenance; weiterer Ausbau ist erst nach Konsolidierung vertretbar.

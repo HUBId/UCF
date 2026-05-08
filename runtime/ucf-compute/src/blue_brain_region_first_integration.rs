@@ -49,6 +49,124 @@ pub const CANONICAL_BLUE_BRAIN_FIRST_REGION_INTEGRATION_MAP: [BlueBrainFirstRegi
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainSc1SecondConsolidationActionClass {
+    SecondaryConsolidationTarget,
+    SupportingAffectedSurface,
+    GuardSensitiveArea,
+    DocTestEvidenceArea,
+    NonCanonicalResidualPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_SC1_SECOND_CONSOLIDATION_ACTION_MAP:
+    [BlueBrainSc1SecondConsolidationActionClass; 5] = [
+    BlueBrainSc1SecondConsolidationActionClass::SecondaryConsolidationTarget,
+    BlueBrainSc1SecondConsolidationActionClass::SupportingAffectedSurface,
+    BlueBrainSc1SecondConsolidationActionClass::GuardSensitiveArea,
+    BlueBrainSc1SecondConsolidationActionClass::DocTestEvidenceArea,
+    BlueBrainSc1SecondConsolidationActionClass::NonCanonicalResidualPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCrossLineSemanticTerm {
+    AdvisoryOnly,
+    Caveated,
+    Deferred,
+    Blocked,
+    Insufficient,
+    DiagnosticOnly,
+    ReferenceOnly,
+    CurrentModelMode,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCrossLineTerminologyGuardChecklistEntry {
+    pub term: BlueBrainCrossLineSemanticTerm,
+    pub allowed_consumer_read: &'static str,
+    pub forbidden_authority: &'static str,
+    pub scope_note: &'static str,
+}
+
+pub const CANONICAL_BLUE_BRAIN_CROSS_LINE_TERMINOLOGY_GUARD_CHECKLIST:
+    [BlueBrainCrossLineTerminologyGuardChecklistEntry; 9] = [
+    BlueBrainCrossLineTerminologyGuardChecklistEntry {
+        term: BlueBrainCrossLineSemanticTerm::AdvisoryOnly,
+        allowed_consumer_read: "bounded positive read only",
+        forbidden_authority: "no direct action, execution, retry, memory, compute, safety, selection, or promotion authority",
+        scope_note: "may inform existing bounded runtime/selection/reference consumers without becoming a trigger",
+    },
+    BlueBrainCrossLineTerminologyGuardChecklistEntry {
+        term: BlueBrainCrossLineSemanticTerm::Caveated,
+        allowed_consumer_read: "bounded read with visible caveat only",
+        forbidden_authority: "no promotion to strong support, no direct action, execution, retry, memory, compute, or safety authority",
+        scope_note: "preserves uncertainty across region, relation, diagnostic, and model wording",
+    },
+    BlueBrainCrossLineTerminologyGuardChecklistEntry {
+        term: BlueBrainCrossLineSemanticTerm::Deferred,
+        allowed_consumer_read: "not-active-yet status read only",
+        forbidden_authority: "no silent activation, no retry orchestration, no direct action, execution, memory, compute, or safety authority",
+        scope_note: "distinct from blocked and requires explicit future re-scope before activation",
+    },
+    BlueBrainCrossLineTerminologyGuardChecklistEntry {
+        term: BlueBrainCrossLineSemanticTerm::Blocked,
+        allowed_consumer_read: "fail-closed unavailable or forbidden-path read only",
+        forbidden_authority: "no fallback activation, no override, no direct action, execution, retry, memory, compute, or safety authority",
+        scope_note: "marks a closed boundary for consumers",
+    },
+    BlueBrainCrossLineTerminologyGuardChecklistEntry {
+        term: BlueBrainCrossLineSemanticTerm::Insufficient,
+        allowed_consumer_read: "weak-evidence diagnostic read only",
+        forbidden_authority: "no support signal, no promotion, no direct action, execution, retry, memory, compute, or safety authority",
+        scope_note: "keeps absent or weak evidence separate from positive advisory support",
+    },
+    BlueBrainCrossLineTerminologyGuardChecklistEntry {
+        term: BlueBrainCrossLineSemanticTerm::DiagnosticOnly,
+        allowed_consumer_read: "observable diagnostic state read only",
+        forbidden_authority: "no advisory promotion, no direct action, execution, retry, memory, compute, selection, or safety authority",
+        scope_note: "diagnostics may explain a state but do not steer transitions",
+    },
+    BlueBrainCrossLineTerminologyGuardChecklistEntry {
+        term: BlueBrainCrossLineSemanticTerm::ReferenceOnly,
+        allowed_consumer_read: "read-only context/reference access only",
+        forbidden_authority: "no mutation, no direct memory commit, no direct action, execution, retry, compute, or safety authority",
+        scope_note: "keeps reference consumption separated from persistence and execution",
+    },
+    BlueBrainCrossLineTerminologyGuardChecklistEntry {
+        term: BlueBrainCrossLineSemanticTerm::CurrentModelMode,
+        allowed_consumer_read: "descriptive model-mode read only",
+        forbidden_authority: "no contract authority, no model-platform expansion, no second deepening candidate, no direct action, execution, retry, memory, compute, or safety authority",
+        scope_note: "describes the maintained model boundary without changing region or relation behavior",
+    },
+    BlueBrainCrossLineTerminologyGuardChecklistEntry {
+        term: BlueBrainCrossLineSemanticTerm::NonCanonicalInternalOnly,
+        allowed_consumer_read: "internal/test/residual traceability read only when explicitly caveated",
+        forbidden_authority: "no consumer-operational behavior, no direct action, execution, retry, memory, compute, safety, region, relation, or model authority",
+        scope_note: "prevents residual paths from becoming a second truth source",
+    },
+];
+
+pub fn blue_brain_cross_line_term_guard_checklist_entry(
+    term: BlueBrainCrossLineSemanticTerm,
+) -> BlueBrainCrossLineTerminologyGuardChecklistEntry {
+    CANONICAL_BLUE_BRAIN_CROSS_LINE_TERMINOLOGY_GUARD_CHECKLIST
+        .iter()
+        .copied()
+        .find(|entry| entry.term == term)
+        .expect("canonical Blue-Brain cross-line terminology checklist covers every term")
+}
+
+pub fn blue_brain_cross_line_term_allows_direct_authority(
+    term: BlueBrainCrossLineSemanticTerm,
+) -> bool {
+    let entry = blue_brain_cross_line_term_guard_checklist_entry(term);
+    !(entry.forbidden_authority.contains("no direct action")
+        && entry.forbidden_authority.contains("execution")
+        && entry.forbidden_authority.contains("retry")
+        && entry.forbidden_authority.contains("compute")
+        && entry.forbidden_authority.contains("safety"))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainFirstRegionHardeningClass {
     GuardedCanonicalRegionSurface,
     GuardedDiagnosticsPath,
@@ -5885,6 +6003,64 @@ mod tests {
         BlueBrainKuramotoPhaseNodeInput, BlueBrainKuramotoRuntimePosture,
         BlueBrainKuramotoSelectionPosture,
     };
+
+    #[test]
+    fn sc1_second_consolidation_action_and_guard_checklist_are_canonical() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_SC1_SECOND_CONSOLIDATION_ACTION_MAP.len(),
+            5
+        );
+        for required in [
+            BlueBrainSc1SecondConsolidationActionClass::SecondaryConsolidationTarget,
+            BlueBrainSc1SecondConsolidationActionClass::SupportingAffectedSurface,
+            BlueBrainSc1SecondConsolidationActionClass::GuardSensitiveArea,
+            BlueBrainSc1SecondConsolidationActionClass::DocTestEvidenceArea,
+            BlueBrainSc1SecondConsolidationActionClass::NonCanonicalResidualPath,
+        ] {
+            assert!(CANONICAL_BLUE_BRAIN_SC1_SECOND_CONSOLIDATION_ACTION_MAP.contains(&required));
+        }
+
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_CROSS_LINE_TERMINOLOGY_GUARD_CHECKLIST.len(),
+            9
+        );
+        for term in [
+            BlueBrainCrossLineSemanticTerm::AdvisoryOnly,
+            BlueBrainCrossLineSemanticTerm::Caveated,
+            BlueBrainCrossLineSemanticTerm::Deferred,
+            BlueBrainCrossLineSemanticTerm::Blocked,
+            BlueBrainCrossLineSemanticTerm::Insufficient,
+            BlueBrainCrossLineSemanticTerm::DiagnosticOnly,
+            BlueBrainCrossLineSemanticTerm::ReferenceOnly,
+            BlueBrainCrossLineSemanticTerm::CurrentModelMode,
+            BlueBrainCrossLineSemanticTerm::NonCanonicalInternalOnly,
+        ] {
+            let entry = blue_brain_cross_line_term_guard_checklist_entry(term);
+            assert_eq!(entry.term, term);
+            assert!(entry.allowed_consumer_read.contains("read"));
+            assert!(entry.forbidden_authority.contains("no direct action"));
+            assert!(entry.forbidden_authority.contains("execution"));
+            assert!(entry.forbidden_authority.contains("retry"));
+            assert!(entry.forbidden_authority.contains("compute"));
+            assert!(entry.forbidden_authority.contains("safety"));
+            assert!(!blue_brain_cross_line_term_allows_direct_authority(term));
+        }
+
+        let reference_entry = blue_brain_cross_line_term_guard_checklist_entry(
+            BlueBrainCrossLineSemanticTerm::ReferenceOnly,
+        );
+        assert!(reference_entry.forbidden_authority.contains("no mutation"));
+        assert!(reference_entry
+            .forbidden_authority
+            .contains("no direct memory commit"));
+
+        let model_entry = blue_brain_cross_line_term_guard_checklist_entry(
+            BlueBrainCrossLineSemanticTerm::CurrentModelMode,
+        );
+        assert!(model_entry
+            .forbidden_authority
+            .contains("no second deepening candidate"));
+    }
 
     #[test]
     fn first_region_map_contains_all_required_paths() {

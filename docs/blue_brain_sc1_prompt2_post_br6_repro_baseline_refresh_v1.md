@@ -128,7 +128,8 @@ Geänderte Dateien/Flächen in diesem Pass:
 
 Umgesetzte Maßnahme: die wichtigste SC1-Restschwäche, eine fehlende frische post-BR6 Repro-/Test-Baseline, ist geschlossen oder deutlich reduziert. Historische BB29-Baselines bleiben als Residuen erhalten, sind aber nicht mehr die sichtbare aktuelle Evidenzfläche.
 
-Verbleibende sinnvolle Konsolidierungsmaßnahmen:
+Nach SC1 Prompt 3 verbleibende sinnvolle Konsolidierungsmaßnahme:
 
-1. Cross-line terminology/guard checklist consolidation für advisory-only/caveated/deferred/blocked/insufficient/diagnostic-only/reference-only/current-model-mode/non-canonical.
-2. Relation cleanup/hardening review für selection-mediated und execution-interface-mediated IR1-Wortlaut, insbesondere Basal Ganglia/Cerebellum/Hypothalamus-Kanten.
+1. Relation cleanup/hardening review für selection-mediated und execution-interface-mediated IR1-Wortlaut, insbesondere Basal Ganglia/Cerebellum/Hypothalamus-Kanten.
+
+Hinweis: Die zuvor hier genannte Cross-line terminology/guard checklist consolidation wurde durch `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md` umgesetzt.

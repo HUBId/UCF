@@ -12,6 +12,7 @@ Kanonische Status-Map:
   - `docs/blue_brain_ir1_readiness_sweep_inter_region_closure_serie_ir1_prompt4_v1.md`
   - `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`
   - `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
+  - supporting consolidation evidence: `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md` and `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`
 - **Historical snapshots (nicht aktuelle operative Autorität):**
   - `docs/blue_brain_post_bb25_maintenance_default_decision_map_serie_bb25_prompt5_v1.md`
   - `docs/blue_brain_final_maintenance_handoff_serie_bb25_prompt6_v1.md`
@@ -33,6 +34,7 @@ Autoritätsklassen im Repo-Kontext:
 
 - **Operational readiness map (BB20 P1):** `docs/blue_brain_bb20_production_readiness_sweep_serie_bb20_prompt1_v1.md`
 - **Terminology/state semantics harmonization (BB20 P2):** `docs/blue_brain_bb20_cross_line_terminology_state_harmonization_serie_bb20_prompt2_v1.md`
+- **SC1 cross-line terminology/guard checklist consolidation (supporting evidence):** `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`
 - **BB22 cross-line stabilization/cleanup:**
   - `docs/blue_brain_bb22_narrow_cross_line_stabilization_pass_serie_bb22_prompt1_v1.md`
   - `docs/blue_brain_bb22_cross_line_guard_signal_consistency_serie_bb22_prompt2_v1.md`
