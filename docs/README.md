@@ -12,6 +12,7 @@ Kanonische Status-Map:
   - `docs/blue_brain_ir1_readiness_sweep_inter_region_closure_serie_ir1_prompt4_v1.md`
   - `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`
   - `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
+  - `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md`
   - supporting consolidation evidence: `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md` and `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`
 - **Historical snapshots (nicht aktuelle operative Autorität):**
   - `docs/blue_brain_post_bb25_maintenance_default_decision_map_serie_bb25_prompt5_v1.md`
@@ -135,10 +136,11 @@ Referenzpunkte für die technische Scope-Grenze:
 ## 2.1) Post-BR6 maintenance default (six anatomical regions + bounded relations)
 
 - Aktive anatomische Regionenbasis ist **Hippocampus + Amygdala + Thalamus + Basal Ganglia + Cerebellum + Hypothalamus**.
-- Standardmodus bleibt **Maintenance/Konsolidierung/Bugfix/Cleanup** mit klarer no-direct-* Guard-Linie.
+- Standardmodus nach SC1 Prompt 4 bleibt **Maintenance/Bugfix/Cleanup/Report-Refresh** mit klarer no-direct-* Guard-Linie; Konsolidierung ist abgeschlossen, solange kein expliziter Re-Scope erfolgt.
 - **Keine siebte operative Region, kein zweiter Modellvertiefungskandidat und keine globale Neurodynamikplattform** sind aktiv; jeder Ausbau benötigt expliziten Re-Scope.
 - Die BR1-BR6/IR1/MD2-Linie schließt als kontrollierte, maintenance-gehärtete bounded anatomy/inter-region/model-deepening Basis ohne Plattformausweitung.
-- Canonical status map: `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
+- Canonical system audit map: `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
+- Final SC1 consolidation and maintenance decision: `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md`
 - Canonical Hypothalamus closure: `docs/blue_brain_br6_hypothalamus_readiness_sweep_expansion_boundary_serie_br6_prompt4_v1.md`
 - Canonical inter-region closure: `docs/blue_brain_ir1_readiness_sweep_inter_region_closure_serie_ir1_prompt4_v1.md`
 - Canonical model-deepening maintenance map: `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`

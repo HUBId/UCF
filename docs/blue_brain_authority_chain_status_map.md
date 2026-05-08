@@ -24,8 +24,9 @@ Nur diese Klassen sind für die operative Einordnung zu verwenden:
 - `docs/blue_brain_ir1_readiness_sweep_inter_region_closure_serie_ir1_prompt4_v1.md`
 - `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`
 - `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
+- `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md`
 
-Operative Endlage: **Hippocampus, Amygdala, Thalamus, Basal Ganglia, Cerebellum und Hypothalamus** gelten als bounded, advisory/reference/diagnostic integrierte anatomische Regionen. IR1 bleibt die führende bounded inter-region architecture; MD1/MD2 bleibt genau eine maintenance-gehärtete Modellvertiefung (`Amygdala ↔ Thalamus`) und öffnet keinen zweiten Kandidaten. Der nächste Default ist Konsolidierung/Maintenance, nicht weiterer Regionsausbau.
+Operative Endlage: **Hippocampus, Amygdala, Thalamus, Basal Ganglia, Cerebellum und Hypothalamus** gelten als bounded, advisory/reference/diagnostic integrierte anatomische Regionen. IR1 bleibt die führende bounded inter-region architecture; MD1/MD2 bleibt genau eine maintenance-gehärtete Modellvertiefung (`Amygdala ↔ Thalamus`) und öffnet keinen zweiten Kandidaten. Der finale SC1-Default ist Maintenance/Bugfix/Cleanup/Report-Refresh; weiterer Regionsausbau, zweite Modellvertiefung und Plattformbildung sind nicht aktiv.
 
 ### Historical snapshot (nicht aktuelle operative Autorität)
 
@@ -66,4 +67,4 @@ Historische Aussagen bleiben erhalten (BB25/BB27/BB29-Zeitpunkte), werden aber d
 
 ## Conflict rule (single truth)
 
-Wenn historische BB25/BB27/BB29-Aussagen und die post-BR6-Endlage unterschiedlich sind, gilt **ausschließlich** die BR6/IR1/MD2/System-Audit-Current-Authority-Linie als operativ verbindlich.
+Wenn historische BB25/BB27/BB29-Aussagen und die post-BR6-Endlage unterschiedlich sind, gilt **ausschließlich** die BR6/IR1/MD2/System-Audit/SC1-Prompt-4-Current-Authority-Linie als operativ verbindlich. SC1 Prompt 4 ist dabei die finale Status- und Maintenance-Entscheidung, nicht eine neue Funktions- oder Plattformquelle.
