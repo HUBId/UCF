@@ -73,3 +73,8 @@ The maintenance-facing Doku/Test/Referenz entrypoint for this stabilized baselin
 3. Review future Runtime/Selection/Reference changes against the stabilization map before merging them.
 4. If a second candidate is later proposed, require explicit re-scope and no-direct-* proof before implementation.
 5. Continue reducing non-canonical/internal-only residual wording rather than adding new model surfaces.
+
+
+## MD3 Prompt 1 supersession note
+
+MD2 remains the canonical maintenance baseline for the first model-deepening surface (`Amygdala ↔ Thalamus`). The later MD3 re-scope line `docs/blue_brain_md3_second_deepening_rescope_line_v1.md` is the only current authority for whether to prioritize a second candidate. MD3 prioritizes exactly one decision-only second candidate (`Amygdala ↔ Basal Ganglia`, bounded Kuramoto-like) and still does not implement that candidate, open HH as productive default, create direct action/execution/retry/memory/compute/safety authority, or create a global model platform.

@@ -107,3 +107,8 @@ The targeted maintenance test surface should keep these checks explicit and smal
 Maintenance is sufficient after MD2. No further series logic is needed for the first model-deepening line unless a bug, doc inconsistency, or guard regression is found.
 
 A later explicit second model-deepening candidate is not justified as follow-on work now. It would need an explicit re-scope package with concrete repo leverage, no-direct-* proof, and evidence that the maintenance-hardened `Amygdala ↔ Thalamus` baseline remains stable without becoming a platform.
+
+
+## MD3 Prompt 1 supersession note
+
+MD2 remains the canonical maintenance baseline for the first model-deepening surface (`Amygdala ↔ Thalamus`). The later MD3 re-scope line `docs/blue_brain_md3_second_deepening_rescope_line_v1.md` is the only current authority for whether to prioritize a second candidate. MD3 prioritizes exactly one decision-only second candidate (`Amygdala ↔ Basal Ganglia`, bounded Kuramoto-like) and still does not implement that candidate, open HH as productive default, create direct action/execution/retry/memory/compute/safety authority, or create a global model platform.
