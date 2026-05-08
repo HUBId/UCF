@@ -2,7 +2,7 @@
 
 Status: `hypothalamus_like_region` ist die erste minimal integrierte BR6-Anschlussfläche nach der Rollenkarte aus Prompt 1. Der Integrationsmodus bleibt `abstract functional current mode`: keine biologische Vollsimulation, keine globale Neurodynamikplattform, keine Hodgkin-Huxley-Produktivintegration und keine implizite Kuramoto-Aufweitung.
 
-Diese Datei ist die kanonische Hypothalamus-Integration-Map für BR6 Prompt 2. Sie konsolidiert die Hypothalamus-Rolle gegen Runtime, Selection, Context/Reference und die bestehende inter-region architecture, ohne Action-, Execution-, Retry-, Memory-, Compute-, Policy-, Planner-, Agenten- oder Safety-Autorität zu öffnen.
+Diese Datei ist die kanonische Hypothalamus-Integration-Map für BR6 Prompt 2. Für die gehärtete Diagnostics-/Contract-Semantik gilt zusätzlich `docs/blue_brain_hypothalamus_surface_diagnostics_contracts_hardening_serie_br6_prompt3_v1.md` als kanonische BR6-Prompt-3-Map. Beide Linien konsolidieren die Hypothalamus-Rolle gegen Runtime, Selection, Context/Reference und die bestehende inter-region architecture, ohne Action-, Execution-, Retry-, Memory-, Compute-, Policy-, Planner-, Agenten- oder Safety-Autorität zu öffnen.
 
 ## 1) Kanonische Hypothalamus-Integration-Map
 
@@ -12,8 +12,9 @@ Die Hypothalamus-Integration besteht genau aus diesen Klassen:
 2. `hypothalamus state surface`
 3. `hypothalamus output/advisory surface`
 4. `hypothalamus reference surface`
-5. `blocked/deferred hypothalamus path`
-6. `non-canonical/internal-only hypothalamus path`
+5. `hypothalamus diagnostics/contract map`
+6. `blocked/deferred hypothalamus path`
+7. `non-canonical/internal-only hypothalamus path`
 
 Diese Klassen sind Schnittstellenlabels, keine neue Meta-Plattform und keine direkte Region-zu-Region-Nachrichtenengine.
 
@@ -47,7 +48,7 @@ Der Hypothalamus darf nur bounded Zustände tragen:
 - `reference-only regulation state`,
 - `non-canonical/internal-only`.
 
-Er darf keine Action-, Execution-, Retry-, Memory-, Compute-, Safety-, Planner-, Policy- oder Agenten-Zustände tragen. Stale, caveated, insufficient, blocked und reference-only Fälle bleiben als Diagnostics unterscheidbar und werden nicht zu positiver Autorität eskaliert.
+Er darf keine Action-, Execution-, Retry-, Memory-, Compute-, Safety-, Planner-, Policy- oder Agenten-Zustände tragen. Stale, caveated, deferred, insufficient, blocked und reference-only Fälle bleiben als Diagnostics unterscheidbar und werden nicht zu positiver Autorität eskaliert.
 
 ## 4) Output / Advisory Surface
 
@@ -61,7 +62,25 @@ Erlaubte bounded Outputs sind:
 - `insufficient diagnostic output`,
 - `non-canonical/internal-only`.
 
-Runtime, Selection, Context und Reference dürfen diese Outputs höchstens advisory-only lesen. Explizit verboten bleiben direct action selection, direct action trigger, direct execution trigger, direct retry trigger, direct memory commit, direct compute invocation und safety override.
+Runtime, Selection, Context und Reference dürfen diese Outputs höchstens advisory-only, caveated, deferred, blocked, insufficient oder diagnostic-only gemäß derselben kanonischen Contract-Lesart lesen. Explizit verboten bleiben direct action selection, direct action trigger, direct execution trigger, direct retry trigger, direct memory commit, direct compute invocation und safety override.
+
+
+## 4a) Diagnostics / Contract Hardening
+
+Die gehärtete BR6-Prompt-3-Map unterscheidet kanonisch:
+
+- `hypothalamus advisory-only diagnostic`,
+- `hypothalamus caveated diagnostic`,
+- `hypothalamus deferred diagnostic`,
+- `hypothalamus blocked diagnostic`,
+- `hypothalamus insufficient diagnostic`,
+- `hypothalamus diagnostic-only state`,
+- `hypothalamus bounded contract signal`,
+- `non-canonical/internal-only hypothalamus path`.
+
+`advisory-only ist ein bounded positives Signal` ohne direkte Autorität. `caveated` ist kein starkes positives Signal und darf nicht implizit zu advisory-only aufgewertet werden.
+
+`deferred ist nicht blocked`; deferred bedeutet bounded Aufschub/Zurückstellung. `blocked ist nicht insufficient`; blocked bedeutet begrenzender Contract-/Safety-/Reference-Zustand, während insufficient keine tragfähige bounded Basis hat.
 
 ## 5) Runtime / Selection / State-Modulation
 
@@ -95,7 +114,7 @@ Diese Relationen sind advisory-only Contract-/Diagnostic-Reads, keine all-to-all
 
 ## 9) Modellgrenze und no-direct Guards
 
-Der current mode bleibt `abstract functional current mode`. `bounded Kuramoto-like candidate`, `Hodgkin-Huxley simulation-only/diagnostic-only`, `later selective HH deepening` und deferred biologische Details bleiben getrennte spätere Re-Scope-Pfade.
+Der current mode bleibt `abstract functional current mode`; current model mode remains unchanged. `bounded Kuramoto-like candidate`, `Hodgkin-Huxley simulation-only/diagnostic-only`, `later selective HH deepening` und deferred biologische Details bleiben getrennte spätere Re-Scope-Pfade.
 
 Bewusst out of scope bleiben:
 
