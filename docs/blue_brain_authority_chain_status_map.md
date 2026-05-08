@@ -24,10 +24,11 @@ Nur diese Klassen sind für die operative Einordnung zu verwenden:
 - `docs/blue_brain_ir1_readiness_sweep_inter_region_closure_serie_ir1_prompt4_v1.md`
 - `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`
 - `docs/blue_brain_md3_second_deepening_rescope_line_v1.md`
+- `docs/blue_brain_md3_second_model_deepening_implementation_line_v1.md`
 - `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
 - `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md`
 
-Operative Endlage: **Hippocampus, Amygdala, Thalamus, Basal Ganglia, Cerebellum und Hypothalamus** gelten als bounded, advisory/reference/diagnostic integrierte anatomische Regionen. IR1 bleibt die führende bounded inter-region architecture; MD1/MD2 bleibt genau eine maintenance-gehärtete erste Modellvertiefung (`Amygdala ↔ Thalamus`). MD3 öffnet auf Re-Scope-Ebene genau einen zweiten Kandidaten (`Amygdala ↔ Basal Ganglia`) als spätere relation-level bounded Kuramoto-like Minimalarbeit, ohne Implementierung, Plattformbildung oder direkte Autorität. Der finale SC1-Default ist Maintenance/Bugfix/Cleanup/Report-Refresh; weiterer Regionsausbau, zweite Modellvertiefung und Plattformbildung sind nicht aktiv.
+Operative Endlage: **Hippocampus, Amygdala, Thalamus, Basal Ganglia, Cerebellum und Hypothalamus** gelten als bounded, advisory/reference/diagnostic integrierte anatomische Regionen. IR1 bleibt die führende bounded inter-region architecture; MD1/MD2 bleibt genau eine maintenance-gehärtete erste Modellvertiefung (`Amygdala ↔ Thalamus`). MD3 Prompt 1 öffnet auf Re-Scope-Ebene genau einen zweiten Kandidaten (`Amygdala ↔ Basal Ganglia`); MD3 Prompt 2 implementiert genau diesen Kandidaten minimal als relation-level bounded Kuramoto-like advisory/diagnostic line, ohne Plattformbildung oder direkte Action-/Execution-/Retry-/Memory-/Compute-/Safety-Autorität. Der finale SC1-Default bleibt Maintenance/Bugfix/Cleanup/Report-Refresh; weiterer Regionsausbau, dritte Modellvertiefung und Plattformbildung sind nicht aktiv.
 
 ### Historical snapshot (nicht aktuelle operative Autorität)
 
@@ -63,7 +64,7 @@ Historische Aussagen bleiben erhalten (BB25/BB27/BB29-Zeitpunkte), werden aber d
 - Jede Lesart, die BB25-, BB27- oder BB29-Dokumente als heute gleichrangige operative Autorität behandelt.
 - Jede Lesart, die Prefrontal Cortex, Anterior Cingulate Cortex oder Insula als aktuell operativ integrierte Regionen behandelt.
 - Implizite Fortsetzungs-/Expansionspointer ohne expliziten Re-Scope.
-- Jede Modellvertiefungslesart, die aus MD1/MD2 eine globale Modellplattform oder einen zweiten aktiven Vertiefungskandidaten ableitet; MD3 ist die einzige aktuelle Re-Scope-Entscheidung und priorisiert genau `Amygdala ↔ Basal Ganglia` decision-only.
+- Jede Modellvertiefungslesart, die aus MD1/MD2/MD3 eine globale Modellplattform, weitere Kandidaten oder direkte Autorität ableitet; MD3 priorisiert und implementiert ausschließlich `Amygdala ↔ Basal Ganglia` als bounded Kuramoto-like second deepening.
 - Jede Lesart verteilter Terminologie, die `advisory-only`, `caveated`, `deferred`, `blocked`, `insufficient`, `diagnostic-only`, `reference-only`, `current model mode` oder `non-canonical/internal-only` mit direkter Action-/Execution-/Retry-/Memory-/Compute-/Safety-Autorität verwechselt.
 
 ## Conflict rule (single truth)
