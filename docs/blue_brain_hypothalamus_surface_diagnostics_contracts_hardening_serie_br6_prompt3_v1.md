@@ -103,10 +103,12 @@ Bounded spätere Kopplung bedeutet Komplementarität, nicht Gleichsetzung und ke
 
 ## 9) BR6-Folgepfad
 
-Nächste sinnvolle Schritte nach dieser Härtung:
+Diese Härtung wird durch `docs/blue_brain_br6_hypothalamus_readiness_sweep_expansion_boundary_serie_br6_prompt4_v1.md` abgeschlossen. Die Prompt-4-Datei bleibt die kanonische BR6-Abschluss- und Expansionsgrenze; diese Prompt-3-Datei bleibt die detaillierte diagnostics/contract map.
 
-1. Consumer-facing Fixtures/Goldens ergänzen, falls externe Consumers die Hypothalamus-Diagnostics maschinenlesbar verwenden.
-2. Readiness-/Guard-Doku gegen die neue diagnostics/contract map prüfen.
+Nächste sinnvolle Schritte nach dieser Härtung sind daher keine weitere Anatomieöffnung, sondern die dort priorisierte System-Audit/Consolidation-Linie:
+
+1. Consumer-facing Fixtures/Goldens nur ergänzen, falls externe Consumers die Hypothalamus-Diagnostics maschinenlesbar verwenden müssen.
+2. Readiness-/Guard-Doku gegen die diagnostics/contract map und die Prompt-4-Expansionsgrenze prüfen.
 3. Inter-region-Diagnostics nur dort erweitern, wo die bestehende IR1-Relation eine Hypothalamus-Adjunct-Lesart bereits erlaubt.
 4. Optionalen bounded Kuramoto-like oder HH-simulation-only Re-Scope separat entscheiden; keine implizite Produktivvertiefung.
-5. Erst danach eine nächste echte Hirnregion auf diese gehärtete Surface beziehen.
+5. Keine nächste echte Hirnregion aus Prompt 3 heraus öffnen.
