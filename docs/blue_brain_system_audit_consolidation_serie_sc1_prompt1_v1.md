@@ -8,10 +8,10 @@ Repo-Basis geprüft:
 
 - `git status --short` war zu Beginn leer.
 - `AGENTS.md` ist die repo-weite Arbeitsanweisung und fordert offline-first, deterministische Änderungen, canonical checks und keine behavior-changing Änderungen ohne Spec-Intent.
-- Auffindbare Audit-Artefakte liegen unter `out/blue_brain_audit_baseline_2026-05-02/`, `out/blue_brain_audit_baseline_2026-05-04/`, `out/docs_lint_report.json` und `out/gate_report.json`.
+- Auffindbare Audit-Artefakte liegen unter `out/blue_brain_audit_baseline_2026-05-02/`, `out/blue_brain_audit_baseline_2026-05-04/`, `out/blue_brain_audit_baseline_2026-05-08/`, `out/docs_lint_report.json` und `out/gate_report.json`.
 - `out/docs_lint_report.json` meldet `ok: true`; `out/gate_report.json` meldet `status: PASS`.
 
-Bewertung: Die Reproduzierbarkeitsbasis reicht für eine belastbare Konsolidierungsentscheidung aus, aber die versionierten Blue-Brain-Baselines sind historisch. Für aktuelle post-BR6-Aussagen muss ein frischer Baseline-Refresh priorisiert werden.
+Bewertung: Die Reproduzierbarkeitsbasis reicht für eine belastbare Konsolidierungsentscheidung aus, aber die versionierten Blue-Brain-Baselines sind historisch. Für aktuelle post-BR6-Aussagen wurde der frische Baseline-Refresh in SC1 Prompt 2 umgesetzt; `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md` und `out/blue_brain_audit_baseline_2026-05-08/` sind die aktuelle Konsolidierungsevidenz.
 
 ## 2) Autoritätskette und Referenzoberfläche
 
@@ -27,7 +27,7 @@ Konsolidierungsfix in diesem Pass:
 - `docs/README.md` wurde auf post-BR6 authority entrypoints umgestellt.
 - `docs/blue_brain_authority_chain_status_map.md` wurde auf BR6/IR1/MD2/System-Audit als Current Authority gehoben; BB29 ist jetzt historische Snapshot-Linie.
 
-Restbewertung: doc authority ist nach dem Fix **clean enough for maintenance**, aber ein Baseline-Refresh bleibt offen.
+Restbewertung: doc authority ist nach dem Fix **clean enough for maintenance**; der zuvor offene Baseline-Refresh ist durch SC1 Prompt 2 als supporting evidence geschlossen oder deutlich reduziert.
 
 ## 3) Regionenbestand: operative Status Map
 
@@ -135,7 +135,7 @@ Evidence points:
 
 - Code surfaces for region, relation, model-deepening and guard states are concentrated in `runtime/ucf-compute/src/blue_brain_region_first_integration.rs`.
 - Current generated reports under `out/docs_lint_report.json` and `out/gate_report.json` pass.
-- Historical versioned baselines under `out/blue_brain_audit_baseline_2026-05-02/` and `out/blue_brain_audit_baseline_2026-05-04/` remain useful but predate BR6.
+- Historical versioned baselines under `out/blue_brain_audit_baseline_2026-05-02/` and `out/blue_brain_audit_baseline_2026-05-04/` remain useful as historical evidence, while `out/blue_brain_audit_baseline_2026-05-08/` is the current post-BR6 consolidation baseline.
 - Doku volume is high; authority entrypoints are therefore essential to avoid duplicate-truth drift.
 
 Assessment:
@@ -144,7 +144,7 @@ Assessment:
 - Relation architecture: maintenance-ready with relation-wording caveat.
 - Model deepening: maintenance-ready; no second candidate.
 - Guard rails: maintenance-ready.
-- Repro baseline: needs refresh after this audit.
+- Repro baseline: refreshed in SC1 Prompt 2 for the post-BR6 authority line.
 
 ## 9) Systemweite consolidation map
 
@@ -155,7 +155,7 @@ Assessment:
 | doc authority clean | yes after this pass, with BR6/IR1/MD2/System-Audit as current authority |
 | semantic drift remaining | medium-low: terms are consistent but distributed |
 | guard weakness remaining | low in guard flags; medium in stale-document discoverability |
-| reproducibility gap | medium: current root reports pass, but versioned Blue-Brain baseline is still BB29-era |
+| reproducibility gap | low after SC1 Prompt 2: current root reports pass and `out/blue_brain_audit_baseline_2026-05-08/` provides the post-BR6 versioned Blue-Brain baseline |
 | relation ambiguity | medium-low: fixed pair map exists, but relation class richness needs periodic checklist review |
 | model-boundary drift | medium-low: one deepened pair is safe; HH/Kuramoto wording needs careful maintenance |
 | non-canonical residue | present and acceptable when explicitly marked internal-only/deferred |
@@ -163,15 +163,15 @@ Assessment:
 ## 10) Auditdienliche Fixes in diesem Pass
 
 - Authority chain updated from BB29-only current line to post-BR6 BR6/IR1/MD2/System-Audit current authority.
-- README current entrypoints updated to six integrated anatomical regions and historical BB29 baseline wording.
+- README current entrypoints updated to six integrated anatomical regions and current post-BR6 baseline evidence; historical BB29 baseline wording remains explicitly residual.
 - Minor README Markdown heading drift fixed for BB27/BB28/BB29 sections.
 
 No runtime behavior, region implementation, model implementation, policy logic, planner/agent behavior or compute core code was changed.
 
 ## 11) Highest-leverage next consolidation measures
 
-1. **Repro-/Test-Baseline-Refresh for post-BR6**  
-   Run and preserve a fresh Blue-Brain baseline under a new `out/blue_brain_audit_baseline_<date>/` path. This should come before any expansion because current versioned baselines are BB29-era.
+1. **Repro-/Test-Baseline-Refresh for post-BR6 — implemented by SC1 Prompt 2**  
+   Fresh Blue-Brain baseline preserved under `out/blue_brain_audit_baseline_2026-05-08/`; `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md` is the canonical action evidence. Historical 2026-05-02/2026-05-04 baselines remain comparison evidence only.
 
 2. **Cross-line terminology/guard checklist consolidation**  
    Add one compact maintenance checklist that maps advisory-only/caveated/deferred/blocked/insufficient/diagnostic-only/reference-only/current-model-mode/non-canonical to allowed and forbidden consumer reads. This reduces semantic drift without adding behavior.
@@ -187,4 +187,4 @@ Geänderte Dateien in diesem Pass:
 - `docs/README.md`
 - `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
 
-Gesamtentscheidung: Der Blue-Brain-Stand ist systemweit **maintenance-ready with caveats**. Die sechs integrierten anatomischen Regionen und die bounded inter-region architecture sind ausreichend klar, sofern BR6/IR1/MD2/System-Audit als aktuelle Authority gelesen werden. Die größten Restschwächen sind eine post-BR6 Repro-Baseline-Lücke, verteilte Terminologie und relationale Wortlautrisiken. Nach diesen 1-3 Konsolidierungsmaßnahmen genügt Maintenance; weiterer Ausbau ist erst nach Konsolidierung vertretbar.
+Gesamtentscheidung: Der Blue-Brain-Stand ist systemweit **maintenance-ready with caveats**. Die sechs integrierten anatomischen Regionen und die bounded inter-region architecture sind ausreichend klar, sofern BR6/IR1/MD2/System-Audit als aktuelle Authority gelesen werden. Die größte SC1-Restschwäche, die post-BR6 Repro-Baseline-Lücke, wurde in SC1 Prompt 2 geschlossen oder deutlich reduziert; verbleibende Restschwächen sind verteilte Terminologie und relationale Wortlautrisiken. Nach diesen 1-3 Konsolidierungsmaßnahmen genügt Maintenance; weiterer Ausbau ist erst nach Konsolidierung vertretbar.

@@ -53,6 +53,7 @@ Historische Aussagen bleiben erhalten (BB25/BB27/BB29-Zeitpunkte), werden aber d
 - `docs/blue_brain_br4_basal_ganglia_readiness_sweep_expansion_boundary_serie_br4_prompt4_v1.md`
 - `docs/blue_brain_br5_cerebellum_readiness_sweep_expansion_boundary_serie_br5_prompt4_v1.md`
 - `docs/blue_brain_md1_readiness_sweep_model_deepening_closure_v1.md`
+- `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md`
 
 ### Non-canonical / outdated pointer
 
