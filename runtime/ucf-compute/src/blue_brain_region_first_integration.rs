@@ -370,19 +370,44 @@ pub enum BlueBrainHypothalamusIntegrationClass {
     HypothalamusStateSurface,
     HypothalamusOutputAdvisorySurface,
     HypothalamusReferenceSurface,
+    HypothalamusDiagnosticsContractMap,
     BlockedDeferredHypothalamusPath,
     NonCanonicalInternalOnlyHypothalamusPath,
 }
 
 pub const CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP:
-    [BlueBrainHypothalamusIntegrationClass; 6] = [
+    [BlueBrainHypothalamusIntegrationClass; 7] = [
     BlueBrainHypothalamusIntegrationClass::HypothalamusInputSurface,
     BlueBrainHypothalamusIntegrationClass::HypothalamusStateSurface,
     BlueBrainHypothalamusIntegrationClass::HypothalamusOutputAdvisorySurface,
     BlueBrainHypothalamusIntegrationClass::HypothalamusReferenceSurface,
+    BlueBrainHypothalamusIntegrationClass::HypothalamusDiagnosticsContractMap,
     BlueBrainHypothalamusIntegrationClass::BlockedDeferredHypothalamusPath,
     BlueBrainHypothalamusIntegrationClass::NonCanonicalInternalOnlyHypothalamusPath,
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHypothalamusModelModeClass {
+    AbstractFunctionalCurrentMode,
+    BoundedKuramotoLikeCandidateOnly,
+    HodgkinHuxleySimulationOnlyDiagnosticOnly,
+    LaterSelectiveHodgkinHuxleyDeepening,
+    DeferredNotSuitableNowModelPath,
+    NonCanonicalInternalOnlyModelPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_MODEL_MODE_MAP: [BlueBrainHypothalamusModelModeClass;
+    6] = [
+    BlueBrainHypothalamusModelModeClass::AbstractFunctionalCurrentMode,
+    BlueBrainHypothalamusModelModeClass::BoundedKuramotoLikeCandidateOnly,
+    BlueBrainHypothalamusModelModeClass::HodgkinHuxleySimulationOnlyDiagnosticOnly,
+    BlueBrainHypothalamusModelModeClass::LaterSelectiveHodgkinHuxleyDeepening,
+    BlueBrainHypothalamusModelModeClass::DeferredNotSuitableNowModelPath,
+    BlueBrainHypothalamusModelModeClass::NonCanonicalInternalOnlyModelPath,
+];
+
+pub const BLUE_BRAIN_HYPOTHALAMUS_CURRENT_MODEL_MODE: BlueBrainHypothalamusModelModeClass =
+    BlueBrainHypothalamusModelModeClass::AbstractFunctionalCurrentMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainPostBr5NextDirection {
@@ -5150,8 +5175,10 @@ pub enum BlueBrainHypothalamusAdvisoryOutputClass {
     StatePressureHint,
     BoundedRegulationCaveat,
     ReferenceBoundedSignal,
-    BlockedDeferred,
+    DeferredDiagnosticOutput,
+    BlockedDiagnosticOutput,
     InsufficientDiagnosticOutput,
+    DiagnosticOnlyOutput,
     NonCanonicalInternalOnly,
 }
 
@@ -5181,6 +5208,30 @@ pub enum BlueBrainHypothalamusDiagnosticState {
     HypothalamusDiagnosticOnlyState,
     NonCanonicalInternalOnlyHypothalamusDiagnosticPath,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHypothalamusDiagnosticsContractClass {
+    HypothalamusAdvisoryOnlyDiagnostic,
+    HypothalamusCaveatedDiagnostic,
+    HypothalamusDeferredDiagnostic,
+    HypothalamusBlockedDiagnostic,
+    HypothalamusInsufficientDiagnostic,
+    HypothalamusDiagnosticOnlyState,
+    HypothalamusBoundedContractSignal,
+    NonCanonicalInternalOnlyHypothalamusPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_DIAGNOSTICS_CONTRACT_MAP:
+    [BlueBrainHypothalamusDiagnosticsContractClass; 8] = [
+    BlueBrainHypothalamusDiagnosticsContractClass::HypothalamusAdvisoryOnlyDiagnostic,
+    BlueBrainHypothalamusDiagnosticsContractClass::HypothalamusCaveatedDiagnostic,
+    BlueBrainHypothalamusDiagnosticsContractClass::HypothalamusDeferredDiagnostic,
+    BlueBrainHypothalamusDiagnosticsContractClass::HypothalamusBlockedDiagnostic,
+    BlueBrainHypothalamusDiagnosticsContractClass::HypothalamusInsufficientDiagnostic,
+    BlueBrainHypothalamusDiagnosticsContractClass::HypothalamusDiagnosticOnlyState,
+    BlueBrainHypothalamusDiagnosticsContractClass::HypothalamusBoundedContractSignal,
+    BlueBrainHypothalamusDiagnosticsContractClass::NonCanonicalInternalOnlyHypothalamusPath,
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainHypothalamusCanonicalRead {
@@ -5350,7 +5401,7 @@ pub fn evaluate_blue_brain_hypothalamus_drive_homeostasis_modulation(
         {
             (
                 BlueBrainHypothalamusStateSurface::BlockedRegulationState,
-                BlueBrainHypothalamusAdvisoryOutputClass::BlockedDeferred,
+                BlueBrainHypothalamusAdvisoryOutputClass::BlockedDiagnosticOutput,
                 BlueBrainHypothalamusContractSignal::Blocked,
                 BlueBrainHypothalamusContractSignal::Blocked,
                 BlueBrainHypothalamusContractSignal::Blocked,
@@ -5380,7 +5431,7 @@ pub fn evaluate_blue_brain_hypothalamus_drive_homeostasis_modulation(
         {
             (
                 BlueBrainHypothalamusStateSurface::DeferredRegulationState,
-                BlueBrainHypothalamusAdvisoryOutputClass::BlockedDeferred,
+                BlueBrainHypothalamusAdvisoryOutputClass::DeferredDiagnosticOutput,
                 BlueBrainHypothalamusContractSignal::Deferred,
                 BlueBrainHypothalamusContractSignal::Deferred,
                 BlueBrainHypothalamusContractSignal::Deferred,
@@ -5389,7 +5440,7 @@ pub fn evaluate_blue_brain_hypothalamus_drive_homeostasis_modulation(
         } else if input.reference_validity == BlueBrainReferenceValidity::ReferenceOnly {
             (
                 BlueBrainHypothalamusStateSurface::ReferenceOnlyRegulationState,
-                BlueBrainHypothalamusAdvisoryOutputClass::ReferenceBoundedSignal,
+                BlueBrainHypothalamusAdvisoryOutputClass::DiagnosticOnlyOutput,
                 BlueBrainHypothalamusContractSignal::ReferenceOnly,
                 BlueBrainHypothalamusContractSignal::ReferenceOnly,
                 BlueBrainHypothalamusContractSignal::ReferenceOnly,
@@ -11136,7 +11187,7 @@ mod tests {
     }
 
     #[test]
-    fn hypothalamus_br6_prompt2_integration_map_separates_surfaces_and_roles() {
+    fn hypothalamus_br6_prompt3_integration_and_contract_maps_are_canonical() {
         assert_eq!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_ROLE_MAP.len(), 5);
         assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_ROLE_MAP
             .contains(&BlueBrainHypothalamusRoleClass::BoundedDriveStateRole));
@@ -11146,7 +11197,7 @@ mod tests {
             .contains(&BlueBrainHypothalamusRoleClass::UrgencyModulationRole));
         assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_ROLE_MAP
             .contains(&BlueBrainHypothalamusRoleClass::ContextLinkedStatePressureRole));
-        assert_eq!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP.len(), 6);
+        assert_eq!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP.len(), 7);
         assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP
             .contains(&BlueBrainHypothalamusIntegrationClass::HypothalamusInputSurface));
         assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP
@@ -11156,9 +11207,53 @@ mod tests {
         assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP
             .contains(&BlueBrainHypothalamusIntegrationClass::HypothalamusReferenceSurface));
         assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP
+            .contains(&BlueBrainHypothalamusIntegrationClass::HypothalamusDiagnosticsContractMap));
+        assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP
             .contains(&BlueBrainHypothalamusIntegrationClass::BlockedDeferredHypothalamusPath));
         assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_INTEGRATION_MAP.contains(
             &BlueBrainHypothalamusIntegrationClass::NonCanonicalInternalOnlyHypothalamusPath
+        ));
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_DIAGNOSTICS_CONTRACT_MAP.len(),
+            8
+        );
+        assert!(
+            CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_DIAGNOSTICS_CONTRACT_MAP.contains(
+                &BlueBrainHypothalamusDiagnosticsContractClass::HypothalamusAdvisoryOnlyDiagnostic
+            )
+        );
+        assert!(
+            CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_DIAGNOSTICS_CONTRACT_MAP.contains(
+                &BlueBrainHypothalamusDiagnosticsContractClass::HypothalamusCaveatedDiagnostic
+            )
+        );
+        assert!(
+            CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_DIAGNOSTICS_CONTRACT_MAP.contains(
+                &BlueBrainHypothalamusDiagnosticsContractClass::HypothalamusDeferredDiagnostic
+            )
+        );
+        assert!(
+            CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_DIAGNOSTICS_CONTRACT_MAP.contains(
+                &BlueBrainHypothalamusDiagnosticsContractClass::HypothalamusBlockedDiagnostic
+            )
+        );
+        assert!(
+            CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_DIAGNOSTICS_CONTRACT_MAP.contains(
+                &BlueBrainHypothalamusDiagnosticsContractClass::HypothalamusInsufficientDiagnostic
+            )
+        );
+        assert!(
+            CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_DIAGNOSTICS_CONTRACT_MAP.contains(
+                &BlueBrainHypothalamusDiagnosticsContractClass::HypothalamusDiagnosticOnlyState
+            )
+        );
+        assert!(
+            CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_DIAGNOSTICS_CONTRACT_MAP.contains(
+                &BlueBrainHypothalamusDiagnosticsContractClass::HypothalamusBoundedContractSignal
+            )
+        );
+        assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_DIAGNOSTICS_CONTRACT_MAP.contains(
+            &BlueBrainHypothalamusDiagnosticsContractClass::NonCanonicalInternalOnlyHypothalamusPath
         ));
     }
 
@@ -11285,6 +11380,121 @@ mod tests {
     }
 
     #[test]
+    fn hypothalamus_br6_prompt3_all_reads_are_distinct_and_aligned() {
+        let cases = [
+            (
+                BlueBrainHypothalamusInputSurface {
+                    selection_signal: BlueBrainControlAttentionSelectionClass::AttentionTarget,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                    reference_validity: BlueBrainReferenceValidity::Current,
+                    context_priority:
+                        BlueBrainContextEvidencePriorityClass::PrimaryEvidenceReference,
+                },
+                BlueBrainHypothalamusCanonicalRead::AdvisoryOnly,
+                BlueBrainHypothalamusDiagnosticState::HypothalamusAdvisoryOnlyDiagnostic,
+                BlueBrainHypothalamusAdvisoryOutputClass::UrgencyHint,
+            ),
+            (
+                BlueBrainHypothalamusInputSurface {
+                    selection_signal:
+                        BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                    reference_validity: BlueBrainReferenceValidity::Caveated,
+                    context_priority:
+                        BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+                },
+                BlueBrainHypothalamusCanonicalRead::Caveated,
+                BlueBrainHypothalamusDiagnosticState::HypothalamusCaveatedDiagnostic,
+                BlueBrainHypothalamusAdvisoryOutputClass::BoundedRegulationCaveat,
+            ),
+            (
+                BlueBrainHypothalamusInputSurface {
+                    selection_signal:
+                        BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateDeferred,
+                    reference_validity: BlueBrainReferenceValidity::Current,
+                    context_priority:
+                        BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+                },
+                BlueBrainHypothalamusCanonicalRead::Deferred,
+                BlueBrainHypothalamusDiagnosticState::HypothalamusDeferredDiagnostic,
+                BlueBrainHypothalamusAdvisoryOutputClass::DeferredDiagnosticOutput,
+            ),
+            (
+                BlueBrainHypothalamusInputSurface {
+                    selection_signal:
+                        BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateRejected,
+                    reference_validity: BlueBrainReferenceValidity::Current,
+                    context_priority:
+                        BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+                },
+                BlueBrainHypothalamusCanonicalRead::Blocked,
+                BlueBrainHypothalamusDiagnosticState::HypothalamusBlockedDiagnostic,
+                BlueBrainHypothalamusAdvisoryOutputClass::BlockedDiagnosticOutput,
+            ),
+            (
+                BlueBrainHypothalamusInputSurface {
+                    selection_signal:
+                        BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateInsufficient,
+                    reference_validity: BlueBrainReferenceValidity::Current,
+                    context_priority:
+                        BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+                },
+                BlueBrainHypothalamusCanonicalRead::Insufficient,
+                BlueBrainHypothalamusDiagnosticState::HypothalamusInsufficientDiagnostic,
+                BlueBrainHypothalamusAdvisoryOutputClass::InsufficientDiagnosticOutput,
+            ),
+            (
+                BlueBrainHypothalamusInputSurface {
+                    selection_signal:
+                        BlueBrainControlAttentionSelectionClass::EvidenceReferenceSelection,
+                    deferral_class: BlueBrainCandidateDeferralLifecycleClass::CandidateSelected,
+                    reference_validity: BlueBrainReferenceValidity::ReferenceOnly,
+                    context_priority:
+                        BlueBrainContextEvidencePriorityClass::SupportingEvidenceReference,
+                },
+                BlueBrainHypothalamusCanonicalRead::DiagnosticOnly,
+                BlueBrainHypothalamusDiagnosticState::HypothalamusDiagnosticOnlyState,
+                BlueBrainHypothalamusAdvisoryOutputClass::DiagnosticOnlyOutput,
+            ),
+        ];
+
+        for (input, expected_read, expected_diagnostic, expected_output) in cases {
+            let (_, output) = evaluate_blue_brain_hypothalamus_drive_homeostasis_modulation(input);
+            assert_eq!(output.canonical_contract_read, expected_read);
+            assert_eq!(output.runtime_diagnostic_state, expected_diagnostic);
+            assert_eq!(output.selection_diagnostic_state, expected_diagnostic);
+            assert_eq!(output.context_diagnostic_state, expected_diagnostic);
+            assert_eq!(output.reference_diagnostic_state, expected_diagnostic);
+            assert_eq!(output.advisory_class, expected_output);
+            assert!(blue_brain_hypothalamus_consumer_contract_reads_are_aligned(
+                output
+            ));
+            assert!(blue_brain_hypothalamus_output_has_no_direct_authority(
+                output
+            ));
+        }
+    }
+
+    #[test]
+    fn hypothalamus_br6_prompt3_current_model_mode_stays_abstract_functional() {
+        assert_eq!(
+            BLUE_BRAIN_HYPOTHALAMUS_CURRENT_MODEL_MODE,
+            BlueBrainHypothalamusModelModeClass::AbstractFunctionalCurrentMode
+        );
+        assert_eq!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_MODEL_MODE_MAP.len(), 6);
+        assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_MODEL_MODE_MAP
+            .contains(&BlueBrainHypothalamusModelModeClass::BoundedKuramotoLikeCandidateOnly));
+        assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_MODEL_MODE_MAP.contains(
+            &BlueBrainHypothalamusModelModeClass::HodgkinHuxleySimulationOnlyDiagnosticOnly
+        ));
+        assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_MODEL_MODE_MAP
+            .contains(&BlueBrainHypothalamusModelModeClass::LaterSelectiveHodgkinHuxleyDeepening));
+    }
+
+    #[test]
     fn hypothalamus_br6_prompt2_inter_region_adjunct_is_bounded() {
         assert_eq!(CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP.len(), 15);
         assert_eq!(
@@ -11370,15 +11580,20 @@ mod tests {
         assert!(doc.contains("hypothalamus state surface"));
         assert!(doc.contains("hypothalamus output/advisory surface"));
         assert!(doc.contains("hypothalamus reference surface"));
+        assert!(doc.contains("hypothalamus diagnostics/contract map"));
         assert!(doc.contains("blocked/deferred hypothalamus path"));
         assert!(doc.contains("non-canonical/internal-only hypothalamus path"));
         assert!(doc.contains("urgency-hint"));
         assert!(doc.contains("state-pressure hint"));
         assert!(doc.contains("bounded regulation caveat"));
+        assert!(doc.contains("advisory-only ist ein bounded positives Signal"));
+        assert!(doc.contains("deferred ist nicht blocked"));
+        assert!(doc.contains("blocked ist nicht insufficient"));
         assert!(doc.contains("Reference-only, stale, caveated, blocked und insufficient"));
         assert!(doc.contains("abstract functional current mode"));
         assert!(doc.contains("keine Hodgkin-Huxley-Produktivintegration"));
         assert!(doc.contains("keine implizite Kuramoto-Aufweitung"));
+        assert!(doc.contains("current model mode remains unchanged"));
         assert!(doc.contains("Hippocampus ↔ Hypothalamus"));
         assert!(doc.contains("Amygdala ↔ Hypothalamus"));
         assert!(doc.contains("Thalamus ↔ Hypothalamus"));
