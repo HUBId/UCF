@@ -1,0 +1,17 @@
+# command: git rev-parse HEAD
+913f6ea50e47dcb4d980441d5fbd18d17e859f0b
+# command: git status --short --branch
+## work
+ M docs/README.md
+ M docs/blue_brain_audit_baseline_map_v1.md
+ M out/blue_brain_audit_baseline_2026-05-08/cargo_test_workspace.log
+ M out/blue_brain_audit_baseline_2026-05-08/docs_lint.log
+ M out/blue_brain_audit_baseline_2026-05-08/gate_report.json
+ M out/blue_brain_audit_baseline_2026-05-08/readiness_gate.log
+ M out/gate_report.json
+?? docs/blue_brain_final_evidence_baseline_refresh_2026_05_08.md
+?? out/blue_brain_audit_baseline_2026-05-08/cargo_clippy_workspace.log
+?? out/blue_brain_audit_baseline_2026-05-08/cargo_fmt_check.log
+?? out/blue_brain_audit_baseline_2026-05-08/docs_lint_root.log
+?? out/blue_brain_audit_baseline_2026-05-08/head_status.log
+?? out/blue_brain_audit_baseline_2026-05-08/readiness_gate_root.log
