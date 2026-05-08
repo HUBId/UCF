@@ -74,16 +74,177 @@ pub enum BlueBrainMaintenanceFindingClass {
     DocTestDrift,
     NonCanonicalResidualPath,
     NoChangeNeeded,
+    PossibleFutureExpansionHook,
 }
 
 pub const CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP: [BlueBrainMaintenanceFindingClass;
-    6] = [
+    7] = [
     BlueBrainMaintenanceFindingClass::RealBug,
     BlueBrainMaintenanceFindingClass::SemanticInconsistency,
     BlueBrainMaintenanceFindingClass::GuardWeakness,
     BlueBrainMaintenanceFindingClass::DocTestDrift,
     BlueBrainMaintenanceFindingClass::NonCanonicalResidualPath,
     BlueBrainMaintenanceFindingClass::NoChangeNeeded,
+    BlueBrainMaintenanceFindingClass::PossibleFutureExpansionHook,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainPostMd3MaintenanceSurface {
+    RegionSurfaces,
+    InterRegionRelations,
+    FirstModelDeepening,
+    SecondModelDeepening,
+    RuntimeSelectionReferenceContracts,
+    DocsTestsReadinessReferences,
+    NonCanonicalResiduals,
+    ExpansionLeverReview,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainPostMd3MaintenanceFinding {
+    pub surface: BlueBrainPostMd3MaintenanceSurface,
+    pub finding_class: BlueBrainMaintenanceFindingClass,
+    pub summary: &'static str,
+    pub maintenance_only: bool,
+    pub no_scope_expansion: bool,
+    pub direct_action_trigger: bool,
+    pub direct_execution_trigger: bool,
+    pub direct_retry_trigger: bool,
+    pub direct_memory_commit: bool,
+    pub direct_compute_invocation: bool,
+    pub opens_new_region: bool,
+    pub opens_new_model_deepening: bool,
+    pub possible_future_rescope_candidate: Option<&'static str>,
+}
+
+pub const BLUE_BRAIN_POST_MD3_POSSIBLE_FUTURE_RE_SCOPE_CANDIDATE: Option<&str> = None;
+
+/// Canonical post-MD3 maintenance findings map. This is a status/decision aid
+/// only; entries document bounded bugs, drift, residuals, and expansion review
+/// outcomes without changing region, relation, model, runtime, policy, retry,
+/// memory, or compute authority.
+pub const CANONICAL_BLUE_BRAIN_POST_MD3_MAINTENANCE_FINDINGS_MAP:
+    [BlueBrainPostMd3MaintenanceFinding; 8] = [
+    BlueBrainPostMd3MaintenanceFinding {
+        surface: BlueBrainPostMd3MaintenanceSurface::RegionSurfaces,
+        finding_class: BlueBrainMaintenanceFindingClass::NoChangeNeeded,
+        summary: "six anatomical region surfaces remain bounded advisory/reference/diagnostic",
+        maintenance_only: true,
+        no_scope_expansion: true,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        opens_new_region: false,
+        opens_new_model_deepening: false,
+        possible_future_rescope_candidate: None,
+    },
+    BlueBrainPostMd3MaintenanceFinding {
+        surface: BlueBrainPostMd3MaintenanceSurface::InterRegionRelations,
+        finding_class: BlueBrainMaintenanceFindingClass::NoChangeNeeded,
+        summary: "IR1 relations remain bounded and mediated by existing runtime/selection/reference contracts",
+        maintenance_only: true,
+        no_scope_expansion: true,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        opens_new_region: false,
+        opens_new_model_deepening: false,
+        possible_future_rescope_candidate: None,
+    },
+    BlueBrainPostMd3MaintenanceFinding {
+        surface: BlueBrainPostMd3MaintenanceSurface::FirstModelDeepening,
+        finding_class: BlueBrainMaintenanceFindingClass::NoChangeNeeded,
+        summary: "MD1/MD2 Amygdala-Thalamus line remains the first advisory-only bounded Kuramoto-like deepening",
+        maintenance_only: true,
+        no_scope_expansion: true,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        opens_new_region: false,
+        opens_new_model_deepening: false,
+        possible_future_rescope_candidate: None,
+    },
+    BlueBrainPostMd3MaintenanceFinding {
+        surface: BlueBrainPostMd3MaintenanceSurface::SecondModelDeepening,
+        finding_class: BlueBrainMaintenanceFindingClass::NoChangeNeeded,
+        summary: "MD3 Amygdala-Basal Ganglia line remains the second and final current advisory-only bounded deepening",
+        maintenance_only: true,
+        no_scope_expansion: true,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        opens_new_region: false,
+        opens_new_model_deepening: false,
+        possible_future_rescope_candidate: None,
+    },
+    BlueBrainPostMd3MaintenanceFinding {
+        surface: BlueBrainPostMd3MaintenanceSurface::RuntimeSelectionReferenceContracts,
+        finding_class: BlueBrainMaintenanceFindingClass::GuardWeakness,
+        summary: "cross-line direct-authority predicate now requires memory-commit denial alongside action/execution/retry/compute/safety denial",
+        maintenance_only: true,
+        no_scope_expansion: true,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        opens_new_region: false,
+        opens_new_model_deepening: false,
+        possible_future_rescope_candidate: None,
+    },
+    BlueBrainPostMd3MaintenanceFinding {
+        surface: BlueBrainPostMd3MaintenanceSurface::DocsTestsReadinessReferences,
+        finding_class: BlueBrainMaintenanceFindingClass::DocTestDrift,
+        summary: "maintenance finding classes now include the explicit possible-future-expansion-hook bucket and this post-MD3 reference doc",
+        maintenance_only: true,
+        no_scope_expansion: true,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        opens_new_region: false,
+        opens_new_model_deepening: false,
+        possible_future_rescope_candidate: None,
+    },
+    BlueBrainPostMd3MaintenanceFinding {
+        surface: BlueBrainPostMd3MaintenanceSurface::NonCanonicalResiduals,
+        finding_class: BlueBrainMaintenanceFindingClass::NonCanonicalResidualPath,
+        summary: "historical and test-only paths remain marked non-canonical/internal-only and carry no consumer authority",
+        maintenance_only: true,
+        no_scope_expansion: true,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        opens_new_region: false,
+        opens_new_model_deepening: false,
+        possible_future_rescope_candidate: None,
+    },
+    BlueBrainPostMd3MaintenanceFinding {
+        surface: BlueBrainPostMd3MaintenanceSurface::ExpansionLeverReview,
+        finding_class: BlueBrainMaintenanceFindingClass::PossibleFutureExpansionHook,
+        summary: "no repo-backed post-MD3 expansion hook is active; future work requires explicit re-scope",
+        maintenance_only: true,
+        no_scope_expansion: true,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        opens_new_region: false,
+        opens_new_model_deepening: false,
+        possible_future_rescope_candidate: BLUE_BRAIN_POST_MD3_POSSIBLE_FUTURE_RE_SCOPE_CANDIDATE,
+    },
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,6 +343,7 @@ pub fn blue_brain_cross_line_term_allows_direct_authority(
     !(entry.forbidden_authority.contains("no direct action")
         && entry.forbidden_authority.contains("execution")
         && entry.forbidden_authority.contains("retry")
+        && entry.forbidden_authority.contains("memory")
         && entry.forbidden_authority.contains("compute")
         && entry.forbidden_authority.contains("safety"))
 }
@@ -12007,7 +12169,7 @@ mod tests {
             ));
         }
 
-        assert_eq!(CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP.len(), 6);
+        assert_eq!(CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP.len(), 7);
         for finding_class in [
             BlueBrainMaintenanceFindingClass::RealBug,
             BlueBrainMaintenanceFindingClass::SemanticInconsistency,
@@ -12015,6 +12177,7 @@ mod tests {
             BlueBrainMaintenanceFindingClass::DocTestDrift,
             BlueBrainMaintenanceFindingClass::NonCanonicalResidualPath,
             BlueBrainMaintenanceFindingClass::NoChangeNeeded,
+            BlueBrainMaintenanceFindingClass::PossibleFutureExpansionHook,
         ] {
             assert!(CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP.contains(&finding_class));
         }
@@ -13149,6 +13312,90 @@ mod tests {
         ));
         assert!(CANONICAL_BLUE_BRAIN_HYPOTHALAMUS_MODEL_MODE_MAP
             .contains(&BlueBrainHypothalamusModelModeClass::LaterSelectiveHodgkinHuxleyDeepening));
+    }
+
+    #[test]
+    fn post_md3_maintenance_findings_map_is_bounded_and_has_no_active_expansion_hook() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP.len(), 7);
+        for finding_class in [
+            BlueBrainMaintenanceFindingClass::RealBug,
+            BlueBrainMaintenanceFindingClass::SemanticInconsistency,
+            BlueBrainMaintenanceFindingClass::GuardWeakness,
+            BlueBrainMaintenanceFindingClass::DocTestDrift,
+            BlueBrainMaintenanceFindingClass::NonCanonicalResidualPath,
+            BlueBrainMaintenanceFindingClass::NoChangeNeeded,
+            BlueBrainMaintenanceFindingClass::PossibleFutureExpansionHook,
+        ] {
+            assert!(CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP.contains(&finding_class));
+        }
+
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_POST_MD3_MAINTENANCE_FINDINGS_MAP.len(),
+            8
+        );
+        assert_eq!(BLUE_BRAIN_POST_MD3_POSSIBLE_FUTURE_RE_SCOPE_CANDIDATE, None);
+
+        for finding in CANONICAL_BLUE_BRAIN_POST_MD3_MAINTENANCE_FINDINGS_MAP {
+            assert!(finding.maintenance_only);
+            assert!(finding.no_scope_expansion);
+            assert!(!finding.direct_action_trigger);
+            assert!(!finding.direct_execution_trigger);
+            assert!(!finding.direct_retry_trigger);
+            assert!(!finding.direct_memory_commit);
+            assert!(!finding.direct_compute_invocation);
+            assert!(!finding.opens_new_region);
+            assert!(!finding.opens_new_model_deepening);
+        }
+
+        let expansion_review = CANONICAL_BLUE_BRAIN_POST_MD3_MAINTENANCE_FINDINGS_MAP
+            .iter()
+            .find(|finding| {
+                finding.surface == BlueBrainPostMd3MaintenanceSurface::ExpansionLeverReview
+            })
+            .expect("post-MD3 expansion review finding");
+        assert_eq!(
+            expansion_review.finding_class,
+            BlueBrainMaintenanceFindingClass::PossibleFutureExpansionHook
+        );
+        assert_eq!(expansion_review.possible_future_rescope_candidate, None);
+    }
+
+    #[test]
+    fn post_md3_cross_line_direct_authority_guard_includes_memory_denial() {
+        for term in [
+            BlueBrainCrossLineSemanticTerm::AdvisoryOnly,
+            BlueBrainCrossLineSemanticTerm::Caveated,
+            BlueBrainCrossLineSemanticTerm::Deferred,
+            BlueBrainCrossLineSemanticTerm::Blocked,
+            BlueBrainCrossLineSemanticTerm::Insufficient,
+            BlueBrainCrossLineSemanticTerm::DiagnosticOnly,
+            BlueBrainCrossLineSemanticTerm::ReferenceOnly,
+            BlueBrainCrossLineSemanticTerm::CurrentModelMode,
+            BlueBrainCrossLineSemanticTerm::NonCanonicalInternalOnly,
+        ] {
+            let entry = blue_brain_cross_line_term_guard_checklist_entry(term);
+            assert!(entry.forbidden_authority.contains("memory"));
+            assert!(!blue_brain_cross_line_term_allows_direct_authority(term));
+        }
+    }
+
+    #[test]
+    fn post_md3_maintenance_pass_doc_pins_findings_and_no_expansion() {
+        let doc = include_str!("../../../docs/blue_brain_post_md3_maintenance_decision_pass_v1.md");
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_POST_MD3_MAINTENANCE_FINDINGS_MAP"));
+        assert!(doc.contains("real bug"));
+        assert!(doc.contains("semantic inconsistency"));
+        assert!(doc.contains("guard weakness"));
+        assert!(doc.contains("doc/test drift"));
+        assert!(doc.contains("non-canonical residual path"));
+        assert!(doc.contains("no-change-needed finding"));
+        assert!(doc.contains("possible future expansion hook"));
+        assert!(doc.contains("No active post-MD3 re-scope candidate remains"));
+        assert!(doc.contains("no direct action"));
+        assert!(doc.contains("no direct execution"));
+        assert!(doc.contains("no direct retry"));
+        assert!(doc.contains("no direct memory"));
+        assert!(doc.contains("no direct compute"));
     }
 
     #[test]
