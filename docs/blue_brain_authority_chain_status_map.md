@@ -54,6 +54,7 @@ Historische Aussagen bleiben erhalten (BB25/BB27/BB29-Zeitpunkte), werden aber d
 - `docs/blue_brain_br5_cerebellum_readiness_sweep_expansion_boundary_serie_br5_prompt4_v1.md`
 - `docs/blue_brain_md1_readiness_sweep_model_deepening_closure_v1.md`
 - `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md`
+- `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`
 
 ### Non-canonical / outdated pointer
 
@@ -61,6 +62,7 @@ Historische Aussagen bleiben erhalten (BB25/BB27/BB29-Zeitpunkte), werden aber d
 - Jede Lesart, die Prefrontal Cortex, Anterior Cingulate Cortex oder Insula als aktuell operativ integrierte Regionen behandelt.
 - Implizite Fortsetzungs-/Expansionspointer ohne expliziten Re-Scope.
 - Jede Modellvertiefungslesart, die aus MD1/MD2 eine globale Modellplattform oder einen zweiten aktiven Vertiefungskandidaten ableitet.
+- Jede Lesart verteilter Terminologie, die `advisory-only`, `caveated`, `deferred`, `blocked`, `insufficient`, `diagnostic-only`, `reference-only`, `current model mode` oder `non-canonical/internal-only` mit direkter Action-/Execution-/Retry-/Memory-/Compute-/Safety-Autorität verwechselt.
 
 ## Conflict rule (single truth)
 
