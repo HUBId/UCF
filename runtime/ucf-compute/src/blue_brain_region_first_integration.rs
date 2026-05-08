@@ -2105,6 +2105,307 @@ pub const BLUE_BRAIN_MD2_POST_STABILIZATION_DECISION: BlueBrainMd2PostStabilizat
     BlueBrainMd2PostStabilizationDecision::MaintenanceSufficientNoSecondCandidateNow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd3SecondDeepeningRescopeClass {
+    ReadyForSecondDeepeningConsideration,
+    PlausibleButNotYet,
+    AbstractSufficient,
+    KuramotoLikeCandidate,
+    HodgkinHuxleySimulationOnlyDiagnosticOnlyCandidate,
+    LaterSelectiveHodgkinHuxleyDeepening,
+    NoSecondDeepeningNow,
+    NonCanonicalInternalOnlyModelPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_DECISION_CLASS_MAP:
+    [BlueBrainMd3SecondDeepeningRescopeClass; 8] = [
+    BlueBrainMd3SecondDeepeningRescopeClass::ReadyForSecondDeepeningConsideration,
+    BlueBrainMd3SecondDeepeningRescopeClass::PlausibleButNotYet,
+    BlueBrainMd3SecondDeepeningRescopeClass::AbstractSufficient,
+    BlueBrainMd3SecondDeepeningRescopeClass::KuramotoLikeCandidate,
+    BlueBrainMd3SecondDeepeningRescopeClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCandidate,
+    BlueBrainMd3SecondDeepeningRescopeClass::LaterSelectiveHodgkinHuxleyDeepening,
+    BlueBrainMd3SecondDeepeningRescopeClass::NoSecondDeepeningNow,
+    BlueBrainMd3SecondDeepeningRescopeClass::NonCanonicalInternalOnlyModelPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd3SecondDeepeningSurfaceKind {
+    Region,
+    Relation,
+    BoundedDynamicsSurface,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd3SecondDeepeningDecision {
+    PrioritizeExactlyOneSecondCandidate,
+    NoSecondDeepeningNow,
+}
+
+pub const BLUE_BRAIN_MD3_SECOND_DEEPENING_DECISION: BlueBrainMd3SecondDeepeningDecision =
+    BlueBrainMd3SecondDeepeningDecision::PrioritizeExactlyOneSecondCandidate;
+
+pub const BLUE_BRAIN_MD3_PRIORITIZED_SECOND_DEEPENING_PAIR: Option<
+    BlueBrainInterRegionArchitecturePair,
+> = Some(BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainMd3SecondDeepeningCandidateEvidence {
+    pub prioritized_second_candidate: bool,
+    pub functional_leverage: u8,
+    pub integration_risk: u8,
+    pub semantic_clarity: u8,
+    pub test_doc_support: u8,
+    pub guard_scope_risk: u8,
+    pub model_weight: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainMd3SecondDeepeningCandidateAssessment {
+    pub candidate_id: &'static str,
+    pub surface_kind: BlueBrainMd3SecondDeepeningSurfaceKind,
+    pub region: Option<BlueBrainAnatomicalRegionClass>,
+    pub pair: Option<BlueBrainInterRegionArchitecturePair>,
+    pub rescope_class: BlueBrainMd3SecondDeepeningRescopeClass,
+    pub model_class: BlueBrainMd1ModelDeepeningClass,
+    pub prioritized_second_candidate: bool,
+    pub functional_leverage: u8,
+    pub integration_risk: u8,
+    pub semantic_clarity: u8,
+    pub test_doc_support: u8,
+    pub guard_scope_risk: u8,
+    pub model_weight: u8,
+    pub advisory_only: bool,
+    pub direct_action_trigger: bool,
+    pub direct_execution_trigger: bool,
+    pub direct_retry_trigger: bool,
+    pub direct_memory_commit: bool,
+    pub direct_compute_invocation: bool,
+    pub safety_override: bool,
+    pub global_model_platform: bool,
+    pub multiple_deepening_opened: bool,
+}
+
+const fn blue_brain_md3_second_deepening_candidate_assessment(
+    candidate_id: &'static str,
+    surface_kind: BlueBrainMd3SecondDeepeningSurfaceKind,
+    region: Option<BlueBrainAnatomicalRegionClass>,
+    pair: Option<BlueBrainInterRegionArchitecturePair>,
+    rescope_class: BlueBrainMd3SecondDeepeningRescopeClass,
+    model_class: BlueBrainMd1ModelDeepeningClass,
+    evidence: BlueBrainMd3SecondDeepeningCandidateEvidence,
+) -> BlueBrainMd3SecondDeepeningCandidateAssessment {
+    BlueBrainMd3SecondDeepeningCandidateAssessment {
+        candidate_id,
+        surface_kind,
+        region,
+        pair,
+        rescope_class,
+        model_class,
+        prioritized_second_candidate: evidence.prioritized_second_candidate,
+        functional_leverage: evidence.functional_leverage,
+        integration_risk: evidence.integration_risk,
+        semantic_clarity: evidence.semantic_clarity,
+        test_doc_support: evidence.test_doc_support,
+        guard_scope_risk: evidence.guard_scope_risk,
+        model_weight: evidence.model_weight,
+        advisory_only: true,
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        safety_override: false,
+        global_model_platform: false,
+        multiple_deepening_opened: false,
+    }
+}
+
+const fn blue_brain_md3_second_deepening_candidate_evidence(
+    prioritized_second_candidate: bool,
+    functional_leverage: u8,
+    integration_risk: u8,
+    semantic_clarity: u8,
+    test_doc_support: u8,
+    guard_scope_risk: u8,
+    model_weight: u8,
+) -> BlueBrainMd3SecondDeepeningCandidateEvidence {
+    BlueBrainMd3SecondDeepeningCandidateEvidence {
+        prioritized_second_candidate,
+        functional_leverage,
+        integration_risk,
+        semantic_clarity,
+        test_doc_support,
+        guard_scope_risk,
+        model_weight,
+    }
+}
+
+/// Canonical MD3 rescope map for deciding whether exactly one second model
+/// deepening has enough leverage to open after the MD2 maintenance baseline.
+///
+/// The map is decision-only. It does not implement a second model, does not
+/// invoke compute, does not rewrite region/relation contracts, and does not
+/// create a general Kuramoto/HH platform. Scores are deterministic bounded
+/// ordinal evidence: higher leverage/clarity/support is better, while higher
+/// risk/weight is worse.
+pub const CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_DECISION_MAP:
+    [BlueBrainMd3SecondDeepeningCandidateAssessment; 16] = [
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "hippocampus_region",
+        BlueBrainMd3SecondDeepeningSurfaceKind::Region,
+        Some(BlueBrainAnatomicalRegionClass::Hippocampus),
+        None,
+        BlueBrainMd3SecondDeepeningRescopeClass::AbstractSufficient,
+        BlueBrainMd1ModelDeepeningClass::AbstractSufficient,
+        blue_brain_md3_second_deepening_candidate_evidence(false, 2, 2, 5, 5, 2, 1),
+    ),
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "amygdala_region",
+        BlueBrainMd3SecondDeepeningSurfaceKind::Region,
+        Some(BlueBrainAnatomicalRegionClass::Amygdala),
+        None,
+        BlueBrainMd3SecondDeepeningRescopeClass::PlausibleButNotYet,
+        BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate,
+        blue_brain_md3_second_deepening_candidate_evidence(false, 4, 4, 4, 4, 4, 2),
+    ),
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "thalamus_region",
+        BlueBrainMd3SecondDeepeningSurfaceKind::Region,
+        Some(BlueBrainAnatomicalRegionClass::Thalamus),
+        None,
+        BlueBrainMd3SecondDeepeningRescopeClass::AbstractSufficient,
+        BlueBrainMd1ModelDeepeningClass::AbstractSufficient,
+        blue_brain_md3_second_deepening_candidate_evidence(false, 3, 3, 5, 5, 3, 1),
+    ),
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "basal_ganglia_region",
+        BlueBrainMd3SecondDeepeningSurfaceKind::Region,
+        Some(BlueBrainAnatomicalRegionClass::BasalGanglia),
+        None,
+        BlueBrainMd3SecondDeepeningRescopeClass::PlausibleButNotYet,
+        BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow,
+        blue_brain_md3_second_deepening_candidate_evidence(false, 4, 5, 4, 4, 5, 2),
+    ),
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "cerebellum_region",
+        BlueBrainMd3SecondDeepeningSurfaceKind::Region,
+        Some(BlueBrainAnatomicalRegionClass::Cerebellum),
+        None,
+        BlueBrainMd3SecondDeepeningRescopeClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCandidate,
+        BlueBrainMd1ModelDeepeningClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCandidate,
+        blue_brain_md3_second_deepening_candidate_evidence(false, 3, 6, 4, 3, 6, 5),
+    ),
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "hypothalamus_region",
+        BlueBrainMd3SecondDeepeningSurfaceKind::Region,
+        Some(BlueBrainAnatomicalRegionClass::Hypothalamus),
+        None,
+        BlueBrainMd3SecondDeepeningRescopeClass::AbstractSufficient,
+        BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow,
+        blue_brain_md3_second_deepening_candidate_evidence(false, 3, 4, 5, 4, 4, 1),
+    ),
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "hippocampus_thalamus_relation",
+        BlueBrainMd3SecondDeepeningSurfaceKind::Relation,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::HippocampusThalamus),
+        BlueBrainMd3SecondDeepeningRescopeClass::AbstractSufficient,
+        BlueBrainMd1ModelDeepeningClass::AbstractSufficient,
+        blue_brain_md3_second_deepening_candidate_evidence(false, 3, 2, 5, 5, 2, 1),
+    ),
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "amygdala_thalamus_relation_existing_first_baseline",
+        BlueBrainMd3SecondDeepeningSurfaceKind::Relation,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaThalamus),
+        BlueBrainMd3SecondDeepeningRescopeClass::PlausibleButNotYet,
+        BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate,
+        blue_brain_md3_second_deepening_candidate_evidence(false, 5, 2, 5, 5, 2, 2),
+    ),
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "amygdala_basal_ganglia_relation",
+        BlueBrainMd3SecondDeepeningSurfaceKind::Relation,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia),
+        BlueBrainMd3SecondDeepeningRescopeClass::ReadyForSecondDeepeningConsideration,
+        BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate,
+        blue_brain_md3_second_deepening_candidate_evidence(true, 5, 4, 5, 5, 4, 2),
+    ),
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "hippocampus_hypothalamus_relation",
+        BlueBrainMd3SecondDeepeningSurfaceKind::Relation,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::HippocampusHypothalamus),
+        BlueBrainMd3SecondDeepeningRescopeClass::AbstractSufficient,
+        BlueBrainMd1ModelDeepeningClass::AbstractSufficient,
+        blue_brain_md3_second_deepening_candidate_evidence(false, 3, 3, 5, 4, 3, 1),
+    ),
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "amygdala_hypothalamus_relation",
+        BlueBrainMd3SecondDeepeningSurfaceKind::Relation,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaHypothalamus),
+        BlueBrainMd3SecondDeepeningRescopeClass::PlausibleButNotYet,
+        BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate,
+        blue_brain_md3_second_deepening_candidate_evidence(false, 4, 4, 4, 4, 5, 2),
+    ),
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "thalamus_hypothalamus_relation",
+        BlueBrainMd3SecondDeepeningSurfaceKind::Relation,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::ThalamusHypothalamus),
+        BlueBrainMd3SecondDeepeningRescopeClass::PlausibleButNotYet,
+        BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate,
+        blue_brain_md3_second_deepening_candidate_evidence(false, 4, 4, 4, 4, 4, 2),
+    ),
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "basal_ganglia_hypothalamus_relation",
+        BlueBrainMd3SecondDeepeningSurfaceKind::Relation,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaHypothalamus),
+        BlueBrainMd3SecondDeepeningRescopeClass::PlausibleButNotYet,
+        BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow,
+        blue_brain_md3_second_deepening_candidate_evidence(false, 4, 5, 4, 4, 5, 2),
+    ),
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "bb12_bounded_advisory_kuramoto_surface",
+        BlueBrainMd3SecondDeepeningSurfaceKind::BoundedDynamicsSurface,
+        None,
+        None,
+        BlueBrainMd3SecondDeepeningRescopeClass::KuramotoLikeCandidate,
+        BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate,
+        blue_brain_md3_second_deepening_candidate_evidence(false, 5, 4, 5, 5, 4, 2),
+    ),
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "bb10_hh_diagnostic_surface",
+        BlueBrainMd3SecondDeepeningSurfaceKind::BoundedDynamicsSurface,
+        None,
+        None,
+        BlueBrainMd3SecondDeepeningRescopeClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCandidate,
+        BlueBrainMd1ModelDeepeningClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCandidate,
+        blue_brain_md3_second_deepening_candidate_evidence(false, 2, 7, 4, 3, 7, 7),
+    ),
+    blue_brain_md3_second_deepening_candidate_assessment(
+        "basal_ganglia_cerebellum_later_hh_relation",
+        BlueBrainMd3SecondDeepeningSurfaceKind::Relation,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum),
+        BlueBrainMd3SecondDeepeningRescopeClass::LaterSelectiveHodgkinHuxleyDeepening,
+        BlueBrainMd1ModelDeepeningClass::LaterSelectiveHodgkinHuxleyDeepening,
+        blue_brain_md3_second_deepening_candidate_evidence(false, 3, 7, 4, 3, 7, 7),
+    ),
+];
+
+pub fn blue_brain_md3_prioritized_second_deepening_candidate(
+) -> Option<BlueBrainMd3SecondDeepeningCandidateAssessment> {
+    CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_DECISION_MAP
+        .iter()
+        .copied()
+        .find(|assessment| assessment.prioritized_second_candidate)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlueBrainMd2ModelDeepeningStabilizationMapEntry {
     pub stabilization_class: BlueBrainMd2ModelDeepeningStabilizationClass,
     pub final_status_class: BlueBrainMd2ModelDeepeningFinalStatusClass,
@@ -11294,6 +11595,139 @@ mod tests {
         assert!(!residual.canonical_first_deepening_surface);
         assert!(residual.non_canonical_internal_only);
         assert!(!residual.creates_direct_authority);
+    }
+
+    #[test]
+    fn md3_second_deepening_rescope_prioritizes_exactly_one_bounded_candidate() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_DECISION_CLASS_MAP.len(),
+            8
+        );
+        for rescope_class in [
+            BlueBrainMd3SecondDeepeningRescopeClass::ReadyForSecondDeepeningConsideration,
+            BlueBrainMd3SecondDeepeningRescopeClass::PlausibleButNotYet,
+            BlueBrainMd3SecondDeepeningRescopeClass::AbstractSufficient,
+            BlueBrainMd3SecondDeepeningRescopeClass::KuramotoLikeCandidate,
+            BlueBrainMd3SecondDeepeningRescopeClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCandidate,
+            BlueBrainMd3SecondDeepeningRescopeClass::LaterSelectiveHodgkinHuxleyDeepening,
+            BlueBrainMd3SecondDeepeningRescopeClass::NoSecondDeepeningNow,
+            BlueBrainMd3SecondDeepeningRescopeClass::NonCanonicalInternalOnlyModelPath,
+        ] {
+            assert!(CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_DECISION_CLASS_MAP
+                .contains(&rescope_class));
+        }
+
+        assert_eq!(
+            BLUE_BRAIN_MD3_SECOND_DEEPENING_DECISION,
+            BlueBrainMd3SecondDeepeningDecision::PrioritizeExactlyOneSecondCandidate
+        );
+        assert_eq!(
+            BLUE_BRAIN_MD3_PRIORITIZED_SECOND_DEEPENING_PAIR,
+            Some(BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia)
+        );
+
+        let prioritized: Vec<_> = CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_DECISION_MAP
+            .iter()
+            .filter(|assessment| assessment.prioritized_second_candidate)
+            .collect();
+        assert_eq!(prioritized.len(), 1);
+        let candidate = prioritized[0];
+        assert_eq!(candidate.candidate_id, "amygdala_basal_ganglia_relation");
+        assert_eq!(
+            candidate.surface_kind,
+            BlueBrainMd3SecondDeepeningSurfaceKind::Relation
+        );
+        assert_eq!(candidate.region, None);
+        assert_eq!(
+            candidate.pair,
+            Some(BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia)
+        );
+        assert_eq!(
+            candidate.rescope_class,
+            BlueBrainMd3SecondDeepeningRescopeClass::ReadyForSecondDeepeningConsideration
+        );
+        assert_eq!(
+            candidate.model_class,
+            BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate
+        );
+        assert!(candidate.functional_leverage >= candidate.integration_risk);
+        assert!(candidate.semantic_clarity >= 5);
+        assert!(candidate.test_doc_support >= 5);
+        assert!(candidate.model_weight <= 2);
+    }
+
+    #[test]
+    fn md3_second_deepening_rescope_keeps_model_forms_and_guards_separate() {
+        let abstract_candidates = CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_DECISION_MAP
+            .iter()
+            .filter(|assessment| {
+                assessment.rescope_class
+                    == BlueBrainMd3SecondDeepeningRescopeClass::AbstractSufficient
+            })
+            .count();
+        assert!(abstract_candidates >= 4);
+
+        let kuramoto_candidate = blue_brain_md3_prioritized_second_deepening_candidate()
+            .expect("one prioritized MD3 second-deepening candidate");
+        assert_eq!(
+            kuramoto_candidate.model_class,
+            BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate
+        );
+
+        let hh_diagnostic_candidates = CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_DECISION_MAP
+            .iter()
+            .filter(|assessment| {
+                assessment.rescope_class
+                    == BlueBrainMd3SecondDeepeningRescopeClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCandidate
+            })
+            .count();
+        assert!(hh_diagnostic_candidates >= 2);
+
+        let later_hh_candidates = CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_DECISION_MAP
+            .iter()
+            .filter(|assessment| {
+                assessment.rescope_class
+                    == BlueBrainMd3SecondDeepeningRescopeClass::LaterSelectiveHodgkinHuxleyDeepening
+            })
+            .count();
+        assert_eq!(later_hh_candidates, 1);
+
+        for assessment in CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_DECISION_MAP {
+            assert!(assessment.advisory_only);
+            assert!(!assessment.direct_action_trigger);
+            assert!(!assessment.direct_execution_trigger);
+            assert!(!assessment.direct_retry_trigger);
+            assert!(!assessment.direct_memory_commit);
+            assert!(!assessment.direct_compute_invocation);
+            assert!(!assessment.safety_override);
+            assert!(!assessment.global_model_platform);
+            assert!(!assessment.multiple_deepening_opened);
+        }
+    }
+
+    #[test]
+    fn md3_second_deepening_rescope_docs_are_canonical_and_non_conflicting() {
+        let md3_doc =
+            include_str!("../../../docs/blue_brain_md3_second_deepening_rescope_line_v1.md");
+        assert!(md3_doc.contains("second-deepening rescope line"));
+        assert!(md3_doc.contains("CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_DECISION_MAP"));
+        assert!(md3_doc.contains("Amygdala ↔ Basal Ganglia"));
+        assert!(md3_doc.contains("bounded Kuramoto-like"));
+        assert!(md3_doc.contains("HH simulation-only/diagnostic-only"));
+        assert!(md3_doc.contains("later selective HH deepening"));
+        assert!(md3_doc.contains("abstract sufficient"));
+        assert!(md3_doc.contains("no direct action trigger"));
+        assert!(md3_doc.contains("no direct compute invocation"));
+        assert!(md3_doc.contains("no global model platform"));
+        assert!(md3_doc.contains("no implicit multiple deepening"));
+
+        let readme = include_str!("../../../docs/README.md");
+        assert!(readme.contains("Second model-deepening re-scope line (MD3 Prompt 1)"));
+        assert!(readme.contains("docs/blue_brain_md3_second_deepening_rescope_line_v1.md"));
+
+        let authority = include_str!("../../../docs/blue_brain_authority_chain_status_map.md");
+        assert!(authority.contains("MD3"));
+        assert!(authority.contains("Amygdala ↔ Basal Ganglia"));
     }
 
     #[test]
