@@ -1,5 +1,7 @@
 # BlueBrain first inter-region relation line (Serie BB26 / Prompt 4)
 
+> Maintenance-discoverability note: This BB26 two-region relation line is a historical/supporting implementation-stage reference. It remains useful for bounded-relation guard semantics, but its two-region scope is not the current Blue-Brain end state after BR6/IR1/MD2/MD3/SC1.
+
 Status: **first bounded relation line** between the already integrated Region 1 and Region 2 surfaces.  
 Scope remains strictly **two regions only** and **advisory-only**.
 

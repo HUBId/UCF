@@ -1,5 +1,7 @@
 # Blue-Brain IR1 Prompt 2: first bounded inter-region implementation line
 
+> Maintenance-discoverability note: This is an early IR1 implementation-stage reference. Its initial implemented-relation set and activation wording are historically important but are superseded for current operative status by `docs/blue_brain_ir1_readiness_sweep_inter_region_closure_serie_ir1_prompt4_v1.md`, MD2, MD3 and SC1. It is not current authority for adding relations or regions.
+
 Status: **first inter-region implementation line** over the bounded IR1 architecture map. This document is the implementation companion to `docs/blue_brain_inter_region_architecture_serie_ir1_prompt1_v1.md`; it does not replace that architecture map and does not create a second truth source for relation classes.
 
 IR1 Prompt 2 implements exactly three implemented relations from the original five-region IR1 map. Every other original architecture-map relation remains deferred/not-yet-implemented or blocked for this step. BR6 Prompt 2 appends a bounded Hypothalamus adjunct relation set to the same code anchor without changing the original IR1 base-three decision.

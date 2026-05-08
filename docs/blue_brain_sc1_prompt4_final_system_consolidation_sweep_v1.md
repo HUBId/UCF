@@ -1,5 +1,7 @@
 # Serie SC1 Prompt 4: final Blue-Brain system consolidation sweep and maintenance decision
 
+> Maintenance-discoverability note: This is current operational authority for the SC1 maintenance decision. It should be reached through the README/authority/discoverability maps and read with the shadow-surface inventory for non-canonical crate surfaces.
+
 Status: finaler SC1-System-Consolidation-Sweep für den aktuellen UCF-Blue-Brain-Stand. Diese Datei ist eine knappe Current-Authority-Referenz für Status und Maintenance-Entscheidung; sie erzeugt keine neue Region, keine neue Modellvertiefung, keine Planner-/Agentenlogik, keine Policy-Governance, keine Retry-Orchestrierung, keine globale Modellplattform und keine Compute-Core-Arbeit.
 
 ## 1) Repo-basierter Prüfstand
@@ -86,7 +88,7 @@ Not operational:
 - `execution-interface-mediated` wording remains sensitive: it is an execution-adjacent diagnostic/read interface, not an execution trigger.
 - Amygdala model wording remains descriptive and bounded; Kuramoto-like language is not a general model platform and does not open HH operation.
 - Hypothalamus is the newest region and should receive normal maintenance scrutiny, but no extra expansion task is implied.
-- Deferred/non-canonical paths remain present for traceability; they are not consumer-operational.
+- Deferred/non-canonical paths remain present for traceability; DBM/microcircuit/neuro shadow surfaces are inventoried separately and are not consumer-operational.
 
 ## 5) Guard Rails retained unchanged
 
@@ -111,7 +113,7 @@ For this final sweep, the required consistency criteria are:
 - readiness states remain separated across stable, caveated, advisory-only, diagnostic-only/deferred and non-canonical/internal-only.
 - no-direct-* guards remain visible in docs and tests.
 - Doku does not contradict the region/relation/model surfaces in `runtime/ucf-compute/src/blue_brain_region_first_integration.rs`.
-- Reproducibility and audit references point to SC1 Prompt 2 and the standard docs/readiness reports.
+- Reproducibility and audit references point to SC1 Prompt 2, the audit baseline map, the 2026-05-08 baseline bundle and the standard docs/readiness reports.
 - Current-authority docs stay compact and do not create a second operative truth source.
 
 ## 7) Maintenance decision

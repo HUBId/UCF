@@ -1,5 +1,7 @@
 # Blue-Brain IR1 Prompt 1: bounded inter-region architecture map
 
+> Maintenance-discoverability note: This is a current IR1 architecture input/supporting reference, but later IR1 Prompt 4 plus MD2/MD3/SC1 define the current operative closure. Read this file through `docs/blue_brain_authority_chain_status_map.md`; it is not a standalone platform or expansion authority.
+
 Status: **bounded inter-region architecture line** over the already opened anatomical regions: `hippocampus_like_region`, `amygdala_like_region`, `thalamus_like_region`, `basal_ganglia_like_region`, `cerebellum_like_region`, and the BR6 `hypothalamus_like_region` adjunct line.
 
 This document is the canonical IR1 architecture map for the original five regions plus the BR6 hypothalamus adjunct relation line. It consolidates the existing BR1-BR5 surfaces and the BB2/BB4/BB8/BB12/BB17/BB19/BB21 contract lines without creating a global region orchestration platform, a planner/agent layer, a retry platform, a policy-governance platform, or new compute-core behavior.

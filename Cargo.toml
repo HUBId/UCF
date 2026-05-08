@@ -204,14 +204,4 @@ ucf-archive-store = { path = "domains/archive/crates/ucf-archive-store" }
 ucf-archive-firewood = { path = "domains/archive/crates/ucf-archive-firewood", default-features = false }
 ucf-ai-backends = { path = "domains/ai-backends", default-features = false }
 
-[workspace.features]
-archive-firewood = ["ucf-archive-firewood/archive-firewood"]
-ai-candle = ["ucf-ai-backends/ai-candle"]
-ai-burn = ["ucf-ai-backends/ai-burn"]
-digitalbrain = [
-    "ucf-ai-port/digitalbrain",
-    "ucf-digitalbrain-port/digitalbrain",
-    "ucf-rig/digitalbrain",
-]
-
 [workspace.lints]

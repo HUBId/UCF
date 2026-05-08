@@ -4,8 +4,10 @@ Dieses README ist die **kanonische Einstiegsfläche** für operative Doku-Pfade 
 
 ## 0) Authority chain (historical vs current)
 
-Kanonische Status-Map:
-- `docs/blue_brain_authority_chain_status_map.md`
+Kanonische Status-/Discoverability-Maps:
+- `docs/blue_brain_authority_chain_status_map.md` (single source for authority classification)
+- `docs/blue_brain_maintenance_discoverability_map_v1.md` (maintenance-facing reading order; supporting reference only)
+- `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md` (shadow-surface inventory; supporting reference only)
 
 - **Current operational authority (maßgeblich):**
   - `docs/blue_brain_br6_hypothalamus_readiness_sweep_expansion_boundary_serie_br6_prompt4_v1.md`
@@ -29,17 +31,20 @@ Kanonische Status-Map:
 
 Regel: Bei Konflikten zwischen historischen BB25/BB27/BB29-Aussagen und der post-BR6-Endlage gilt **immer** die BR6/IR1/MD2/MD3/System-Audit-Current-Authority-Linie.
 
-Autoritätsklassen im Repo-Kontext:
+Autoritäts-/Discoverability-Klassen im Repo-Kontext:
 - current operational authority
+- supporting current reference
 - historical snapshot
-- supporting reference
-- non-canonical / outdated pointer
+- stale discoverability pointer
+- non-canonical/internal-only shadow surface
 
 
 ## 1) Canonical operational entrypoints
 
 - **Operational readiness map (BB20 P1):** `docs/blue_brain_bb20_production_readiness_sweep_serie_bb20_prompt1_v1.md`
 - **Terminology/state semantics harmonization (BB20 P2):** `docs/blue_brain_bb20_cross_line_terminology_state_harmonization_serie_bb20_prompt2_v1.md`
+- **Maintenance discoverability map (supporting reference):** `docs/blue_brain_maintenance_discoverability_map_v1.md`
+- **Non-canonical shadow-surface inventory (supporting reference):** `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`
 - **SC1 cross-line terminology/guard checklist consolidation (supporting evidence):** `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`
 - **BB22 cross-line stabilization/cleanup:**
   - `docs/blue_brain_bb22_narrow_cross_line_stabilization_pass_serie_bb22_prompt1_v1.md`
@@ -150,6 +155,9 @@ Referenzpunkte für die technische Scope-Grenze:
 - **Keine siebte operative Region und keine globale Neurodynamikplattform** sind aktiv. MD3 priorisiert genau einen zweiten Modellvertiefungskandidaten (`Amygdala ↔ Basal Ganglia`), MD3 Prompt 2 vertieft ausschließlich diese Relation minimal bounded Kuramoto-like, MD3 Prompt 3 härtet sie, und MD3 Prompt 4 schließt den Stand in Maintenance; weitere Kandidaten bleiben geschlossen.
 - Die BR1-BR6/IR1/MD2/MD3-Linie schließt als kontrollierte, maintenance-gehärtete bounded anatomy/inter-region/model-deepening Basis ohne Plattformausweitung.
 - Canonical system audit map: `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
+- Maintenance discoverability map: `docs/blue_brain_maintenance_discoverability_map_v1.md`
+- Non-canonical shadow-surface inventory: `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`
+- Maintenance consolidation closeout note: `docs/blue_brain_maintenance_consolidation_pass_v1.md`
 - Final SC1 consolidation and maintenance decision: `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md`
 - Canonical Hypothalamus closure: `docs/blue_brain_br6_hypothalamus_readiness_sweep_expansion_boundary_serie_br6_prompt4_v1.md`
 - Canonical inter-region closure: `docs/blue_brain_ir1_readiness_sweep_inter_region_closure_serie_ir1_prompt4_v1.md`
@@ -162,13 +170,16 @@ Referenzpunkte für die technische Scope-Grenze:
 
 ## 2.2) Audit-Baseline (Blue-Brain / aktuelle post-BR6 Konsolidierungsevidenz) — 2026-05-08
 
-SC1 Prompt 2 hat die höchste priorisierte SC1-Konsolidierungsmaßnahme umgesetzt: ein frischer Repro-/Test-Baseline-Refresh für die aktuelle post-BR6-Linie mit sechs integrierten anatomischen Regionen, IR1 und MD2. Die kanonische Action-Evidence-Line ist:
+SC1 Prompt 2 hat die höchste priorisierte SC1-Konsolidierungsmaßnahme umgesetzt: ein frischer Repro-/Test-Baseline-Refresh für die aktuelle post-BR6/IR1/MD2/MD3/SC1-Linie mit sechs integrierten anatomischen Regionen, bounded inter-region semantics und zwei exakt abgeschlossenen Modellvertiefungen. Die kanonische Action-Evidence-Line ist:
 
 - `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md`
 
 Die aktuellen versionierten Reports liegen unter:
 
+- `out/blue_brain_audit_baseline_2026-05-08/cargo_test_workspace.log`
+- `out/blue_brain_audit_baseline_2026-05-08/docs_lint.log`
 - `out/blue_brain_audit_baseline_2026-05-08/docs_lint_report.json`
+- `out/blue_brain_audit_baseline_2026-05-08/readiness_gate.log`
 - `out/blue_brain_audit_baseline_2026-05-08/gate_report.json`
 
 Ausgeführt wurden:
@@ -188,6 +199,7 @@ Die älteren Baselines `out/blue_brain_audit_baseline_2026-05-02/` und `out/blue
 - Keine implizite Scope-Erweiterung außerhalb der unterstützten Scope-Artefakte.
 - `no-direct-*` Grenzen (kein direkter Action/Compute/Retry/Policy/Memory-Commit Pfad aus advisory-only Linien).
 - Non-canonical/internal-only Pfade haben **keine** direkte operative Autorität.
+- Zusätzliche DBM-/Microcircuit-/Biophys-/Neuro-/Adjacent-Domain-Crates sind gemäß `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md` Shadow-Surfaces, nicht implizite Regionen oder Plattformen.
 
 Primäre Guard-/Boundary-Dokumente:
 - `docs/blue_brain_execution_guard_rails_production_facing_serie_bb18_prompt3_v1.md`
