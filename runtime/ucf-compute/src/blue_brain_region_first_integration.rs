@@ -67,6 +67,26 @@ pub const CANONICAL_BLUE_BRAIN_SC1_SECOND_CONSOLIDATION_ACTION_MAP:
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMaintenanceFindingClass {
+    RealBug,
+    SemanticInconsistency,
+    GuardWeakness,
+    DocTestDrift,
+    NonCanonicalResidualPath,
+    NoChangeNeeded,
+}
+
+pub const CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP: [BlueBrainMaintenanceFindingClass;
+    6] = [
+    BlueBrainMaintenanceFindingClass::RealBug,
+    BlueBrainMaintenanceFindingClass::SemanticInconsistency,
+    BlueBrainMaintenanceFindingClass::GuardWeakness,
+    BlueBrainMaintenanceFindingClass::DocTestDrift,
+    BlueBrainMaintenanceFindingClass::NonCanonicalResidualPath,
+    BlueBrainMaintenanceFindingClass::NoChangeNeeded,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainCrossLineSemanticTerm {
     AdvisoryOnly,
     Caveated,
@@ -1538,7 +1558,7 @@ const fn blue_brain_md1_region_deepening_decision_const(
 }
 
 pub const CANONICAL_BLUE_BRAIN_MD1_REGION_DEEPENING_DECISION_MAP:
-    [BlueBrainMd1RegionDeepeningDecision; 5] = [
+    [BlueBrainMd1RegionDeepeningDecision; 6] = [
     blue_brain_md1_region_deepening_decision_const(
         BlueBrainAnatomicalRegionClass::Hippocampus,
         BlueBrainAnatomicalRegionSystemRoleClass::AttentionSelectionMediation,
@@ -1583,6 +1603,15 @@ pub const CANONICAL_BLUE_BRAIN_MD1_REGION_DEEPENING_DECISION_MAP:
         BlueBrainMd1DeepeningPriorityClass::CandidateButWait,
         false,
         true,
+    ),
+    blue_brain_md1_region_deepening_decision_const(
+        BlueBrainAnatomicalRegionClass::Hypothalamus,
+        BlueBrainAnatomicalRegionSystemRoleClass::DriveHomeostasisUrgencyMediation,
+        BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode,
+        BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow,
+        BlueBrainMd1DeepeningPriorityClass::KeepAbstractOrDeferred,
+        false,
+        false,
     ),
 ];
 
@@ -2565,6 +2594,21 @@ pub const CANONICAL_BLUE_BRAIN_ANATOMICAL_REGION_MAP: [BlueBrainAnatomicalRegion
     BlueBrainAnatomicalRegionClass::Hypothalamus,
     BlueBrainAnatomicalRegionClass::Insula,
 ];
+
+pub const CURRENT_BOUNDED_BLUE_BRAIN_ANATOMICAL_REGION_MAP: [BlueBrainAnatomicalRegionClass; 6] = [
+    BlueBrainAnatomicalRegionClass::Hippocampus,
+    BlueBrainAnatomicalRegionClass::Amygdala,
+    BlueBrainAnatomicalRegionClass::Thalamus,
+    BlueBrainAnatomicalRegionClass::BasalGanglia,
+    BlueBrainAnatomicalRegionClass::Cerebellum,
+    BlueBrainAnatomicalRegionClass::Hypothalamus,
+];
+
+pub fn is_current_bounded_blue_brain_anatomical_region(
+    region: BlueBrainAnatomicalRegionClass,
+) -> bool {
+    CURRENT_BOUNDED_BLUE_BRAIN_ANATOMICAL_REGION_MAP.contains(&region)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainAnatomicalRegionSystemRoleClass {
@@ -10553,7 +10597,7 @@ mod tests {
 
         assert_eq!(
             CANONICAL_BLUE_BRAIN_MD1_REGION_DEEPENING_DECISION_MAP.len(),
-            5
+            6
         );
         assert_eq!(
             blue_brain_md1_region_deepening_decision(BlueBrainAnatomicalRegionClass::Hippocampus)
@@ -10579,6 +10623,11 @@ mod tests {
             blue_brain_md1_region_deepening_decision(BlueBrainAnatomicalRegionClass::Cerebellum)
                 .deepening_class,
             BlueBrainMd1ModelDeepeningClass::HodgkinHuxleySimulationOnlyDiagnosticOnlyCandidate
+        );
+        assert_eq!(
+            blue_brain_md1_region_deepening_decision(BlueBrainAnatomicalRegionClass::Hypothalamus)
+                .deepening_class,
+            BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow
         );
         assert_eq!(
             blue_brain_md1_region_deepening_decision(
@@ -11073,6 +11122,103 @@ mod tests {
                 assert!(!kuramoto_result.boundary_guard.safety_override_allowed);
             }
         }
+    }
+
+    #[test]
+    fn maintenance_pass_pins_six_region_scope_and_finding_classes() {
+        assert_eq!(CURRENT_BOUNDED_BLUE_BRAIN_ANATOMICAL_REGION_MAP.len(), 6);
+        for region in [
+            BlueBrainAnatomicalRegionClass::Hippocampus,
+            BlueBrainAnatomicalRegionClass::Amygdala,
+            BlueBrainAnatomicalRegionClass::Thalamus,
+            BlueBrainAnatomicalRegionClass::BasalGanglia,
+            BlueBrainAnatomicalRegionClass::Cerebellum,
+            BlueBrainAnatomicalRegionClass::Hypothalamus,
+        ] {
+            assert!(is_current_bounded_blue_brain_anatomical_region(region));
+        }
+        for non_canonical_residual in [
+            BlueBrainAnatomicalRegionClass::PrefrontalCortex,
+            BlueBrainAnatomicalRegionClass::AnteriorCingulateCortex,
+            BlueBrainAnatomicalRegionClass::Insula,
+        ] {
+            assert!(!is_current_bounded_blue_brain_anatomical_region(
+                non_canonical_residual
+            ));
+        }
+
+        assert_eq!(CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP.len(), 6);
+        for finding_class in [
+            BlueBrainMaintenanceFindingClass::RealBug,
+            BlueBrainMaintenanceFindingClass::SemanticInconsistency,
+            BlueBrainMaintenanceFindingClass::GuardWeakness,
+            BlueBrainMaintenanceFindingClass::DocTestDrift,
+            BlueBrainMaintenanceFindingClass::NonCanonicalResidualPath,
+            BlueBrainMaintenanceFindingClass::NoChangeNeeded,
+        ] {
+            assert!(CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP.contains(&finding_class));
+        }
+    }
+
+    #[test]
+    fn md1_region_deepening_map_keeps_hypothalamus_canonical_but_not_deepened() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_MD1_REGION_DEEPENING_DECISION_MAP.len(),
+            6
+        );
+        let hypothalamus =
+            blue_brain_md1_region_deepening_decision(BlueBrainAnatomicalRegionClass::Hypothalamus);
+        assert_eq!(
+            hypothalamus.system_role,
+            BlueBrainAnatomicalRegionSystemRoleClass::DriveHomeostasisUrgencyMediation
+        );
+        assert_eq!(
+            hypothalamus.current_model_mode,
+            BlueBrainFirstAnatomicalRegionModelModeClass::AbstractFunctionalCurrentMode
+        );
+        assert_eq!(
+            hypothalamus.deepening_class,
+            BlueBrainMd1ModelDeepeningClass::NoDeepeningNeededNow
+        );
+        assert_eq!(
+            hypothalamus.priority_class,
+            BlueBrainMd1DeepeningPriorityClass::KeepAbstractOrDeferred
+        );
+        assert!(hypothalamus.advisory_only);
+        assert!(!hypothalamus.coupling_synchrony_gating_timing_leverage);
+        assert!(!hypothalamus.excitability_spiking_membrane_leverage);
+        assert!(!hypothalamus.direct_action_trigger);
+        assert!(!hypothalamus.direct_execution_trigger);
+        assert!(!hypothalamus.direct_retry_trigger);
+        assert!(!hypothalamus.direct_memory_commit);
+        assert!(!hypothalamus.direct_compute_invocation);
+        assert!(!hypothalamus.global_model_platform);
+
+        let first_deepening_candidates = CANONICAL_BLUE_BRAIN_MD1_REGION_DEEPENING_DECISION_MAP
+            .iter()
+            .filter(|decision| {
+                decision.deepening_class
+                    == BlueBrainMd1ModelDeepeningClass::BoundedKuramotoLikeCandidate
+                    && decision.priority_class
+                        == BlueBrainMd1DeepeningPriorityClass::CandidateButWait
+            })
+            .count();
+        assert_eq!(first_deepening_candidates, 1);
+
+        let maintenance_map = include_str!(
+            "../../../docs/blue_brain_maintenance_findings_map_serie_maint_prompt1_v1.md"
+        );
+        assert!(maintenance_map.contains("hypothalamus_like_region"));
+        assert!(maintenance_map.contains("CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP"));
+        assert!(maintenance_map.contains("real_bug"));
+        assert!(maintenance_map.contains("semantic_inconsistency"));
+        assert!(maintenance_map.contains("guard_weakness"));
+        assert!(maintenance_map.contains("doc_test_drift"));
+        assert!(maintenance_map.contains("non_canonical_residual_path"));
+        assert!(maintenance_map.contains("no_change_needed"));
+        assert!(maintenance_map.contains("NoDeepeningNeededNow"));
+        assert!(maintenance_map.contains("No new anatomical region"));
+        assert!(maintenance_map.contains("No implicit second model-deepening candidate"));
     }
 
     #[test]
