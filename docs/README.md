@@ -142,22 +142,28 @@ Referenzpunkte für die technische Scope-Grenze:
 - Canonical model-deepening maintenance map: `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`
 
 
-## 2.2) Audit-Baseline (Blue-Brain / historische Drei-Regionen-Baseline, BB29) — 2026-05-04
+## 2.2) Audit-Baseline (Blue-Brain / aktuelle post-BR6 Konsolidierungsevidenz) — 2026-05-08
 
-Für einen reproduzierbaren Audit-Baseline-Pass wurden die kanonischen AGENTS-Checks frisch ausgeführt; die Reports liegen unter:
+SC1 Prompt 2 hat die höchste priorisierte SC1-Konsolidierungsmaßnahme umgesetzt: ein frischer Repro-/Test-Baseline-Refresh für die aktuelle post-BR6-Linie mit sechs integrierten anatomischen Regionen, IR1 und MD2. Die kanonische Action-Evidence-Line ist:
 
-- `out/blue_brain_audit_baseline_2026-05-04/docs_lint_report.json`
-- `out/blue_brain_audit_baseline_2026-05-04/gate_report.json`
+- `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md`
+
+Die aktuellen versionierten Reports liegen unter:
+
+- `out/blue_brain_audit_baseline_2026-05-08/docs_lint_report.json`
+- `out/blue_brain_audit_baseline_2026-05-08/gate_report.json`
 
 Ausgeführt wurden:
 
 - `cargo test --workspace`
-- `cargo run -p ucf-ops -- docs lint --strict --out ./out/blue_brain_audit_baseline_2026-05-04/docs_lint_report.json`
-- `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/blue_brain_audit_baseline_2026-05-04/gate_report.json`
+- `cargo run -p ucf-ops -- docs lint --strict --out ./out/blue_brain_audit_baseline_2026-05-08/docs_lint_report.json`
+- `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/blue_brain_audit_baseline_2026-05-08/gate_report.json`
+- `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
+- `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json`
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
 
-Diese Baseline bleibt reproduzierbare historische Evidenz für den BB29-Stand. Für aktuelle operative Regionen-/Relationsaussagen gilt die post-BR6 Authority-Linie aus Abschnitt 0/2.1.
+Die älteren Baselines `out/blue_brain_audit_baseline_2026-05-02/` und `out/blue_brain_audit_baseline_2026-05-04/` bleiben historische Vergleichs- und Auditspuren. Für aktuelle operative Regionen-/Relations-/Modellaussagen gilt weiterhin ausschließlich die post-BR6 Authority-Linie aus Abschnitt 0/2.1; die 2026-05-08-Baseline ist Evidenz, keine neue operative Wahrheit.
 
 ## 3) Guard rails and boundaries (must stay visible)
 

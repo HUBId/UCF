@@ -1,0 +1,5 @@
+warning: /workspace/UCF/Cargo.toml: unused manifest key: workspace.features
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.26s
+     Running `target/debug/ucf-ops readiness-gate --profile test --out ./out/blue_brain_audit_baseline_2026-05-08/gate_report.json`
+status=Pass
+out=./out/blue_brain_audit_baseline_2026-05-08/gate_report.json
