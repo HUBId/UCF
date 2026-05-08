@@ -119,6 +119,7 @@ Autoritätsklassen im Repo-Kontext:
 - **Final model-deepening maintenance reference map (MD2 Prompt 2/3, canonical entry):** `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`
 - **Second model-deepening re-scope line (MD3 Prompt 1):** `docs/blue_brain_md3_second_deepening_rescope_line_v1.md`
 - **Second model-deepening implementation line (MD3 Prompt 2):** `docs/blue_brain_md3_second_model_deepening_implementation_line_v1.md`
+- **Second model-deepening hardening line (MD3 Prompt 3):** `docs/blue_brain_md3_second_model_deepening_hardening_line_v1.md`
 - **Real compute final reference line:**
   - `docs/final_reference_line_serie_j_v1.md`
   - `docs/final_production_readiness_evidence_pack_serie_j_v1.md`
@@ -130,7 +131,7 @@ Autoritätsklassen im Repo-Kontext:
 - **advisory-only / bounded:** BB10/BB11/BB16 bleiben advisory-only.
 - **usable-with-caveats (frozen semantics):** BB6/BB7/BB9/BB15 candidate/caveat slices ohne Promotion.
 - **deferred / test-only / non-canonical:** nicht Teil der operativen Baseline, keine implizite Reaktivierung.
-- **model-deepening maintenance-facing:** genau `Amygdala ↔ Thalamus` bleibt als erste bounded Kuramoto-like advisory/diagnostic Fläche maintenance-hardened; `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md` ist der kanonische Schnellzugriff für finale Stabilitätskarte, Doku/Test/Referenz. Die MD2-code-seitige Entscheidung `MaintenanceSufficientNoSecondCandidateNow` bleibt als abgeschlossene MD2-Stabilisierungshistorie sichtbar; MD3 Prompt 1 ergänzt als Re-Scope-Entscheidung genau einen priorisierten zweiten Kandidaten (`Amygdala ↔ Basal Ganglia`); MD3 Prompt 2 implementiert genau diesen Kandidaten minimal als bounded Kuramoto-like advisory/diagnostic second model-deepening line, ohne neue Action-/Execution-/Retry-/Memory-/Compute-/Safety-Autorität.
+- **model-deepening maintenance-facing:** genau `Amygdala ↔ Thalamus` bleibt als erste bounded Kuramoto-like advisory/diagnostic Fläche maintenance-hardened; `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md` ist der kanonische Schnellzugriff für finale Stabilitätskarte, Doku/Test/Referenz. Die MD2-code-seitige Entscheidung `MaintenanceSufficientNoSecondCandidateNow` bleibt als abgeschlossene MD2-Stabilisierungshistorie sichtbar; MD3 Prompt 1 ergänzt als Re-Scope-Entscheidung genau einen priorisierten zweiten Kandidaten (`Amygdala ↔ Basal Ganglia`); MD3 Prompt 2 implementiert genau diesen Kandidaten minimal als bounded Kuramoto-like advisory/diagnostic second model-deepening line; MD3 Prompt 3 härtet diese zweite Vertiefung über `CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_HARDENING_MAP`, trennt Modell-/Diagnostics-/Contract-Zustände und hält Action-/Execution-/Retry-/Memory-/Compute-/Safety-Autorität weiter geschlossen.
 
 Referenzpunkte für die technische Scope-Grenze:
 - `docs/supported_scope_execution_v13.md`
