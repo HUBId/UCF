@@ -2,7 +2,7 @@
 
 Stand: 2026-05-08 (UTC).
 
-Ziel dieser Referenz ist eine **kanonische, reproduzierbare Audit-Baseline** für den aktuellen Blue-Brain-Stand nach BR6, IR1, MD2, MD3 und SC1, ohne neue Feature-Arbeit.
+Ziel dieser Referenz ist eine **kanonische, reproduzierbare Audit-Baseline** für den aktuellen Blue-Brain-Stand nach BR6, IR1, MD2, MD3 und SC1, ohne neue Feature-Arbeit. Maßgeblicher HEAD für diesen Refresh ist `913f6ea50e47dcb4d980441d5fbd18d17e859f0b`.
 
 ## Authority scope of this baseline
 
@@ -12,7 +12,7 @@ Diese Baseline belegt die aktuelle maintenance-facing Evidenzlage für:
 - IR1 bounded inter-region semantics as read/diagnostic/advisory/reference classes only;
 - MD2 exactly one maintenance-hardened first model-deepening pair (`Amygdala ↔ Thalamus`);
 - MD3 exactly one bounded second model-deepening pair (`Amygdala ↔ Basal Ganglia`);
-- SC1 maintenance-ready-with-caveats closure.
+- SC1 maintenance-ready closure, jetzt als clean reproducible baseline belegt.
 
 Sie belegt **keine** neue Region, keine weitere Modellvertiefung, keine inter-region platform, keine globale Modell-/Neurodynamikplattform, keine Planner-/Agenten-/Policy-/Retry-Logik und keine Compute-Core-Erweiterung.
 
@@ -20,11 +20,11 @@ Sie belegt **keine** neue Region, keine weitere Modellvertiefung, keine inter-re
 
 - **clean reproducible baseline**
   - Kanonische Checks laufen frisch durch.
-  - Reports liegen unter `out/blue_brain_audit_baseline_2026-05-08/`.
+  - Reports liegen unter `out/blue_brain_audit_baseline_2026-05-08/` und referenzieren HEAD `913f6ea50e47dcb4d980441d5fbd18d17e859f0b`.
   - Root-Reports liegen zusätzlich unter `out/docs_lint_report.json` und `out/gate_report.json`.
 
 - **accepted tracked audit artifact**
-  - Versionierte Audit-Referenzen in `docs/` (diese Datei und SC1 Prompt 2).
+  - Versionierte Audit-Referenzen in `docs/` (diese Datei, SC1 Prompt 2 und die finale Evidence-Abschlussnotiz).
   - Versionierte Baseline-Reports unter `out/blue_brain_audit_baseline_2026-05-08/`.
 
 - **historical baseline trace**
@@ -61,18 +61,25 @@ Zusätzliche Repo-/PR-Hygiene für diesen Pass:
 
 Alle aktuellen Audit-Baseline-Ergebnisse liegen gebündelt unter:
 
+- `out/blue_brain_audit_baseline_2026-05-08/head_status.log`
 - `out/blue_brain_audit_baseline_2026-05-08/cargo_test_workspace.log`
 - `out/blue_brain_audit_baseline_2026-05-08/docs_lint.log`
 - `out/blue_brain_audit_baseline_2026-05-08/docs_lint_report.json`
+- `out/blue_brain_audit_baseline_2026-05-08/docs_lint_root.log`
 - `out/blue_brain_audit_baseline_2026-05-08/readiness_gate.log`
+- `out/blue_brain_audit_baseline_2026-05-08/readiness_gate_root.log`
 - `out/blue_brain_audit_baseline_2026-05-08/gate_report.json`
+- `out/blue_brain_audit_baseline_2026-05-08/cargo_fmt_check.log`
+- `out/blue_brain_audit_baseline_2026-05-08/cargo_clippy_workspace.log`
 - `out/docs_lint_report.json`
 - `out/gate_report.json`
 
+Die beiden aktuellen Gate-Reports (`out/gate_report.json` und `out/blue_brain_audit_baseline_2026-05-08/gate_report.json`) tragen `code_version_tag = 913f6ea50e47dcb4d980441d5fbd18d17e859f0b`.
+
 ## Historical baseline treatment
 
-- `out/blue_brain_audit_baseline_2026-05-02/` bleibt eine historische BB29/pre-BR6 Vergleichsspur.
-- `out/blue_brain_audit_baseline_2026-05-04/` bleibt eine historische Übergangsspur.
+- `out/blue_brain_audit_baseline_2026-05-02/` bleibt eine historische BB29/pre-BR6 Vergleichsspur; die dortige `workspace.features`-Cargo-Warnung ist historisch.
+- `out/blue_brain_audit_baseline_2026-05-04/` bleibt eine historische Übergangsspur mit älterem `code_version_tag`.
 - Historische Baselines dürfen nicht als aktuelle operative Regions-/Relations-/Modelllage gelesen werden.
 - Bei Widerspruch zwischen historischen Baselines und der Authority Map gilt `docs/blue_brain_authority_chain_status_map.md`.
 
@@ -83,6 +90,10 @@ Diese Baseline erlaubt Aussagen zu:
 - reproduzierbarer Ausführbarkeit der kanonischen Repo-Checks im aktuellen maintenance-facing Blue-Brain-Stand,
 - konsistenter Ablage der verwendeten Audit-Reports,
 - sauberer Trennung von aktuellen Reports, historischen Baselines und non-canonical leftover artifacts,
-- beseitigter Cargo-Maintenance-Noise bezüglich des früheren unsupported `workspace.features` Root-Manifesteintrags.
+- beseitigter Cargo-Maintenance-Noise bezüglich des früheren unsupported `workspace.features` Root-Manifesteintrags; im frischen 2026-05-08-Lauf tritt die Warnung nicht mehr auf.
 
 Sie macht **keine** zusätzliche Aussage über nicht ausgeführte Matrix-/Umgebungsvarianten und erzeugt keine operative Autorität neben der Authority Chain.
+
+## Abschlussnotiz
+
+Die finale Evidence-/Baseline-Abschlussnotiz liegt unter `docs/blue_brain_final_evidence_baseline_refresh_2026_05_08.md` und bestätigt den Status **clean reproducible baseline** auf HEAD `913f6ea50e47dcb4d980441d5fbd18d17e859f0b`.

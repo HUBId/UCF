@@ -1,0 +1,4 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.36s
+     Running `target/debug/ucf-ops readiness-gate --profile test --out ./out/gate_report.json`
+status=Pass
+out=./out/gate_report.json

@@ -173,14 +173,20 @@ Referenzpunkte für die technische Scope-Grenze:
 SC1 Prompt 2 hat die höchste priorisierte SC1-Konsolidierungsmaßnahme umgesetzt: ein frischer Repro-/Test-Baseline-Refresh für die aktuelle post-BR6/IR1/MD2/MD3/SC1-Linie mit sechs integrierten anatomischen Regionen, bounded inter-region semantics und zwei exakt abgeschlossenen Modellvertiefungen. Die kanonische Action-Evidence-Line ist:
 
 - `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md`
+- `docs/blue_brain_final_evidence_baseline_refresh_2026_05_08.md`
 
-Die aktuellen versionierten Reports liegen unter:
+Der maßgebliche finale Baseline-Lauf referenziert HEAD `913f6ea50e47dcb4d980441d5fbd18d17e859f0b` und ist als **clean reproducible baseline** eingestuft. Die aktuellen versionierten Reports liegen unter:
 
+- `out/blue_brain_audit_baseline_2026-05-08/head_status.log`
 - `out/blue_brain_audit_baseline_2026-05-08/cargo_test_workspace.log`
 - `out/blue_brain_audit_baseline_2026-05-08/docs_lint.log`
 - `out/blue_brain_audit_baseline_2026-05-08/docs_lint_report.json`
+- `out/blue_brain_audit_baseline_2026-05-08/docs_lint_root.log`
 - `out/blue_brain_audit_baseline_2026-05-08/readiness_gate.log`
+- `out/blue_brain_audit_baseline_2026-05-08/readiness_gate_root.log`
 - `out/blue_brain_audit_baseline_2026-05-08/gate_report.json`
+- `out/blue_brain_audit_baseline_2026-05-08/cargo_fmt_check.log`
+- `out/blue_brain_audit_baseline_2026-05-08/cargo_clippy_workspace.log`
 
 Ausgeführt wurden:
 
@@ -191,6 +197,8 @@ Ausgeführt wurden:
 - `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json`
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
+
+Die aktuelle Root-Evidence liegt zusätzlich unter `out/docs_lint_report.json` und `out/gate_report.json`; beide aktuellen Gate-Reports tragen `code_version_tag = 913f6ea50e47dcb4d980441d5fbd18d17e859f0b`. Die frühere `workspace.features`-Cargo-Warnung tritt im frischen Lauf nicht mehr auf und bleibt nur in historischen 2026-05-02-Logs sichtbar.
 
 Die älteren Baselines `out/blue_brain_audit_baseline_2026-05-02/` und `out/blue_brain_audit_baseline_2026-05-04/` bleiben historische Vergleichs- und Auditspuren. Für aktuelle operative Regionen-/Relations-/Modellaussagen gilt weiterhin ausschließlich die post-BR6 Authority-Linie aus Abschnitt 0/2.1; die 2026-05-08-Baseline ist Evidenz, keine neue operative Wahrheit.
 

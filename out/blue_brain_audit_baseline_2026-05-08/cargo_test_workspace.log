@@ -1,17 +1,17 @@
    Compiling libc v0.2.178
    Compiling cfg-if v1.0.4
    Compiling proc-macro2 v1.0.103
-   Compiling unicode-ident v1.0.22
    Compiling quote v1.0.42
+   Compiling unicode-ident v1.0.22
    Compiling jobserver v0.1.34
-   Compiling find-msvc-tools v0.1.5
    Compiling syn v2.0.111
+   Compiling find-msvc-tools v0.1.5
    Compiling shlex v1.3.0
    Compiling cc v1.2.49
    Compiling blake3 v1.8.2
+   Compiling arrayref v0.3.9
    Compiling arrayvec v0.7.6
    Compiling constant_time_eq v0.3.1
-   Compiling arrayref v0.3.9
    Compiling serde_core v1.0.225
    Compiling serde v1.0.225
    Compiling serde_derive v1.0.225
@@ -19,21 +19,21 @@
    Compiling either v1.15.0
    Compiling itertools v0.12.1
    Compiling bytes v1.11.0
-   Compiling prost-derive v0.12.6
    Compiling version_check v0.9.5
+   Compiling prost-derive v0.12.6
    Compiling typenum v1.19.0
    Compiling generic-array v0.14.7
    Compiling prost v0.12.6
    Compiling ucf-protocol v0.1.0 (/workspace/UCF/protocol/crates/ucf-protocol)
-   Compiling block-buffer v0.10.4
    Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
    Compiling digest v0.10.7
    Compiling cpufeatures v0.2.17
    Compiling sha2 v0.10.9
    Compiling biophys_core v0.1.0 (/workspace/UCF/crates/biophys_core)
    Compiling ucf-core v0.1.0 (/workspace/UCF/core/ucf-core)
-   Compiling ucf-types v0.1.0 (/workspace/UCF/core/crates/ucf-types)
    Compiling ucf-frames v0.1.0 (/workspace/UCF/domains/ucf-frames)
+   Compiling ucf-types v0.1.0 (/workspace/UCF/core/crates/ucf-types)
    Compiling ucf-brainbus v0.1.0 (/workspace/UCF/domains/ucf-brainbus)
    Compiling ucf-crypto v0.1.0 (/workspace/UCF/core/crates/ucf-crypto)
    Compiling thiserror v1.0.69
@@ -50,10 +50,10 @@
    Compiling ucf-coupling v0.1.0 (/workspace/UCF/core/crates/ucf-coupling)
    Compiling zerocopy v0.8.33
    Compiling zerocopy-derive v0.8.33
-   Compiling ryu v1.0.20
    Compiling itoa v1.0.15
-   Compiling ucf-ncde v0.1.0 (/workspace/UCF/core/crates/ucf-ncde)
+   Compiling ryu v1.0.20
    Compiling ucf-ssm v0.1.0 (/workspace/UCF/core/crates/ucf-ssm)
+   Compiling ucf-ncde v0.1.0 (/workspace/UCF/core/crates/ucf-ncde)
    Compiling memchr v2.7.6
    Compiling ucf-structural-store v0.1.0 (/workspace/UCF/core/crates/ucf-structural-store)
    Compiling ahash v0.8.12
@@ -76,22 +76,22 @@
    Compiling ucf-attn-controller v0.1.0 (/workspace/UCF/core/crates/ucf-attn-controller)
    Compiling ucf-nsr-port v0.1.0 (/workspace/UCF/core/crates/ucf-nsr-port)
    Compiling ucf-archive v0.1.0 (/workspace/UCF/domains/archive/crates/ucf-archive)
-   Compiling ucf-openevolve-port v0.1.0 (/workspace/UCF/core/crates/ucf-openevolve-port)
    Compiling ucf-params-registry v0.1.0 (/workspace/UCF/core/crates/ucf-params-registry)
+   Compiling ucf-openevolve-port v0.1.0 (/workspace/UCF/core/crates/ucf-openevolve-port)
    Compiling toml_datetime v0.6.11
    Compiling serde_spanned v0.6.9
-   Compiling toml_write v0.1.2
    Compiling winnow v0.7.14
+   Compiling toml_write v0.1.2
    Compiling ucf-rsa v0.1.0 (/workspace/UCF/core/crates/ucf-rsa)
    Compiling ucf-recursion-controller v0.1.0 (/workspace/UCF/core/crates/ucf-recursion-controller)
    Compiling ucf-ism v0.1.0 (/workspace/UCF/core/crates/ucf-ism)
-   Compiling hex v0.4.3
    Compiling toml_edit v0.22.27
+   Compiling hex v0.4.3
    Compiling autocfg v1.5.0
    Compiling num-traits v0.2.19
    Compiling ucf-sleep-coordinator v0.1.0 (/workspace/UCF/core/crates/ucf-sleep-coordinator)
-   Compiling ucf-cde-port v0.1.0 (/workspace/UCF/core/crates/ucf-cde-port)
    Compiling toml v0.8.23
+   Compiling ucf-cde-port v0.1.0 (/workspace/UCF/core/crates/ucf-cde-port)
    Compiling ucf-scm-port v0.1.0 (/workspace/UCF/core/crates/ucf-scm-port)
    Compiling ucf-geist v0.1.0 (/workspace/UCF/domains/geist/crates/ucf-geist)
    Compiling ucf-tom-port v0.1.0 (/workspace/UCF/core/crates/ucf-tom-port)
@@ -114,8 +114,8 @@
    Compiling rmp-serde v1.3.0
    Compiling safetensors v0.4.5
    Compiling half v2.7.1
-   Compiling tempfile v3.23.0
    Compiling ucf-compute v0.1.0 (/workspace/UCF/runtime/ucf-compute)
+   Compiling tempfile v3.23.0
    Compiling biophys_plasticity_l4 v0.1.0 (/workspace/UCF/crates/biophys_plasticity_l4)
    Compiling biophys_synapses_l4 v0.1.0 (/workspace/UCF/crates/biophys_synapses_l4)
    Compiling ucf-ess v0.1.0 (/workspace/UCF/domains/ucf-ess)
@@ -127,11 +127,11 @@
    Compiling ucf-policy v0.1.0 (/workspace/UCF/runtime/ucf-policy)
    Compiling ucf-neuromod v0.1.0 (/workspace/UCF/domains/ucf-neuromod)
    Compiling ucf-snn v0.1.0 (/workspace/UCF/domains/ucf-snn)
-   Compiling ucf-biophys v0.1.0 (/workspace/UCF/domains/ucf-biophys)
    Compiling ucf-fep v0.1.0 (/workspace/UCF/domains/ucf-fep)
+   Compiling ucf-biophys v0.1.0 (/workspace/UCF/domains/ucf-biophys)
    Compiling ucf-iit-proxy v0.1.0 (/workspace/UCF/domains/ucf-iit)
-   Compiling ucf-spikes v0.1.0 (/workspace/UCF/core/ucf-spikes)
    Compiling ucf-dbm v0.1.0 (/workspace/UCF/domains/ucf-dbm)
+   Compiling ucf-spikes v0.1.0 (/workspace/UCF/core/ucf-spikes)
    Compiling ppv-lite86 v0.2.21
    Compiling regex-syntax v0.8.8
    Compiling ucf-runtime v0.1.0 (/workspace/UCF/runtime/ucf-runtime)
@@ -140,8 +140,8 @@
    Compiling biophys_injection v0.1.0 (/workspace/UCF/crates/biophys_injection)
    Compiling thiserror v2.0.12
    Compiling thiserror-impl v2.0.12
-   Compiling crc32fast v1.5.0
    Compiling semver v1.0.27
+   Compiling crc32fast v1.5.0
    Compiling rustc_version v0.4.1
    Compiling getrandom v0.2.17
    Compiling simd-adler32 v0.3.8
@@ -151,13 +151,13 @@
    Compiling miniz_oxide v0.8.9
    Compiling aho-corasick v1.1.4
    Compiling curve25519-dalek-derive v0.1.1
-   Compiling subtle v2.6.1
    Compiling zip v2.4.2
-   Compiling signature v2.2.0
    Compiling bumpalo v3.19.1
+   Compiling signature v2.2.0
+   Compiling subtle v2.6.1
    Compiling zeroize v1.8.2
-   Compiling zopfli v0.8.3
    Compiling ed25519 v2.2.3
+   Compiling zopfli v0.8.3
    Compiling regex-automata v0.4.14
    Compiling flate2 v1.1.9
    Compiling rand_chacha v0.3.1
@@ -168,8 +168,8 @@
    Compiling regex v1.12.3
    Compiling rand v0.8.5
    Compiling ed25519-dalek v2.2.0
-   Compiling microcircuit_pmrf_stub v0.1.0 (/workspace/UCF/crates/microcircuit_pmrf_stub)
    Compiling ucf-ops v0.1.0 (/workspace/UCF/runtime/ucf-ops)
+   Compiling microcircuit_pmrf_stub v0.1.0 (/workspace/UCF/crates/microcircuit_pmrf_stub)
    Compiling pkg-config v0.3.32
    Compiling zstd-sys v2.0.16+zstd.1.5.7
    Compiling microcircuit_sn_stub v0.1.0 (/workspace/UCF/crates/microcircuit_sn_stub)
@@ -185,8 +185,8 @@
    Compiling microcircuit_sc_stub v0.1.0 (/workspace/UCF/crates/microcircuit_sc_stub)
    Compiling microcircuit_stn_stub v0.1.0 (/workspace/UCF/crates/microcircuit_stn_stub)
    Compiling biophys_assets v0.1.0 (/workspace/UCF/crates/biophys_assets)
-   Compiling microcircuit_dopamin_stub v0.1.0 (/workspace/UCF/crates/microcircuit_dopamin_stub)
    Compiling microcircuit_serotonin_stub v0.1.0 (/workspace/UCF/crates/microcircuit_serotonin_stub)
+   Compiling microcircuit_dopamin_stub v0.1.0 (/workspace/UCF/crates/microcircuit_dopamin_stub)
    Compiling microcircuit_cerebellum_stub v0.1.0 (/workspace/UCF/crates/microcircuit_cerebellum_stub)
    Compiling biophys_solver v0.1.0 (/workspace/UCF/crates/biophys_solver)
    Compiling memristor_backend v0.1.0 (/workspace/UCF/crates/memristor_backend)
@@ -209,8 +209,8 @@
    Compiling dbm_pprf v0.1.0 (/workspace/UCF/crates/dbm_pprf)
    Compiling dbm_hpa v0.1.0 (/workspace/UCF/crates/dbm_hpa)
    Compiling dbm_18_cerebellum v0.1.0 (/workspace/UCF/crates/dbm_18_cerebellum)
-   Compiling dbm_8_serotonin v0.1.0 (/workspace/UCF/crates/dbm_8_serotonin)
    Compiling dbm_6_dopamin_nacc v0.1.0 (/workspace/UCF/crates/dbm_6_dopamin_nacc)
+   Compiling dbm_8_serotonin v0.1.0 (/workspace/UCF/crates/dbm_8_serotonin)
    Compiling dbm_stn v0.1.0 (/workspace/UCF/crates/dbm_stn)
    Compiling dbm_13_hypothalamus v0.1.0 (/workspace/UCF/crates/dbm_13_hypothalamus)
    Compiling asset_chunker v0.1.0 (/workspace/UCF/crates/asset_chunker)
@@ -225,17 +225,17 @@
    Compiling ucf-feature-translator v0.1.0 (/workspace/UCF/domains/ai/crates/ucf-feature-translator)
    Compiling ucf-lens-port v0.1.0 (/workspace/UCF/core/crates/ucf-lens-port)
    Compiling ucf-ai-host-abi v0.1.0 (/workspace/UCF/domains/ai-host-abi)
-   Compiling protoc-bin-vendored-macos-aarch_64 v3.2.0
-   Compiling protoc-bin-vendored-win32 v3.2.0
-   Compiling protoc-bin-vendored-linux-x86_32 v3.2.0
-   Compiling protoc-bin-vendored-macos-x86_64 v3.2.0
-   Compiling protoc-bin-vendored-linux-s390_64 v3.2.0
-   Compiling protoc-bin-vendored-linux-ppcle_64 v3.2.0
-   Compiling protoc-bin-vendored-linux-aarch_64 v3.2.0
-   Compiling protoc-bin-vendored-linux-x86_64 v3.2.0
    Compiling multimap v0.10.1
-   Compiling prost-build v0.12.6
+   Compiling protoc-bin-vendored-linux-x86_64 v3.2.0
+   Compiling protoc-bin-vendored-linux-aarch_64 v3.2.0
+   Compiling protoc-bin-vendored-linux-x86_32 v3.2.0
+   Compiling protoc-bin-vendored-linux-ppcle_64 v3.2.0
+   Compiling protoc-bin-vendored-linux-s390_64 v3.2.0
+   Compiling protoc-bin-vendored-macos-aarch_64 v3.2.0
+   Compiling protoc-bin-vendored-macos-x86_64 v3.2.0
+   Compiling protoc-bin-vendored-win32 v3.2.0
    Compiling protoc-bin-vendored v3.2.0
+   Compiling prost-build v0.12.6
    Compiling ucf-gateway v0.1.0 (/workspace/UCF/runtime/ucf-gateway)
    Compiling dbm_bus v0.1.0 (/workspace/UCF/crates/dbm_bus)
    Compiling biophys_targeting_l4 v0.1.0 (/workspace/UCF/crates/biophys_targeting_l4)
@@ -248,11 +248,11 @@
    Compiling ucf-bluebrain-port v0.1.0 (/workspace/UCF/domains/brain/crates/ucf-bluebrain-port)
    Compiling asset_rehydration v0.1.0 (/workspace/UCF/crates/asset_rehydration)
    Compiling wait-timeout v0.2.1
-   Compiling quick-error v1.2.3
-   Compiling fnv v1.0.7
    Compiling bit-vec v0.8.0
-   Compiling bit-set v0.8.0
+   Compiling fnv v1.0.7
+   Compiling quick-error v1.2.3
    Compiling rusty-fork v0.3.1
+   Compiling bit-set v0.8.0
    Compiling ucf-brain-mapper v0.1.0 (/workspace/UCF/domains/brain/crates/ucf-brain-mapper)
    Compiling ucf-ai-port v0.1.0 (/workspace/UCF/core/crates/ucf-ai-port)
    Compiling ucf-feature-spiker v0.1.0 (/workspace/UCF/domains/features/crates/ucf-feature-spiker)
@@ -266,13 +266,13 @@
    Compiling ucf-jepa v0.1.0 (/workspace/UCF/core/crates/ucf-jepa)
    Compiling ucf-digital-brain v0.1.0 (/workspace/UCF/domains/digital-brain/crates/ucf-digital-brain)
    Compiling parking_lot_core v0.9.12
+   Compiling unarray v0.1.4
    Compiling unsafe-libyaml v0.2.11
    Compiling lazy_static v1.5.0
-   Compiling unarray v0.1.4
    Compiling proptest v1.8.0
    Compiling serde_yaml v0.9.34+deprecated
-   Compiling smallvec v1.15.1
    Compiling scopeguard v1.2.0
+   Compiling smallvec v1.15.1
    Compiling lock_api v0.4.14
    Compiling biophys_asset_builder v0.1.0 (/workspace/UCF/crates/biophys_asset_builder)
    Compiling rustversion v1.0.22
@@ -287,20 +287,20 @@
    Compiling assets v0.1.0 (/workspace/UCF/crates/assets)
    Compiling engine v0.1.0 (/workspace/UCF/engine)
    Compiling mio v0.8.11
+   Compiling allocator-api2 v0.2.21
    Compiling paste v1.0.15
    Compiling foldhash v0.1.5
-   Compiling allocator-api2 v0.2.21
    Compiling hashbrown v0.15.5
    Compiling itertools v0.13.0
    Compiling signal-hook-mio v0.2.5
    Compiling castaway v0.2.4
    Compiling strum_macros v0.26.4
-   Compiling static_assertions v1.1.0
-   Compiling unicode-segmentation v1.12.0
    Compiling unicode-width v0.1.14
-   Compiling unicode-truncate v1.1.0
+   Compiling unicode-segmentation v1.12.0
+   Compiling static_assertions v1.1.0
    Compiling compact_str v0.7.1
    Compiling strum v0.26.3
+   Compiling unicode-truncate v1.1.0
    Compiling crossterm v0.27.0
    Compiling lru v0.12.5
    Compiling pvgs v0.1.0 (/workspace/UCF/crates/pvgs)
@@ -312,10 +312,10 @@
    Compiling ratatui v0.27.0
    Compiling query v0.1.0 (/workspace/UCF/crates/query)
    Compiling ucf-demo v0.1.0 (/workspace/UCF/core/crates/ucf-demo)
-   Compiling microcircuit_sn_l4 v0.1.0 (/workspace/UCF/crates/microcircuit_sn_l4)
+   Compiling microcircuit_hypothalamus_l4 v0.1.0 (/workspace/UCF/crates/microcircuit_hypothalamus_l4)
    Compiling ucf-console v0.1.0 (/workspace/UCF/runtime/ucf-console)
    Compiling microcircuit_amygdala_l4 v0.1.0 (/workspace/UCF/crates/microcircuit_amygdala_l4)
-   Compiling microcircuit_hypothalamus_l4 v0.1.0 (/workspace/UCF/crates/microcircuit_hypothalamus_l4)
+   Compiling microcircuit_sn_l4 v0.1.0 (/workspace/UCF/crates/microcircuit_sn_l4)
    Compiling ucf-bench v0.1.0 (/workspace/UCF/runtime/ucf-bench)
    Compiling biophys_trace v0.1.0 (/workspace/UCF/crates/biophys_trace)
    Compiling storage-firewood v0.1.0 (/workspace/UCF/vendor/ucf-chip-4-main/vendor/ztate/storage-firewood)
@@ -324,21 +324,21 @@
    Compiling scorecards v0.1.0 (/workspace/UCF/crates/scorecards)
    Compiling ucf-consolidation v0.1.0 (/workspace/UCF/domains/consolidation/crates/ucf-consolidation)
    Compiling ucf-vector-index-qdrant v0.1.0 (/workspace/UCF/domains/index/crates/ucf-vector-index-qdrant)
-   Compiling ucf-ingestion v0.1.0 (/workspace/UCF/core/crates/ucf-ingestion)
    Compiling ucf-terminal v0.1.0 (/workspace/UCF/adapters/terminal/crates/ucf-terminal)
+   Compiling ucf-ingestion v0.1.0 (/workspace/UCF/core/crates/ucf-ingestion)
    Compiling microcircuit_insula_l4 v0.1.0 (/workspace/UCF/crates/microcircuit_insula_l4)
    Compiling microcircuit_pag_l4 v0.1.0 (/workspace/UCF/crates/microcircuit_pag_l4)
    Compiling ucf-ai-backends v0.1.0 (/workspace/UCF/domains/ai-backends)
    Compiling ucf-rig v0.1.0 (/workspace/UCF/adapters/rig/crates/ucf-rig)
-   Compiling microcircuit_pag_biophys v0.1.0 (/workspace/UCF/crates/microcircuit_pag_biophys)
    Compiling microcircuit_amygdala_biophys v0.1.0 (/workspace/UCF/crates/microcircuit_amygdala_biophys)
    Compiling microcircuit_sn_biophys v0.1.0 (/workspace/UCF/crates/microcircuit_sn_biophys)
    Compiling microcircuit_pmrf_biophys v0.1.0 (/workspace/UCF/crates/microcircuit_pmrf_biophys)
    Compiling microcircuit_stn_biophys v0.1.0 (/workspace/UCF/crates/microcircuit_stn_biophys)
+   Compiling microcircuit_pag_biophys v0.1.0 (/workspace/UCF/crates/microcircuit_pag_biophys)
    Compiling microcircuit_lc_biophys v0.1.0 (/workspace/UCF/crates/microcircuit_lc_biophys)
    Compiling microcircuit_cerebellum_pop v0.1.0 (/workspace/UCF/crates/microcircuit_cerebellum_pop)
-   Compiling microcircuit_serotonin_attractor v0.1.0 (/workspace/UCF/crates/microcircuit_serotonin_attractor)
    Compiling microcircuit_dopamin_attractor v0.1.0 (/workspace/UCF/crates/microcircuit_dopamin_attractor)
+   Compiling microcircuit_serotonin_attractor v0.1.0 (/workspace/UCF/crates/microcircuit_serotonin_attractor)
    Compiling microcircuit_stn_hold v0.1.0 (/workspace/UCF/crates/microcircuit_stn_hold)
    Compiling microcircuit_sc_attractor v0.1.0 (/workspace/UCF/crates/microcircuit_sc_attractor)
    Compiling microcircuit_lc_l4 v0.1.0 (/workspace/UCF/crates/microcircuit_lc_l4)
@@ -356,7 +356,7 @@
    Compiling ucf-backends-gpu v0.1.0 (/workspace/UCF/runtime/ucf-backends-gpu)
    Compiling ucf-ode-port v0.1.0 (/workspace/UCF/core/crates/ucf-ode-port)
    Compiling app v0.1.0 (/workspace/UCF/app)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 14m 34s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13m 52s
      Running unittests src/main.rs (target/debug/deps/app-344822f6be4d753c)
 
 running 1 test
@@ -385,13 +385,13 @@ test tests::verify_fails_on_chunk_digest_mismatch ... ok
 test tests::verify_valid_bundle ... ok
 test tests::boundedness_rejects_payload_sizes ... ok
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
 
      Running unittests src/lib.rs (target/debug/deps/assets-b7b07fcbe5338d8e)
 
 running 2 tests
-test tests::rejects_zero_version ... ok
 test tests::parses_fixed_bytes ... ok
+test tests::rejects_zero_version ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -418,12 +418,12 @@ test tests::canonical_connectivity_sorting ... ok
 test tests::canonical_label_sorting ... ok
 test tests::canonical_morphology_sorting ... ok
 test tests::digest_changes_on_field_update ... ok
-test tests::digest_deterministic ... ok
 test tests::generator_bounds_hold ... ok
 test tests::manifest_digest_deterministic ... ok
+test tests::digest_deterministic ... ok
 test tests::morphology_tree_deterministic_digest ... ok
-test tests::morphology_tree_sizes_are_bounded ... ok
 test tests::payload_canonical_roundtrip_deterministic ... ok
+test tests::morphology_tree_sizes_are_bounded ... ok
 test tests::payload_digests_are_stable ... ok
 
 test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -475,8 +475,8 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/biophys_event_queue_l4-839b76a86d2e9d75)
 
 running 4 tests
-test tests::bucket_overflow_drops_highest_synapse_index ... ok
 test tests::compaction_only_runs_when_needed ... ok
+test tests::bucket_overflow_drops_highest_synapse_index ... ok
 test tests::counters_are_deterministic ... ok
 test tests::total_overflow_sets_flag_and_degrades_for_tick ... ok
 
@@ -488,7 +488,7 @@ running 2 tests
 test tests::reason_codes_are_sorted_and_bounded ... ok
 test tests::spike_train_digest_is_deterministic_and_bounded ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
      Running unittests src/lib.rs (target/debug/deps/biophys_governance-7414f18b843d18eb)
 
@@ -587,11 +587,11 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/l4_stp.rs (target/debug/deps/l4_stp-4e7dda5f83d948f1)
 
 running 5 tests
-test stp_bounds_and_g_clamp_hold ... ok
 test stp_depression_reduces_release_and_conductance ... ok
+test stp_bounds_and_g_clamp_hold ... ok
 test stp_determinism_matches ... ok
-test stp_recovery_restores_resources ... ok
 test stp_integration_shows_depression_over_repeated_spikes ... ok
+test stp_recovery_restores_resources ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -600,8 +600,8 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 5 tests
 test bounded_queue_drops_highest_indices ... ok
 test delay_is_applied_to_synaptic_conductance ... ok
-test synapse_conductance_clamps_without_overflow ... ok
 test deterministic_runs_match ... ok
+test synapse_conductance_clamps_without_overflow ... ok
 test synaptic_input_advances_spike_time ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -650,11 +650,11 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/dbm_0_sn-aa3f246e7da73b1a)
 
 running 8 tests
-test tests::deterministic_outputs ... ok
 test tests::calm_state_executes_plan ... ok
+test tests::deterministic_outputs ... ok
 test tests::hysteresis_keeps_stricter_mode ... ok
-test tests::policy_pressure_high_simulates ... ok
 test tests::integrity_fail_forces_report ... ok
+test tests::policy_pressure_high_simulates ... ok
 test tests::replay_hint_and_progress_generate_salience ... ok
 test tests::salience_items_bounded_and_sorted ... ok
 test tests::threat_high_pushes_stabilize ... ok
@@ -670,8 +670,8 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/dbm_13_hypothalamus-079445b44b6c3921)
 
 running 5 tests
-test tests::calm_state_remains_m0 ... ok
 test tests::integrity_fail_forces_m3 ... ok
+test tests::calm_state_remains_m0 ... ok
 test tests::policy_pressure_high_sets_m1 ... ok
 test tests::threat_high_pushes_m2 ... ok
 test tests::tool_side_effects_enforce_simulate_first ... ok
@@ -687,12 +687,12 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/dbm_6_dopamin_nacc-22e7c53ad9830815)
 
 running 6 tests
-test tests::deterministic_outputs ... ok
 test tests::noncritical_inputs_allow_progress ... ok
+test tests::deterministic_outputs ... ok
 test tests::positive_deltas_raise_utility_score ... ok
 test tests::reason_codes_ordering_is_deterministic ... ok
-test tests::replay_hint_after_three_nonpositive_deltas ... ok
 test tests::reward_block_caps_progress_and_incentive ... ok
+test tests::replay_hint_after_three_nonpositive_deltas ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -709,8 +709,8 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/dbm_8_serotonin-dfa7955ac56b4b4c)
 
 running 3 tests
-test tests::cooldown_longer_on_flapping ... ok
 test tests::hysteresis_requires_multiple_windows ... ok
+test tests::cooldown_longer_on_flapping ... ok
 test tests::replay_mismatch_forces_high ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -729,8 +729,8 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/dbm_bus-d60983ffe6f74f31)
 
 running 3 tests
-test feedback_snapshot_tests::overflow_and_injection_drop_surface_reason_codes ... ok
 test feedback_snapshot_tests::feedback_snapshot_is_deterministic_for_same_inputs ... ok
+test feedback_snapshot_tests::overflow_and_injection_drop_surface_reason_codes ... ok
 test tests::reason_codes_are_deterministic ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -741,14 +741,14 @@ running 2 tests
 test absent_cerebellum_input_does_not_create_cerebellum_state_or_recommendations ... ok
 test cerebellum_suspend_recommendations_remain_advisory_output_not_retry_or_execution ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
      Running tests/determinism.rs (target/debug/deps/determinism-1a7e9ff353a4bffb)
 
 running 1 test
 test tick_outputs_stable_and_reason_codes_sorted ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
      Running tests/evidence_refs.rs (target/debug/deps/evidence_refs-82a6bc4decdcacba)
 
@@ -762,13 +762,13 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 1 test
 test golden_sequence_is_deterministic ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
      Running tests/modulator_mapping.rs (target/debug/deps/modulator_mapping-1990ff1f4a6e39a2)
 
 running 2 tests
-test reward_block_allows_da_progress ... ok
 test reward_block_forces_da_low ... ok
+test reward_block_allows_da_progress ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -779,7 +779,7 @@ test pprf_lock_is_bounded_in_generated_cases ... ok
 test profile_does_not_downgrade_after_fail_without_unlock ... ok
 test brainbus_outputs_are_deterministic_and_bounded ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
 
      Running tests/property_modules.rs (target/debug/deps/property_modules-941db58518de5f5d)
 
@@ -788,7 +788,7 @@ test pprf_lock_does_not_exceed_cap ... ok
 test serotonin_stability_does_not_exceed_high ... ok
 test hpa_counters_saturate_under_stress ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
 
      Running unittests src/lib.rs (target/debug/deps/dbm_core-4dc4fcef37471308)
 
@@ -801,8 +801,8 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/dbm_hpa-64ce3984beea025b)
 
 running 3 tests
-test tests::persistence_round_trip_retains_state ... ok
 test tests::integrity_fail_increases_sensitivity ... ok
+test tests::persistence_round_trip_retains_state ... ok
 test tests::stable_windows_reduce_allostatic_load ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
@@ -810,8 +810,8 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/dbm_pag-2f1ad171902367f3)
 
 running 4 tests
-test tests::high_threat_without_integrity_sets_quarantine ... ok
 test tests::exfil_high_triggers_forensic ... ok
+test tests::high_threat_without_integrity_sets_quarantine ... ok
 test tests::integrity_fail_drives_forensic ... ok
 test tests::probing_threat_results_in_contained_continue ... ok
 
@@ -820,8 +820,8 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/dbm_pmrf-0d59cccb7608ca47)
 
 running 3 tests
-test tests::hold_active_triggers_slow_mode ... ok
 test tests::divergence_high_triggers_split ... ok
+test tests::hold_active_triggers_slow_mode ... ok
 test tests::normal_mode_without_triggers ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -829,17 +829,17 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/dbm_pprf-5e3b038a22444899)
 
 running 3 tests
-test tests::non_strict_shift_blocked_by_lock ... ok
 test tests::flapping_penalty_forces_report_and_longer_lock ... ok
 test tests::stricter_target_preempts_lock ... ok
+test tests::non_strict_shift_blocked_by_lock ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
      Running unittests src/lib.rs (target/debug/deps/dbm_sc-9ddafbe7f56c4347)
 
 running 3 tests
-test tests::integrity_fail_forces_report ... ok
 test tests::exfil_threat_triggers_dlp_target ... ok
+test tests::integrity_fail_forces_report ... ok
 test tests::unlock_takes_precedence_over_replay ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -875,8 +875,8 @@ test asset_publisher::tests::deterministic_encoding_roundtrip ... ok
 test asset_publisher::tests::commit_called_once_on_startup ... ok
 test asset_publisher::tests::manifest_digest_is_deterministic ... ok
 test asset_publisher::tests::no_recommit_on_repeat_ticks ... ok
-test asset_publisher::tests::recommit_on_asset_change ... ok
 test microcircuit_publisher::tests::evidence_is_deterministic ... ok
+test asset_publisher::tests::recommit_on_asset_change ... ok
 test microcircuit_publisher::tests::publishes_hpa_once_per_digest ... ok
 test microcircuit_publisher::tests::publishes_once_on_startup ... ok
 test microcircuit_publisher::tests::republishes_hpa_on_digest_change ... ok
@@ -886,32 +886,32 @@ test tests::bounded_tick_processing_respects_limit ... ok
 test tests::cbv_absence_is_stable ... ok
 test tests::cbv_digest_preserves_determinism_with_same_inputs ... ok
 test tests::cbv_presence_triggers_strict_mode_when_enabled ... ok
+test tests::cbv_digest_embeds_and_changes_control_frame_hash ... ok
 test tests::config_driven_profile_switches ... ok
 test tests::degraded_integrity_with_replay_mismatch_escalates_profile ... ok
-test tests::cbv_digest_embeds_and_changes_control_frame_hash ... ok
 test tests::digest_is_deterministic ... ok
 test tests::deterministic_control_frames_from_same_sequence ... ok
 test tests::dlp_secret_drives_amygdala_and_pag_to_forensic ... ok
 test tests::evidence_writer_receives_control_frame_digest ... ok
+test tests::diminishing_returns_emit_replay_hint_and_reason_code ... ok
 test tests::fallback_config_is_conservative ... ok
 test tests::flapping_penalty_forces_restriction ... ok
-test tests::diminishing_returns_emit_replay_hint_and_reason_code ... ok
-test tests::hbv_arousal_floor_enables_overlays ... ok
 test tests::forensic_override_is_deterministic ... ok
+test tests::hbv_arousal_floor_enables_overlays ... ok
 test tests::hbv_biases_hypothalamus_defaults ... ok
 test tests::hbv_cooldown_bias_applies ... ok
-test tests::integrity_fail_triggers_forensic_profile ... ok
 test tests::integrity_fail_latches_until_reset ... ok
+test tests::integrity_fail_triggers_forensic_profile ... ok
 test tests::integrity_failure_drives_focus_lock_and_blocks_looser_shift ... ok
 test tests::integrity_fail_without_unlock_remains_forensic ... ok
-test tests::overlay_masks_are_applied ... ok
 test tests::missing_frame_triggers_restriction ... ok
+test tests::overlay_masks_are_applied ... ok
 test tests::overlays_only_relax_after_cooldown ... ok
 test tests::pev_conservatism_bias_enforces_strict_and_lock ... ok
 test tests::pev_absence_is_stable ... ok
 test tests::pev_digest_embeds_and_changes_control_frame_hash ... ok
-test tests::pev_manipulation_bias_enables_export_lock ... ok
 test tests::pev_digest_preserves_determinism_with_same_inputs ... ok
+test tests::pev_manipulation_bias_enables_export_lock ... ok
 test tests::pev_novelty_bias_enables_lock ... ok
 test tests::pev_reversibility_bias_prefers_simulation ... ok
 test tests::policy_pressure_high_uses_contained_continue ... ok
@@ -924,8 +924,8 @@ test tests::stable_successes_raise_progress_when_safe ... ok
 test tests::stn_policy_pressure_hold_enables_overlays ... ok
 test tests::stable_unlock_windows_allow_restricted_recovery ... ok
 test tests::stricter_target_preempts_existing_lock ... ok
-test tests::tighten_is_allowed_during_cooldown ... ok
 test tests::threat_high_blocks_progress_rewards ... ok
+test tests::tighten_is_allowed_during_cooldown ... ok
 
 test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
 
@@ -935,7 +935,7 @@ running 2 tests
 test baseline_resolver_max_merge_reaches_high_and_biases ... ok
 test identical_frames_produce_deterministic_control_and_digest ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
      Running tests/brain_bus_engine.rs (target/debug/deps/brain_bus_engine-a1c80a90e445dbfd)
 
@@ -943,7 +943,7 @@ running 2 tests
 test brain_bus_control_matches_golden_digest_and_reasons ... ok
 test brain_bus_control_is_reproducible ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
      Running tests/cbv_digest_roundtrip.rs (target/debug/deps/cbv_digest_roundtrip-7a253f6b9edc0636)
 
@@ -965,7 +965,7 @@ running 2 tests
 test reward_block_caps_progress_effects ... ok
 test replay_hint_after_three_negative_windows ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
      Running tests/macro_milestone_cbv_control.rs (target/debug/deps/macro_milestone_cbv_control-be6566a887b396e8)
 
@@ -1006,20 +1006,20 @@ running 5 tests
 test tests::deterministic_sequence_repeatable ... ok
 test tests::dlp_secret_activates_exfil_quickly ... ok
 test tests::integrity_fail_is_immediate_high ... ok
-test tests::micro_is_not_less_than_rules_on_critical_inputs ... ok
 test tests::accumulators_and_latches_bounded ... ok
+test tests::micro_is_not_less_than_rules_on_critical_inputs ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
      Running unittests src/lib.rs (target/debug/deps/microcircuit_amygdala_l4-fc41b0265e1efcbd)
 
 running 13 tests
 test asset_tests::asset_backed_matches_hardcoded_outputs ... ok
-test asset_tests::asset_build_is_deterministic ... ok
 test asset_tests::asset_pool_mapping_rejects_duplicate_pool_labels ... ok
 test asset_tests::asset_pool_mapping_rejects_missing_pool_label ... ok
 test asset_tests::asset_pool_mapping_uses_labels ... ok
 test asset_tests::asset_pool_mapping_v1_fallback_accepts_unlabeled_bundle ... ok
+test asset_tests::asset_build_is_deterministic ... ok
 test asset_tests::manifest_digest_binding_rejects_mismatch ... ok
 test tests::bounded_state_values ... ok
 test tests::cross_sensitization_synapses_are_directional ... ok
@@ -1028,13 +1028,13 @@ test tests::dlp_secret_activates_exfil_quickly ... ok
 test tests::integrity_fail_is_immediate_high ... ok
 test asset_tests::boundedness_rejects_large_assets ... ok
 
-test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
 
      Running unittests src/lib.rs (target/debug/deps/microcircuit_amygdala_pop-8603d7611bb68080)
 
 running 5 tests
-test tests::deterministic_sequence_is_repeatable ... ok
 test tests::dlp_secret_sets_exfil_and_high_threat ... ok
+test tests::deterministic_sequence_is_repeatable ... ok
 test tests::latch_keeps_exfil_active_after_drop ... ok
 test tests::probing_sets_med_threat ... ok
 test tests::replay_mismatch_sets_integrity_and_high_threat ... ok
@@ -1050,10 +1050,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/microcircuit_cerebellum_pop-e8866ae0cced319e)
 
 running 5 tests
-test tests::deterministic_sequence_is_repeatable ... ok
-test tests::invariants_hold_vs_rules_backend ... ok
-test tests::per_tool_failures_create_anomaly_and_recommendation ... ok
 test tests::bounded_tool_state_eviction_is_deterministic ... ok
+test tests::invariants_hold_vs_rules_backend ... ok
+test tests::deterministic_sequence_is_repeatable ... ok
+test tests::per_tool_failures_create_anomaly_and_recommendation ... ok
 test tests::unavailable_triggers_divergence_high ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -1061,11 +1061,11 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/microcircuit_cerebellum_stub-ab9f129e10c4019d)
 
 running 6 tests
-test tests::bounded_tool_processing_and_recommendations ... ok
+test tests::deterministic_tool_anomaly_ordering ... ok
 test tests::per_tool_counter_recommends_suspend ... ok
 test tests::stable_window_reduces_from_high ... ok
 test tests::timeouts_trigger_high ... ok
-test tests::deterministic_tool_anomaly_ordering ... ok
+test tests::bounded_tool_processing_and_recommendations ... ok
 test tests::unavailable_trigger_high ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -1073,8 +1073,8 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/microcircuit_core-1d4bcaaec16f5320)
 
 running 2 tests
-test tests::digest_depends_on_domain ... ok
 test tests::digest_depends_on_bytes ... ok
+test tests::digest_depends_on_domain ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -1145,11 +1145,11 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/microcircuit_insula_fusion-b4e2bd48fae044bd)
 
 running 6 tests
-test tests::conservative_clamps_do_not_downplay_inputs ... ok
 test tests::benign_inputs_are_not_less_conservative_than_rules ... ok
+test tests::determinism_sequence_and_digests ... ok
+test tests::conservative_clamps_do_not_downplay_inputs ... ok
 test tests::integrity_fail_locks_state ... ok
 test tests::micro_is_not_less_conservative_than_rules_on_critical_inputs ... ok
-test tests::determinism_sequence_and_digests ... ok
 test tests::threat_high_locks_for_multiple_steps ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -1196,16 +1196,16 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/microcircuit_lc_stub-d6b1c04e0faab03e)
 
 running 2 tests
-test tests::parity_with_rule_logic ... ok
 test tests::digest_changes_with_progress ... ok
+test tests::parity_with_rule_logic ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
      Running unittests src/lib.rs (target/debug/deps/microcircuit_pag_attractor-332591b756a56de3)
 
 running 6 tests
-test tests::exfil_high_forces_forensic ... ok
 test tests::determinism_for_sequence ... ok
+test tests::exfil_high_forces_forensic ... ok
 test tests::high_threat_prefers_quarantine_or_forensic ... ok
 test tests::integrity_fail_forces_forensic ... ok
 test tests::invariants_vs_rules_backend ... ok
@@ -1218,10 +1218,10 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 6 tests
 test tests::exfil_forces_forensic ... ok
 test tests::determinism_for_sequence ... ok
-test tests::integrity_fail_forces_forensic ... ok
 test tests::high_threat_prefers_quarantine_or_forensic ... ok
-test tests::latch_prevents_immediate_relax ... ok
+test tests::integrity_fail_forces_forensic ... ok
 test tests::invariants_vs_rules_backend ... ok
+test tests::latch_prevents_immediate_relax ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -1255,8 +1255,8 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 4 tests
 test tests::determinism_same_sequence_same_outputs ... ok
-test tests::divergence_high_triggers_split_required ... ok
 test tests::hold_active_triggers_slow_mode ... ok
+test tests::divergence_high_triggers_split_required ... ok
 test tests::tempo_recovers_when_drive_low ... ok
 
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -1273,12 +1273,12 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/microcircuit_sc_attractor-06b5ca632b74419c)
 
 running 6 tests
+test tests::exfil_drives_dlp_high_stabilize ... ok
 test tests::determinism_same_inputs ... ok
 test tests::integrity_fail_drives_integrity_high_report ... ok
 test tests::invariants_match_rules_backend ... ok
 test tests::lock_prevents_relaxing_too_fast ... ok
 test tests::stricter_target_preempts_lock ... ok
-test tests::exfil_drives_dlp_high_stabilize ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -1309,11 +1309,11 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 6 tests
 test tests::bounded_outputs ... ok
-test tests::determinism_sequence_and_digests ... ok
 test tests::hysteresis_prevents_immediate_relax ... ok
+test tests::determinism_sequence_and_digests ... ok
 test tests::no_less_conservative_under_critical ... ok
-test tests::strictness_preempts_to_report ... ok
 test tests::microcircuit_invariants_golden ... ok
+test tests::strictness_preempts_to_report ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -1350,13 +1350,13 @@ test tests::reward_block_forces_da_low ... ok
 test tests::within_pool_excitation_increases_spikes ... ok
 test asset_tests::boundedness_rejects_large_assets ... ok
 
-test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
 
      Running unittests src/lib.rs (target/debug/deps/microcircuit_sn_stub-5cf0ce23c7702465)
 
 running 3 tests
-test tests::deterministic_outputs_across_steps ... ok
 test tests::deterministic_digest_for_same_state ... ok
+test tests::deterministic_outputs_across_steps ... ok
 test tests::digest_changes_with_progress ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -1383,10 +1383,10 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/microcircuit_stn_stub-65548daecb4ec023)
 
 running 4 tests
-test tests::policy_pressure_high_triggers_hold_and_novelty_lock ... ok
 test tests::arousal_and_threat_trigger_hold_without_receipt_invalid ... ok
-test tests::receipt_invalid_triggers_hold ... ok
+test tests::policy_pressure_high_triggers_hold_and_novelty_lock ... ok
 test tests::tool_side_effects_hold_with_policy_pressure ... ok
+test tests::receipt_invalid_triggers_hold ... ok
 
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -1396,20 +1396,20 @@ running 18 tests
 test tests::cbv_chain_and_caution_tighten_controls ... ok
 test tests::cbv_absent_leaves_decision_unchanged ... ok
 test tests::cbv_does_not_loosen_overlays ... ok
-test tests::cbv_export_strictness_enables_lock ... ok
 test tests::cbv_novelty_dampening_enables_lock ... ok
+test tests::cbv_export_strictness_enables_lock ... ok
 test tests::cbv_strictness_forces_strict_mode ... ok
 test tests::classification_does_not_set_divergence ... ok
 test tests::classification_uses_thresholds ... ok
-test tests::config_files_load ... ok
+test tests::missing_required_field_fails_parse ... ok
 test tests::pev_absent_leaves_decision_unchanged ... ok
 test tests::pev_conservatism_bias_enforces_strict_and_lock ... ok
-test tests::missing_required_field_fails_parse ... ok
 test tests::pev_does_not_loosen_existing_restrictions ... ok
 test tests::pev_manipulation_aversion_enables_export_lock ... ok
 test tests::pev_novelty_penalty_enables_lock ... ok
 test tests::pev_reversibility_prefers_simulation ... ok
 test tests::replay_mismatch_detected_from_nested_stats ... ok
+test tests::config_files_load ... ok
 test tests::rules_drive_profiles_and_overlays ... ok
 
 test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
@@ -1417,8 +1417,8 @@ test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
      Running unittests src/lib.rs (target/debug/deps/pvgs-9d9bc117af2d62b5)
 
 running 5 tests
-test tests::appends_asset_manifest ... ok
 test tests::dedup_is_idempotent ... ok
+test tests::appends_asset_manifest ... ok
 test tests::logs_sep_event ... ok
 test tests::rejects_digest_mismatch ... ok
 test tests::rejects_invalid_length ... ok
@@ -1428,8 +1428,8 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/pvgs_client-c6226d2ff7b837f0)
 
 running 16 tests
-test tests::local_reader_exposes_full_cbv_when_available ... ok
 test tests::local_reader_exposes_latest_pev_digest_and_vector ... ok
+test tests::local_reader_exposes_full_cbv_when_available ... ok
 test tests::local_reader_rejects_short_digest ... ok
 test tests::local_reader_returns_latest_cbv_digest ... ok
 test tests::local_reader_returns_none_without_cbv ... ok
@@ -1450,8 +1450,8 @@ test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
      Running unittests src/lib.rs (target/debug/deps/query-6f709976a00f189e)
 
 running 2 tests
-test tests::queries_latest_asset_manifest ... ok
 test tests::list_is_deterministic ... ok
+test tests::queries_latest_asset_manifest ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -1489,8 +1489,8 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/rsv-89ddac096a2a0830)
 
 running 2 tests
-test tests::default_state_is_low_and_ok ... ok
 test tests::missing_frame_counter_increments ... ok
+test tests::default_state_is_low_and_ok ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -1505,18 +1505,18 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 11 tests
 test lifecycle::tests::decode_hash_rejects_invalid_length ... ok
-test lifecycle::tests::snapshot_bundle_load_detects_checksum_mismatch ... ok
 test lifecycle::tests::snapshot_bundle_load_fails_when_proof_missing ... ok
+test lifecycle::tests::snapshot_bundle_load_detects_checksum_mismatch ... ok
 test tests::kv_roundtrip_and_commit ... ok
 test tests::pruner_retains_recent_snapshots ... ok
 test tests::pruning_proof_rejects_tampering ... ok
 test tests::commit_rejects_manifest_mismatch ... ok
 test tests::state_commit_flow ... ok
 test wal::tests::append_and_replay_after_restart ... ok
-test tests::tree_proof_verifies ... ok
 test wal::tests::corrupted_payload_triggers_recovery_error ... ok
+test tests::tree_proof_verifies ... ok
 
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
 
      Running unittests src/bin/firewood_recovery.rs (target/debug/deps/firewood_recovery-46c8e126835190e3)
 
@@ -1577,13 +1577,13 @@ test store::tests::firewood_backend_requires_feature ... ok
 test store::tests::file_store_records_and_snapshots ... ok
 test tests::append_and_fold_is_deterministic_across_runs ... ok
 test tests::append_and_fold_updates_state_and_proofs ... ok
+test tests::append_and_fold_uses_commitment_digest ... ok
 test tests::append_returns_id_and_stores_record ... ok
 test tests::append_with_proof_overrides_envelope ... ok
-test tests::append_and_fold_uses_commitment_digest ... ok
 test tests::file_archive_detects_corrupt_fold_snapshot ... ok
 test tests::file_archive_persists_proof_envelope ... ok
-test tests::file_archive_persists_fold_snapshot ... ok
 test tests::file_archive_rejects_invalid_proof_length_in_snapshot ... ok
+test tests::file_archive_persists_fold_snapshot ... ok
 
 test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
@@ -1621,8 +1621,8 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_bench-342e3b6410434d5b)
 
 running 2 tests
-test tests::summarize_is_stable ... ok
 test tests::fixture_parse_works ... ok
+test tests::summarize_is_stable ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -1638,17 +1638,17 @@ running 2 tests
 test sandbox_inproc_echo_smoke_runs ... ok
 test compute_fixture_smoke_under_four_seconds ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
      Running unittests src/lib.rs (target/debug/deps/ucf_biophys-2290c770b0df611e)
 
 running 34 tests
 test v0::hormone::tests::deterministic_sequence_produces_identical_digests ... ok
 test v0::hormone::tests::modulation_is_tightening_only ... ok
-test v0::hormone::tests::state_stays_bounded_under_sustained_stress ... ok
 test v0::hormone::tests::higher_sustained_risk_increases_cortisol_baseline ... ok
-test v0::neuro::tests::deterministic_sequence_produces_identical_digests ... ok
+test v0::hormone::tests::state_stays_bounded_under_sustained_stress ... ok
 test v0::neuro::tests::bounded_under_sustained_stress ... ok
+test v0::neuro::tests::deterministic_sequence_produces_identical_digests ... ok
 test v0::neuro::tests::spike_cap_is_deterministic ... ok
 test v0::tests::apply_event_obeys_clamp_and_rate_limit ... ok
 test v0::tests::cde_cycle_detection_rejects_strong_cycle ... ok
@@ -1661,22 +1661,22 @@ test v0::tests::iit_classification_thresholds_are_stable ... ok
 test v0::tests::iit_compute_integration_clamps_to_unit_interval ... ok
 test v0::tests::microcircuit_new_ring_has_expected_counts_and_adjacency ... ok
 test v0::tests::microcircuit_spikes_under_high_glutamate_low_gaba ... ok
-test v0::tests::microcircuit_stays_quiet_under_high_gaba_low_glutamate ... ok
+test v0::neuro::tests::higher_cortisol_reduces_excitability ... ok
 test v0::tests::modulate_hh_applies_expected_directional_effects ... ok
 test v0::tests::nsr_verify_rejects_cyclic_graph ... ok
 test v0::tests::onn_phase_bin_is_in_range_and_stable ... ok
+test v0::tests::microcircuit_stays_quiet_under_high_gaba_low_glutamate ... ok
 test v0::tests::onn_phase_diff_wraps_shortest_arc ... ok
 test v0::tests::phase_lock_identity_and_pi_offset ... ok
 test v0::tests::snn_event_bus_honors_capacity ... ok
 test v0::tests::ssm_gate_rises_with_stronger_inputs ... ok
 test v0::tests::ssm_noise_slows_state_updates ... ok
 test v0::tests::ssm_norm_and_sparsity_are_reported ... ok
-test v0::tests::ttfs_phase_maps_window_bounds ... ok
 test v0::tests::ttfs_strength_mapping_is_monotonic ... ok
-test v0::tests::unit01_clamps_nan_neg_and_overflow ... ok
+test v0::tests::ttfs_phase_maps_window_bounds ... ok
 test v0::tests::with_hpa_lowers_serotonin_and_raises_gaba_when_cortisol_high ... ok
+test v0::tests::unit01_clamps_nan_neg_and_overflow ... ok
 test v0::tests::wrap_phase_normalizes_to_tau_interval ... ok
-test v0::neuro::tests::higher_cortisol_reduces_excitability ... ok
 
 test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
@@ -1698,8 +1698,8 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_brain_mapper-b2a9d071ed3c95fc)
 
 running 3 tests
-test tests::map_to_stimulus_is_deterministic ... ok
 test tests::lens_selection_drives_spikes_when_present ... ok
+test tests::map_to_stimulus_is_deterministic ... ok
 test tests::threat_focus_produces_hypothalamus_spike ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -1732,13 +1732,13 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 13 tests
 test tests::cycle_edges_are_rejected ... ok
 test tests::cde_is_deterministic_for_same_inputs ... ok
-test tests::high_score_emits_spike ... ok
 test tests::intervention_feedback_adjusts_score ... ok
 test tests::observation_commit_is_deterministic ... ok
 test tests::propose_edge_dedup_and_sort ... ok
+test tests::high_score_emits_spike ... ok
 test tests::query_is_deterministic ... ok
-test tests::rsa_param_updates_are_clamped ... ok
 test tests::register_observation_updates_commit ... ok
+test tests::rsa_param_updates_are_clamped ... ok
 test v0::tests::decay_prunes_below_threshold ... ok
 test v0::tests::intervention_increases_conf_faster_than_observation ... ok
 test v0::tests::max_edges_enforced ... ok
@@ -1756,8 +1756,8 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_cde_scm-a428726298aefb07)
 
 running 4 tests
-test tests::deterministic_outputs_for_same_inputs ... ok
 test tests::emit_spikes_respects_coherence_threshold ... ok
+test tests::deterministic_outputs_for_same_inputs ... ok
 test tests::interventions_are_bounded ... ok
 test tests::surprise_attention_alignment_increases_confidence ... ok
 
@@ -1787,8 +1787,8 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_commit-2529b30186f802ae)
 
 running 3 tests
-test tests::experience_record_commitment_changes_on_payload ... ok
 test tests::experience_record_commitment_is_deterministic ... ok
+test tests::experience_record_commitment_changes_on_payload ... ok
 test tests::milestone_commitment_sorts_child_ids ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -1810,9 +1810,9 @@ test backend_pack::tests::provenance_marks_valid_required_slot_as_used ... ok
 test backend_pack::tests::required_slot_with_broken_compare_path_is_activation_blocked ... ok
 test backend_pack::tests::toy_lnn_feature_gate_behavior ... ok
 test backends::tests::burn_profile_behavior ... ok
-test backends::tests::compatibility_constructor_default_is_not_the_canonical_production_lane ... ok
 test backends::tests::candle_disabled_without_feature ... ok
 test backends::tests::env_parse_defaults ... ok
+test backends::tests::compatibility_constructor_default_is_not_the_canonical_production_lane ... ok
 test backends::tests::onboarding_reference_backend_build_state_is_honest ... ok
 test backends::tests::onboarding_reference_profile_is_pinned_to_burn_pack ... ok
 test backends::tests::parse_backend_kind_aliases ... ok
@@ -1823,19 +1823,19 @@ test blue_brain_combined_retrieval::tests::combined_basis_remains_advisory_only_
 test blue_brain_combined_retrieval::tests::combined_candidate_is_distinct_from_memory_or_execution_only ... ok
 test blue_brain_combined_retrieval::tests::combined_reference_diagnostics_map_covers_required_classes ... ok
 test blue_brain_combined_retrieval::tests::consolidation_candidate_map_covers_required_states ... ok
-test blue_brain_combined_retrieval::tests::context_only_input_is_not_promoted_to_combined_reference ... ok
 test blue_brain_combined_retrieval::tests::context_candidate_and_proposal_non_canonical_paths_are_explicitly_caveated ... ok
+test blue_brain_combined_retrieval::tests::context_only_input_is_not_promoted_to_combined_reference ... ok
 test blue_brain_combined_retrieval::tests::context_reference_boundary_mismatch_is_caveated_and_not_attached ... ok
 test blue_brain_combined_retrieval::tests::memory_only_or_execution_only_reference_stays_not_a_consolidation_candidate ... ok
 test blue_brain_combined_retrieval::tests::non_canonical_path_is_marked_non_canonical ... ok
-test blue_brain_combined_retrieval::tests::stale_or_failed_basis_stays_caveated_and_weak ... ok
 test blue_brain_combined_retrieval::tests::stale_invalidated_failed_cancelled_and_blocked_stay_distinct ... ok
 test blue_brain_dynamics::tests::blocked_kuramoto_state_includes_explicit_no_direct_guard_caveats ... ok
+test blue_brain_combined_retrieval::tests::stale_or_failed_basis_stays_caveated_and_weak ... ok
 test blue_brain_dynamics::tests::canonical_dynamics_diagnostics_map_contains_required_classes ... ok
-test blue_brain_dynamics::tests::canonical_kuramoto_input_group_map_is_unique_and_complete ... ok
 test blue_brain_dynamics::tests::canonical_dynamics_diagnostics_map_lanes_are_unique_and_non_empty ... ok
-test blue_brain_dynamics::tests::caveated_insufficient_blocked_and_noncanonical_coupling_states_stay_explicit ... ok
+test blue_brain_dynamics::tests::canonical_kuramoto_input_group_map_is_unique_and_complete ... ok
 test blue_brain_dynamics::tests::caveated_kuramoto_state_never_reports_strong_selection_or_runtime_feedback ... ok
+test blue_brain_dynamics::tests::caveated_insufficient_blocked_and_noncanonical_coupling_states_stay_explicit ... ok
 test blue_brain_dynamics::tests::diagnostic_only_and_insufficient_feedback_basis_stay_explicit ... ok
 test blue_brain_dynamics::tests::diagnostic_only_kuramoto_provides_bounded_feedback_without_authority ... ok
 test blue_brain_dynamics::tests::dynamics_advisory_coupling_map_contains_canonical_states ... ok
@@ -1862,37 +1862,37 @@ test blue_brain_dynamics::tests::runtime_selection_contract_map_covers_canonical
 test blue_brain_dynamics::tests::runtime_selection_contract_signals_stay_directional_and_distinct ... ok
 test blue_brain_dynamics::tests::scope_states_are_distinguishable_for_minimal_kuramoto_path ... ok
 test blue_brain_dynamics::tests::selection_and_runtime_modulation_are_advisory_only ... ok
-test blue_brain_dynamics::tests::serie_bb16_prompt2_doc_stays_pinned_to_hardened_execution_informed_diagnostics_line ... ok
 test blue_brain_dynamics::tests::serie_bb16_prompt1_doc_stays_pinned_to_feedback_states_and_no_direct_boundaries ... ok
+test blue_brain_dynamics::tests::serie_bb16_prompt2_doc_stays_pinned_to_hardened_execution_informed_diagnostics_line ... ok
 test blue_brain_dynamics::tests::serie_bb16_prompt3_doc_stays_pinned_to_selection_runtime_coupling_boundary ... ok
-test blue_brain_dynamics::tests::serie_bb19_prompt1_doc_stays_pinned_to_runtime_selection_contract_hardening ... ok
 test blue_brain_dynamics::tests::serie_bb16_prompt4_doc_stays_pinned_to_closure_matrix_and_boundaries ... ok
+test blue_brain_dynamics::tests::serie_bb19_prompt1_doc_stays_pinned_to_runtime_selection_contract_hardening ... ok
 test blue_brain_dynamics::tests::serie_bb19_prompt2_doc_stays_pinned_to_runtime_selection_diagnostics_hardening ... ok
 test blue_brain_dynamics::tests::serie_bb19_prompt3_doc_stays_pinned_to_deferred_blocked_priority_boundary_cleanup ... ok
+test blue_brain_dynamics::tests::serie_bb19_prompt4_doc_stays_pinned_to_readiness_sweep_contract_line ... ok
 test blue_brain_dynamics::tests::serie_bb24_prompt2_doc_pins_region_integration_modes_to_existing_boundaries ... ok
 test blue_brain_dynamics::tests::unavailable_or_simulation_only_kuramoto_stays_non_executing_and_ignored ... ok
 test blue_brain_dynamics::tests::unsupported_and_blocked_input_groups_remain_explicit ... ok
-test blue_brain_dynamics::tests::serie_bb19_prompt4_doc_stays_pinned_to_readiness_sweep_contract_line ... ok
 test blue_brain_memory::tests::commit_and_retrieval_feedback_has_no_auto_compute_action_or_commit_triggers ... ok
 test blue_brain_memory::tests::caveat_refresh_preserves_or_updates_caveats_without_auto_triggers ... ok
 test blue_brain_memory::tests::commit_eligible_candidate_is_persisted_and_readable ... ok
-test blue_brain_memory::tests::commit_with_caveat_is_persisted_with_caveats ... ok
 test blue_brain_memory::tests::deferred_rejected_insufficient_and_reference_only_are_not_committed ... ok
-test blue_brain_memory::tests::diagnostics_map_covers_required_classes ... ok
+test blue_brain_memory::tests::commit_with_caveat_is_persisted_with_caveats ... ok
 test blue_brain_memory::tests::failed_result_is_reported_when_store_path_is_not_writable ... ok
-test blue_brain_memory::tests::maintenance_and_retrieval_statuses_remain_distinguishable_with_no_auto_triggers ... ok
+test blue_brain_memory::tests::diagnostics_map_covers_required_classes ... ok
 test blue_brain_memory::tests::maintenance_blocked_and_refresh_unavailable_states_are_explicit ... ok
+test blue_brain_memory::tests::maintenance_and_retrieval_statuses_remain_distinguishable_with_no_auto_triggers ... ok
 test blue_brain_memory::tests::maintenance_states_are_distinguishable_and_feed_retrieval_context_selection ... ok
 test blue_brain_memory::tests::no_op_and_unavailable_states_are_reported_without_creating_records ... ok
 test blue_brain_memory::tests::non_canonical_internal_only_maintenance_path_is_blocked_and_non_canonical ... ok
-test blue_brain_memory::tests::read_reference_distinguishes_found_missing_blocked_and_unavailable ... ok
 test blue_brain_memory::tests::read_reference_distinguishes_caveated_and_stale_states ... ok
+test blue_brain_memory::tests::read_reference_distinguishes_found_missing_blocked_and_unavailable ... ok
 test blue_brain_memory::tests::read_reference_is_memory_only_and_not_history_snapshot_or_evidence_retrieval ... ok
-test blue_brain_memory::tests::retrieval_diagnostics_distinguish_missing_stale_caveated_blocked_and_unavailable ... ok
 test blue_brain_memory::tests::record_id_is_stable_and_reopen_supports_read_by_id_or_candidate ... ok
 test blue_brain_memory::tests::stale_context_and_internal_only_dependency_are_blocked ... ok
-test blue_brain_minimal_execution::tests::backbind_distinguishes_completed_failed_cancelled_blocked_and_unavailable ... ok
+test blue_brain_memory::tests::retrieval_diagnostics_distinguish_missing_stale_caveated_blocked_and_unavailable ... ok
 test blue_brain_minimal_execution::tests::backbind_preserves_no_direct_followup_execution_and_no_memory_commit ... ok
+test blue_brain_minimal_execution::tests::backbind_distinguishes_completed_failed_cancelled_blocked_and_unavailable ... ok
 test blue_brain_minimal_execution::tests::blocked_unavailable_and_cancelled_are_retry_not_applicable ... ok
 test blue_brain_minimal_execution::tests::blocked_unavailable_and_non_canonical_references_do_not_claim_completed_result ... ok
 test blue_brain_minimal_execution::tests::cancelled_is_not_failed_and_not_consumed_by_execution ... ok
@@ -1906,8 +1906,8 @@ test blue_brain_minimal_execution::tests::execution_failure_and_cancelled_are_di
 test blue_brain_minimal_execution::tests::failed_or_blocked_precheck_prevents_execution ... ok
 test blue_brain_minimal_execution::tests::failed_path_exposes_retry_classification_without_retry_orchestration_side_effects ... ok
 test blue_brain_minimal_execution::tests::guard_rail_map_is_explicit_for_canonical_and_non_canonical_paths ... ok
-test blue_brain_minimal_execution::tests::integrity_map_distinguishes_terminal_classes_and_detects_mismatch ... ok
 test blue_brain_minimal_execution::tests::integrity_rejects_cancelled_after_start_and_partial_paths ... ok
+test blue_brain_minimal_execution::tests::integrity_map_distinguishes_terminal_classes_and_detects_mismatch ... ok
 test blue_brain_minimal_execution::tests::integrity_rejects_requested_or_started_state_drift ... ok
 test blue_brain_minimal_execution::tests::non_canonical_internal_only_path_stays_unavailable ... ok
 test blue_brain_minimal_execution::tests::placeholder_eligibility_is_not_execution_or_failed_result ... ok
@@ -1916,58 +1916,58 @@ test blue_brain_minimal_execution::tests::production_hardening_path_map_stays_na
 test blue_brain_minimal_execution::tests::retry_boundary_distinguishes_retryable_and_nonretryable_failures ... ok
 test blue_brain_minimal_execution::tests::serie_bb18_prompt3_doc_stays_pinned_to_guard_rail_map_and_exclusions ... ok
 test blue_brain_minimal_execution::tests::unsupported_vs_blocked_vs_unavailable_vs_non_canonical_stay_distinct ... ok
-test blue_brain_region_first_integration::tests::amygdala_br2_prompt3_canonical_diagnostics_contract_map_is_complete_and_distinct ... ok
 test blue_brain_minimal_execution::tests::serie_bb18_prompt4_closure_doc_stays_pinned_to_canonical_boundaries ... ok
+test blue_brain_region_first_integration::tests::amygdala_br2_prompt3_canonical_diagnostics_contract_map_is_complete_and_distinct ... ok
 test blue_brain_region_first_integration::tests::amygdala_br2_prompt3_runtime_selection_reference_reads_stay_semantically_aligned ... ok
 test blue_brain_region_first_integration::tests::amygdala_br2_prompt3_doc_pins_surface_diagnostics_contracts_and_boundaries ... ok
-test blue_brain_region_first_integration::tests::amygdala_br2_role_map_doc_pins_role_integration_mode_boundaries_and_separation ... ok
 test blue_brain_region_first_integration::tests::anatomical_region_canonical_map_doc_pins_scope_and_deferred_boundary ... ok
 test blue_brain_region_first_integration::tests::basal_ganglia_br4_prompt2_action_gating_outputs_remain_advisory_only ... ok
+test blue_brain_region_first_integration::tests::basal_ganglia_br4_prompt2_doc_pins_surfaces_boundaries_and_region_separation ... ok
+test blue_brain_region_first_integration::tests::amygdala_br2_role_map_doc_pins_role_integration_mode_boundaries_and_separation ... ok
 test blue_brain_region_first_integration::tests::basal_ganglia_br4_prompt2_reference_deferred_blocked_and_noncanonical_do_not_escalate ... ok
 test blue_brain_region_first_integration::tests::basal_ganglia_br4_prompt2_surfaces_roles_and_guards_are_canonical ... ok
 test blue_brain_region_first_integration::tests::basal_ganglia_br4_prompt3_diagnostics_contract_map_is_canonical_and_distinct ... ok
-test blue_brain_region_first_integration::tests::basal_ganglia_br4_prompt2_doc_pins_surfaces_boundaries_and_region_separation ... ok
-test blue_brain_region_first_integration::tests::basal_ganglia_br4_prompt3_doc_pins_contract_hardening_line ... ok
 test blue_brain_region_first_integration::tests::basal_ganglia_br4_prompt3_runtime_selection_reference_share_same_canonical_read ... ok
 test blue_brain_region_first_integration::tests::basal_ganglia_br4_prompt4_closeout_keeps_status_classes_and_guards_separate ... ok
-test blue_brain_region_first_integration::tests::basal_ganglia_br4_role_and_model_mode_stay_distinct_and_bounded ... ok
+test blue_brain_region_first_integration::tests::basal_ganglia_br4_prompt3_doc_pins_contract_hardening_line ... ok
 test blue_brain_region_first_integration::tests::basal_ganglia_br4_prompt4_doc_pins_readiness_sweep_and_next_region_boundary ... ok
+test blue_brain_region_first_integration::tests::basal_ganglia_br4_role_and_model_mode_stay_distinct_and_bounded ... ok
 test blue_brain_region_first_integration::tests::basal_ganglia_br4_role_map_doc_pins_role_integration_mode_boundaries_and_separation ... ok
+test blue_brain_region_first_integration::tests::bb30_prompt6_readiness_doc_pins_first_anatomical_expansion_boundary ... ok
 test blue_brain_region_first_integration::tests::bb31_prompt3_final_sweep_doc_pins_stability_map_and_maintenance_default ... ok
 test blue_brain_region_first_integration::tests::canonical_anatomical_region_map_pins_roles_and_model_modes ... ok
-test blue_brain_region_first_integration::tests::bb30_prompt6_readiness_doc_pins_first_anatomical_expansion_boundary ... ok
 test blue_brain_region_first_integration::tests::cerebellum_br5_prompt2_diagnostics_contracts_mode_and_region_boundaries_are_pinned ... ok
 test blue_brain_region_first_integration::tests::cerebellum_br5_prompt1_doc_pins_role_mode_boundaries_and_handoff ... ok
 test blue_brain_region_first_integration::tests::cerebellum_br5_prompt2_input_guards_reject_direct_authority_sources ... ok
+test blue_brain_region_first_integration::tests::cerebellum_br5_prompt2_doc_pins_minimal_bounded_integration_line ... ok
 test blue_brain_region_first_integration::tests::cerebellum_br5_prompt2_integration_map_surfaces_are_canonical_and_distinct ... ok
 test blue_brain_region_first_integration::tests::cerebellum_br5_prompt2_runtime_selection_execution_reference_reads_stay_bounded ... ok
 test blue_brain_region_first_integration::tests::cerebellum_br5_prompt3_contract_map_separates_all_canonical_reads ... ok
 test blue_brain_region_first_integration::tests::cerebellum_br5_prompt3_reference_only_and_caveat_do_not_promote_to_authority ... ok
-test blue_brain_region_first_integration::tests::cerebellum_br5_prompt2_doc_pins_minimal_bounded_integration_line ... ok
 test blue_brain_region_first_integration::tests::cerebellum_br5_prompt4_readiness_map_and_next_direction_are_pinned ... ok
 test blue_brain_region_first_integration::tests::cerebellum_br5_role_map_is_prediction_timing_correction_and_abstract_functional ... ok
+test blue_brain_region_first_integration::tests::cerebellum_br5_prompt4_doc_pins_readiness_expansion_boundary_and_next_stage ... ok
 test blue_brain_region_first_integration::tests::deferred_blocked_and_noncanonical_inter_region_reads_do_not_blur ... ok
 test blue_brain_region_first_integration::tests::docs_indexes_expose_bb27_two_region_maintenance_reference_line ... ok
 test blue_brain_region_first_integration::tests::docs_indexes_expose_bb29_three_region_maintenance_reference_line ... ok
 test blue_brain_region_first_integration::tests::docs_indexes_expose_bb31_first_anatomical_maintenance_reference_line ... ok
-test blue_brain_region_first_integration::tests::cerebellum_br5_prompt4_doc_pins_readiness_expansion_boundary_and_next_stage ... ok
 test blue_brain_region_first_integration::tests::docs_indexes_expose_br5_cerebellum_readiness_sweep ... ok
 test blue_brain_region_first_integration::tests::docs_readme_exposes_region1_maintenance_entrypoint ... ok
 test blue_brain_region_first_integration::tests::first_anatomical_region_current_model_mode_is_abstract_functional ... ok
-test blue_brain_region_first_integration::tests::first_anatomical_region_diagnostic_map_contains_required_states ... ok
 test blue_brain_region_first_integration::tests::first_anatomical_docs_tests_index_cleanup_doc_pins_canonical_reference_map ... ok
+test blue_brain_region_first_integration::tests::first_anatomical_region_diagnostic_map_contains_required_states ... ok
 test blue_brain_region_first_integration::tests::first_anatomical_region_diagnostics_keep_contract_semantics_distinct ... ok
-test blue_brain_region_first_integration::tests::first_anatomical_region_input_output_guards_preserve_advisory_only_boundaries ... ok
 test blue_brain_region_first_integration::tests::first_anatomical_region_diagnostics_doc_pins_contract_and_no_direct_boundaries ... ok
+test blue_brain_region_first_integration::tests::first_anatomical_region_input_output_guards_preserve_advisory_only_boundaries ... ok
 test blue_brain_region_first_integration::tests::first_anatomical_region_integration_map_contains_required_classes ... ok
 test blue_brain_region_first_integration::tests::first_anatomical_region_integration_doc_pins_minimal_surfaces_and_boundaries ... ok
-test blue_brain_region_first_integration::tests::first_anatomical_region_model_decision_map_contains_required_classes ... ok
 test blue_brain_region_first_integration::tests::first_anatomical_region_model_decision_doc_pins_current_mode_and_boundaries ... ok
+test blue_brain_region_first_integration::tests::first_anatomical_region_model_decision_map_contains_required_classes ... ok
 test blue_brain_region_first_integration::tests::first_anatomical_region_runtime_selection_reference_reads_are_consistent ... ok
 test blue_brain_region_first_integration::tests::first_anatomical_region_selection_is_hippocampus_like_region ... ok
+test blue_brain_region_first_integration::tests::first_anatomical_stabilization_doc_pins_surface_contract_model_and_guards ... ok
 test blue_brain_region_first_integration::tests::first_anatomical_stabilization_map_is_maintenance_hardened_and_model_bounded ... ok
 test blue_brain_region_first_integration::tests::first_inter_region_implementation_cannot_create_direct_authority ... ok
-test blue_brain_region_first_integration::tests::first_anatomical_stabilization_doc_pins_surface_contract_model_and_guards ... ok
 test blue_brain_region_first_integration::tests::first_inter_region_implementation_defers_or_blocks_every_other_pair ... ok
 test blue_brain_region_first_integration::tests::first_inter_region_implementation_map_anchors_exactly_three_relations ... ok
 test blue_brain_region_first_integration::tests::first_inter_region_implementation_preserves_mediated_signal_boundaries ... ok
@@ -1976,7 +1976,6 @@ test blue_brain_region_first_integration::tests::first_region_diagnostic_map_con
 test blue_brain_region_first_integration::tests::first_region_distinguishes_deferred_blocked_caveated_and_reference_only ... ok
 test blue_brain_region_first_integration::tests::first_region_finalization_map_contains_required_classes ... ok
 test blue_brain_region_first_integration::tests::first_region_hardening_map_contains_required_classes ... ok
-test blue_brain_region_first_integration::tests::first_inter_region_implementation_doc_pins_exact_relations_and_guards ... ok
 test blue_brain_region_first_integration::tests::first_region_map_contains_all_required_paths ... ok
 test blue_brain_region_first_integration::tests::first_region_marks_blocked_and_non_canonical_paths ... ok
 test blue_brain_region_first_integration::tests::first_region_marks_insufficient_without_promoting_to_caveated_or_blocked ... ok
@@ -1984,6 +1983,7 @@ test blue_brain_region_first_integration::tests::first_region_non_canonical_cont
 test blue_brain_region_first_integration::tests::first_region_output_is_advisory_and_non_authoritative ... ok
 test blue_brain_region_first_integration::tests::first_region_rejects_non_canonical_input_sources ... ok
 test blue_brain_region_first_integration::tests::first_region_runtime_selection_reference_contract_reads_are_consistent ... ok
+test blue_brain_region_first_integration::tests::first_inter_region_implementation_doc_pins_exact_relations_and_guards ... ok
 test blue_brain_region_first_integration::tests::first_region_stabilization_map_contains_required_classes ... ok
 test blue_brain_region_first_integration::tests::hippocampus_br1_integration_map_and_guards_remain_bounded ... ok
 test blue_brain_region_first_integration::tests::hippocampus_br1_prompt3_canonical_diagnostics_contract_map_is_complete_and_distinct ... ok
@@ -1993,12 +1993,12 @@ test blue_brain_region_first_integration::tests::hippocampus_br1_prompt3_doc_pin
 test blue_brain_region_first_integration::tests::hippocampus_br1_role_map_doc_pins_role_integration_mode_and_scope_boundaries ... ok
 test blue_brain_region_first_integration::tests::hypothalamus_br6_prompt2_inputs_outputs_are_bounded_and_no_direct ... ok
 test blue_brain_region_first_integration::tests::hypothalamus_br6_prompt2_inter_region_adjunct_is_bounded ... ok
+test blue_brain_region_first_integration::tests::hypothalamus_br6_prompt2_doc_pins_surfaces_model_and_boundaries ... ok
 test blue_brain_region_first_integration::tests::hypothalamus_br6_prompt2_reference_deferred_blocked_and_noncanonical_do_not_escalate ... ok
 test blue_brain_region_first_integration::tests::hypothalamus_br6_prompt3_all_reads_are_distinct_and_aligned ... ok
 test blue_brain_region_first_integration::tests::hypothalamus_br6_prompt3_current_model_mode_stays_abstract_functional ... ok
 test blue_brain_region_first_integration::tests::hypothalamus_br6_prompt3_integration_and_contract_maps_are_canonical ... ok
 test blue_brain_region_first_integration::tests::implemented_inter_region_relations_share_one_runtime_selection_reference_read ... ok
-test blue_brain_region_first_integration::tests::hypothalamus_br6_prompt2_doc_pins_surfaces_model_and_boundaries ... ok
 test blue_brain_region_first_integration::tests::inter_region_architecture_map_cannot_create_direct_authority ... ok
 test blue_brain_region_first_integration::tests::inter_region_architecture_map_covers_five_plus_hypothalamus_pair_classes ... ok
 test blue_brain_region_first_integration::tests::inter_region_architecture_roles_remain_functionally_separated ... ok
@@ -2006,13 +2006,13 @@ test blue_brain_region_first_integration::tests::inter_region_contract_reads_can
 test blue_brain_region_first_integration::tests::inter_region_diagnostics_contract_doc_pins_prompt3_semantics ... ok
 test blue_brain_region_first_integration::tests::inter_region_diagnostics_contract_map_separates_canonical_states ... ok
 test blue_brain_region_first_integration::tests::inter_region_relation_distinguishes_caveated_deferred_and_shared_reference ... ok
-test blue_brain_region_first_integration::tests::inter_region_architecture_doc_pins_scope_and_mediation_boundaries ... ok
 test blue_brain_region_first_integration::tests::inter_region_relation_doc_pins_scope_boundaries ... ok
 test blue_brain_region_first_integration::tests::inter_region_relation_map_contains_required_classes ... ok
 test blue_brain_region_first_integration::tests::inter_region_relation_stays_advisory_only_without_direct_authority ... ok
+test blue_brain_region_first_integration::tests::inter_region_architecture_doc_pins_scope_and_mediation_boundaries ... ok
 test blue_brain_region_first_integration::tests::ir1_readiness_sweep_keeps_operational_deferred_blocked_and_caveat_slots_explicit ... ok
-test blue_brain_region_first_integration::tests::maintenance_pass_pins_six_region_scope_and_finding_classes ... ok
 test blue_brain_region_first_integration::tests::ir1_readiness_doc_pins_closeout_next_direction_and_out_of_scope_boundary ... ok
+test blue_brain_region_first_integration::tests::maintenance_pass_pins_six_region_scope_and_finding_classes ... ok
 test blue_brain_region_first_integration::tests::md1_first_deepening_diagnostics_keep_advisory_caveated_deferred_blocked_insufficient_diagnostic_only_distinct ... ok
 test blue_brain_region_first_integration::tests::md1_first_deepening_hardening_keeps_model_diagnostic_contract_and_consumer_reads_separate ... ok
 test blue_brain_region_first_integration::tests::md1_first_deepening_integration_map_separates_required_surfaces ... ok
@@ -2025,110 +2025,110 @@ test blue_brain_region_first_integration::tests::md1_readiness_map_closes_first_
 test blue_brain_region_first_integration::tests::md1_readiness_map_keeps_model_diagnostic_contract_and_surface_states_distinct ... ok
 test blue_brain_region_first_integration::tests::md1_region_deepening_map_keeps_hypothalamus_canonical_but_not_deepened ... ok
 test blue_brain_region_first_integration::tests::md2_docs_tests_reference_map_is_canonical_maintenance_entrypoint ... ok
-test blue_brain_region_first_integration::tests::md1_doc_pins_selective_model_deepening_decision_line ... ok
 test blue_brain_region_first_integration::tests::md2_stabilization_keeps_runtime_selection_reference_states_from_becoming_authority ... ok
 test blue_brain_region_first_integration::tests::md2_stabilization_map_hardens_first_deepening_without_scope_expansion ... ok
+test blue_brain_region_first_integration::tests::md1_doc_pins_selective_model_deepening_decision_line ... ok
 test blue_brain_region_first_integration::tests::md3_second_deepening_diagnostics_keep_status_categories_distinct ... ok
-test blue_brain_region_first_integration::tests::md3_second_deepening_docs_pin_implementation_and_boundaries ... ok
+test blue_brain_region_first_integration::tests::md3_readiness_sweep_closes_second_deepening_into_maintenance ... ok
 test blue_brain_region_first_integration::tests::md3_second_deepening_integration_map_separates_required_surfaces ... ok
 test blue_brain_region_first_integration::tests::md3_second_deepening_preserves_runtime_selection_reference_and_no_direct_scope ... ok
-test blue_brain_region_first_integration::tests::md3_readiness_sweep_closes_second_deepening_into_maintenance ... ok
+test blue_brain_region_first_integration::tests::md3_second_deepening_docs_pin_implementation_and_boundaries ... ok
 test blue_brain_region_first_integration::tests::md3_second_deepening_rescope_keeps_model_forms_and_guards_separate ... ok
 test blue_brain_region_first_integration::tests::md3_second_deepening_rescope_prioritizes_exactly_one_bounded_candidate ... ok
-test blue_brain_region_first_integration::tests::md3_second_deepening_targets_only_amygdala_basal_ganglia_kuramoto_like_candidate ... ok
-test blue_brain_region_first_integration::tests::post_md3_cross_line_direct_authority_guard_includes_memory_denial ... ok
-test blue_brain_region_first_integration::tests::post_md3_maintenance_findings_map_is_bounded_and_has_no_active_expansion_hook ... ok
 test blue_brain_region_first_integration::tests::md3_second_deepening_rescope_docs_are_canonical_and_non_conflicting ... ok
-test blue_brain_region_first_integration::tests::post_md3_maintenance_pass_doc_pins_findings_and_no_expansion ... ok
+test blue_brain_region_first_integration::tests::md3_second_deepening_targets_only_amygdala_basal_ganglia_kuramoto_like_candidate ... ok
+test blue_brain_region_first_integration::tests::post_md3_maintenance_findings_map_is_bounded_and_has_no_active_expansion_hook ... ok
+test blue_brain_region_first_integration::tests::post_md3_cross_line_direct_authority_guard_includes_memory_denial ... ok
 test blue_brain_region_first_integration::tests::region1_final_stabilization_sweep_doc_pins_status_classes_and_decision ... ok
 test blue_brain_region_first_integration::tests::region1_maintenance_reference_doc_pins_canonical_maps_and_boundaries ... ok
+test blue_brain_region_first_integration::tests::post_md3_maintenance_pass_doc_pins_findings_and_no_expansion ... ok
 test blue_brain_region_first_integration::tests::roadmap_map_exposes_region1_maintenance_entrypoint_and_boundary ... ok
-test blue_brain_region_first_integration::tests::sc1_second_consolidation_action_and_guard_checklist_are_canonical ... ok
 test blue_brain_region_first_integration::tests::second_region_class_selection_is_memory_context_related ... ok
+test blue_brain_region_first_integration::tests::sc1_second_consolidation_action_and_guard_checklist_are_canonical ... ok
 test blue_brain_region_first_integration::tests::second_region_distinguishes_caveated_deferred_and_non_canonical_states ... ok
 test blue_brain_region_first_integration::tests::second_region_distinguishes_insufficient_from_caveated ... ok
-test blue_brain_region_first_integration::tests::second_region_diagnostics_doc_pins_canonical_state_line ... ok
 test blue_brain_region_first_integration::tests::second_region_distinguishes_reference_only_from_caveated_and_blocked ... ok
+test blue_brain_region_first_integration::tests::second_region_diagnostics_doc_pins_canonical_state_line ... ok
 test blue_brain_region_first_integration::tests::second_region_expansion_state_remains_not_opened_yet ... ok
-test blue_brain_region_first_integration::tests::second_region_hardening_doc_pins_no_direct_and_non_canonical_cleanup ... ok
 test blue_brain_region_first_integration::tests::second_region_hardening_map_contains_guarded_and_exclusion_paths ... ok
 test blue_brain_region_first_integration::tests::second_region_input_guard_accepts_only_canonical_inputs ... ok
+test blue_brain_region_first_integration::tests::second_region_hardening_doc_pins_no_direct_and_non_canonical_cleanup ... ok
 test blue_brain_region_first_integration::tests::second_region_input_guard_rejects_forbidden_authority_inputs ... ok
 test blue_brain_region_first_integration::tests::second_region_integration_map_contains_minimal_surfaces ... ok
-test blue_brain_region_first_integration::tests::second_region_integration_doc_pins_boundaries_and_no_authority_escalation ... ok
 test blue_brain_region_first_integration::tests::second_region_no_direct_authority_flags_stay_false_for_all_diagnostics_paths ... ok
 test blue_brain_region_first_integration::tests::second_region_output_stays_bounded_advisory_only ... ok
+test blue_brain_region_first_integration::tests::second_region_integration_doc_pins_boundaries_and_no_authority_escalation ... ok
 test blue_brain_region_first_integration::tests::second_region_runtime_selection_reference_use_same_diagnostics_surface ... ok
 test blue_brain_region_first_integration::tests::second_region_selection_map_contains_required_classes ... ok
 test blue_brain_region_first_integration::tests::second_region_selection_doc_pins_candidate_statuses_and_guards ... ok
 test blue_brain_region_first_integration::tests::thalamus_br3_prompt2_input_guard_blocks_forbidden_authority_inputs ... ok
-test blue_brain_region_first_integration::tests::thalamus_br3_prompt2_doc_pins_surfaces_boundaries_and_region_separation ... ok
 test blue_brain_region_first_integration::tests::thalamus_br3_prompt2_integration_map_surfaces_are_complete_and_distinct ... ok
 test blue_brain_region_first_integration::tests::thalamus_br3_prompt2_reference_deferred_blocked_and_noncanonical_paths_do_not_escalate ... ok
 test blue_brain_region_first_integration::tests::thalamus_br3_prompt2_runtime_selection_routing_reference_outputs_stay_bounded ... ok
+test blue_brain_region_first_integration::tests::thalamus_br3_prompt2_doc_pins_surfaces_boundaries_and_region_separation ... ok
 test blue_brain_region_first_integration::tests::thalamus_br3_prompt3_canonical_diagnostics_contract_map_is_complete_and_distinct ... ok
 test blue_brain_region_first_integration::tests::thalamus_br3_prompt3_insufficient_is_not_caveated_deferred_or_blocked ... ok
-test blue_brain_region_first_integration::tests::thalamus_br3_prompt3_runtime_selection_routing_reference_reads_are_aligned ... ok
 test blue_brain_region_first_integration::tests::thalamus_br3_prompt3_doc_pins_surface_diagnostics_contracts_and_boundaries ... ok
+test blue_brain_region_first_integration::tests::thalamus_br3_prompt3_runtime_selection_routing_reference_reads_are_aligned ... ok
 test blue_brain_region_first_integration::tests::thalamus_model_mode_and_role_stay_distinct_from_hippocampus_and_amygdala ... ok
-test blue_brain_region_first_integration::tests::third_region_class_selection_is_runtime_feedback_integration_related ... ok
 test blue_brain_region_first_integration::tests::thalamus_br3_role_map_doc_pins_role_integration_mode_boundaries_and_separation ... ok
+test blue_brain_region_first_integration::tests::third_region_class_selection_is_runtime_feedback_integration_related ... ok
 test blue_brain_region_first_integration::tests::third_region_contract_map_contains_required_classes ... ok
 test blue_brain_region_first_integration::tests::third_region_diagnostic_map_contains_required_states ... ok
-test blue_brain_region_first_integration::tests::third_region_contract_doc_pins_runtime_selection_reference_semantics ... ok
 test blue_brain_region_first_integration::tests::third_region_hardening_doc_pins_no_direct_guard_lines_and_cleanup ... ok
 test blue_brain_region_first_integration::tests::third_region_hardening_map_contains_required_classes ... ok
 test blue_brain_region_first_integration::tests::third_region_input_guards_preserve_no_direct_authority_inputs ... ok
+test blue_brain_region_first_integration::tests::third_region_contract_doc_pins_runtime_selection_reference_semantics ... ok
 test blue_brain_region_first_integration::tests::third_region_integration_map_contains_required_classes ... ok
 test blue_brain_region_first_integration::tests::third_region_integration_doc_pins_surfaces_and_bounds ... ok
 test blue_brain_region_first_integration::tests::third_region_relation_map_contains_required_classes ... ok
-test blue_brain_region_first_integration::tests::third_region_relation_stays_bounded_advisory_only_without_direct_authority ... ok
 test blue_brain_region_first_integration::tests::third_region_relation_doc_pins_direction_semantics_and_boundaries ... ok
+test blue_brain_region_first_integration::tests::third_region_relation_stays_bounded_advisory_only_without_direct_authority ... ok
 test blue_brain_region_first_integration::tests::third_region_selection_doc_pins_candidate_statuses_and_boundaries ... ok
-test blue_brain_region_first_integration::tests::third_region_signal_to_diagnostic_state_distinguishes_core_states ... ok
 test blue_brain_region_first_integration::tests::third_region_selection_map_contains_required_classes ... ok
+test blue_brain_region_first_integration::tests::third_region_signal_to_diagnostic_state_distinguishes_core_states ... ok
 test blue_brain_region_first_integration::tests::three_region_consistency_map_contains_required_classes ... ok
-test blue_brain_region_first_integration::tests::three_region_consistency_doc_pins_canonical_paths_and_no_direct_guards ... ok
 test blue_brain_region_first_integration::tests::three_region_consistency_uses_shared_guard_contract_boundaries ... ok
+test blue_brain_region_first_integration::tests::three_region_consistency_doc_pins_canonical_paths_and_no_direct_guards ... ok
 test blue_brain_region_first_integration::tests::two_region_consistency_keeps_caveated_distinct_from_blocked_insufficient ... ok
+test blue_brain_region_first_integration::tests::three_region_docs_tests_cleanup_doc_pins_canonical_categories_and_region4_boundary ... ok
 test blue_brain_region_first_integration::tests::two_region_consistency_map_contains_required_classes ... ok
 test blue_brain_region_first_integration::tests::two_region_maintenance_findings_map_contains_required_classes ... ok
-test blue_brain_region_first_integration::tests::three_region_docs_tests_cleanup_doc_pins_canonical_categories_and_region4_boundary ... ok
 test blue_brain_region_first_integration::tests::two_region_relation_and_consistency_preserve_no_direct_authority ... ok
 test blue_brain_region_first_integration::tests::two_region_maintenance_reference_cleanup_doc_pins_canonical_categories ... ok
+test canonical_reference::tests::bb22_prompt1_doc_pins_cross_line_stabilization_classes_and_boundaries ... ok
 test canonical_reference::tests::bb21_prompt4_doc_stays_pinned_to_canonical_boundaries_and_no_direct_guards ... ok
 test canonical_reference::tests::bb22_prompt2_doc_pins_canonical_signal_classes_and_no_direct_guard_meanings ... ok
-test canonical_reference::tests::bb22_prompt1_doc_pins_cross_line_stabilization_classes_and_boundaries ... ok
 test canonical_reference::tests::bb22_prompt3_doc_pins_remaining_internal_transition_cleanup_map_and_boundaries ... ok
 test canonical_reference::tests::classifies_canonical_reference_kinds_without_overlap ... ok
-test canonical_reference::tests::bb22_prompt4_doc_pins_final_cross_line_readiness_map_and_freeze_decision ... ok
 test canonical_reference::tests::classifies_lifecycle_and_execution_outcomes ... ok
+test canonical_reference::tests::bb22_prompt4_doc_pins_final_cross_line_readiness_map_and_freeze_decision ... ok
 test canonical_reference::tests::cross_line_signal_classification_keeps_strong_bounded_weak_and_blocked_distinct ... ok
 test canonical_reference::tests::execution_reference_classification_is_case_insensitive_for_status_tokens ... ok
 test canonical_reference::tests::explicit_guard_markers_override_generic_diagnostic_and_reference_only_paths ... ok
 test canonical_reference::tests::interaction_classes_keep_result_reference_and_consumption_boundaries_explicit ... ok
-test canonical_reference::tests::reference_consumption_layers_enforce_expected_canonical_reference_kinds ... ok
 test canonical_reference::tests::reference_consumption_layers_reject_non_canonical_internal_only_paths ... ok
-test canonical_reference::tests::weak_execution_basis_stays_candidate_only_and_cannot_drive_execution_layer ... ok
+test canonical_reference::tests::reference_consumption_layers_enforce_expected_canonical_reference_kinds ... ok
 test canonical_reference::tests::validity_states_remain_distinct_across_canonical_and_non_canonical_lanes ... ok
+test canonical_reference::tests::weak_execution_basis_stays_candidate_only_and_cannot_drive_execution_layer ... ok
 test capabilities::tests::request_digest_changes_with_conditioning_fields ... ok
 test capabilities::tests::sampling_is_denied_by_default ... ok
 test capabilities::tests::stub_changes_when_seed_changes ... ok
 test capabilities::tests::stub_is_deterministic ... ok
-test capabilities::llm_toy::tests::toy_fixture_digest_is_stable ... ok
 test capabilities::tests::stub_refuses_external_io_and_exec_intent ... ok
-test compute_service::tests::admitted_job_runs_on_canonical_pipeline_path ... ok
+test capabilities::llm_toy::tests::toy_fixture_digest_is_stable ... ok
 test compute_service::tests::artifact_or_backend_issue_rejects_during_admission ... ok
+test compute_service::tests::admitted_job_runs_on_canonical_pipeline_path ... ok
 test compute_service::tests::backend_device_incompatibility_is_reported_for_local_worker_lane ... ok
 test compute_service::tests::blocked_warmup_candidate_is_marked_unavailable_in_assessment ... ok
 test compute_service::tests::budget_exceeded_execution_is_classified_as_timed_out ... ok
 test compute_service::tests::candle_lane_marks_lfm_stage_as_degraded_only ... ok
-test compute_service::tests::distributed_placement_reports_local_only_subset_when_remote_is_incompatible ... ok
 test compute_service::tests::distributed_recovery_snapshot_marks_partial_degradation_and_excludes_worker ... ok
-test compute_service::tests::distributed_recovery_snapshot_recovers_to_recovery_in_progress ... ok
+test compute_service::tests::distributed_placement_reports_local_only_subset_when_remote_is_incompatible ... ok
 test compute_service::tests::distributed_recovery_snapshot_tracks_uncertain_and_recovery_required_jobs ... ok
-test compute_service::tests::integration_onboarding_reference_backend_via_service_keeps_pipeline_surface ... ok
+test compute_service::tests::distributed_recovery_snapshot_recovers_to_recovery_in_progress ... ok
 test compute_service::tests::incompatible_budget_is_rejected_in_admission ... ok
+test compute_service::tests::integration_onboarding_reference_backend_via_service_keeps_pipeline_surface ... ok
 test compute_service::tests::invalid_request_is_rejected_with_structured_failure ... ok
 test compute_service::tests::membership_view_distinguishes_single_failure_flapping_and_degraded_states ... ok
 test compute_service::tests::local_redispatch_is_marked_as_degraded_due_to_pressure ... ok
@@ -2147,8 +2147,8 @@ test compute_service::tests::pressure_snapshot_reports_backpressure_and_unschedu
 test compute_service::tests::queue_defer_includes_degraded_membership_signal_when_worker_set_is_unreliable ... ok
 test compute_service::tests::queued_jobs_are_visible_in_in_flight_snapshot ... ok
 test compute_service::tests::rejection_sets_rejected_completion_class ... ok
-test compute_service::tests::repeated_cold_reference_path_and_candidate_path_are_reported ... ok
 test compute_service::tests::remote_execution_failure_can_redispatch_to_local_with_provenance ... ok
+test compute_service::tests::repeated_cold_reference_path_and_candidate_path_are_reported ... ok
 test compute_service::tests::requested_incompatible_worker_is_rejected_with_structured_failure ... ok
 test compute_service::tests::requested_worker_failure_stays_terminal_without_auto_fallback ... ok
 test compute_service::tests::requested_worker_tracks_device_provenance_when_unavailable ... ok
@@ -2162,8 +2162,8 @@ test compute_service::tests::uncertain_orphaned_coordination_requires_recovery_s
 test compute_service::tests::valid_job_is_submitted_admitted_and_queued ... ok
 test compute_service::tests::strong_feedback_prefers_proven_warm_path_and_surfaces_provenance ... ok
 test compute_service::tests::weak_feedback_is_not_overinterpreted ... ok
-test compute_service::tests::worker_registry_snapshot_reports_class_role_and_health_timestamps ... ok
 test compute_service::tests::worker_launch_failure_is_reported_as_structured_execution_error ... ok
+test compute_service::tests::worker_registry_snapshot_reports_class_role_and_health_timestamps ... ok
 test contracts::tests::canonical_runtime_handoff_semantics_cover_required_transitions ... ok
 test contracts::tests::cross_cutting_invariants_and_outcome_classes_are_explicit ... ok
 test contracts::tests::evidence_and_trace_partial_caveat_semantics_are_aligned ... ok
@@ -2226,30 +2226,31 @@ test model_store::tests::promotion_decision_marks_runtime_context_mismatch_as_no
 test model_store::tests::promotion_decision_surfaces_constrained_backend_device_support_classes ... ok
 test model_store::tests::rollout_diagnostics_capture_blocked_and_inconclusive_signals ... ok
 test model_store::tests::rollout_diagnostics_capture_progressed_active_path_when_no_candidate ... ok
-test evidence::tests::mini_fuzz_spikes_digest_no_panics ... ok
 test model_store::tests::rollout_diagnostics_distinguish_compare_shadow_only_scope ... ok
 test model_store::tests::rollout_diagnostics_marks_candidate_rejected_after_activation_attempt ... ok
 test model_store::tests::slot_path_statuses_distinguish_candidate_compare_shadow_and_blocked ... ok
+test model_store::tests::warmup_slot_paths_marks_active_warm_candidate_prepared_and_compare_blocked ... ok
 test pipeline::tests::artifact_failures_are_classified ... ok
 test pipeline::tests::artifact_incompatible_is_classified ... ok
-test model_store::tests::warmup_slot_paths_marks_active_warm_candidate_prepared_and_compare_blocked ... ok
-test pipeline::tests::canonical_pipeline_request_uses_world_sae_ssm_lfm_order ... ok
+test evidence::tests::mini_fuzz_spikes_digest_no_panics ... ok
 test pipeline::tests::canonical_pipeline_exposes_nsr_disabled_status_by_default ... ok
-test pipeline::tests::degraded_fallback_sets_explicit_failure_kind ... ok
 test pipeline::tests::canonical_result_contains_world_stage_provenance ... ok
+test pipeline::tests::canonical_pipeline_request_uses_world_sae_ssm_lfm_order ... ok
 test pipeline::tests::degraded_path_exposes_fault_domain_notes ... ok
+test pipeline::tests::degraded_fallback_sets_explicit_failure_kind ... ok
 test pipeline::tests::execution_error_classifier_distinguishes_backend_disabled ... ok
 test pipeline::tests::fail_fast_profile_yields_unavailable ... ok
-test pipeline::tests::failure_kind_maps_to_fault_domains_and_isolation ... ok
 test pipeline::tests::deterministic_for_same_input_and_seed ... ok
-test pipeline::tests::invalid_input_is_structured_unavailable ... ok
-test pipeline::tests::nsr_contract_mismatch_is_explicit ... ok
-test pipeline::tests::nsr_required_verification_failed_maps_to_structured_failure_kind ... ok
+test pipeline::tests::failure_kind_maps_to_fault_domains_and_isolation ... ok
 test pipeline::tests::keeps_expected_capability_notes ... ok
-test pipeline::tests::stress_profile_triggers_degraded_quality ... ok
+test pipeline::tests::nsr_contract_mismatch_is_explicit ... ok
+test pipeline::tests::invalid_input_is_structured_unavailable ... ok
+test pipeline::tests::nsr_required_verification_failed_maps_to_structured_failure_kind ... ok
 test pipeline::tests::stub_pack_contract_mismatch_is_structured_unavailable ... ok
+test pipeline::tests::stress_profile_triggers_degraded_quality ... ok
 test pipeline::tests::world_slot_unavailable_maps_to_world_artifact_failure ... ok
 test reference_map::tests::blue_brain_bb10_neural_dynamics_candidate_map_keeps_classes_boundaries_and_non_execution ... ok
+test pipeline::tests::unavailable_trace_slices_are_explicitly_marked ... ok
 test reference_map::tests::blue_brain_bb9_execution_eligibility_conditions_bind_to_memory_precheck_and_diagnostics ... ok
 test reference_map::tests::blue_brain_bb9_future_result_boundary_map_keeps_placeholder_and_actual_result_split ... ok
 test reference_map::tests::blue_brain_bb9_safety_precheck_and_execution_eligibility_maps_keep_classes_distinct ... ok
@@ -2276,12 +2277,11 @@ test reference_map::tests::blue_brain_future_action_handoff_and_result_placehold
 test reference_map::tests::blue_brain_future_memory_attachment_map_preserves_propose_not_commit_semantics ... ok
 test reference_map::tests::blue_brain_future_memory_handoff_state_and_commit_result_maps_keep_classes_distinct ... ok
 test reference_map::tests::blue_brain_handoff_inference_status_and_evidence_lanes_stay_on_canonical_compute_line ... ok
-test pipeline::tests::unavailable_trace_slices_are_explicitly_marked ... ok
 test reference_map::tests::blue_brain_handoff_map_keeps_minimal_canonical_split_and_non_canonical_boundary_explicit ... ok
 test reference_map::tests::blue_brain_inference_contract_stays_pinned_to_canonical_submit_and_fault_status_core ... ok
 test reference_map::tests::blue_brain_integration_map_keeps_minimal_classes_and_outward_contract_basis_explicit ... ok
-test reference_map::tests::blue_brain_memory_commit_boundary_map_distinguishes_candidate_and_not_memory_states ... ok
 test reference_map::tests::blue_brain_memory_candidate_lifecycle_map_keeps_no_persistence_boundary_explicit ... ok
+test reference_map::tests::blue_brain_memory_commit_boundary_map_distinguishes_candidate_and_not_memory_states ... ok
 test reference_map::tests::blue_brain_memory_commit_diagnostics_bind_back_to_candidate_selection_runtime_and_boundaries ... ok
 test reference_map::tests::blue_brain_memory_commit_diagnostics_map_keeps_required_classes_and_canonical_reasons ... ok
 test reference_map::tests::blue_brain_minimal_planning_action_interface_map_keeps_readiness_classes_distinct ... ok
@@ -2298,8 +2298,8 @@ test reference_map::tests::blue_brain_reasoning_candidate_diagnostics_map_preser
 test reference_map::tests::blue_brain_reference_context_map_keeps_evidence_replay_snapshot_trace_classes_distinct ... ok
 test reference_map::tests::blue_brain_reference_context_map_preserves_no_persistence_and_non_canonical_boundaries ... ok
 test reference_map::tests::blue_brain_runtime_feedback_map_keeps_canonical_feedback_classes_explicit ... ok
-test reference_map::tests::blue_brain_runtime_feedback_map_preserves_result_status_evidence_context_boundaries ... ok
 test reference_map::tests::blue_brain_runtime_phase_map_keeps_minimal_runtime_phases_and_caveat_state_explicit ... ok
+test reference_map::tests::blue_brain_runtime_feedback_map_preserves_result_status_evidence_context_boundaries ... ok
 test reference_map::tests::blue_brain_runtime_surface_map_keeps_five_minimal_runtime_classes_explicit ... ok
 test reference_map::tests::blue_brain_runtime_surface_map_stays_pinned_to_final_compute_line_without_internal_leak ... ok
 test reference_map::tests::blue_brain_selection_diagnostics_map_keeps_canonical_outcomes_reasons_and_non_canonical_boundary_explicit ... ok
@@ -2310,13 +2310,13 @@ test reference_map::tests::canonical_map_has_one_production_entry_lane ... ok
 test reference_map::tests::canonical_map_keeps_compatibility_constructors_non_production ... ok
 test reference_map::tests::canonical_map_lane_names_are_unique ... ok
 test reference_map::tests::completion_status_classifies_outward_vs_mixed_vs_internal_without_false_positive ... ok
-test reference_map::tests::domain_facing_consumer_map_keeps_alignment_classes_explicit ... ok
-test reference_map::tests::drift_prevention_check_map_keeps_four_minimal_load_bearing_classes ... ok
 test reference_map::tests::dbm_13_hypothalamus_doc_stays_diagnostic_and_non_authoritative ... ok
+test reference_map::tests::domain_facing_consumer_map_keeps_alignment_classes_explicit ... ok
 test reference_map::tests::drift_prevention_checks_stay_pinned_to_canonical_outward_and_shared_semantics ... ok
-test reference_map::tests::final_reference_line_covers_execution_rollout_replay_diagnostics_and_boundary ... ok
+test reference_map::tests::drift_prevention_check_map_keeps_four_minimal_load_bearing_classes ... ok
 test reference_map::tests::final_reference_doc_and_code_constants_are_kept_in_sync ... ok
 test reference_map::tests::first_domain_rollout_candidate_map_keeps_minimal_classification_surface ... ok
+test reference_map::tests::final_reference_line_covers_execution_rollout_replay_diagnostics_and_boundary ... ok
 test reference_map::tests::first_domain_rollout_completion_map_marks_ops_probe_as_aligned ... ok
 test reference_map::tests::first_domain_rollout_completion_statuses_are_narrow_and_non_ambiguous ... ok
 test reference_map::tests::integration_contract_view_keeps_internal_paths_out_of_outward_boundary ... ok
@@ -2328,21 +2328,21 @@ test reference_map::tests::only_ops_probe_is_marked_aligned_to_final_compute_lin
 test reference_map::tests::outward_aligned_consumers_use_canonical_status_and_evidence_exports ... ok
 test reference_map::tests::outward_facing_integration_contracts_stay_pinned_to_final_execution_line ... ok
 test reference_map::tests::post_rollout_adoption_map_keeps_minimal_narrow_classes_explicit ... ok
-test reference_map::tests::post_rollout_map_keeps_orchestrator_and_replay_as_review_candidates ... ok
 test reference_map::tests::post_rollout_map_keeps_replay_lane_explicitly_review_only ... ok
+test reference_map::tests::post_rollout_map_keeps_orchestrator_and_replay_as_review_candidates ... ok
 test reference_map::tests::post_rollout_map_separates_baseline_and_not_pursued_surfaces_explicitly ... ok
 test reference_map::tests::rollout_ready_candidate_is_pinned_to_canonical_outward_contracts_only ... ok
 test reference_map::tests::production_readiness_evidence_pack_stays_aligned_with_canonical_core_contracts ... ok
-test reference_map::tests::serie_bb10_prompt1_neural_dynamics_doc_stays_pinned_to_candidate_map_and_boundaries ... ok
 test reference_map::tests::serie_bb10_prompt2_kuramoto_modulation_doc_keeps_advisory_only_boundary ... ok
+test reference_map::tests::serie_bb10_prompt1_neural_dynamics_doc_stays_pinned_to_candidate_map_and_boundaries ... ok
 test reference_map::tests::serie_bb10_prompt3_hodgkin_huxley_doc_keeps_diagnostic_only_boundary ... ok
 test reference_map::tests::serie_bb1_prompt2_contract_doc_stays_pinned_to_single_compute_contract_language ... ok
 test reference_map::tests::serie_bb1_blue_brain_map_doc_stays_pinned_to_canonical_compute_contracts ... ok
 test reference_map::tests::serie_bb1_prompt3_handoff_doc_stays_pinned_to_canonical_handoff_map ... ok
 test reference_map::tests::serie_bb1_prompt4_candidate_doc_stays_pinned_to_canonical_contracts_and_handoffs ... ok
 test reference_map::tests::serie_bb2_prompt1_runtime_surface_doc_stays_pinned_to_runtime_surface_and_phase_maps ... ok
-test reference_map::tests::serie_bb1_prompt5_readiness_doc_keeps_closure_matrix_and_baseline_pinned ... ok
 test reference_map::tests::serie_bb2_prompt2_transition_trigger_doc_stays_pinned_to_canonical_map_and_boundaries ... ok
+test reference_map::tests::serie_bb1_prompt5_readiness_doc_keeps_closure_matrix_and_baseline_pinned ... ok
 test reference_map::tests::serie_bb2_prompt3_context_memory_boundary_doc_stays_pinned_to_code_map ... ok
 test reference_map::tests::serie_bb2_prompt4_runtime_feedback_doc_stays_pinned_to_feedback_map ... ok
 test reference_map::tests::serie_bb2_prompt5_readiness_doc_keeps_runtime_baseline_and_compute_maintenance_boundary ... ok
@@ -2350,17 +2350,17 @@ test reference_map::tests::serie_bb3_prompt1_context_memory_surface_doc_stays_pi
 test reference_map::tests::serie_bb3_prompt2_lifecycle_doc_stays_pinned_to_code_map ... ok
 test reference_map::tests::serie_bb3_prompt3_evidence_reference_doc_stays_pinned_to_code_map ... ok
 test reference_map::tests::serie_bb3_prompt4_persistence_boundary_doc_stays_pinned_to_code_map ... ok
-test reference_map::tests::serie_bb4_prompt1_control_attention_selection_doc_stays_pinned_to_code_map ... ok
 test reference_map::tests::serie_bb3_prompt5_readiness_doc_keeps_context_memory_baseline_and_deferred_persistence_explicit ... ok
-test reference_map::tests::serie_bb4_prompt3_priority_deferral_doc_stays_pinned_to_code_maps ... ok
+test reference_map::tests::serie_bb4_prompt1_control_attention_selection_doc_stays_pinned_to_code_map ... ok
 test reference_map::tests::serie_bb4_prompt2_compute_trigger_arbitration_doc_stays_pinned_to_code_map ... ok
+test reference_map::tests::serie_bb4_prompt3_priority_deferral_doc_stays_pinned_to_code_maps ... ok
 test reference_map::tests::serie_bb4_prompt4_control_attention_diagnostics_doc_stays_pinned_to_code_map ... ok
 test reference_map::tests::serie_bb4_prompt5_readiness_sweep_doc_stays_pinned_to_bb4_maps_and_boundaries ... ok
 test reference_map::tests::serie_bb5_prompt1_memory_commit_boundary_doc_stays_pinned_to_code_maps ... ok
 test reference_map::tests::serie_bb5_prompt2_future_memory_handoff_and_commit_result_doc_stays_pinned_to_code_maps ... ok
 test reference_map::tests::serie_bb5_prompt3_memory_commit_diagnostics_doc_stays_pinned_to_code_maps ... ok
-test reference_map::tests::serie_bb6_prompt1_planning_reasoning_candidate_doc_stays_pinned_to_code_map ... ok
 test reference_map::tests::serie_bb5_prompt4_readiness_sweep_doc_keeps_minimal_memory_commit_line_explicit ... ok
+test reference_map::tests::serie_bb6_prompt1_planning_reasoning_candidate_doc_stays_pinned_to_code_map ... ok
 test reference_map::tests::serie_bb6_prompt2_candidate_action_boundary_doc_stays_pinned_to_code_maps ... ok
 test reference_map::tests::serie_bb6_prompt3_reasoning_candidate_diagnostics_doc_stays_pinned_to_code_map ... ok
 test reference_map::tests::serie_bb6_prompt4_candidate_comparison_doc_stays_pinned_to_code_map ... ok
@@ -2370,44 +2370,44 @@ test reference_map::tests::serie_bb7_prompt2_readiness_diagnostics_doc_stays_pin
 test reference_map::tests::serie_bb7_prompt3_future_action_handoff_doc_stays_pinned_to_code_maps ... ok
 test reference_map::tests::serie_bb7_prompt4_readiness_sweep_doc_keeps_final_planning_action_closure_line_explicit ... ok
 test reference_map::tests::serie_bb9_prompt1_action_execution_boundary_doc_stays_pinned_to_code_maps ... ok
-test reference_map::tests::serie_bb9_prompt3_future_result_placeholder_boundary_doc_stays_pinned_to_code_maps ... ok
 test reference_map::tests::serie_bb9_prompt2_execution_eligibility_diagnostics_doc_stays_pinned_to_code_maps ... ok
+test reference_map::tests::serie_bb9_prompt3_future_result_placeholder_boundary_doc_stays_pinned_to_code_maps ... ok
 test reference_map::tests::serie_br6_prompt1_hypothalamus_doc_keeps_role_mode_and_no_direct_boundaries ... ok
 test reference_map::tests::serie_br6_prompt1_hypothalamus_doc_separates_existing_region_roles ... ok
+test reference_map::tests::serie_br6_prompt1_hypothalamus_updates_canonical_region_and_inter_region_docs ... ok
 test reference_map::tests::serie_bb9_prompt4_readiness_sweep_doc_stays_pinned_to_code_maps ... ok
 test reference_map::tests::serie_j_final_readiness_sweep_stays_aligned_with_canonical_production_line ... ok
-test reference_map::tests::serie_br6_prompt1_hypothalamus_updates_canonical_region_and_inter_region_docs ... ok
 test reference_map::tests::serie_k_closure_doc_stays_aligned_with_outward_integration_boundaries ... ok
 test reference_map::tests::serie_l_prompt2_boundary_doc_keeps_final_acceptance_line_explicit ... ok
 test reference_map::tests::serie_m_consumer_map_doc_stays_in_sync_with_code ... ok
 test reference_map::tests::serie_n_priority_view_does_not_mark_legacy_or_internal_paths_as_aligned ... ok
-test reference_map::tests::serie_o_drift_prevention_checks_doc_stays_tied_to_canonical_line ... ok
 test reference_map::tests::serie_n_broader_system_map_stays_pinned_to_final_compute_line_and_priority_view ... ok
-test reference_map::tests::serie_o_maintenance_boundary_doc_keeps_minimal_change_classes_explicit ... ok
+test reference_map::tests::serie_o_drift_prevention_checks_doc_stays_tied_to_canonical_line ... ok
 test reference_map::tests::serie_o_minimal_follow_up_canon_is_consistent_across_reference_and_exit_docs ... ok
+test reference_map::tests::serie_o_maintenance_boundary_doc_keeps_minimal_change_classes_explicit ... ok
+test reference_map::tests::serie_p_first_domain_rollout_doc_stays_pinned_to_canonical_contracts_and_boundaries ... ok
 test reference_map::tests::serie_o_prompt4_readiness_sweep_keeps_matrix_follow_up_line_and_priority_explicit ... ok
 test reference_map::tests::serie_p_prompt3_completion_doc_stays_pinned_to_single_rollout_proof_case ... ok
-test reference_map::tests::serie_p_first_domain_rollout_doc_stays_pinned_to_canonical_contracts_and_boundaries ... ok
 test reference_map::tests::serie_q_post_rollout_adoption_doc_stays_pinned_to_single_rollout_anchor_language ... ok
-test reference_map::tests::serie_p_prompt4_closure_doc_keeps_matrix_rollout_line_and_priority_explicit ... ok
 test risk_contract::tests::validate_rejects_non_finite ... ok
 test risk_contract::tests::validate_rejects_out_of_range ... ok
+test reference_map::tests::serie_p_prompt4_closure_doc_keeps_matrix_rollout_line_and_priority_explicit ... ok
 test risk_contract::tests::verified_pipeline_requires_evidence ... ok
 test runtime_profile::tests::compare_runtime_alias_maps_to_diagnostic_mode ... ok
-test runtime_profile::tests::production_allows_slot_shadow_flags_without_global_shadow_mode ... ok
 test runtime_profile::tests::defaults_track_backend_kind ... ok
+test runtime_profile::tests::production_allows_slot_shadow_flags_without_global_shadow_mode ... ok
 test runtime_profile::tests::production_rejects_diagnostic_enablement ... ok
 test runtime_profile::tests::rejects_unsupported_multi_worker_profile ... ok
 test service_surface::tests::admission_rejection_is_structured ... ok
 test service_surface::tests::baseline_comparison_is_visible_in_runtime_snapshot ... ok
 test service_surface::tests::baseline_comparison_marks_rollout_boundary_as_not_meaningful ... ok
-test service_surface::tests::canonical_consumer_view_marks_insufficient_evidence_without_bundle_refs ... ok
 test service_surface::tests::candidate_can_be_compared_against_explicit_baseline ... ok
+test service_surface::tests::canonical_consumer_view_marks_insufficient_evidence_without_bundle_refs ... ok
+test service_surface::tests::completed_jobs_are_persisted_in_history_lookup ... ok
 test service_surface::tests::canonical_consumer_view_uses_shared_status_semantics ... ok
 test service_surface::tests::control_attention_diagnostics_cover_outcomes_and_mark_non_canonical_details ... ok
-test service_surface::tests::completed_jobs_are_persisted_in_history_lookup ... ok
-test service_surface::tests::drain_scheduler_guarded_noop_boundary_is_explicit ... ok
 test service_surface::tests::drain_scheduler_blocks_when_stale_runtime_basis_requires_refresh ... ok
+test service_surface::tests::drain_scheduler_guarded_noop_boundary_is_explicit ... ok
 test service_surface::tests::drain_scheduler_reports_noop_when_nothing_is_runnable ... ok
 test service_surface::tests::evidence_export_surface_tracks_canonical_bundle_refs_and_trace_refs ... ok
 test service_surface::tests::execute_inline_reports_completion_and_status_surface ... ok
@@ -2425,8 +2425,8 @@ test service_surface::tests::operations_actions_are_applied_or_structured_unsupp
 test service_surface::tests::operations_snapshot_distinguishes_unavailable_and_partially_unavailable ... ok
 test service_surface::tests::operations_snapshot_keeps_hotspot_signals_consistent ... ok
 test service_surface::tests::operations_snapshot_marks_drift_affected_when_stale_basis_and_regression_signal_conflict ... ok
-test service_surface::tests::operations_snapshot_marks_stale_when_only_stale_history_context_exists ... ok
 test service_surface::tests::operations_snapshot_marks_unknown_without_job_signal ... ok
+test service_surface::tests::operations_snapshot_marks_stale_when_only_stale_history_context_exists ... ok
 test service_surface::tests::operations_snapshot_recommends_rehydrate_for_orphaned_work_items ... ok
 test service_surface::tests::operations_snapshot_surfaces_runtime_profile_flags ... ok
 test service_surface::tests::parse_warmup_state_distinguishes_cold_preparing_ready_blocked ... ok
@@ -2437,18 +2437,18 @@ test service_surface::tests::queue_hygiene_surfaces_orphaned_persisted_active_wo
 test service_surface::tests::recovery_rehydrates_queued_jobs_and_marks_running_jobs_uncertain ... ok
 test service_surface::tests::recovery_status_is_carried_into_job_status_and_history ... ok
 test service_surface::tests::rehydrate_history_blocks_when_snapshot_basis_is_stale ... ok
-test service_surface::tests::rehydrate_history_is_mutating_and_blocked_without_store ... ok
 test service_surface::tests::rejected_and_failed_jobs_keep_failure_summary_in_history ... ok
+test service_surface::tests::rehydrate_history_is_mutating_and_blocked_without_store ... ok
 test service_surface::tests::replay_from_legacy_history_without_request_is_configuration_incomplete ... ok
 test service_surface::tests::replay_from_remote_history_without_remote_context_is_blocked ... ok
-test service_surface::tests::replay_preflight_classifies_local_to_remote_as_changed_context_with_caveat ... ok
 test service_surface::tests::replay_marks_changed_context_as_inconclusive_for_regression_checks ... ok
+test service_surface::tests::replay_preflight_classifies_local_to_remote_as_changed_context_with_caveat ... ok
 test service_surface::tests::replay_preflight_classifies_remote_to_local_with_bridge_signals ... ok
 test service_surface::tests::replay_preflight_classifies_ready_run ... ok
 test service_surface::tests::replay_preflight_distinguishes_remote_to_other_remote_context ... ok
 test service_surface::tests::replay_preflight_exposes_evidence_aware_comparison_class ... ok
-test service_surface::tests::replay_preflight_marks_backend_device_shift_as_blocked_for_replay ... ok
 test service_surface::tests::replay_preflight_marks_missing_rollout_context_as_blocked_for_comparison ... ok
+test service_surface::tests::replay_preflight_marks_backend_device_shift_as_blocked_for_replay ... ok
 test service_surface::tests::replay_preflight_marks_partial_snapshot_as_caveat ... ok
 test service_surface::tests::replay_regression_signal_classes_cover_strong_possible_and_no_signal ... ok
 test service_surface::tests::replay_preflight_partial_snapshot_with_changed_context_remains_blocked ... ok
@@ -2457,17 +2457,17 @@ test service_surface::tests::runtime_operation_code_and_mutation_result_core_sem
 test service_surface::tests::replay_runs_through_canonical_path_and_links_source_job ... ok
 test service_surface::tests::runtime_operation_references_recovery_evidence_comparison ... ok
 test service_surface::tests::runtime_operations_keep_core_semantics_aligned_on_real_outcomes ... ok
-test service_surface::tests::runtime_snapshot_contains_recent_operation_provenance ... ok
 test service_surface::tests::service_hardening_semantics_preserve_non_hardening_compute_failure_class ... ok
+test service_surface::tests::runtime_snapshot_contains_recent_operation_provenance ... ok
 test service_surface::tests::service_hardening_view_distinguishes_stable_caveated_degraded_recovery_and_insufficient ... ok
 test service_surface::tests::shared_entry_contract_mapping_stays_consistent_for_replay_and_ops ... ok
-test service_surface::tests::service_trust_state_distinguishes_current_caveated_partial_degraded_and_insufficient ... ok
 test service_surface::tests::standard_entry_blocks_expert_replay_contract ... ok
+test service_surface::tests::service_trust_state_distinguishes_current_caveated_partial_degraded_and_insufficient ... ok
 test service_surface::tests::standard_entry_blocks_scheduler_drain_runtime_ops ... ok
 test service_surface::tests::status_evidence_export_surface_includes_control_attention_diagnostics ... ok
 test service_surface::tests::status_evidence_export_surface_keeps_internal_runtime_details_out_of_default_surface ... ok
-test service_surface::tests::status_export_surface_reuses_runtime_snapshot_and_trust_semantics ... ok
 test service_surface::tests::trust_evolution_is_recorded_across_operations ... ok
+test service_surface::tests::status_export_surface_reuses_runtime_snapshot_and_trust_semantics ... ok
 test service_surface::tests::workflow_view_surfaces_canonical_expert_paths_and_transitions ... ok
 test service_surface::tests::workflow_view_marks_partial_blocked_and_internal_only_states ... ok
 test ssm::tests::budget_exceeded_reports_stage ... ok
@@ -2500,7 +2500,7 @@ test world_vljepa_shadow::tests::drift_alarm_disables_shadow ... ok
 test world_vljepa_shadow::tests::window_aggregation_is_deterministic ... ok
 test ssm::tests::benchmark_ref_vs_opt_small_med_large ... ok
 
-test result: ok. 703 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.46s
+test result: ok. 703 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.58s
 
      Running unittests src/bin/ucf-ssm-bench.rs (target/debug/deps/ucf_ssm_bench-a724667d4a11db86)
 
@@ -2525,8 +2525,8 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 3 tests
 test tests::drift_is_sorted_and_bounded ... ok
-test tests::health_status_mapping_is_stable ... ok
 test tests::alerts_are_sorted_and_bounded ... ok
+test tests::health_status_mapping_is_stable ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -2552,8 +2552,8 @@ test tests::drift_high_prioritizes_macro_selection ... ok
 test tests::low_phi_increases_replay_bias ... ok
 test tests::replay_influence_biases_selection ... ok
 test tests::kernel_appends_derived_milestones ... ok
-test tests::replay_token_contains_no_raw_text ... ok
 test tests::replay_selection_is_deterministic_for_same_inputs ... ok
+test tests::replay_token_contains_no_raw_text ... ok
 test tests::sleep_pulse_produces_replay_scheduled_events ... ok
 
 test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -2562,8 +2562,8 @@ test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 11 tests
 test archive_log::tests::append_result_contains_deterministic_id ... ok
-test archive_log::tests::every_append_flushes ... ok
 test archive_log::tests::interval_flushes_only_after_elapsed_interval ... ok
+test archive_log::tests::every_append_flushes ... ok
 test archive_log::tests::manual_never_flushes_implicitly ... ok
 test storage::tests::deterministic_id_for_same_seq_payload ... ok
 test storage::tests::mem_archive_seq_starts_at_one_and_increments ... ok
@@ -2605,7 +2605,7 @@ test hh::tests::dopamine_increases_spikes ... ok
 test hh::tests::serotonin_not_more_spikes ... ok
 test hh::tests::hh_rest_stable_no_nan ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
      Running unittests src/lib.rs (target/debug/deps/ucf_demo-03f7dfd60897c1ea)
 
@@ -2653,8 +2653,8 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/ess_v1.rs (target/debug/deps/ess_v1-1ffcf05e6c28b57b)
 
 running 9 tests
-test append_lower_window_same_tick_fails_and_len_unchanged ... ok
 test append_lower_tick_fails_and_len_unchanged ... ok
+test append_lower_window_same_tick_fails_and_len_unchanged ... ok
 test append_same_tick_increasing_window_succeeds ... ok
 test append_with_increasing_ticks_succeeds ... ok
 test constructors_default_neuromod_to_none ... ok
@@ -2674,11 +2674,11 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_evidence-9b8a26a0c85a0736)
 
 running 3 tests
-test file_store::tests::file_store_persists_records_across_reopen ... ok
 test file_store::tests::file_store_detects_corruption_on_reopen ... ok
+test file_store::tests::file_store_persists_records_across_reopen ... ok
 test tests::evidence_store_appends ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
      Running unittests src/lib.rs (target/debug/deps/ucf_feature_spiker-5d02df96d24a9aab)
 
@@ -2692,8 +2692,8 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_feature_translator-fc102d6890174b9d)
 
 running 2 tests
-test tests::mock_lens_selects_top_k_and_scales_with_gain ... ok
 test tests::mock_sae_is_deterministic_and_sorted ... ok
+test tests::mock_lens_selects_top_k_and_scales_with_gain ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -2760,8 +2760,8 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/gateway_v1.rs (target/debug/deps/gateway_v1-c2a6cbd784d2d829)
 
 running 6 tests
-test health_endpoint_requires_token_outside_dev_and_returns_bounded_surface ... ok
 test gateway_panic_is_caught_and_returns_internal_error ... ok
+test health_endpoint_requires_token_outside_dev_and_returns_bounded_surface ... ok
 test negotiation_and_submit_and_subscribe_and_ess_query_work ... ok
 test strict_mode_rejects_non_loopback_tcp_bind_and_records_violation ... ok
 test tcp_length_delimited_roundtrip_works ... ok
@@ -2792,8 +2792,8 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_iit_monitor-2eff7823e7feb312)
 
 running 3 tests
-test tests::low_phi_triggers_fusion_actions ... ok
 test tests::evaluation_is_deterministic_for_same_snapshot_history ... ok
+test tests::low_phi_triggers_fusion_actions ... ok
 test tests::sample_is_deterministic_and_bounded ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -2820,8 +2820,8 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_ingestion-713fd2c3c628ff7b)
 
 running 4 tests
-test tests::ingestion_service_emits_workspace_snapshot_event_and_archives_record ... ok
 test tests::ingestion_service_emits_speech_event_when_lock_ok ... ok
+test tests::ingestion_service_emits_workspace_snapshot_event_and_archives_record ... ok
 test tests::ingestion_service_rejects_invalid_control_frame ... ok
 test tests::ingestion_service_routes_control_frame_and_publishes_outcome ... ok
 
@@ -2884,11 +2884,11 @@ test notar::tests::block_rule_triggers_on_high_surprise_low_plv ... ok
 test notar::tests::facts_root_is_order_invariant ... ok
 test notar::tests::logic_hook_block_flips_verdict ... ok
 test notar::tests::reasoning_trace_is_deterministic ... ok
-test policy_ecology_v0::tests::deny_by_default_blocks_without_capability ... ok
 test policy_ecology_v0::tests::deterministic_assessment_digest ... ok
 test policy_ecology_v0::tests::fail_open_or_fast_is_deterministic ... ok
-test policy_ecology_v0::tests::lower_coherence_monotonic_risk ... ok
+test policy_ecology_v0::tests::deny_by_default_blocks_without_capability ... ok
 test policy_ecology_v0::tests::reason_boundedness_and_clamps ... ok
+test policy_ecology_v0::tests::lower_coherence_monotonic_risk ... ok
 test tests::causal_atoms_raise_risk_warning ... ok
 test tests::causal_high_confidence_delta_denies ... ok
 test tests::causal_medium_confidence_delta_warns ... ok
@@ -2899,8 +2899,8 @@ test tests::forbidden_intent_produces_deny ... ok
 test tests::hard_constraint_trace_is_deterministic ... ok
 test tests::high_risk_denies_in_mvp ... ok
 test tests::low_coherence_low_phi_warns_in_mvp ... ok
-test tests::ok_path_has_no_violations ... ok
 test tests::reasoning_trace_is_deterministic ... ok
+test tests::ok_path_has_no_violations ... ok
 test tests::reasoning_trace_merkle_chain_links_prev_commit ... ok
 test v0::tests::high_risk_blocks_by_r2 ... ok
 test v0::tests::low_risk_terminal_research_is_unknown_deterministically ... ok
@@ -2938,10 +2938,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 11 tests
 test tests::accept_spike_within_window ... ok
-test tests::coupling_increases_plv_over_ticks ... ok
 test tests::median_bucket_is_deterministic ... ok
-test v0::core::tests::coherence_pair_matches_phase_relationship ... ok
+test tests::coupling_increases_plv_over_ticks ... ok
 test tests::tick_is_deterministic_for_same_inputs ... ok
+test v0::core::tests::coherence_pair_matches_phase_relationship ... ok
 test v0::core::tests::invalid_cycle_hz_is_rejected ... ok
 test v0::core::tests::step_ms_advances_deterministically_without_coupling ... ok
 test v0::phase_bus::tests::lock_metric_properties ... ok
@@ -2963,8 +2963,8 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 458 tests
 test absolute_final_input_continuity_sweep::tests::absolute_final_input_continuity_digest_stable ... ok
 test adversarial::tests::fixture_parser_is_stable ... ok
-test airgap::tests::manifest_digest_stable ... ok
 test adversarial::tests::report_serialization_stable ... ok
+test airgap::tests::manifest_digest_stable ... ok
 test alerts::tests::evaluator_triggers_and_clears_with_hysteresis ... ok
 test artifact_schema::tests::check_reports_missing_snapshot_as_breaking ... ok
 test artifact_schema::tests::check_reports_missing_v11_residual_snapshot_as_breaking ... ok
@@ -2988,8 +2988,8 @@ test artifact_schema::tests::check_reports_v20_supported_scope_execution_shape_d
 test artifact_schema::tests::parse_struct_captures_optional_and_required ... ok
 test artifact_schema::tests::parse_struct_field_order_is_stable_sorted ... ok
 test bench::tests::quantile_estimator_orders_values ... ok
-test artifact_schema::tests::generator_then_check_passes_for_full_v18_coverage ... ok
 test bugkit_tests::bugkit_manifest_detects_tamper ... ok
+test artifact_schema::tests::generator_then_check_passes_for_full_v18_coverage ... ok
 test bugkit_tests::bugkit_size_cap_drops_optional_entries ... ok
 test bugkit_tests::bugkit_zip_order_is_deterministic ... ok
 test bundle_absolute_sweep::tests::bundle_absolute_sweep_digest_stable ... ok
@@ -3121,19 +3121,19 @@ test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execut
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v15_expands_when_governance_seal_passes ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v15_freezes_when_governance_seal_fails ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v4_denies_stale_prior_execution_artifact ... ok
-test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v4_denies_stale_reevaluation ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v4_digest_is_deterministic ... ok
+test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v4_denies_stale_reevaluation ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v4_expands_when_one_candidate_and_authority_pass ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v4_reaffirms_freeze_when_governance_authority_fails ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v4_reaffirms_freeze_when_two_candidates_viable ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v5_denies_stale_prior_execution_artifact ... ok
-test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v5_expands_when_final_consumer_authority_passes ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v5_freezes_on_ambiguous_candidates ... ok
+test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v5_expands_when_final_consumer_authority_passes ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v5_freezes_when_final_consumer_authority_fails ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v6_denies_stale_prior_execution_artifact ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v6_expands_with_final_governance_and_residual_pass ... ok
-test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v6_freezes_on_ambiguous_candidates ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v6_freezes_when_residual_sweep_fails ... ok
+test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v6_freezes_on_ambiguous_candidates ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v7_denies_stale_reevaluation_artifact ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v7_expands_with_residual_free_governance_pass ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_scope_execute_v7_reaffirms_freeze_on_historical_governance_dependency ... ok
@@ -3153,8 +3153,8 @@ test models_lifecycle::probe_tests::consistency_v4_tests::supported_set_apply_ex
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_set_apply_freeze_is_deterministic ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_set_apply_autogenerates_reeval_when_missing ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_slot_set_digest_is_deterministic ... ok
-test models_lifecycle::probe_tests::consistency_v4_tests::unknown_slot_metadata_is_not_eligible ... ok
 test models_lifecycle::probe_tests::consistency_v4_tests::supported_set_review_defaults_to_freeze_for_current_repo_state ... ok
+test models_lifecycle::probe_tests::consistency_v4_tests::unknown_slot_metadata_is_not_eligible ... ok
 test models_lifecycle::probe_tests::detects_second_supported_real_slot_from_docs ... ok
 test models_lifecycle::probe_tests::models_shadow_ready_fails_without_required_evidence ... ok
 test models_lifecycle::probe_tests::probe_report_serialization_is_stable ... ok
@@ -3420,7 +3420,7 @@ test v9_gate::tests::v9_gate_report_serialization_is_deterministic ... ok
 test world_shadow::tests::world_parity_status_is_deterministic ... ok
 test tests::metrics_trend_downsamples_to_bound ... ok
 
-test result: ok. 458 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.46s
+test result: ok. 458 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.93s
 
      Running unittests src/main.rs (target/debug/deps/ucf_ops-ff553d02e6208662)
 
@@ -3433,7 +3433,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 1 test
 test adversarial_suite_v1_runs_and_reports_cases ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
      Running tests/airgap_flow.rs (target/debug/deps/airgap_flow-3601fdaef0d0b8b4)
 
@@ -3442,7 +3442,7 @@ test airgap_export_zip_order_is_sorted ... ok
 test airgap_import_detects_tamper ... ok
 test airgap_import_rejects_untrusted_signer_in_strict_mode ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
 
      Running tests/bench_flow.rs (target/debug/deps/bench_flow-14dbc3b8db9ad964)
 
@@ -3465,15 +3465,15 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 11 tests
 test br4_basal_ganglia_bluebrain_attachment_stays_no_direct_and_bounded ... ok
-test br4_basal_ganglia_handoff_prioritizes_basal_before_cerebellum_and_readme_indexes_doc ... ok
 test br4_basal_ganglia_closeout_preserves_no_direct_compute_and_existing_bluebrain_lines ... ok
-test br4_basal_ganglia_prompt3_hardens_diagnostics_contracts_and_reads ... ok
-test br4_basal_ganglia_readiness_map_closes_surfaces_diagnostics_contracts_and_model_mode ... ok
-test br4_basal_ganglia_role_map_pins_canonical_roles_and_current_mode ... ok
+test br4_basal_ganglia_handoff_prioritizes_basal_before_cerebellum_and_readme_indexes_doc ... ok
 test br4_basal_ganglia_prompt3_preserves_model_region_and_no_direct_boundaries ... ok
+test br4_basal_ganglia_prompt3_hardens_diagnostics_contracts_and_reads ... ok
+test br4_basal_ganglia_role_map_pins_canonical_roles_and_current_mode ... ok
 test br4_basal_ganglia_separates_region_roles_without_scope_expansion ... ok
-test br4_next_region_handoff_prioritizes_cerebellum_without_opening_region_five ... ok
+test br4_basal_ganglia_readiness_map_closes_surfaces_diagnostics_contracts_and_model_mode ... ok
 test docs_readme_indexes_br4_basal_ganglia_closeout_reference ... ok
+test br4_next_region_handoff_prioritizes_cerebellum_without_opening_region_five ... ok
 test docs_readme_indexes_br4_basal_ganglia_prompt3_contract_hardening ... ok
 
 test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
@@ -3482,23 +3482,23 @@ test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 running 8 tests
 test br5_cerebellum_prompt2_and_prompt3_docs_are_indexed ... ok
-test br5_cerebellum_prompt3_keeps_no_direct_authority_guards ... ok
 test br5_cerebellum_bluebrain_attachment_stays_no_direct_and_bounded ... ok
+test br5_cerebellum_prompt3_keeps_no_direct_authority_guards ... ok
 test br5_cerebellum_prompt3_pins_diagnostics_contract_map_and_reads ... ok
 test br5_cerebellum_prompt3_preserves_model_boundaries_and_region_separation ... ok
 test br5_cerebellum_role_map_pins_canonical_roles_and_current_mode ... ok
 test docs_readme_indexes_br5_cerebellum_prompt1_role_map ... ok
 test br5_cerebellum_separates_all_established_region_roles_without_scope_expansion ... ok
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
      Running tests/br6_hypothalamus_readiness_docs.rs (target/debug/deps/br6_hypothalamus_readiness_docs-451b30499a1eb694)
 
 running 5 tests
 test br6_hypothalamus_model_boundary_separates_abstract_kuramoto_hh_and_hh_later ... ok
-test br6_hypothalamus_readiness_map_keeps_surface_diagnostics_contract_and_model_classes_distinct ... ok
-test br6_next_direction_prioritizes_system_audit_without_opening_region_seven ... ok
 test br6_hypothalamus_closeout_preserves_no_direct_out_of_scope_and_bluebrain_contract_lines ... ok
+test br6_next_direction_prioritizes_system_audit_without_opening_region_seven ... ok
+test br6_hypothalamus_readiness_map_keeps_surface_diagnostics_contract_and_model_classes_distinct ... ok
 test br6_prompt3_points_to_prompt4_closeout_and_readme_indexes_closure_reference ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -3510,7 +3510,7 @@ test counterfactual_simulation_never_executes_tools ... ok
 test causal_slice_contains_decision_chain ... ok
 test explain_why_reports_links ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
 
      Running tests/determinism_scan.rs (target/debug/deps/determinism_scan-3fcd5929336abac7)
 
@@ -3528,7 +3528,7 @@ test docs_lint_fails_on_snapshot_mismatch ... ok
 test docs_lint_passes_on_repo_docs ... ok
 test docs_lint_reports_fail_instead_of_error_when_required_doc_is_missing ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.80s
 
      Running tests/error_code_mapping.rs (target/debug/deps/error_code_mapping-ba37a5cd03760a30)
 
@@ -3566,8 +3566,8 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 3 tests
 test net_deps_audit_reports_forbidden_path_deterministically ... ok
-test net_deps_lockfile_fallback_reports_forbidden_path ... ok
 test parses_allowlist_file ... ok
+test net_deps_lockfile_fallback_reports_forbidden_path ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -3604,7 +3604,7 @@ test v0_gate_writes_deterministic_check_order ... ok
 test world_shadow_report_reads_bounded_windows ... ok
 test readiness_gate_writes_report ... ok
 
-test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.28s
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.25s
 
      Running tests/portability_check.rs (target/debug/deps/portability_check-405603644ccc223d)
 
@@ -3612,15 +3612,15 @@ running 2 tests
 test portability_check_runs_and_writes_report ... ok
 test path_scan_is_clean_for_repo ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
 
      Running tests/portability_report_v5.rs (target/debug/deps/portability_report_v5-f2dd45da99fcf644)
 
 running 2 tests
-test portability_report_v11_skips_optional_backend_resolution_cleanly ... ok
 test portability_report_v11_contains_final_sweep_sections_in_stable_order ... ok
+test portability_report_v11_skips_optional_backend_resolution_cleanly ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 55.10s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 53.68s
 
      Running tests/preflight_flow.rs (target/debug/deps/preflight_flow-27eaae3ccea78141)
 
@@ -3666,14 +3666,14 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 10 tests
 test tests::low_coherence_forces_thought_only_and_caps_thoughts ... ok
-test tests::restrict_forces_thought_only_and_throttles ... ok
 test tests::retention_is_deterministic_across_cycles ... ok
+test tests::restrict_forces_thought_only_and_throttles ... ok
 test tests::speech_allowed_when_all_gates_allow ... ok
 test tests::speech_denied_when_coherence_below_threshold ... ok
 test tests::speech_denied_when_nsr_denies ... ok
 test tests::speech_denied_when_phi_below_threshold ... ok
-test tests::speech_denied_when_risk_gate_denies ... ok
 test tests::speech_denied_when_speak_lock_below_threshold ... ok
+test tests::speech_denied_when_risk_gate_denies ... ok
 test tests::thought_is_buffered_and_never_emitted ... ok
 
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -3712,7 +3712,7 @@ test tool_plans::tests::canonical_digest_is_stable_across_arg_ordering ... ok
 test tool_plans::tests::issue_tightens_on_risk_and_prevents_issue ... ok
 test policy_packs::tests::policy_pack_merge_no_panic_for_random_overlay_values ... ok
 
-test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.05s
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.07s
 
      Running tests/capability_gate.rs (target/debug/deps/capability_gate-05dc3380fd3f24eb)
 
@@ -3728,25 +3728,25 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/core_contract_tests.rs (target/debug/deps/core_contract_tests-42616d0941b7a0ab)
 
 running 2 tests
-test control_decision_contract_invariants_hold ... ok
 test payload_channel_contract_is_consistent ... ok
+test control_decision_contract_invariants_hold ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
      Running tests/policy_gate.rs (target/debug/deps/policy_gate-08f3d960bcae2024)
 
 running 9 tests
-test external_output_text_with_allow_emits_text ... ok
 test gem_allow_brain_stimulus_emits_spikes ... ok
-test internal_thought_allowed_but_not_externalized ... ok
+test external_output_text_with_allow_emits_text ... ok
 test memory_write_bytes_with_allow_writes_memory ... ok
+test internal_thought_allowed_but_not_externalized ... ok
 test no_decision_no_action ... ok
 test pbm_allows_external_output_text_and_gem_emits ... ok
 test pbm_denies_external_output_text_over_512_bytes ... ok
 test pbm_meta_baseline_when_neuromod_none ... ok
 test pbm_meta_high_stress_sets_recursion_budget_zero ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
      Running unittests src/lib.rs (target/debug/deps/ucf_policy_ecology-65a65344a439d69b)
 
@@ -3774,8 +3774,8 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf-050aca2e8f736778)
 
 running 2 tests
-test v1::spec::tests::prost_roundtrip_experience_record ... ok
 test v1::spec::tests::serde_roundtrip_control_frame ... ok
+test v1::spec::tests::prost_roundtrip_experience_record ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -3801,9 +3801,9 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_recursion_controller-53ed019c4f815a4d)
 
 running 3 tests
-test tests::high_drift_reduces_depth ... ok
 test tests::determinism_holds_for_identical_inputs ... ok
 test tests::high_phi_low_risk_increases_depth ... ok
+test tests::high_drift_reduces_depth ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -3822,8 +3822,8 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/replay_golden.rs (target/debug/deps/replay_golden-aa92430c85a2cf25)
 
 running 5 tests
-test backend_override_can_trigger_drift ... ok
 test full_no_action_never_executes_actions ... ok
+test backend_override_can_trigger_drift ... ok
 test replay_audit_detects_missing_chain_digest ... ok
 test replay_audit_reports_missing_data_for_empty_range ... ok
 test golden_fixture_matches_in_compute_mode ... ok
@@ -3839,8 +3839,8 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_risk_gate-7535f8dc425a798f)
 
 running 2 tests
-test tests::tom_risk_can_deny_speech ... ok
 test tests::risk_gate_is_deterministic ... ok
+test tests::tom_risk_can_deny_speech ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -3851,27 +3851,27 @@ test tests::attention_cap_does_not_increase_when_ssm_gain_drops ... ok
 test tests::fusion_action_biases_attention_replay ... ok
 test tests::high_drift_increases_replay_bias ... ok
 test tests::high_drift_reduces_output_router_thought_budget ... ok
+test tests::ai_host_internal_thoughts_are_stored_without_speech_output ... ok
 test tests::high_surprise_increases_learning_unless_nsr_block ... ok
 test tests::influence_adjusts_attention_gain_and_channel ... ok
 test tests::kuramoto_caveat_tag_reports_unsupported_inputs_explicitly ... ok
 test tests::kuramoto_input_classifies_canonical_reference_types_without_blurring_boundaries ... ok
 test tests::low_plv_reduces_learning_rate ... ok
 test tests::low_plv_triggers_replay_and_stabilize ... ok
-test tests::ai_host_internal_thoughts_are_stored_without_speech_output ... ok
+test tests::nsr_restrict_forces_stabilize_and_blocks_rsa ... ok
 test tests::ncde_commit_flows_into_workspace_and_self_state ... ok
 test tests::predictive_observation_changes_with_ssm_state ... ok
-test tests::relaxation_requires_stable_window ... ok
-test tests::nsr_restrict_forces_stabilize_and_blocks_rsa ... ok
 test tests::replay_pressure_influence_boosts_pressure ... ok
-test tests::runtime_modules_mock_bundle_compiles ... ok
+test tests::relaxation_requires_stable_window ... ok
 test tests::runtime_modules_v1_defaults_run_cycles ... ok
-test tests::sle_bias_applies_to_next_ssm_cycle ... ok
+test tests::runtime_modules_mock_bundle_compiles ... ok
 test tests::ssm_commit_flows_into_workspace_and_attention ... ok
 test tests::structural_delta_is_deterministic ... ok
+test tests::sle_bias_applies_to_next_ssm_cycle ... ok
 test tests::violation_shrinks_budget_deterministically ... ok
 test tests::structural_params_drive_onn_window_and_snn_verify_limit ... ok
 
-test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
      Running tests/coherence_gate.rs (target/debug/deps/coherence_gate-7d5170fa7d90d535)
 
@@ -3880,7 +3880,7 @@ test pipeline_order_is_authoritative ... ok
 test thought_only_non_leak_drops_speech_and_forces_stabilize ... ok
 test determinism_smoke_test_matches_workspace_and_archive_roots ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
 
      Running tests/wire_path_e2e.rs (target/debug/deps/wire_path_e2e-12a8137ae7f5988e)
 
@@ -3891,13 +3891,13 @@ test cde_runs_before_nsr_in_verify ... ok
 test handle_control_frame_routes_end_to_end ... ok
 test orchestrator_respects_cycle_plan_ordering ... ok
 test risk_gate_allows_speech_when_lock_ok ... ok
-test risk_gate_denies_speech_when_nsr_not_ok ... ok
 test risk_gate_denies_speech_on_unsafe_scm_probe ... ok
+test risk_gate_denies_speech_when_nsr_not_ok ... ok
 test sandbox_allows_speech_outputs_when_lock_ok ... ok
 test sandbox_denied_blocks_external_speech ... ok
 test verify_pulse_emits_causal_report ... ok
 
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
      Running unittests src/lib.rs (target/debug/deps/ucf_rsa-3211d6a5240454d5)
 
@@ -3907,12 +3907,12 @@ test tests::rsa_blocks_when_sleep_inactive ... ok
 test tests::rsa_gating_blocks_when_nsr_denies_or_policy_fails ... ok
 test tests::rsa_tick_is_deterministic ... ok
 test tests::sleep_phase_denied_by_default ... ok
-test tests::sleep_report_proposals_are_deterministically_sorted ... ok
 test tests::sleep_phase_allowed_appends_report_and_emits_event ... ok
+test tests::sleep_report_proposals_are_deterministically_sorted ... ok
 test v0::tests::determinism_same_inputs ... ok
 test v0::tests::gating_blocks_on_nsr_deny ... ok
-test v0::tests::gating_blocks_on_nsr_restrict ... ok
 test v0::tests::rollback_triggers_inverse_proposal_next_sleep ... ok
+test v0::tests::gating_blocks_on_nsr_restrict ... ok
 
 test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -3926,8 +3926,8 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_runtime-153d3f2a419fd18d)
 
 running 48 tests
-test coherence::tests::iit_monitor_outputs_are_deterministic_and_bounded ... ok
 test coherence::tests::incoherence_phase_window_tightens_only ... ok
+test coherence::tests::iit_monitor_outputs_are_deterministic_and_bounded ... ok
 test coherence::tests::metrics_are_bounded ... ok
 test coherence::tests::routing_is_deterministic ... ok
 test compute_economics::tests::llm_cost_is_deterministic ... ok
@@ -3937,8 +3937,8 @@ test ebm::tests::budget_exceeded_is_safe_and_deterministic ... ok
 test ebm::tests::deterministic_for_same_input ... ok
 test ebm::tests::gpu_mode_default_off ... ok
 test ebm::tests::parity_allows_one_lsb_delta ... ok
-test ebm::tests::parity_detects_drift_over_lsb ... ok
 test ebm::tests::tie_break_prefers_lower_candidate_id ... ok
+test ebm::tests::parity_detects_drift_over_lsb ... ok
 test ebm::tests::variant_generation_is_deterministic ... ok
 test evolution::tests::delta_digest_is_stable ... ok
 test evolution::tests::candidate_generation_is_deterministic ... ok
@@ -3955,27 +3955,27 @@ test nsr_v1::tests::parse_error_fallback_is_conservative_for_tool ... ok
 test nsr_v1::tests::parser_rejects_unknown_predicate ... ok
 test orchestrator::tests::emergency_decoding_policy_forces_safe_short_output ... ok
 test orchestrator::tests::emergency_state_transitions_on_runaway_and_cooldown ... ok
-test orchestrator::tests::fails_fast_on_bad_policy_bundle_hash ... ok
 test hooks::tests::rebuild_from_records_matches_streaming_output ... ok
-test orchestrator::tests::hormone_stress_gate_tightens_llm_budget ... ok
+test orchestrator::tests::fails_fast_on_bad_policy_bundle_hash ... ok
 test orchestrator::tests::max_tokens_eff_decreases_with_uncertainty ... ok
+test orchestrator::tests::hormone_stress_gate_tightens_llm_budget ... ok
 test orchestrator::tests::override_policy_is_auditable ... ok
 test orchestrator::tests::prompt_builder_is_deterministic_and_bounded ... ok
 test orchestrator::tests::panic_in_stage_compute_is_caught_and_recorded ... ok
 test orchestrator::tests::runtime_returns_error_if_training_mode_env_is_enabled ... ok
 test sandbox::tests::brain_call_spec_is_phase_agnostic ... ok
 test sandbox::tests::brain_call_spec_keeps_spike_count ... ok
-test sandbox::tests::canonical_encoding_is_stable ... ok
 test sandbox::tests::denied_call_returns_denied_status ... ok
+test sandbox::tests::canonical_encoding_is_stable ... ok
 test sandbox::tests::deterministic_budget_enforced ... ok
 test sandbox_fs::tests::rejects_parent_traversal ... ok
 test stage_isolation::tests::parse_mode ... ok
+test tool_plugins::tests::echo_results_are_bounded_and_deterministic ... ok
 test tool_plugins::tests::file_tool_blocked_outside_root ... ok
 test tool_plugins::tests::run_plugin_tool_maps_status_and_keeps_digest_preview ... ok
-test tool_plugins::tests::echo_results_are_bounded_and_deterministic ... ok
 test tool_plugins::tests::token_binding_prevents_misuse ... ok
 
-test result: ok. 48 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 48 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
      Running unittests src/bin/ucf-sandbox-worker.rs (target/debug/deps/ucf_sandbox_worker-ee7703ab26222457)
 
@@ -3992,13 +3992,13 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/e2e_real_compute_onboarding.rs (target/debug/deps/e2e_real_compute_onboarding-07c47cd46ef9add4)
 
 running 5 tests
-test e2e_real_compute_onboarding_v0_chain_and_invariants ... ok
 test e2e_real_compute_onboarding_v0_ess_linking_and_order ... ok
+test e2e_real_compute_onboarding_v0_chain_and_invariants ... ok
 test e2e_scenario_ebm_v1_off_shadow_active ... ok
 test e2e_stage_summary_records_present_for_short_loop ... ok
 test e2e_tool_plan_demo_chain_and_single_use_token_replay ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.75s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.76s
 
      Running tests/error_code_mapping.rs (target/debug/deps/error_code_mapping-a89ff867554399ca)
 
@@ -4012,7 +4012,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 1 test
 test no_direct_std_fs_usage_outside_wrappers ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
      Running tests/runtime_v0.rs (target/debug/deps/runtime_v0-7277eeb17eea373c)
 
@@ -4020,9 +4020,9 @@ running 58 tests
 test archive_append_frame_emitted_on_each_tick ... ok
 test archive_log_seq_increments_for_each_tick ... ok
 test archive_tick_payload_is_bounded ... ok
-test attention_event_turns_true_with_strong_novelty_spike ... ok
-test coherence_invariants_ok_and_err_cases ... ok
 test cde_intervention_helper_updates_engine_state ... ok
+test coherence_invariants_ok_and_err_cases ... ok
+test attention_event_turns_true_with_strong_novelty_spike ... ok
 test degraded_budget_marks_risk_quality_and_persists_evidence ... ok
 test evolution_disabled_by_default_emits_no_delta_records ... ok
 test evolution_enabled_persists_proposal_and_evaluation_without_actions ... ok
@@ -4031,8 +4031,8 @@ test evolution_suppressed_in_emergency_mode ... ok
 test external_output_class_uses_plan_summary_without_llm_digests ... ok
 test external_output_text_is_allowed_emitted_and_audited ... ok
 test fep_high_drift_reduces_learning_and_raises_inhibit ... ok
-test fep_high_risk_raises_inhibit_and_can_defer ... ok
 test evolution_replay_proposal_digests_are_stable ... ok
+test fep_high_risk_raises_inhibit_and_can_defer ... ok
 test fep_high_surprise_boosts_memory_priority_and_marks_consolidation ... ok
 test gem_allow_path_emits_and_writes_when_invoked_directly ... ok
 test forced_cycle_rejects_nsr_and_forces_fragmenting_coherence ... ok
@@ -4067,8 +4067,8 @@ test orchestrator_tick_updates_biophys_frame ... ok
 test orchestrator_tick_updates_microcircuit_frame ... ok
 test orchestrator_tick_updates_phase_frame_with_valid_locks ... ok
 test real_compute_onboarding_v0_smoke_path ... ok
-test orchestrator_tick_emits_tcf_frame_each_tick ... ok
 test runtime_uses_snn_spike_rate_for_ncde_u4 ... ok
+test orchestrator_tick_emits_tcf_frame_each_tick ... ok
 test sle_fires_and_injects_meta_into_ssm ... ok
 test sle_policy_denial_blocks_meta_injection ... ok
 test ssm_gate_matches_mean_lock_in_fallback_path ... ok
@@ -4076,13 +4076,13 @@ test tick_emits_chem_and_digital_brain_frames ... ok
 test tool_audit_records_and_hash_chain_are_appended ... ok
 test stress_profile_sets_budget_stage_and_backpressure_gating ... ok
 
-test result: ok. 58 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.93s
+test result: ok. 58 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.02s
 
      Running tests/v0_flow_e2e.rs (target/debug/deps/v0_flow_e2e-da4c2cc462efc964)
 
 running 2 tests
-test v0_flow_e2e_is_deterministic_and_chain_complete ... ok
 test v0_flow_optional_hooks_do_not_change_core_outputs ... ok
+test v0_flow_e2e_is_deterministic_and_chain_complete ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
 
@@ -4098,8 +4098,8 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 7 tests
 test tests::deny_when_ops_budget_exceeded ... ok
 test tests::deny_when_output_char_cap_exceeded ... ok
-test tests::normalization_is_deterministic ... ok
 test tests::validator_accepts_minimal_valid_control_frame ... ok
+test tests::normalization_is_deterministic ... ok
 test tests::validator_rejects_invalid_ranges ... ok
 test tests::validator_rejects_too_many_context_refs ... ok
 test tests::validator_rejects_unsupported_version ... ok
@@ -4139,23 +4139,23 @@ test tests::sle_biases_respect_bounds ... ok
 test tests::sle_class_selection_tracks_phi_surprise_and_replay ... ok
 test tests::sle_cooldown_suppresses_thought_pulse ... ok
 test tests::sle_deny_forces_inhibitory_pulse ... ok
-test tests::sle_thought_only_emits_root_on_surprise ... ok
-test tests::sle_tick_is_deterministic ... ok
 test tests::sle_loop_closure_depends_on_last_symbol ... ok
+test tests::sle_tick_is_deterministic ... ok
+test tests::sle_thought_only_emits_root_on_surprise ... ok
 test tests::sle_v1_tick_is_deterministic ... ok
 test v0::tests::cooldown_behavior_blocks_immediate_refire ... ok
 test v0::tests::depth_clamp_respects_config ... ok
 test v0::tests::determinism_same_inputs_same_output ... ok
 test v0::tests::trigger_priority_conflict_beats_others ... ok
 
-test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
      Running unittests src/lib.rs (target/debug/deps/ucf_sleep_coordinator-b2f8567c9d8ee355)
 
 running 5 tests
-test tests::policy_denial_prevents_sleep_report_append ... ok
 test tests::policy_allow_appends_sleep_report ... ok
 test tests::repeated_critical_surprise_triggers_sleep ... ok
+test tests::policy_denial_prevents_sleep_report_append ... ok
 test tests::sleep_trigger_density_increments_cycle ... ok
 test tests::sleep_trigger_instability_is_deterministic ... ok
 
@@ -4164,12 +4164,12 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_snn-50e9ead59b7e6df8)
 
 running 9 tests
-test v0::tests::encode_ttfsp_monotonic_by_intensity ... ok
 test v0::tests::encode_ttfsp_phase_bias_earlier_phase_is_earlier_spike ... ok
+test v0::tests::encode_ttfsp_monotonic_by_intensity ... ok
 test v0::tests::encoder_normalizes_phase ... ok
 test v0::tests::novelty_gate_filters_and_emits ... ok
-test v0::tests::encoder_sorts_by_time_then_chan ... ok
 test v0::tests::snn_emit_caps_and_keeps_top_intensities ... ok
+test v0::tests::encoder_sorts_by_time_then_chan ... ok
 test v0::tests::snn_emit_is_deterministic_for_fixed_inputs ... ok
 test v0::tests::snn_emit_routing_thresholds_for_sae ... ok
 test v0::tests::ttfs_maps_intensity_extremes ... ok
@@ -4187,8 +4187,8 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_spikebus-6d2cfd2f2dd2a74b)
 
 running 4 tests
-test tests::fold_root_matches_expected ... ok
 test tests::deterministic_sort_and_cap ... ok
+test tests::fold_root_matches_expected ... ok
 test tests::phase_gating_rejects_outside_window ... ok
 test tests::thresholding_rejects_below_threshold ... ok
 
@@ -4197,8 +4197,8 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_spikes-13cb7066b6916e4d)
 
 running 3 tests
-test tests::encode_ttfs_bounds_and_monotonicity ... ok
 test tests::phase_distance_is_circular ... ok
+test tests::encode_ttfs_bounds_and_monotonicity ... ok
 test tests::phase_lock_filter_handles_attenuate_and_drop ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -4206,8 +4206,8 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_ssm-27fece76a842b6ae)
 
 running 12 tests
-test tests::attention_gain_respects_tcf_cap ... ok
 test tests::attention_gain_decreases_when_conflict_score_rises ... ok
+test tests::attention_gain_respects_tcf_cap ... ok
 test tests::decay_drives_state_toward_zero ... ok
 test tests::deterministic_output_commit ... ok
 test tests::deterministic_repeated_runs_with_identical_input_and_state ... ok
@@ -4215,8 +4215,8 @@ test tests::novelty_base_matches_popcount_hash_xor ... ok
 test tests::novelty_tracks_digest_distance ... ok
 test tests::salience_does_not_decrease_when_spike_max_intensity_increases ... ok
 test tests::surprise_increases_update_magnitude ... ok
-test v0::tests::energy_increases_with_stronger_input ... ok
 test v0::tests::deterministic_with_same_inputs ... ok
+test v0::tests::energy_increases_with_stronger_input ... ok
 test v0::tests::enforces_gate_floor ... ok
 
 test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -4224,8 +4224,8 @@ test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
      Running unittests src/lib.rs (target/debug/deps/ucf_ssm_port-58c4724cd3dfaeec)
 
 running 3 tests
-test tests::deterministic_state_evolution ... ok
 test tests::attention_gain_affects_state_change ... ok
+test tests::deterministic_state_evolution ... ok
 test tests::mismatched_dimensions_surface_errors ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -4235,8 +4235,8 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 4 tests
 test tests::apply_deltas_clamps_and_recomputes_commit ... ok
 test tests::commit_blocked_when_gate_is_false ... ok
-test tests::commit_occurs_when_evaluation_improves ... ok
 test tests::proposal_is_deterministic_for_same_seed ... ok
+test tests::commit_occurs_when_evaluation_improves ... ok
 
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -4257,11 +4257,11 @@ test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running unittests src/lib.rs (target/debug/deps/ucf_tcf_port-56c1f23593179fba)
 
 running 5 tests
-test tests::cycle_plan_is_deterministic_for_same_inputs ... ok
 test tests::rsa_param_updates_are_clamped ... ok
+test tests::cycle_plan_is_deterministic_for_same_inputs ... ok
 test tests::surprise_critical_boosts_sense_and_consolidate ... ok
-test tests::threat_focus_moves_verify_earlier_and_heavier ... ok
 test tests::tighten_sync_increases_damping_effect ... ok
+test tests::threat_focus_moves_verify_earlier_and_heavier ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -4286,18 +4286,18 @@ running 17 tests
 test fixed_point_tests::q16_16_saturating_mul_and_add ... ok
 test fixed_point_tests::uq0_16_mul_is_deterministic ... ok
 test fixed_point_tests::uq0_16_roundtrip_and_clamp ... ok
-test remediation_codes::tests::unknown_maps_to_fallback ... ok
 test remediation_codes::tests::registry_is_stable_ordered ... ok
+test remediation_codes::tests::unknown_maps_to_fallback ... ok
 test risk_confidence_tests::risk_confidence_update_is_bounded ... ok
-test risk_confidence_tests::risk_confidence_update_is_deterministic ... ok
 test signal_bundle_tests::signal_bundle_digest_changes_with_field_mutation ... ok
+test risk_confidence_tests::risk_confidence_update_is_deterministic ... ok
 test signal_bundle_tests::signal_bundle_digest_is_deterministic ... ok
 test tests::canonicalize_f32_normalizes_negative_zero_and_nan ... ok
-test tests::digest32_enforces_length ... ok
 test tests::domain_digest_requires_domain ... ok
 test tests::logical_time_value ... ok
 test tests::node_id_roundtrip ... ok
 test tests::quantize_unit_clamps_nan_and_bounds ... ok
+test tests::digest32_enforces_length ... ok
 test tests::vrf_tag_requires_suite_and_domain ... ok
 test tests::quantize_unit_is_monotonic_and_idempotent ... ok
 
