@@ -8,15 +8,19 @@ Kanonische Status-Map:
 - `docs/blue_brain_authority_chain_status_map.md`
 
 - **Current operational authority (maßgeblich):**
-  - `docs/blue_brain_bb29_post_maintenance_default_decision_map_serie_bb29_prompt5_v1.md`
-  - `docs/blue_brain_bb29_final_maintenance_handoff_map_serie_bb29_prompt6_v1.md`
+  - `docs/blue_brain_br6_hypothalamus_readiness_sweep_expansion_boundary_serie_br6_prompt4_v1.md`
+  - `docs/blue_brain_ir1_readiness_sweep_inter_region_closure_serie_ir1_prompt4_v1.md`
+  - `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`
+  - `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
 - **Historical snapshots (nicht aktuelle operative Autorität):**
   - `docs/blue_brain_post_bb25_maintenance_default_decision_map_serie_bb25_prompt5_v1.md`
   - `docs/blue_brain_final_maintenance_handoff_serie_bb25_prompt6_v1.md`
   - `docs/blue_brain_bb27_post_maintenance_default_decision_map_serie_bb27_prompt5_v1.md`
   - `docs/blue_brain_bb27_final_maintenance_handoff_map_serie_bb27_prompt6_v1.md`
+  - `docs/blue_brain_bb29_post_maintenance_default_decision_map_serie_bb29_prompt5_v1.md`
+  - `docs/blue_brain_bb29_final_maintenance_handoff_map_serie_bb29_prompt6_v1.md`
 
-Regel: Bei Konflikten zwischen historischen BB25/BB27-Aussagen und der BB29-Endlage gilt **immer** die BB29-Current-Authority-Linie.
+Regel: Bei Konflikten zwischen historischen BB25/BB27/BB29-Aussagen und der post-BR6-Endlage gilt **immer** die BR6/IR1/MD2/System-Audit-Current-Authority-Linie.
 
 Autoritätsklassen im Repo-Kontext:
 - current operational authority
@@ -65,14 +69,14 @@ Autoritätsklassen im Repo-Kontext:
   - `docs/blue_brain_two_region_guard_contract_consistency_serie_bb26_prompt7_v1.md`
 - **BB26 readiness sweep / second-region expansion boundary (BB26 P8):**
   - `docs/blue_brain_bb26_readiness_sweep_second_region_expansion_boundary_serie_bb26_prompt8_v1.md`
-- **Two-region maintenance stabilization/reference line (BB27):
+- **Two-region maintenance stabilization/reference line (BB27):**
   - _Authority class: supporting reference (historical transition line)._
   - `docs/blue_brain_two_region_maintenance_stabilization_serie_bb27_prompt1_v1.md`
   - `docs/blue_brain_two_region_docs_tests_reference_cleanup_serie_bb27_prompt2_v1.md`
   - `docs/blue_brain_bb27_final_two_region_stabilization_sweep_serie_bb27_prompt3_v1.md`
   - `docs/blue_brain_bb27_post_maintenance_default_decision_map_serie_bb27_prompt5_v1.md`
   - `docs/blue_brain_bb27_final_maintenance_handoff_map_serie_bb27_prompt6_v1.md`
-- **Third-region selection line (BB28):
+- **Third-region selection line (BB28):**
   - `docs/blue_brain_third_region_selection_serie_bb28_prompt1_v1.md`
   - `docs/blue_brain_third_region_integration_serie_bb28_prompt2_v1.md`
   - `docs/blue_brain_third_region_runtime_selection_reference_contract_serie_bb28_prompt3_v1.md`
@@ -92,7 +96,7 @@ Autoritätsklassen im Repo-Kontext:
   - `docs/blue_brain_first_anatomical_stabilization_line_serie_bb31_prompt1_v1.md`
   - `docs/blue_brain_first_anatomical_docs_tests_index_cleanup_serie_bb31_prompt2_v1.md`
   - `docs/blue_brain_bb31_final_first_anatomical_stabilization_sweep_serie_bb31_prompt3_v1.md`
-- **Three-region maintenance stabilization/reference line (BB29):
+- **Three-region maintenance stabilization/reference line (BB29):**
   - `docs/blue_brain_three_region_maintenance_stabilization_line_serie_bb29_prompt1_v1.md`
   - `docs/blue_brain_three_region_docs_tests_index_cleanup_serie_bb29_prompt2_v1.md`
   - `docs/blue_brain_bb29_final_three_region_stabilization_sweep_serie_bb29_prompt3_v1.md`
@@ -126,17 +130,19 @@ Referenzpunkte für die technische Scope-Grenze:
 - `docs/blue_brain_bb23_maintenance_guard_rails_allowed_change_envelope_serie_bb23_prompt2_v1.md`
 - `docs/blue_brain_bb23_final_freeze_readiness_statement_serie_bb23_prompt3_v1.md`
 
-## 2.1) Post-BB29 maintenance default (three-region bounded handoff)
+## 2.1) Post-BR6 maintenance default (six anatomical regions + bounded relations)
 
-- Aktive Regionenbasis ist **Region 1 + Region 2 + Region 3 (bounded advisory/reference lane)**.
-- Standardmodus bleibt **Maintenance/Bugfix/Cleanup** mit klarer no-direct-* Guard-Linie.
-- **Region 4 ist nicht aktiv** und benötigt einen späteren expliziten Re-Scope.
-- Die BB28/BB29-Linie schließt als kontrollierte, maintenance-gehärtete Drei-Regionen-Basis ohne Plattformausweitung.
-- Canonical stabilization map: `docs/blue_brain_three_region_maintenance_stabilization_line_serie_bb29_prompt1_v1.md`
-- Canonical post-decision map: `docs/blue_brain_bb29_post_maintenance_default_decision_map_serie_bb29_prompt5_v1.md`
+- Aktive anatomische Regionenbasis ist **Hippocampus + Amygdala + Thalamus + Basal Ganglia + Cerebellum + Hypothalamus**.
+- Standardmodus bleibt **Maintenance/Konsolidierung/Bugfix/Cleanup** mit klarer no-direct-* Guard-Linie.
+- **Keine siebte operative Region, kein zweiter Modellvertiefungskandidat und keine globale Neurodynamikplattform** sind aktiv; jeder Ausbau benötigt expliziten Re-Scope.
+- Die BR1-BR6/IR1/MD2-Linie schließt als kontrollierte, maintenance-gehärtete bounded anatomy/inter-region/model-deepening Basis ohne Plattformausweitung.
+- Canonical status map: `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
+- Canonical Hypothalamus closure: `docs/blue_brain_br6_hypothalamus_readiness_sweep_expansion_boundary_serie_br6_prompt4_v1.md`
+- Canonical inter-region closure: `docs/blue_brain_ir1_readiness_sweep_inter_region_closure_serie_ir1_prompt4_v1.md`
+- Canonical model-deepening maintenance map: `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`
 
 
-## 2.2) Audit-Baseline (Blue-Brain / Drei-Regionen, BB29) — 2026-05-04
+## 2.2) Audit-Baseline (Blue-Brain / historische Drei-Regionen-Baseline, BB29) — 2026-05-04
 
 Für einen reproduzierbaren Audit-Baseline-Pass wurden die kanonischen AGENTS-Checks frisch ausgeführt; die Reports liegen unter:
 
@@ -151,7 +157,7 @@ Ausgeführt wurden:
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
 
-Diese Baseline dokumentiert den wartungsstabilen Stand ohne Scope-Erweiterung (keine Region-4-/Plattform-/Planner-Neulogik).
+Diese Baseline bleibt reproduzierbare historische Evidenz für den BB29-Stand. Für aktuelle operative Regionen-/Relationsaussagen gilt die post-BR6 Authority-Linie aus Abschnitt 0/2.1.
 
 ## 3) Guard rails and boundaries (must stay visible)
 
