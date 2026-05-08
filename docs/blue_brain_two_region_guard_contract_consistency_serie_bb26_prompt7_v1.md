@@ -1,5 +1,7 @@
 # Serie BB26 Prompt 7: Two-region guard/contract consistency line
 
+> Maintenance-discoverability note: This BB26 two-region guard/contract consistency line is historical/supporting. It preserves guard semantics, but current operational authority is the six-region post-BR6/IR1/MD2/MD3/SC1 line.
+
 Status: **in progress hardening complete** for the bounded two-region baseline (Region 1 + Region 2 only).
 
 ## Canonical two-region consistency map

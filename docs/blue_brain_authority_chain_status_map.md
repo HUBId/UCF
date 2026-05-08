@@ -11,12 +11,16 @@ Nur diese Klassen sind für die operative Einordnung zu verwenden:
    - Maßgebliche operative Endlage; bei Konflikten immer vorrangig.
 2. **historical snapshot**
    - Historischer Entscheidungs-/Handoff-Stand; dokumentarisch wichtig, aber nicht operativ vorrangig.
-3. **supporting reference**
-   - Stützende Referenz für Guard Rails, Scope oder Nachvollziehbarkeit; keine eigenständige konkurrierende Endlage.
-4. **non-canonical / outdated pointer**
-   - Verweis, der nicht als aktuelle Autorität gelesen werden darf (z. B. veraltete oder historisch überholte Pointer).
+3. **supporting current reference**
+   - Stützende aktuelle Referenz für Guard Rails, Audit, Scope, Discoverability oder Nachvollziehbarkeit; keine eigenständige konkurrierende Endlage.
+4. **stale discoverability pointer**
+   - Älterer oder verkürzter Verweis, der bei isolierter Lektüre wie aktuelle Autorität wirken kann, aber über diese Map relativiert werden muss.
+5. **non-canonical/internal-only shadow surface**
+   - DBM-/Microcircuit-/Neuro-/adjacent-domain Oberfläche außerhalb der aktuellen operativen Blue-Brain-Autorität; keine implizite Region, Relation, Modellplattform oder Consumer-Autorität.
 
-## Canonical classification (post-BR6 current line)
+Die kompakte maintenance-facing Discoverability-Map ist `docs/blue_brain_maintenance_discoverability_map_v1.md`; das Shadow-Surface-Inventar ist `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`. Beide sind Supporting References, nicht zweite Wahrheitsquellen.
+
+## Canonical classification (post-BR6/IR1/MD2/MD3/SC1 current line)
 
 ### Current operational authority (maßgeblich)
 
@@ -44,7 +48,7 @@ Operative Endlage: **Hippocampus, Amygdala, Thalamus, Basal Ganglia, Cerebellum 
 
 Historische Aussagen bleiben erhalten (BB25/BB27/BB29-Zeitpunkte), werden aber durch die BR1-BR6/IR1/MD2-Endlage operativ übersteuert, sofern sie weniger als sechs integrierte anatomische Regionen oder ältere Expansion-Locks beschreiben.
 
-### Supporting reference (nicht konkurrenzierende Endlage)
+### Supporting current reference (nicht konkurrenzierende Endlage)
 
 - `docs/blue_brain_bb23_freeze_maintenance_baseline_serie_bb23_prompt1_v1.md`
 - `docs/blue_brain_bb23_maintenance_guard_rails_allowed_change_envelope_serie_bb23_prompt2_v1.md`
@@ -61,14 +65,29 @@ Historische Aussagen bleiben erhalten (BB25/BB27/BB29-Zeitpunkte), werden aber d
 - `docs/blue_brain_md1_readiness_sweep_model_deepening_closure_v1.md`
 - `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md`
 - `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`
+- `docs/blue_brain_audit_baseline_map_v1.md`
+- `docs/blue_brain_maintenance_discoverability_map_v1.md`
+- `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`
+- `docs/blue_brain_maintenance_consolidation_pass_v1.md`
 
-### Non-canonical / outdated pointer
+### Historical/supporting implementation-stage references (durch spätere Authority relativiert)
+
+- `docs/blue_brain_inter_region_architecture_serie_ir1_prompt1_v1.md`
+- `docs/blue_brain_first_inter_region_implementation_serie_ir1_prompt2_v1.md`
+- `docs/blue_brain_inter_region_diagnostics_contracts_serie_ir1_prompt3_v1.md`
+- `docs/blue_brain_first_inter_region_relation_line_serie_bb26_prompt4_v1.md`
+- `docs/blue_brain_two_region_guard_contract_consistency_serie_bb26_prompt7_v1.md`
+
+Diese Dateien bleiben wichtig für Implementierungs- und Guard-Trail-Nachvollziehbarkeit. Wenn sie engere Zwischenstände, two-region Sprache oder frühe relation activation wording enthalten, gilt für aktuelle operative Aussagen immer die spätere BR6/IR1-Prompt-4/MD2/MD3/SC1-Linie.
+
+### Stale discoverability pointer / non-canonical shadow surface
 
 - Jede Lesart, die BB25-, BB27- oder BB29-Dokumente als heute gleichrangige operative Autorität behandelt.
-- Jede Lesart, die Prefrontal Cortex, Anterior Cingulate Cortex oder Insula als aktuell operativ integrierte Regionen behandelt.
+- Jede Lesart, die Prefrontal Cortex, Anterior Cingulate Cortex, Insula oder zusätzliche DBM-/Microcircuit-/Neuro-Shadow-Crates als aktuell operativ integrierte Regionen behandelt.
 - Implizite Fortsetzungs-/Expansionspointer ohne expliziten Re-Scope.
 - Jede Modellvertiefungslesart, die aus MD1/MD2/MD3 eine globale Modellplattform, weitere Kandidaten oder direkte Autorität ableitet; MD3 priorisiert, implementiert, härtet und schließt ausschließlich `Amygdala ↔ Basal Ganglia` als bounded Kuramoto-like second deepening; der Post-MD3-Pass lässt `BLUE_BRAIN_POST_MD3_POSSIBLE_FUTURE_RE_SCOPE_CANDIDATE` leer.
 - Jede Lesart verteilter Terminologie, die `advisory-only`, `caveated`, `deferred`, `blocked`, `insufficient`, `diagnostic-only`, `reference-only`, `current model mode` oder `non-canonical/internal-only` mit direkter Action-/Execution-/Retry-/Memory-/Compute-/Safety-Autorität verwechselt.
+- Jede Lesart, die die Präsenz von `crates/dbm_*`, `crates/microcircuit_*`, `crates/biophys_*` oder angrenzenden Brain/DigitalBrain/Neuromod/SNN/FEP-Domains als operative Blue-Brain-Autorität auslegt; maßgeblich ist stattdessen `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`.
 
 ## Conflict rule (single truth)
 

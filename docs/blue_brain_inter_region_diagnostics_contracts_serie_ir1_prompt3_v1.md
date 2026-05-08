@@ -1,5 +1,7 @@
 # Blue-Brain IR1 Prompt 3: inter-region diagnostics and contract semantics
 
+> Maintenance-discoverability note: This is an IR1 diagnostics/contract supporting reference. Later IR1 Prompt 4 plus MD2/MD3/SC1 govern current operative status. Diagnostic vocabulary here remains read-only and cannot be used as direct action, execution, retry, memory, compute, safety or platform authority.
+
 Status: **bounded diagnostics/contract hardening line** for exactly the three original Prompt 2 implemented relations. This document hardens how Runtime, Selection, and Reference read relation diagnostics without adding a global inter-region platform, a planner/agent layer, retry orchestration, policy governance, new memory persistence, or compute-core work.
 
 Canonical code anchor: `CANONICAL_BLUE_BRAIN_INTER_REGION_DIAGNOSTICS_CONTRACT_MAP` in `runtime/ucf-compute/src/blue_brain_region_first_integration.rs`. It is derived from `CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP`; it does not open additional relations.
