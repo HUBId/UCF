@@ -2428,6 +2428,28 @@ pub const CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_INTEGRATION_MAP:
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd3SecondDeepeningHardeningClass {
+    HardenedSecondDeepenedInputSurface,
+    HardenedSecondDeepenedStateSurface,
+    HardenedSecondDeepenedOutputAdvisorySurface,
+    HardenedSecondDiagnosticModelBoundary,
+    HardenedSecondRegionRelationContractBoundary,
+    BlockedForbiddenAuthorityPath,
+    NonCanonicalInternalOnlySecondDeepeningPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_HARDENING_MAP:
+    [BlueBrainMd3SecondDeepeningHardeningClass; 7] = [
+    BlueBrainMd3SecondDeepeningHardeningClass::HardenedSecondDeepenedInputSurface,
+    BlueBrainMd3SecondDeepeningHardeningClass::HardenedSecondDeepenedStateSurface,
+    BlueBrainMd3SecondDeepeningHardeningClass::HardenedSecondDeepenedOutputAdvisorySurface,
+    BlueBrainMd3SecondDeepeningHardeningClass::HardenedSecondDiagnosticModelBoundary,
+    BlueBrainMd3SecondDeepeningHardeningClass::HardenedSecondRegionRelationContractBoundary,
+    BlueBrainMd3SecondDeepeningHardeningClass::BlockedForbiddenAuthorityPath,
+    BlueBrainMd3SecondDeepeningHardeningClass::NonCanonicalInternalOnlySecondDeepeningPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainMd3SecondDeepeningCandidateClass {
     AmygdalaBasalGangliaBoundedKuramotoLikeAdvisory,
     FirstDeepeningBaselineNotSecondCandidate,
@@ -2478,7 +2500,9 @@ pub enum BlueBrainMd3SecondDeepeningConsumerReadClass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlueBrainMd3SecondDeepeningBoundaryState {
     pub model_state_is_contract_state: bool,
+    pub diagnostic_output_is_advisory_support: bool,
     pub diagnostic_output_is_operational_authority: bool,
+    pub caveated_model_signal_is_strong_operational_input: bool,
     pub first_deepening_state_is_second_deepening_state: bool,
     pub second_deepening_state_is_region_authority: bool,
     pub region_relation_contracts_remain_leading: bool,
@@ -2619,7 +2643,9 @@ pub fn evaluate_blue_brain_md3_second_model_deepening(
             BlueBrainMd3SecondDeepeningContractSupportClass::DeferredNoSecondSupport,
         boundary_state: BlueBrainMd3SecondDeepeningBoundaryState {
             model_state_is_contract_state: false,
+            diagnostic_output_is_advisory_support: false,
             diagnostic_output_is_operational_authority: false,
+            caveated_model_signal_is_strong_operational_input: false,
             first_deepening_state_is_second_deepening_state: false,
             second_deepening_state_is_region_authority: false,
             region_relation_contracts_remain_leading: true,
@@ -12109,6 +12135,24 @@ mod tests {
             assert!(CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_INTEGRATION_MAP
                 .contains(&path_class));
         }
+
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_HARDENING_MAP.len(),
+            7
+        );
+        for hardening_class in [
+            BlueBrainMd3SecondDeepeningHardeningClass::HardenedSecondDeepenedInputSurface,
+            BlueBrainMd3SecondDeepeningHardeningClass::HardenedSecondDeepenedStateSurface,
+            BlueBrainMd3SecondDeepeningHardeningClass::HardenedSecondDeepenedOutputAdvisorySurface,
+            BlueBrainMd3SecondDeepeningHardeningClass::HardenedSecondDiagnosticModelBoundary,
+            BlueBrainMd3SecondDeepeningHardeningClass::HardenedSecondRegionRelationContractBoundary,
+            BlueBrainMd3SecondDeepeningHardeningClass::BlockedForbiddenAuthorityPath,
+            BlueBrainMd3SecondDeepeningHardeningClass::NonCanonicalInternalOnlySecondDeepeningPath,
+        ] {
+            assert!(
+                CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_HARDENING_MAP.contains(&hardening_class)
+            );
+        }
     }
 
     #[test]
@@ -12281,10 +12325,16 @@ mod tests {
             assert!(!result.safety_override);
             assert!(!result.global_model_platform);
             assert!(!result.boundary_state.model_state_is_contract_state);
+            assert!(!result.boundary_state.diagnostic_output_is_advisory_support);
             assert!(
                 !result
                     .boundary_state
                     .diagnostic_output_is_operational_authority
+            );
+            assert!(
+                !result
+                    .boundary_state
+                    .caveated_model_signal_is_strong_operational_input
             );
             assert!(
                 !result
@@ -12314,6 +12364,8 @@ mod tests {
             "../../../docs/blue_brain_md3_second_model_deepening_implementation_line_v1.md"
         );
         assert!(doc.contains("second model-deepening implementation line"));
+        assert!(doc.contains("second model-deepening hardening line"));
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_HARDENING_MAP"));
         assert!(doc.contains("Amygdala ↔ Basal Ganglia"));
         assert!(doc.contains("bounded Kuramoto-like"));
         assert!(doc.contains("second deepened input surface"));
@@ -12323,6 +12375,9 @@ mod tests {
         assert!(doc.contains("second deepened region/relation contract surface"));
         assert!(doc.contains("blocked/deferred second deepening path"));
         assert!(doc.contains("non-canonical/internal-only second deepening path"));
+        assert!(doc.contains("blocked forbidden authority path"));
+        assert!(doc.contains("diagnostic model output is not advisory support"));
+        assert!(doc.contains("caveated model signal is not strong operational input"));
         assert!(doc.contains("advisory-only"));
         assert!(doc.contains("caveated"));
         assert!(doc.contains("deferred"));
@@ -12339,9 +12394,11 @@ mod tests {
 
         let readme = include_str!("../../../docs/README.md");
         assert!(readme.contains("Second model-deepening implementation line (MD3 Prompt 2)"));
+        assert!(readme.contains("Second model-deepening hardening line (MD3 Prompt 3)"));
         assert!(
             readme.contains("docs/blue_brain_md3_second_model_deepening_implementation_line_v1.md")
         );
+        assert!(readme.contains("docs/blue_brain_md3_second_model_deepening_hardening_line_v1.md"));
     }
 
     #[test]

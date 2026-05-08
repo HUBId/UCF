@@ -1,6 +1,6 @@
 # Architekturpaket MD3 Prompt 2: second model-deepening implementation line
 
-Canonical code anchor: `CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_INTEGRATION_MAP`, `BLUE_BRAIN_MD3_SECOND_DEEPENED_CANDIDATE_PAIR`, and `evaluate_blue_brain_md3_second_model_deepening` in `runtime/ucf-compute/src/blue_brain_region_first_integration.rs`.
+Canonical code anchor: `CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_INTEGRATION_MAP`, `CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_HARDENING_MAP`, `BLUE_BRAIN_MD3_SECOND_DEEPENED_CANDIDATE_PAIR`, and `evaluate_blue_brain_md3_second_model_deepening` in `runtime/ucf-compute/src/blue_brain_region_first_integration.rs`.
 
 ## 1) Candidate and model form
 
@@ -28,6 +28,12 @@ MD1 first deepening remains Amygdala ↔ Thalamus. It is not reinterpreted as th
 | `non-canonical/internal-only second deepening path` | Internal-only residual path. | No canonical Runtime/Selection/Reference read. |
 
 No new meta-platform is introduced.
+
+## 2a) MD3 Prompt 3 hardening overlay
+
+MD3 Prompt 3 adds the **second model-deepening hardening line** without widening the implementation. `CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_HARDENING_MAP` pins exactly these hardening classes: hardened second deepened input surface, hardened second deepened state surface, hardened second deepened output/advisory surface, hardened second diagnostic/model boundary, hardened second region/relation contract boundary, blocked forbidden authority path, and non-canonical/internal-only second deepening path.
+
+The overlay keeps the following boundaries canonical: model state is not contract state; diagnostic model output is not advisory support; diagnostic model output is not operational authority; caveated model signal is not strong operational input; second model-deepening state is not region authority; and first model-deepening state is not second model-deepening state. The blocked forbidden authority path keeps direct action, direct execution, direct retry, direct memory commit, automatic memory persistence, direct compute invocation, safety override, third model deepening, and global model platform paths closed.
 
 ## 3) Inputs and outputs
 
