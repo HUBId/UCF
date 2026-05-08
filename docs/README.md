@@ -15,6 +15,7 @@ Kanonische Status-Map:
   - `docs/blue_brain_md3_second_model_deepening_implementation_line_v1.md`
   - `docs/blue_brain_md3_second_model_deepening_hardening_line_v1.md`
   - `docs/blue_brain_md3_readiness_sweep_system_closure_v1.md`
+  - `docs/blue_brain_post_md3_maintenance_decision_pass_v1.md`
   - `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
   - `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md`
   - supporting consolidation evidence: `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md` and `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`
@@ -123,6 +124,7 @@ Autoritätsklassen im Repo-Kontext:
 - **Second model-deepening implementation line (MD3 Prompt 2):** `docs/blue_brain_md3_second_model_deepening_implementation_line_v1.md`
 - **Second model-deepening hardening line (MD3 Prompt 3):** `docs/blue_brain_md3_second_model_deepening_hardening_line_v1.md`
 - **MD3 final readiness/system closure (MD3 Prompt 4):** `docs/blue_brain_md3_readiness_sweep_system_closure_v1.md`
+- **Post-MD3 maintenance/decision pass:** `docs/blue_brain_post_md3_maintenance_decision_pass_v1.md`
 - **Real compute final reference line:**
   - `docs/final_reference_line_serie_j_v1.md`
   - `docs/final_production_readiness_evidence_pack_serie_j_v1.md`
@@ -155,6 +157,7 @@ Referenzpunkte für die technische Scope-Grenze:
 - Canonical second-deepening re-scope map: `docs/blue_brain_md3_second_deepening_rescope_line_v1.md`
 - Canonical second-deepening implementation map: `docs/blue_brain_md3_second_model_deepening_implementation_line_v1.md`
 - Canonical MD3 final readiness/system closure: `docs/blue_brain_md3_readiness_sweep_system_closure_v1.md`
+- Canonical post-MD3 maintenance/decision pass: `docs/blue_brain_post_md3_maintenance_decision_pass_v1.md`
 
 
 ## 2.2) Audit-Baseline (Blue-Brain / aktuelle post-BR6 Konsolidierungsevidenz) — 2026-05-08
