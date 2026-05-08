@@ -2450,6 +2450,178 @@ pub const CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_HARDENING_MAP:
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd3ReadinessState {
+    StableAndMaintenanceReady,
+    StableButCaveated,
+    AdvisoryOnly,
+    DiagnosticOnlyDeferred,
+    NonCanonicalInternalOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMd3ReadinessSurface {
+    BoundedRegionSurfaces,
+    InterRegionRelations,
+    FirstModelDeepening,
+    SecondModelDeepening,
+    GuardRails,
+    ComputeCore,
+    ReproducibilityReports,
+    DeferredExpansionBoundary,
+    InternalResidualPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainMd3ReadinessMapEntry {
+    pub surface: BlueBrainMd3ReadinessSurface,
+    pub readiness_state: BlueBrainMd3ReadinessState,
+    pub maintenance_ready: bool,
+    pub advisory_only: bool,
+    pub diagnostic_only_or_deferred: bool,
+    pub caveated: bool,
+    pub non_canonical_internal_only: bool,
+    pub opens_new_region: bool,
+    pub opens_additional_model_deepening: bool,
+    pub creates_global_model_platform: bool,
+    pub creates_direct_authority: bool,
+    pub requires_compute_core_work: bool,
+}
+
+/// Canonical MD3 final readiness map for the current Blue-Brain system after
+/// the second model deepening has been implemented and hardened. The map is a
+/// status/guard reference only: it closes the MD3 sweep into maintenance mode
+/// and cannot create regions, planner/agent/policy behavior, retry orchestration,
+/// compute-core work, a third model deepening, or a global model platform.
+pub const CANONICAL_BLUE_BRAIN_MD3_READINESS_MAP: [BlueBrainMd3ReadinessMapEntry; 9] = [
+    BlueBrainMd3ReadinessMapEntry {
+        surface: BlueBrainMd3ReadinessSurface::BoundedRegionSurfaces,
+        readiness_state: BlueBrainMd3ReadinessState::StableAndMaintenanceReady,
+        maintenance_ready: true,
+        advisory_only: true,
+        diagnostic_only_or_deferred: false,
+        caveated: false,
+        non_canonical_internal_only: false,
+        opens_new_region: false,
+        opens_additional_model_deepening: false,
+        creates_global_model_platform: false,
+        creates_direct_authority: false,
+        requires_compute_core_work: false,
+    },
+    BlueBrainMd3ReadinessMapEntry {
+        surface: BlueBrainMd3ReadinessSurface::InterRegionRelations,
+        readiness_state: BlueBrainMd3ReadinessState::StableButCaveated,
+        maintenance_ready: true,
+        advisory_only: true,
+        diagnostic_only_or_deferred: false,
+        caveated: true,
+        non_canonical_internal_only: false,
+        opens_new_region: false,
+        opens_additional_model_deepening: false,
+        creates_global_model_platform: false,
+        creates_direct_authority: false,
+        requires_compute_core_work: false,
+    },
+    BlueBrainMd3ReadinessMapEntry {
+        surface: BlueBrainMd3ReadinessSurface::FirstModelDeepening,
+        readiness_state: BlueBrainMd3ReadinessState::AdvisoryOnly,
+        maintenance_ready: true,
+        advisory_only: true,
+        diagnostic_only_or_deferred: false,
+        caveated: true,
+        non_canonical_internal_only: false,
+        opens_new_region: false,
+        opens_additional_model_deepening: false,
+        creates_global_model_platform: false,
+        creates_direct_authority: false,
+        requires_compute_core_work: false,
+    },
+    BlueBrainMd3ReadinessMapEntry {
+        surface: BlueBrainMd3ReadinessSurface::SecondModelDeepening,
+        readiness_state: BlueBrainMd3ReadinessState::AdvisoryOnly,
+        maintenance_ready: true,
+        advisory_only: true,
+        diagnostic_only_or_deferred: false,
+        caveated: true,
+        non_canonical_internal_only: false,
+        opens_new_region: false,
+        opens_additional_model_deepening: false,
+        creates_global_model_platform: false,
+        creates_direct_authority: false,
+        requires_compute_core_work: false,
+    },
+    BlueBrainMd3ReadinessMapEntry {
+        surface: BlueBrainMd3ReadinessSurface::GuardRails,
+        readiness_state: BlueBrainMd3ReadinessState::StableAndMaintenanceReady,
+        maintenance_ready: true,
+        advisory_only: false,
+        diagnostic_only_or_deferred: false,
+        caveated: false,
+        non_canonical_internal_only: false,
+        opens_new_region: false,
+        opens_additional_model_deepening: false,
+        creates_global_model_platform: false,
+        creates_direct_authority: false,
+        requires_compute_core_work: false,
+    },
+    BlueBrainMd3ReadinessMapEntry {
+        surface: BlueBrainMd3ReadinessSurface::ComputeCore,
+        readiness_state: BlueBrainMd3ReadinessState::StableAndMaintenanceReady,
+        maintenance_ready: true,
+        advisory_only: false,
+        diagnostic_only_or_deferred: false,
+        caveated: false,
+        non_canonical_internal_only: false,
+        opens_new_region: false,
+        opens_additional_model_deepening: false,
+        creates_global_model_platform: false,
+        creates_direct_authority: false,
+        requires_compute_core_work: false,
+    },
+    BlueBrainMd3ReadinessMapEntry {
+        surface: BlueBrainMd3ReadinessSurface::ReproducibilityReports,
+        readiness_state: BlueBrainMd3ReadinessState::StableAndMaintenanceReady,
+        maintenance_ready: true,
+        advisory_only: false,
+        diagnostic_only_or_deferred: false,
+        caveated: false,
+        non_canonical_internal_only: false,
+        opens_new_region: false,
+        opens_additional_model_deepening: false,
+        creates_global_model_platform: false,
+        creates_direct_authority: false,
+        requires_compute_core_work: false,
+    },
+    BlueBrainMd3ReadinessMapEntry {
+        surface: BlueBrainMd3ReadinessSurface::DeferredExpansionBoundary,
+        readiness_state: BlueBrainMd3ReadinessState::DiagnosticOnlyDeferred,
+        maintenance_ready: true,
+        advisory_only: false,
+        diagnostic_only_or_deferred: true,
+        caveated: false,
+        non_canonical_internal_only: false,
+        opens_new_region: false,
+        opens_additional_model_deepening: false,
+        creates_global_model_platform: false,
+        creates_direct_authority: false,
+        requires_compute_core_work: false,
+    },
+    BlueBrainMd3ReadinessMapEntry {
+        surface: BlueBrainMd3ReadinessSurface::InternalResidualPath,
+        readiness_state: BlueBrainMd3ReadinessState::NonCanonicalInternalOnly,
+        maintenance_ready: false,
+        advisory_only: false,
+        diagnostic_only_or_deferred: true,
+        caveated: false,
+        non_canonical_internal_only: true,
+        opens_new_region: false,
+        opens_additional_model_deepening: false,
+        creates_global_model_platform: false,
+        creates_direct_authority: false,
+        requires_compute_core_work: false,
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainMd3SecondDeepeningCandidateClass {
     AmygdalaBasalGangliaBoundedKuramotoLikeAdvisory,
     FirstDeepeningBaselineNotSecondCandidate,
@@ -12399,6 +12571,64 @@ mod tests {
             readme.contains("docs/blue_brain_md3_second_model_deepening_implementation_line_v1.md")
         );
         assert!(readme.contains("docs/blue_brain_md3_second_model_deepening_hardening_line_v1.md"));
+    }
+
+    #[test]
+    fn md3_readiness_sweep_closes_second_deepening_into_maintenance() {
+        let doc = include_str!("../../../docs/blue_brain_md3_readiness_sweep_system_closure_v1.md");
+        let authority = include_str!("../../../docs/blue_brain_authority_chain_status_map.md");
+        let readme = include_str!("../../../docs/README.md");
+
+        assert_eq!(CANONICAL_BLUE_BRAIN_MD3_READINESS_MAP.len(), 9);
+        for state in [
+            BlueBrainMd3ReadinessState::StableAndMaintenanceReady,
+            BlueBrainMd3ReadinessState::StableButCaveated,
+            BlueBrainMd3ReadinessState::AdvisoryOnly,
+            BlueBrainMd3ReadinessState::DiagnosticOnlyDeferred,
+            BlueBrainMd3ReadinessState::NonCanonicalInternalOnly,
+        ] {
+            assert!(CANONICAL_BLUE_BRAIN_MD3_READINESS_MAP
+                .iter()
+                .any(|entry| entry.readiness_state == state));
+        }
+
+        for entry in CANONICAL_BLUE_BRAIN_MD3_READINESS_MAP {
+            assert!(!entry.opens_new_region);
+            assert!(!entry.opens_additional_model_deepening);
+            assert!(!entry.creates_global_model_platform);
+            assert!(!entry.creates_direct_authority);
+            assert!(!entry.requires_compute_core_work);
+        }
+
+        let second = CANONICAL_BLUE_BRAIN_MD3_READINESS_MAP
+            .iter()
+            .find(|entry| entry.surface == BlueBrainMd3ReadinessSurface::SecondModelDeepening)
+            .expect("second model deepening readiness entry");
+        assert_eq!(
+            second.readiness_state,
+            BlueBrainMd3ReadinessState::AdvisoryOnly
+        );
+        assert!(second.maintenance_ready);
+        assert!(second.advisory_only);
+        assert!(second.caveated);
+
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_MD3_READINESS_MAP"));
+        assert!(doc.contains("stable and maintenance-ready"));
+        assert!(doc.contains("stable but caveated"));
+        assert!(doc.contains("advisory-only"));
+        assert!(doc.contains("diagnostic-only/deferred"));
+        assert!(doc.contains("non-canonical/internal-only"));
+        assert!(doc.contains("Amygdala ↔ Thalamus"));
+        assert!(doc.contains("Amygdala ↔ Basal Ganglia"));
+        assert!(doc.contains("Maintenance is the correct default after MD3"));
+        assert!(doc.contains("Compute-Core remains closed"));
+        assert!(doc.contains("no third model-deepening candidate"));
+        assert!(doc.contains("no global model platform"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no retry orchestration"));
+        assert!(doc.contains("no automatic memory persistence"));
+        assert!(authority.contains("blue_brain_md3_readiness_sweep_system_closure_v1.md"));
+        assert!(readme.contains("MD3 final readiness/system closure"));
     }
 
     #[test]

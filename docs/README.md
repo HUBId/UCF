@@ -13,6 +13,8 @@ Kanonische Status-Map:
   - `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`
   - `docs/blue_brain_md3_second_deepening_rescope_line_v1.md`
   - `docs/blue_brain_md3_second_model_deepening_implementation_line_v1.md`
+  - `docs/blue_brain_md3_second_model_deepening_hardening_line_v1.md`
+  - `docs/blue_brain_md3_readiness_sweep_system_closure_v1.md`
   - `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
   - `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md`
   - supporting consolidation evidence: `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md` and `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`
@@ -120,6 +122,7 @@ Autoritätsklassen im Repo-Kontext:
 - **Second model-deepening re-scope line (MD3 Prompt 1):** `docs/blue_brain_md3_second_deepening_rescope_line_v1.md`
 - **Second model-deepening implementation line (MD3 Prompt 2):** `docs/blue_brain_md3_second_model_deepening_implementation_line_v1.md`
 - **Second model-deepening hardening line (MD3 Prompt 3):** `docs/blue_brain_md3_second_model_deepening_hardening_line_v1.md`
+- **MD3 final readiness/system closure (MD3 Prompt 4):** `docs/blue_brain_md3_readiness_sweep_system_closure_v1.md`
 - **Real compute final reference line:**
   - `docs/final_reference_line_serie_j_v1.md`
   - `docs/final_production_readiness_evidence_pack_serie_j_v1.md`
@@ -131,7 +134,7 @@ Autoritätsklassen im Repo-Kontext:
 - **advisory-only / bounded:** BB10/BB11/BB16 bleiben advisory-only.
 - **usable-with-caveats (frozen semantics):** BB6/BB7/BB9/BB15 candidate/caveat slices ohne Promotion.
 - **deferred / test-only / non-canonical:** nicht Teil der operativen Baseline, keine implizite Reaktivierung.
-- **model-deepening maintenance-facing:** genau `Amygdala ↔ Thalamus` bleibt als erste bounded Kuramoto-like advisory/diagnostic Fläche maintenance-hardened; `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md` ist der kanonische Schnellzugriff für finale Stabilitätskarte, Doku/Test/Referenz. Die MD2-code-seitige Entscheidung `MaintenanceSufficientNoSecondCandidateNow` bleibt als abgeschlossene MD2-Stabilisierungshistorie sichtbar; MD3 Prompt 1 ergänzt als Re-Scope-Entscheidung genau einen priorisierten zweiten Kandidaten (`Amygdala ↔ Basal Ganglia`); MD3 Prompt 2 implementiert genau diesen Kandidaten minimal als bounded Kuramoto-like advisory/diagnostic second model-deepening line; MD3 Prompt 3 härtet diese zweite Vertiefung über `CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_HARDENING_MAP`, trennt Modell-/Diagnostics-/Contract-Zustände und hält Action-/Execution-/Retry-/Memory-/Compute-/Safety-Autorität weiter geschlossen.
+- **model-deepening maintenance-facing:** genau `Amygdala ↔ Thalamus` bleibt als erste bounded Kuramoto-like advisory/diagnostic Fläche maintenance-hardened; `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md` ist der kanonische Schnellzugriff für finale Stabilitätskarte, Doku/Test/Referenz. Die MD2-code-seitige Entscheidung `MaintenanceSufficientNoSecondCandidateNow` bleibt als abgeschlossene MD2-Stabilisierungshistorie sichtbar; MD3 Prompt 1 ergänzt als Re-Scope-Entscheidung genau einen priorisierten zweiten Kandidaten (`Amygdala ↔ Basal Ganglia`); MD3 Prompt 2 implementiert genau diesen Kandidaten minimal als bounded Kuramoto-like advisory/diagnostic second model-deepening line; MD3 Prompt 3 härtet diese zweite Vertiefung über `CANONICAL_BLUE_BRAIN_MD3_SECOND_DEEPENING_HARDENING_MAP`, trennt Modell-/Diagnostics-/Contract-Zustände und hält Action-/Execution-/Retry-/Memory-/Compute-/Safety-Autorität weiter geschlossen; MD3 Prompt 4 schließt den Gesamtstand über `CANONICAL_BLUE_BRAIN_MD3_READINESS_MAP` in Maintenance.
 
 Referenzpunkte für die technische Scope-Grenze:
 - `docs/supported_scope_execution_v13.md`
@@ -142,8 +145,8 @@ Referenzpunkte für die technische Scope-Grenze:
 
 - Aktive anatomische Regionenbasis ist **Hippocampus + Amygdala + Thalamus + Basal Ganglia + Cerebellum + Hypothalamus**.
 - Standardmodus nach SC1 Prompt 4 bleibt **Maintenance/Bugfix/Cleanup/Report-Refresh** mit klarer no-direct-* Guard-Linie; Konsolidierung ist abgeschlossen, solange kein expliziter Re-Scope erfolgt.
-- **Keine siebte operative Region und keine globale Neurodynamikplattform** sind aktiv. MD3 priorisiert genau einen zweiten Modellvertiefungskandidaten (`Amygdala ↔ Basal Ganglia`) und MD3 Prompt 2 vertieft ausschließlich diese Relation minimal bounded Kuramoto-like; weitere Kandidaten bleiben geschlossen.
-- Die BR1-BR6/IR1/MD2-Linie schließt als kontrollierte, maintenance-gehärtete bounded anatomy/inter-region/model-deepening Basis ohne Plattformausweitung.
+- **Keine siebte operative Region und keine globale Neurodynamikplattform** sind aktiv. MD3 priorisiert genau einen zweiten Modellvertiefungskandidaten (`Amygdala ↔ Basal Ganglia`), MD3 Prompt 2 vertieft ausschließlich diese Relation minimal bounded Kuramoto-like, MD3 Prompt 3 härtet sie, und MD3 Prompt 4 schließt den Stand in Maintenance; weitere Kandidaten bleiben geschlossen.
+- Die BR1-BR6/IR1/MD2/MD3-Linie schließt als kontrollierte, maintenance-gehärtete bounded anatomy/inter-region/model-deepening Basis ohne Plattformausweitung.
 - Canonical system audit map: `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
 - Final SC1 consolidation and maintenance decision: `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md`
 - Canonical Hypothalamus closure: `docs/blue_brain_br6_hypothalamus_readiness_sweep_expansion_boundary_serie_br6_prompt4_v1.md`
@@ -151,6 +154,7 @@ Referenzpunkte für die technische Scope-Grenze:
 - Canonical model-deepening maintenance map: `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`
 - Canonical second-deepening re-scope map: `docs/blue_brain_md3_second_deepening_rescope_line_v1.md`
 - Canonical second-deepening implementation map: `docs/blue_brain_md3_second_model_deepening_implementation_line_v1.md`
+- Canonical MD3 final readiness/system closure: `docs/blue_brain_md3_readiness_sweep_system_closure_v1.md`
 
 
 ## 2.2) Audit-Baseline (Blue-Brain / aktuelle post-BR6 Konsolidierungsevidenz) — 2026-05-08
