@@ -1,0 +1,19 @@
+# command: git rev-parse HEAD && git status --short --untracked-files=all
+# target baseline HEAD: 9f263aac7e146bf58c65c8f17e467ec710486100
+9f263aac7e146bf58c65c8f17e467ec710486100
+ M docs/README.md
+ M docs/blue_brain_audit_baseline_map_v1.md
+ M docs/blue_brain_final_evidence_baseline_refresh_2026_05_09.md
+ M docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md
+ M out/gate_report.json
+?? out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/cargo_clippy_workspace.log
+?? out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/cargo_fmt_check.log
+?? out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/cargo_test_workspace.log
+?? out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/consistency_checks.log
+?? out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/docs_lint.log
+?? out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/docs_lint_report.json
+?? out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/docs_lint_root.log
+?? out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/gate_report.json
+?? out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/head_status.log
+?? out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/readiness_gate.log
+?? out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/readiness_gate_root.log
