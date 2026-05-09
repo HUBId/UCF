@@ -1,0 +1,5 @@
+# command: git rev-parse HEAD && git status --short --branch
+# target baseline HEAD: ffa017d6138397d2f674a3b2405ca9ef22d3463b
+ffa017d6138397d2f674a3b2405ca9ef22d3463b
+## work
+?? out/blue_brain_audit_baseline_2026-05-09_head_ffa017d613/
