@@ -1,6 +1,6 @@
 # Architekturpaket MD1 Prompt 1: selective model-deepening decision line
 
-Status: repo-basierte Entscheidungs- und Abgrenzungslinie nach IR1. Diese Linie entscheidet selektiv über Modellvertiefung für die fünf kontrolliert integrierten anatomischen Regionen und die IR1-Relationen. Sie baut keine globale Neurodynamikplattform, keine Gehirn-Vollsimulation und keine neue Compute-Core-Arbeit.
+Status: repo-basierte Entscheidungs- und Abgrenzungslinie nach IR1. Diese Linie entscheidet selektiv über Modellvertiefung für die inzwischen sechs kontrolliert integrierten anatomischen Regionen und die IR1-Relationen; die Hypothalamus-Zeile ist ein späterer BR6-Maintenance-Abgleich ohne neue MD1-Funktionalität. Sie baut keine globale Neurodynamikplattform, keine Gehirn-Vollsimulation und keine neue Compute-Core-Arbeit.
 
 Canonical code anchor: `CANONICAL_BLUE_BRAIN_MD1_REGION_DEEPENING_DECISION_MAP` and `CANONICAL_BLUE_BRAIN_MD1_RELATION_DEEPENING_DECISION_MAP` in `runtime/ucf-compute/src/blue_brain_region_first_integration.rs`.
 
@@ -28,8 +28,9 @@ These classes intentionally preserve the BB10/BB12/BB16 boundary: dynamics can m
 | Thalamus | abstract functional current mode | abstract sufficient | Relay/routing integration is useful as a bounded relation endpoint; region-level dynamics would be premature. | Keep abstract. |
 | Basal Ganglia | abstract functional current mode | no-deepening-needed-now | Action-gating mediation must remain contract-bound and non-authoritative; more dynamics risks action/execution scope confusion. | No model deepening now. |
 | Cerebellum | abstract functional current mode | HH simulation-only/diagnostic-only candidate | Timing/mismatch/correction diagnostics could later use spiking/excitability evidence, but only offline or diagnostic-only. | Wait; not a next implementation candidate. |
+| Hypothalamus | abstract functional current mode | no-deepening-needed-now | BR6 added a bounded drive/homeostasis/urgency surface, but it has no current coupling or membrane-model leverage in MD1. | Keep abstract; no model deepening now. |
 
-Note: the broader anatomical map still keeps prefrontal cortex as a later selective HH deepening idea, but it is outside this MD1 pass because it is not one of the five currently controlled integrated regions.
+Note: the broader anatomical map still keeps prefrontal cortex as a later selective HH deepening idea, but it is outside the current bounded operational region set and remains non-canonical/internal-only unless explicitly re-scoped.
 
 ## 3) Relation decision map
 

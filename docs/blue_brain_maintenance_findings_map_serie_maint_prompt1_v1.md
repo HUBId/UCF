@@ -13,7 +13,7 @@ The active maintenance scope remains bounded to the already-integrated anatomica
 5. `cerebellum_like_region`
 6. `hypothalamus_like_region`
 
-No new anatomical region is introduced by this pass. Prefrontal Cortex, Anterior Cingulate Cortex and Insula references remain non-canonical/internal-only or historical candidate residues unless a future explicit re-scope says otherwise. The current model mode remains `abstract functional current mode` for non-deepened regions; the only first minimal model-deepening line remains the bounded `Amygdala ↔ Thalamus` surface. There is no second deepening candidate in this pass.
+No new anatomical region is introduced by this pass. Prefrontal Cortex, Anterior Cingulate Cortex and Insula references remain non-canonical/internal-only or historical candidate residues unless a future explicit re-scope says otherwise. The current model mode remains `abstract functional current mode` for non-deepened regions. The two existing selective model-deepening lines remain bounded to `Amygdala ↔ Thalamus` (first/MD1-MD2) and `Amygdala ↔ Basal Ganglia` (second/MD3). There is no third or additional model-deepening candidate in this pass.
 
 ## Maintenance findings map
 
@@ -32,7 +32,7 @@ The canonical code-side finding classes are pinned in `CANONICAL_BLUE_BRAIN_MAIN
 
 | Finding class | Finding | Resolution |
 | --- | --- | --- |
-| `real_bug` | The MD1 region-deepening decision map still covered only five bounded regions after BR6. `Hypothalamus` therefore fell through to the non-canonical/internal-only fallback even though it is now a current bounded region. | Added a bounded Hypothalamus MD1 decision as `NoDeepeningNeededNow` / `KeepAbstractOrDeferred`, with no coupling leverage, no HH/productive model work, no second candidate and no direct authority. |
+| `real_bug` | The MD1 region-deepening decision map still covered only five bounded regions after BR6. `Hypothalamus` therefore fell through to the non-canonical/internal-only fallback even though it is now a current bounded region. | Added a bounded Hypothalamus MD1 decision as `NoDeepeningNeededNow` / `KeepAbstractOrDeferred`, with no coupling leverage, no HH/productive model work, no third/additional candidate and no direct authority. |
 | `semantic_inconsistency` | The maintenance findings scope lock still listed five regions while SC1 Prompt 4 and the authority map define six current bounded regions. | Updated this map to six regions and explicitly separated historical/non-canonical region residues from the current bounded set. |
 | `guard_weakness` | The current bounded region set was implicit; generic anatomical candidate residues could be misread as currently integrated. | Added a code-side `CURRENT_BOUNDED_BLUE_BRAIN_ANATOMICAL_REGION_MAP` and `is_current_bounded_blue_brain_anatomical_region` guard helper, with tests excluding Prefrontal Cortex, Anterior Cingulate Cortex and Insula from current scope. |
 | `doc_test_drift` | No focused test proved that Hypothalamus is canonical for maintenance but not a new model-deepening candidate. | Added tests pinning the six-region scope, maintenance finding classes, Hypothalamus MD1 no-deepening status and unchanged single bounded Kuramoto-like region candidate count. |
@@ -42,7 +42,7 @@ The canonical code-side finding classes are pinned in `CANONICAL_BLUE_BRAIN_MAIN
 ## Non-expansion checks
 
 - No new anatomical region.
-- No implicit second model-deepening candidate.
+- No implicit third or additional model-deepening candidate.
 - No new allowed action, execution, retry, queue, memory persistence, retrieval, planner, agent, policy, governance, or compute-core authority.
 - Advisory-only remains advisory-only; diagnostic-only/reference-only remain non-authoritative.
 - Caveated, deferred, blocked, insufficient, diagnostic-only, reference-only, current model mode and non-canonical/internal-only remain distinct.
@@ -50,4 +50,4 @@ The canonical code-side finding classes are pinned in `CANONICAL_BLUE_BRAIN_MAIN
 
 ## Follow-up maintenance notes
 
-Further maintenance can keep reducing legacy wording around older generic brain-port test fixtures and broad anatomical candidate maps, but that should remain cleanup-only and must not become a region expansion, a second model-deepening line or a productive HH integration.
+Further maintenance can keep reducing legacy wording around older generic brain-port test fixtures and broad anatomical candidate maps, but that should remain cleanup-only and must not become a region expansion, a third/additional model-deepening line or a productive HH integration.
