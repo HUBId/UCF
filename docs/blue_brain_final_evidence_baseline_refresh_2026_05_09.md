@@ -6,49 +6,49 @@ Diese Abschlussnotiz dokumentiert den letzten kleinen Konsolidierungs-/Evidence-
 
 ## Zielzustand
 
-- Maßgeblicher Baseline-Lauf: `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/`
-- Referenzierter HEAD: `9f263aac7e146bf58c65c8f17e467ec710486100`
+- Maßgeblicher Baseline-Lauf: `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/`
+- Referenzierter HEAD: `0c4d2170aecba56e37c746c6f3b8cbe404626c59`
 - Finaler Reproduzierbarkeitsstatus: **clean maintenance-ready baseline**
 - Danach genügt normaler Maintenance-/Bugfix-/Cleanup-Modus; es gibt keinen aktiven neuen Ausbauhebel.
 
 ## Aktualisierte Reports und Logs
 
-Der Refresh erzeugt bzw. synchronisiert die aktuellen Root-Reports und die gebündelte Baseline unter `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/`:
+Der Refresh erzeugt bzw. synchronisiert die aktuellen Root-Reports und die gebündelte Baseline unter `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/`:
 
 - `out/docs_lint_report.json`
 - `out/gate_report.json`
-- `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/head_status.log`
-- `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/cargo_test_workspace.log`
-- `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/docs_lint.log`
-- `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/docs_lint_report.json`
-- `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/docs_lint_root.log`
-- `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/readiness_gate.log`
-- `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/readiness_gate_root.log`
-- `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/gate_report.json`
-- `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/cargo_fmt_check.log`
-- `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/cargo_clippy_workspace.log`
-- `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/consistency_checks.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/head_status.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/cargo_test_workspace.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/docs_lint.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/docs_lint_report.json`
+- `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/docs_lint_root.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/readiness_gate.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/readiness_gate_root.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/gate_report.json`
+- `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/cargo_fmt_check.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/cargo_clippy_workspace.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/consistency_checks.log`
 
-`out/gate_report.json` und `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/gate_report.json` tragen beide `code_version_tag = 9f263aac7e146bf58c65c8f17e467ec710486100`.
+`out/gate_report.json` und `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/gate_report.json` tragen beide `code_version_tag = 0c4d2170aecba56e37c746c6f3b8cbe404626c59`.
 
 ## Tatsächlich ausgeführte Kommandos
 
 1. `git rev-parse HEAD`
 2. `git status --short --branch`
 3. `cargo test --workspace`
-4. `cargo run -p ucf-ops -- docs lint --strict --out ./out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/docs_lint_report.json`
-5. `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/gate_report.json`
+4. `cargo run -p ucf-ops -- docs lint --strict --out ./out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/docs_lint_report.json`
+5. `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/gate_report.json`
 6. `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 7. `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json`
 8. `cargo fmt --all -- --check`
 9. `cargo clippy --workspace --all-targets -- -D warnings`
-10. Targeted Evidence-Konsistenzchecks gegen HEAD, Baseline-Map, README, SC1-/Evidence-Referenzen und `code_version_tag` (geloggt in `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/consistency_checks.log`)
+10. Targeted Evidence-Konsistenzchecks gegen HEAD, Baseline-Map, README, SC1-/Evidence-Referenzen und `code_version_tag` (geloggt in `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/consistency_checks.log`)
 
 Alle oben genannten Kommandos liefen erfolgreich durch. Die Readiness-Gate-Testprofile enthalten weiterhin dokumentierte `SKIP`-Checks für testprofilbedingte oder fixturebedingte Nicht-Erzwingung; der Gesamtreport steht auf `PASS` und ist kein Caveat für diese Baseline.
 
 ## Fmt-Evidence
 
-`out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/cargo_fmt_check.log` ist bewusst maintenance-facing lesbar. Der Log enthält:
+`out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/cargo_fmt_check.log` ist bewusst maintenance-facing lesbar. Der Log enthält:
 
 - den ausgeführten Command,
 - den geprüften HEAD,
@@ -74,7 +74,7 @@ Diese Trennung ändert keine Runtime-Funktionalität und öffnet keine neue Rela
 - `out/blue_brain_audit_baseline_2026-05-04/` bleibt historische Übergangsspur mit älterem `code_version_tag`.
 - `out/blue_brain_audit_baseline_2026-05-08/` bleibt historische SC1-Evidence auf HEAD `913f6ea50e47dcb4d980441d5fbd18d17e859f0b`.
 - `out/blue_brain_audit_baseline_2026-05-09/` bleibt historische Same-Day-Vorgänger-Evidence und ist nicht mehr der aktuelle operative Baseline-Lauf.
-- `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/` bleibt historische frühere HEAD-qualifizierte Same-Day-Evidence; maßgeblich ist der neue `head_9f263aac7e`-Lauf.
+- `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/`, `out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/`, `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/` und `out/blue_brain_audit_baseline_2026-05-09_head_ffa017d613/` bleiben historische frühere HEAD-qualifizierte Same-Day-Evidence; maßgeblich ist der neue `head_0c4d2170ae`-Lauf.
 - Aktuelle operative Evidence ist ausschließlich der HEAD-qualifizierte 2026-05-09-Lauf plus die Root-Reports `out/docs_lint_report.json` und `out/gate_report.json`.
 
 ## Abschlussnotiz des HEAD-Syncs
@@ -83,9 +83,9 @@ Geänderte bzw. neu erzeugte Deliverables dieses Konsolidierungsblocks:
 
 - Dokumentationsreferenzen: `docs/README.md`, `docs/blue_brain_audit_baseline_map_v1.md`, `docs/blue_brain_final_evidence_baseline_refresh_2026_05_09.md` und `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md`.
 - Root-Reports: `out/docs_lint_report.json` und `out/gate_report.json`.
-- HEAD-qualifizierte Baseline-Reports und Logs: `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/`.
+- HEAD-qualifizierte Baseline-Reports und Logs: `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/`.
 
-Alle ausgeführten Standard-, Hygiene- und Konsistenzchecks liefen erfolgreich. Der aktuelle `code_version_tag` liegt in den Gate-Reports auf `9f263aac7e146bf58c65c8f17e467ec710486100`. Damit ist der Stand auf dem aktuellen Merge-HEAD als **clean maintenance-ready baseline** belegbar; danach genügt normaler Maintenance-/Bugfix-/Cleanup-Modus.
+Alle ausgeführten Standard-, Hygiene- und Konsistenzchecks liefen erfolgreich. Der aktuelle `code_version_tag` liegt in den Gate-Reports auf `0c4d2170aecba56e37c746c6f3b8cbe404626c59`. Damit ist der Stand auf dem aktuellen Merge-HEAD als **clean maintenance-ready baseline** belegbar; danach genügt normaler Maintenance-/Bugfix-/Cleanup-Modus.
 
 ## Abschlussentscheidung
 
