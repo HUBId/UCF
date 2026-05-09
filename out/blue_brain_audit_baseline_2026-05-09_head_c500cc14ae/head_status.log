@@ -1,0 +1,19 @@
+# Audit target head status
+
+audit_target_head=c500cc14ae5c3ba2347933ba959ef0a6629ceee3
+audit_target_short=c500cc14ae
+baseline_dir=out/blue_brain_audit_baseline_2026-05-09_head_c500cc14ae
+
+## Initial anchor check before artifact creation
+
+command: git rev-parse HEAD
+c500cc14ae5c3ba2347933ba959ef0a6629ceee3
+
+command: git status --short --branch
+## work
+
+Interpretation: this exact commit was fixed as the audit target head before generating the refreshed evidence bundle. All newly generated reports/logs/baseline references in this bundle apply to this commit only. Later commits/merges are not automatically part of this baseline and require a deliberate new refresh; they do not retroactively invalidate this completed anchor.
+
+## Post-refresh working tree note
+
+After evidence generation, the working tree includes the refreshed docs/reports/logs to be committed on top of the anchor. That follow-up commit records the anchor; it is not itself a new functional baseline target.

@@ -14,7 +14,7 @@ Geprüfte Anschlussflächen:
 - Modellvertiefung: MD1/MD2 bleibt genau die maintenance-stabilisierte erste `Amygdala ↔ Thalamus`-Vertiefung; MD3 ergänzt genau eine zweite relation-local `Amygdala ↔ Basal Ganglia`-Vertiefung und schließt sie über die MD3-Readiness-Map in Maintenance.
 - Guard Rails: no-direct-action, no-direct-execution, no-direct-retry, no-direct-memory-commit, no-direct-compute, no-safety-override und keine implizite Policy-/Governance-Autorität.
 - Doku-/Referenzfläche: `docs/README.md`, `docs/blue_brain_authority_chain_status_map.md`, SC1 Prompt 1-3, BR6, IR1, MD2 und MD3 Prompt 1-4 bilden die aktuelle Authority-/Evidence-Linie.
-- Reproduzierbarkeit: Die aktuelle post-BR6/SC1 Baseline liegt unter `out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/`; root-level `out/docs_lint_report.json` und `out/gate_report.json` bleiben die Standardberichte.
+- Reproduzierbarkeit: Die aktuelle post-BR6/SC1 Baseline liegt unter `out/blue_brain_audit_baseline_2026-05-09_head_c500cc14ae/`; root-level `out/docs_lint_report.json` und `out/gate_report.json` bleiben die Standardberichte. Audit-Target-HEAD ist `c500cc14ae5c3ba2347933ba959ef0a6629ceee3`; die Maintenance-Ready-Aussage ist auf diesen Commit gebunden und spätere Commits brauchen einen neuen Refresh statt rückwirkend Teil dieser Baseline zu werden.
 
 Bewertung: Der Stand ist als **clean maintenance-ready baseline** belegt. Verbleibende Risiken sind normale Status-/Wortlaut-/Discoverability-Wartungsrisiken, keine offenen Feature- oder Plattformaufträge.
 
@@ -123,7 +123,7 @@ Rationale:
 - The six-region bounded anatomy line is explicit and closed enough for maintenance.
 - IR1 relation semantics are sufficiently constrained once read through the SC1 Prompt 3 guard checklist.
 - MD2 has exactly one stabilized first model-deepening pair; MD3 has exactly one bounded second model-deepening pair; together they do not justify another model-deepening series.
-- Repro/audit evidence is refreshed on HEAD `0c4d2170aecba56e37c746c6f3b8cbe404626c59` for a repo-based handoff.
+- Repro/audit evidence is refreshed on HEAD `c500cc14ae5c3ba2347933ba959ef0a6629ceee3` for a repo-based handoff. This is a commit-bound audit anchor: later commits may require a new refresh, but they do not retroactively invalidate this completed baseline.
 - Remaining risks are wording drift, historical-doc discoverability and normal maintenance regressions, not missing functionality.
 
 No further SC-series or feature series is necessary from the current evidence. A later expansion is only defensible after an explicit re-scope if maintenance evidence shows a concrete operational gap that cannot be solved by bugfix, cleanup, report refresh, terminology hardening or test hardening. If such a future re-scope ever happens, the only acceptable direction is a deliberately bounded contract-hardening pass around existing relation/diagnostic semantics; it must not start by adding a new region, a third or additional model-deepening candidate or a global platform.
