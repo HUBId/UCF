@@ -1,0 +1,6 @@
+$ git rev-parse HEAD
+0c4d2170aecba56e37c746c6f3b8cbe404626c59
+
+$ git status --short --branch
+## work
+?? out/blue_brain_audit_baseline_2026-05-09_head_0c4d2170ae/

@@ -1,0 +1,2 @@
+$ cargo fmt --all -- --check
+PASS: cargo fmt --all -- --check completed on HEAD 0c4d2170aecba56e37c746c6f3b8cbe404626c59

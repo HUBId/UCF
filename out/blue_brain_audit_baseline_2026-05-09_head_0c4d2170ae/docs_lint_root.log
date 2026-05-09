@@ -1,0 +1,191 @@
+$ cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
+   Compiling proc-macro2 v1.0.103
+   Compiling quote v1.0.42
+   Compiling unicode-ident v1.0.22
+   Compiling cfg-if v1.0.4
+   Compiling version_check v0.9.5
+   Compiling serde_core v1.0.225
+   Compiling syn v2.0.111
+   Compiling serde v1.0.225
+   Compiling typenum v1.19.0
+   Compiling generic-array v0.14.7
+   Compiling shlex v1.3.0
+   Compiling find-msvc-tools v0.1.5
+   Compiling anyhow v1.0.100
+   Compiling cc v1.2.49
+   Compiling serde_derive v1.0.225
+   Compiling blake3 v1.8.2
+   Compiling arrayvec v0.7.6
+   Compiling constant_time_eq v0.3.1
+   Compiling arrayref v0.3.9
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling either v1.15.0
+   Compiling cpufeatures v0.2.17
+   Compiling itertools v0.12.1
+   Compiling sha2 v0.10.9
+   Compiling bytes v1.11.0
+   Compiling ucf-core v0.1.0 (/workspace/UCF/core/ucf-core)
+   Compiling prost-derive v0.12.6
+   Compiling ucf-frames v0.1.0 (/workspace/UCF/domains/ucf-frames)
+   Compiling ucf-brainbus v0.1.0 (/workspace/UCF/domains/ucf-brainbus)
+   Compiling ucf-crypto v0.1.0 (/workspace/UCF/core/crates/ucf-crypto)
+   Compiling zerocopy v0.8.33
+   Compiling zerocopy-derive v0.8.33
+   Compiling prost v0.12.6
+   Compiling ucf-protocol v0.1.0 (/workspace/UCF/protocol/crates/ucf-protocol)
+   Compiling ucf-types v0.1.0 (/workspace/UCF/core/crates/ucf-types)
+   Compiling once_cell v1.21.3
+   Compiling ahash v0.8.12
+   Compiling libc v0.2.178
+   Compiling ucf-onn v0.1.0 (/workspace/UCF/core/crates/ucf-onn)
+   Compiling ucf-commit v0.1.0 (/workspace/UCF/core/crates/ucf-commit)
+   Compiling ucf-spikebus v0.1.0 (/workspace/UCF/core/crates/ucf-spikebus)
+   Compiling ucf-coupling v0.1.0 (/workspace/UCF/core/crates/ucf-coupling)
+   Compiling ucf-ncde v0.1.0 (/workspace/UCF/core/crates/ucf-ncde)
+   Compiling ucf-ssm v0.1.0 (/workspace/UCF/core/crates/ucf-ssm)
+   Compiling ucf-structural-store v0.1.0 (/workspace/UCF/core/crates/ucf-structural-store)
+   Compiling metrics v0.24.3
+   Compiling ucf-sandbox v0.1.0 (/workspace/UCF/core/crates/ucf-sandbox)
+   Compiling ucf-influence v0.1.0 (/workspace/UCF/core/crates/ucf-influence)
+   Compiling serde-big-array v0.5.1
+   Compiling ucf-fold v0.1.0 (/workspace/UCF/core/crates/ucf-fold)
+   Compiling ucf-cde-scm v0.1.0 (/workspace/UCF/domains/causal/crates/ucf-cde-scm)
+   Compiling ucf-policy-ecology v0.1.0 (/workspace/UCF/core/crates/ucf-policy-ecology)
+   Compiling bincode v1.3.3
+   Compiling memchr v2.7.6
+   Compiling ucf-evidence v0.1.0 (/workspace/UCF/core/crates/ucf-evidence)
+   Compiling ucf-nsr v0.1.0 (/workspace/UCF/core/crates/ucf-nsr)
+   Compiling hashbrown v0.16.1
+   Compiling autocfg v1.5.0
+   Compiling equivalent v1.0.2
+   Compiling indexmap v2.12.1
+   Compiling num-traits v0.2.19
+   Compiling ucf-archive v0.1.0 (/workspace/UCF/domains/archive/crates/ucf-archive)
+   Compiling ucf-openevolve-port v0.1.0 (/workspace/UCF/core/crates/ucf-openevolve-port)
+   Compiling ucf-archive-store v0.1.0 (/workspace/UCF/domains/archive/crates/ucf-archive-store)
+   Compiling ucf-predictive-coding v0.1.0 (/workspace/UCF/core/crates/ucf-predictive-coding)
+   Compiling ucf-params-registry v0.1.0 (/workspace/UCF/core/crates/ucf-params-registry)
+   Compiling ucf-bus v0.1.0 (/workspace/UCF/core/crates/ucf-bus)
+   Compiling ucf-rsa v0.1.0 (/workspace/UCF/core/crates/ucf-rsa)
+   Compiling ucf-recursion-controller v0.1.0 (/workspace/UCF/core/crates/ucf-recursion-controller)
+   Compiling serde_spanned v0.6.9
+   Compiling toml_datetime v0.6.11
+   Compiling thiserror v1.0.69
+   Compiling serde_json v1.0.145
+   Compiling winnow v0.7.14
+   Compiling toml_write v0.1.2
+   Compiling ucf-sleep-coordinator v0.1.0 (/workspace/UCF/core/crates/ucf-sleep-coordinator)
+   Compiling toml_edit v0.22.27
+   Compiling ucf-nsr-port v0.1.0 (/workspace/UCF/core/crates/ucf-nsr-port)
+   Compiling ucf-cde-port v0.1.0 (/workspace/UCF/core/crates/ucf-cde-port)
+   Compiling ucf-ess v0.1.0 (/workspace/UCF/domains/ucf-ess)
+   Compiling tracing-core v0.1.36
+   Compiling thiserror-impl v1.0.69
+   Compiling tracing-attributes v0.1.31
+   Compiling crc32fast v1.5.0
+   Compiling itoa v1.0.15
+   Compiling semver v1.0.27
+   Compiling pin-project-lite v0.2.16
+   Compiling ryu v1.0.20
+   Compiling tracing v0.1.44
+   Compiling rustc_version v0.4.1
+   Compiling toml v0.8.23
+   Compiling ucf-scm-port v0.1.0 (/workspace/UCF/core/crates/ucf-scm-port)
+   Compiling rmp v0.8.15
+   Compiling ucf-geist v0.1.0 (/workspace/UCF/domains/geist/crates/ucf-geist)
+   Compiling getrandom v0.2.17
+   Compiling ucf-tom-port v0.1.0 (/workspace/UCF/core/crates/ucf-tom-port)
+   Compiling ucf-ism v0.1.0 (/workspace/UCF/core/crates/ucf-ism)
+   Compiling simd-adler32 v0.3.8
+   Compiling byteorder v1.5.0
+   Compiling hex v0.4.3
+   Compiling rmp-serde v1.3.0
+   Compiling ucf-consistency-engine v0.1.0 (/workspace/UCF/core/crates/ucf-consistency-engine)
+   Compiling ucf-risk-gate v0.1.0 (/workspace/UCF/core/crates/ucf-risk-gate)
+   Compiling rand_core v0.6.4
+   Compiling safetensors v0.4.5
+   Compiling curve25519-dalek v4.1.3
+   Compiling ucf-output-router v0.1.0 (/workspace/UCF/core/crates/ucf-output-router)
+   Compiling ucf-attn-controller v0.1.0 (/workspace/UCF/core/crates/ucf-attn-controller)
+   Compiling ucf-iit v0.1.0 (/workspace/UCF/core/crates/ucf-iit)
+   Compiling half v2.7.1
+   Compiling getrandom v0.3.4
+   Compiling adler2 v2.0.1
+   Compiling rustix v1.1.3
+   Compiling thiserror v2.0.12
+   Compiling miniz_oxide v0.8.9
+   Compiling ucf-compute v0.1.0 (/workspace/UCF/runtime/ucf-compute)
+   Compiling ucf-workspace v0.1.0 (/workspace/UCF/core/crates/ucf-workspace)
+   Compiling ucf-bluebrain-bridge v0.1.0 (/workspace/UCF/domains/ucf-bluebrain-bridge)
+   Compiling aho-corasick v1.1.4
+   Compiling ppv-lite86 v0.2.21
+   Compiling curve25519-dalek-derive v0.1.1
+   Compiling thiserror-impl v2.0.12
+   Compiling bitflags v2.10.0
+   Compiling bumpalo v3.19.1
+   Compiling signature v2.2.0
+   Compiling linux-raw-sys v0.11.0
+   Compiling log v0.4.29
+   Compiling subtle v2.6.1
+   Compiling regex-syntax v0.8.8
+   Compiling zeroize v1.8.2
+   Compiling zip v2.4.2
+   Compiling regex-automata v0.4.14
+   Compiling zopfli v0.8.3
+   Compiling ed25519 v2.2.3
+   Compiling rand_chacha v0.3.1
+   Compiling ucf-policy v0.1.0 (/workspace/UCF/runtime/ucf-policy)
+   Compiling ucf-sle v0.1.0 (/workspace/UCF/core/crates/ucf-sle)
+   Compiling flate2 v1.1.9
+   Compiling ucf-neuromod v0.1.0 (/workspace/UCF/domains/ucf-neuromod)
+   Compiling ucf-cde v0.1.0 (/workspace/UCF/core/crates/ucf-cde)
+   Compiling ucf-snn v0.1.0 (/workspace/UCF/domains/ucf-snn)
+   Compiling ucf-tcf v0.1.0 (/workspace/UCF/core/crates/ucf-tcf)
+   Compiling ucf-fep v0.1.0 (/workspace/UCF/domains/ucf-fep)
+   Compiling ucf-biophys v0.1.0 (/workspace/UCF/domains/ucf-biophys)
+   Compiling displaydoc v0.2.5
+   Compiling ucf-spikes v0.1.0 (/workspace/UCF/core/ucf-spikes)
+   Compiling fastrand v2.3.0
+   Compiling ucf-iit-proxy v0.1.0 (/workspace/UCF/domains/ucf-iit)
+   Compiling same-file v1.0.6
+   Compiling ucf-dbm v0.1.0 (/workspace/UCF/domains/ucf-dbm)
+   Compiling walkdir v2.5.0
+   Compiling ucf-runtime v0.1.0 (/workspace/UCF/runtime/ucf-runtime)
+   Compiling tempfile v3.23.0
+   Compiling rand v0.8.5
+   Compiling ed25519-dalek v2.2.0
+   Compiling regex v1.12.3
+   Compiling ucf-replay v0.1.0 (/workspace/UCF/runtime/ucf-replay)
+   Compiling ucf-platform v0.1.0 (/workspace/UCF/runtime/ucf-platform)
+   Compiling ucf-ops v0.1.0 (/workspace/UCF/runtime/ucf-ops)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6m 44s
+     Running `target/debug/ucf-ops docs lint --strict --out ./out/docs_lint_report.json`
+[PASS] spec_snapshot :: docs/spec_snapshot.md is up-to-date
+[PASS] policy_packs :: policy graph valid (schema=1 digest=685156b448e6e6772af6c6dcad215db1ed0ffaeb8feffd0a43e3419b768ef254)
+[PASS] prompt_series_index :: 132 prompt IDs validated
+[PASS] module_map :: module_map crate entries match cargo metadata
+[PASS] hardware_neutral_docs :: no hardware-specific terms detected in guarded docs
+[PASS] v3_docs_consistency :: v3 docs are present and linked from portability/strict/index snapshots
+[PASS] v4_docs_consistency :: v4 docs are present and linked from portability/docs checks/index snapshots
+[PASS] v5_docs_consistency :: v5 docs are present and linked from portability/docs checks
+[PASS] v6_docs_consistency :: v6 docs are present and linked from portability/docs checks
+[PASS] v7_docs_consistency :: v7 docs are present and linked from portability/docs checks
+[PASS] v8_docs_consistency :: v8 docs are present and linked from portability/docs checks
+[PASS] v9_docs_consistency :: v9 docs are present and linked from portability/docs checks
+[PASS] v10_docs_consistency :: v10 docs are present and linked from portability/docs checks
+[PASS] v11_docs_consistency :: v11 docs are present and linked from portability/docs checks
+[PASS] v12_docs_consistency :: v12 docs are present and linked from portability/docs checks
+[PASS] v13_docs_consistency :: v13 docs are present and linked from portability/docs checks
+[PASS] v14_docs_consistency :: v14 docs are present and linked from portability/docs checks
+[PASS] v15_docs_consistency :: v15 docs are present and linked from portability/docs checks
+[PASS] v16_docs_consistency :: v16 docs are present and linked from portability/docs checks
+[PASS] v17_docs_consistency :: v17 docs are present and linked from portability/docs checks
+[PASS] v18_docs_consistency :: v18 docs are present and linked from portability/docs checks
+[PASS] v19_docs_consistency :: v19 docs are present and linked from portability/docs checks
+[PASS] v20_docs_consistency :: v20 docs are present and linked from portability/docs checks
+[PASS] remediation_registry_doc :: docs/remediation_codes_v1.md is up-to-date
+[PASS] artifact_schema_snapshots :: artifact schema snapshots are up-to-date (123 artifacts)
+overall=PASS
+report=./out/docs_lint_report.json
