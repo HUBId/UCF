@@ -176,32 +176,32 @@ SC1 Prompt 2 hat die höchste priorisierte SC1-Konsolidierungsmaßnahme umgesetz
 - `docs/blue_brain_final_evidence_baseline_refresh_2026_05_09.md`
 - historische Vorgänger-Notiz: `docs/blue_brain_final_evidence_baseline_refresh_2026_05_08.md`
 
-Der maßgebliche finale Baseline-Lauf referenziert HEAD `895c3d1175ae1edb6fea4344b269491bb000cc61` und ist als **clean maintenance-ready baseline** eingestuft. Die aktuellen versionierten Reports liegen unter:
+Der maßgebliche finale Baseline-Lauf referenziert HEAD `13615edd74b3e4da27036ceb82b45c78e85b0770` und ist als **clean maintenance-ready baseline** eingestuft. Die aktuellen versionierten Reports liegen unter:
 
-- `out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/head_status.log`
-- `out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/cargo_test_workspace.log`
-- `out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/docs_lint.log`
-- `out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/docs_lint_report.json`
-- `out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/docs_lint_root.log`
-- `out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/readiness_gate.log`
-- `out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/readiness_gate_root.log`
-- `out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/gate_report.json`
-- `out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/cargo_fmt_check.log`
-- `out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/cargo_clippy_workspace.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/head_status.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/cargo_test_workspace.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/docs_lint.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/docs_lint_report.json`
+- `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/docs_lint_root.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/readiness_gate.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/readiness_gate_root.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/gate_report.json`
+- `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/cargo_fmt_check.log`
+- `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/cargo_clippy_workspace.log`
 
 Ausgeführt wurden:
 
 - `cargo test --workspace`
-- `cargo run -p ucf-ops -- docs lint --strict --out ./out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/docs_lint_report.json`
-- `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/gate_report.json`
+- `cargo run -p ucf-ops -- docs lint --strict --out ./out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/docs_lint_report.json`
+- `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/gate_report.json`
 - `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 - `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json`
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
 
-Die aktuelle Root-Evidence liegt zusätzlich unter `out/docs_lint_report.json` und `out/gate_report.json`; beide aktuellen Gate-Reports tragen `code_version_tag = 895c3d1175ae1edb6fea4344b269491bb000cc61`. Die fmt-Evidence unter `out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/cargo_fmt_check.log` enthält Command, HEAD und einen expliziten PASS/OK-Marker. Die frühere `workspace.features`-Cargo-Warnung tritt im frischen Lauf nicht mehr auf und bleibt nur in historischen 2026-05-02-Logs sichtbar.
+Die aktuelle Root-Evidence liegt zusätzlich unter `out/docs_lint_report.json` und `out/gate_report.json`; beide aktuellen Gate-Reports tragen `code_version_tag = 13615edd74b3e4da27036ceb82b45c78e85b0770`. Die fmt-Evidence unter `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/cargo_fmt_check.log` enthält Command, HEAD und einen expliziten PASS/OK-Marker. Die frühere `workspace.features`-Cargo-Warnung tritt im frischen Lauf nicht mehr auf und bleibt nur in historischen 2026-05-02-Logs sichtbar.
 
-Die älteren Baselines `out/blue_brain_audit_baseline_2026-05-02/`, `out/blue_brain_audit_baseline_2026-05-04/`, `out/blue_brain_audit_baseline_2026-05-08/` und die unqualifizierte Same-Day-Vorgänger-Baseline `out/blue_brain_audit_baseline_2026-05-09/` bleiben historische Vergleichs- und Auditspuren. Für aktuelle operative Regionen-/Relations-/Modellaussagen gilt weiterhin ausschließlich die post-BR6 Authority-Linie aus Abschnitt 0/2.1; die HEAD-qualifizierte 2026-05-09-Baseline `out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/` ist aktuelle Evidence, keine neue operative Wahrheit und kein Ausbauhebel.
+Die älteren Baselines `out/blue_brain_audit_baseline_2026-05-02/`, `out/blue_brain_audit_baseline_2026-05-04/`, `out/blue_brain_audit_baseline_2026-05-08/` und die unqualifizierte Same-Day-Vorgänger-Baseline `out/blue_brain_audit_baseline_2026-05-09/` bleiben historische Vergleichs- und Auditspuren. Für aktuelle operative Regionen-/Relations-/Modellaussagen gilt weiterhin ausschließlich die post-BR6 Authority-Linie aus Abschnitt 0/2.1; die HEAD-qualifizierte 2026-05-09-Baseline `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/` ist aktuelle Evidence, keine neue operative Wahrheit und kein Ausbauhebel.
 
 ## 3) Guard rails and boundaries (must stay visible)
 

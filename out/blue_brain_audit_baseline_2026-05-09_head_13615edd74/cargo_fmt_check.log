@@ -1,0 +1,3 @@
+# command: cargo fmt --all -- --check
+# head: 13615edd74b3e4da27036ceb82b45c78e85b0770
+# result: PASS/OK
