@@ -1,0 +1,31 @@
+# command: cargo run -p ucf-ops -- docs lint --strict --out ./out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/docs_lint_report.json
+# head: 13615edd74b3e4da27036ceb82b45c78e85b0770
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.62s
+     Running `target/debug/ucf-ops docs lint --strict --out ./out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/docs_lint_report.json`
+[PASS] spec_snapshot :: docs/spec_snapshot.md is up-to-date
+[PASS] policy_packs :: policy graph valid (schema=1 digest=685156b448e6e6772af6c6dcad215db1ed0ffaeb8feffd0a43e3419b768ef254)
+[PASS] prompt_series_index :: 132 prompt IDs validated
+[PASS] module_map :: module_map crate entries match cargo metadata
+[PASS] hardware_neutral_docs :: no hardware-specific terms detected in guarded docs
+[PASS] v3_docs_consistency :: v3 docs are present and linked from portability/strict/index snapshots
+[PASS] v4_docs_consistency :: v4 docs are present and linked from portability/docs checks/index snapshots
+[PASS] v5_docs_consistency :: v5 docs are present and linked from portability/docs checks
+[PASS] v6_docs_consistency :: v6 docs are present and linked from portability/docs checks
+[PASS] v7_docs_consistency :: v7 docs are present and linked from portability/docs checks
+[PASS] v8_docs_consistency :: v8 docs are present and linked from portability/docs checks
+[PASS] v9_docs_consistency :: v9 docs are present and linked from portability/docs checks
+[PASS] v10_docs_consistency :: v10 docs are present and linked from portability/docs checks
+[PASS] v11_docs_consistency :: v11 docs are present and linked from portability/docs checks
+[PASS] v12_docs_consistency :: v12 docs are present and linked from portability/docs checks
+[PASS] v13_docs_consistency :: v13 docs are present and linked from portability/docs checks
+[PASS] v14_docs_consistency :: v14 docs are present and linked from portability/docs checks
+[PASS] v15_docs_consistency :: v15 docs are present and linked from portability/docs checks
+[PASS] v16_docs_consistency :: v16 docs are present and linked from portability/docs checks
+[PASS] v17_docs_consistency :: v17 docs are present and linked from portability/docs checks
+[PASS] v18_docs_consistency :: v18 docs are present and linked from portability/docs checks
+[PASS] v19_docs_consistency :: v19 docs are present and linked from portability/docs checks
+[PASS] v20_docs_consistency :: v20 docs are present and linked from portability/docs checks
+[PASS] remediation_registry_doc :: docs/remediation_codes_v1.md is up-to-date
+[PASS] artifact_schema_snapshots :: artifact schema snapshots are up-to-date (123 artifacts)
+overall=PASS
+report=./out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/docs_lint_report.json

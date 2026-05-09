@@ -1,0 +1,6 @@
+# command: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/gate_report.json
+# head: 13615edd74b3e4da27036ceb82b45c78e85b0770
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.37s
+     Running `target/debug/ucf-ops readiness-gate --profile test --out ./out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/gate_report.json`
+status=Pass
+out=./out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/gate_report.json

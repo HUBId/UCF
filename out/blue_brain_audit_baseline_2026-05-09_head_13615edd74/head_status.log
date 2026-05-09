@@ -1,0 +1,10 @@
+# command: git rev-parse HEAD && git status --short --branch
+# target baseline HEAD: 13615edd74b3e4da27036ceb82b45c78e85b0770
+13615edd74b3e4da27036ceb82b45c78e85b0770
+## work
+ M docs/README.md
+ M docs/blue_brain_audit_baseline_map_v1.md
+ M docs/blue_brain_final_evidence_baseline_refresh_2026_05_09.md
+ M docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md
+ M out/gate_report.json
+?? out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/
