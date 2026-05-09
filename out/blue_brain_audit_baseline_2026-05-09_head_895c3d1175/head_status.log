@@ -1,0 +1,14 @@
+# command: git rev-parse HEAD
+895c3d1175ae1edb6fea4344b269491bb000cc61
+
+# command: git status --short --branch
+## work
+ M docs/README.md
+ M docs/blue_brain_audit_baseline_map_v1.md
+ M docs/blue_brain_final_evidence_baseline_refresh_2026_05_09.md
+ M docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md
+ M out/gate_report.json
+?? out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/
+
+# target baseline HEAD: 895c3d1175ae1edb6fea4344b269491bb000cc61
+# supersedes previous report evidence from the pre-merge HEAD
