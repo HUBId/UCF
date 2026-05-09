@@ -2,9 +2,13 @@
 
 Status: **IR1 closeout reference** for the initial bounded inter-region architecture. This file closes the Prompt-1 map, Prompt-2 implementation line, and Prompt-3 diagnostics/contract hardening without creating a second truth source: the canonical code anchor remains `CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP`, and this document only records the readiness reading of that map.
 
+Current-baseline note (2026-05-09): this document is current for the **initial IR1 closeout semantics**, not for collapsing every later BR6/SC1 relation into an active relation. Read the tables below as a separation between architecture-lane existence and implementation-lane activation; `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md` carries the current all-six-region relation split.
+
 Scope: only the already opened anatomical regions `hippocampus_like_region`, `amygdala_like_region`, `thalamus_like_region`, `basal_ganglia_like_region`, and `cerebellum_like_region`. Hypothalamus is considered only as a next-direction decision, not opened by IR1. BR6 Prompt 2 supersedes that historical waiting state by adding a separate bounded Hypothalamus adjunct integration line.
 
 ## 1) IR1-readiness map
+
+Prompt-4 relation counts are scoped to the initial five-region IR1 line. Architecture-map labels are not implementation activation by themselves.
 
 | Readiness state | Prompt-4 meaning | Pair assignment |
 |---|---|---|
@@ -107,3 +111,12 @@ This decision does not reopen Compute and does not authorize a Hypothalamus inte
 ## BR6 Prompt 2 supersession note
 
 The IR1 readiness counts remain the historical five-region closeout basis. BR6 Prompt 2 separately extends the code-level inter-region diagnostics map to include Hypothalamus adjunct relations. That later extension keeps the same no-direct guards and does not reopen Compute, policy/governance, planner/agent, retry/orchestration or memory persistence scope.
+
+For the current 2026-05-09 baseline, the all-six-region relation surface must therefore be read in two lanes:
+
+| Reading lane | Meaning |
+|---|---|
+| Architecture lane exists | The bounded architecture map names a relation class such as direct bounded advisory, reference-mediated, selection-mediated, execution-interface-mediated, caveated, deferred, or blocked. |
+| Implemented active relation | The implementation map exposes advisory/read-only diagnostics for that pair. |
+| Deferred/not-yet-implemented relation | The architecture lane exists, but the implementation lane is inactive. |
+| Blocked relation | The implementation is fail-closed/unavailable and must not be treated as a failed execution. |

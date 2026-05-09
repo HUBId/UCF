@@ -40,7 +40,7 @@ These docs and artifacts are current support, not competing authority:
 - `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md` — compact terminology and no-direct-* guard checklist.
 - `docs/blue_brain_audit_baseline_map_v1.md` — current audit baseline and artifact map.
 - `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md` — non-canonical/internal-only shadow-surface inventory.
-- `out/blue_brain_audit_baseline_2026-05-08/` — current Blue-Brain baseline evidence bundle.
+- `out/blue_brain_audit_baseline_2026-05-09/` — current Blue-Brain clean maintenance-ready baseline evidence bundle on HEAD `efbeec23b752744dc9f87a2e2e3eeb9efe25104f`.
 - `out/docs_lint_report.json` and `out/gate_report.json` — standard root reports for canonical docs/readiness checks.
 
 Supporting references can clarify evidence, terminology and maintenance caveats. They must not be used to override the authority map or infer new features.
@@ -59,10 +59,10 @@ Common stale readings to avoid:
 
 ## 5) Maintenance caveat handling
 
-The current state is **maintenance-ready with caveats**. Caveats are discoverability and wording risks, not active expansion levers:
+The current state is a **clean maintenance-ready baseline**. Remaining items are normal discoverability and wording maintenance risks, not active expansion levers:
 
 - historical docs remain searchable and require authority-map disambiguation;
 - `selection-mediated` and `execution-interface-mediated` remain read/diagnostic labels only;
-- current audit evidence is the 2026-05-08 baseline bundle, while earlier bundles are historical;
+- current audit evidence is the 2026-05-09 baseline bundle, while 2026-05-08 and earlier bundles are historical;
 - shadow surfaces remain non-canonical/internal-only/deferred unless a future explicit re-scope changes the authority chain;
 - the former Cargo `workspace.features` warning has been removed at the root manifest instead of accepted as recurring maintenance noise.

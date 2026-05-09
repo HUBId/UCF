@@ -1,0 +1,14 @@
+command: git rev-parse HEAD
+efbeec23b752744dc9f87a2e2e3eeb9efe25104f
+command: git status --short --branch
+## work
+ M docs/README.md
+ M docs/blue_brain_audit_baseline_map_v1.md
+ M docs/blue_brain_final_evidence_baseline_refresh_2026_05_08.md
+ M docs/blue_brain_ir1_readiness_sweep_inter_region_closure_serie_ir1_prompt4_v1.md
+ M docs/blue_brain_maintenance_discoverability_map_v1.md
+ M docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md
+ M docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md
+ M out/gate_report.json
+?? docs/blue_brain_final_evidence_baseline_refresh_2026_05_09.md
+?? out/blue_brain_audit_baseline_2026-05-09/

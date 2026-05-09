@@ -135,16 +135,16 @@ Evidence points:
 
 - Code surfaces for region, relation, model-deepening and guard states are concentrated in `runtime/ucf-compute/src/blue_brain_region_first_integration.rs`.
 - Current generated reports under `out/docs_lint_report.json` and `out/gate_report.json` pass.
-- Historical versioned baselines under `out/blue_brain_audit_baseline_2026-05-02/` and `out/blue_brain_audit_baseline_2026-05-04/` remain useful as historical evidence, while `out/blue_brain_audit_baseline_2026-05-08/` is the current post-BR6 consolidation baseline.
+- Historical versioned baselines under `out/blue_brain_audit_baseline_2026-05-02/`, `out/blue_brain_audit_baseline_2026-05-04/` and `out/blue_brain_audit_baseline_2026-05-08/` remain useful as historical evidence, while `out/blue_brain_audit_baseline_2026-05-09/` is the current post-BR6/SC1 clean maintenance-ready consolidation baseline.
 - Doku volume is high; authority entrypoints are therefore essential to avoid duplicate-truth drift.
 
 Assessment:
 
-- Region surfaces: maintenance-ready with caveats.
-- Relation architecture: maintenance-ready with relation-wording caveat.
+- Region surfaces: clean maintenance-ready baseline; wording risks are normal maintenance risks.
+- Relation architecture: clean maintenance-ready baseline with architecture-lane versus implementation-lane split explicit in SC1 Prompt 4.
 - Model deepening: maintenance-ready; no second candidate.
 - Guard rails: maintenance-ready.
-- Repro baseline: refreshed in SC1 Prompt 2 for the post-BR6 authority line.
+- Repro baseline: refreshed to HEAD `efbeec23b752744dc9f87a2e2e3eeb9efe25104f` in the 2026-05-09 evidence bundle.
 
 ## 9) Systemweite consolidation map
 
@@ -155,7 +155,7 @@ Assessment:
 | doc authority clean | yes after this pass, with BR6/IR1/MD2/System-Audit as current authority |
 | semantic drift remaining | low after SC1 Prompt 3: terms are still historically distributed, but compact code/doc checklist now pins allowed and forbidden consumer reads |
 | guard weakness remaining | low in guard flags; medium in stale-document discoverability |
-| reproducibility gap | low after SC1 Prompt 2: current root reports pass and `out/blue_brain_audit_baseline_2026-05-08/` provides the post-BR6 versioned Blue-Brain baseline |
+| reproducibility gap | closed for current HEAD: root reports pass and `out/blue_brain_audit_baseline_2026-05-09/` provides the current post-BR6/SC1 Blue-Brain baseline |
 | relation ambiguity | medium-low: fixed pair map exists, but relation class richness needs periodic checklist review |
 | model-boundary drift | medium-low: one deepened pair is safe; HH/Kuramoto wording needs careful maintenance |
 | non-canonical residue | present and acceptable when explicitly marked internal-only/deferred |
@@ -171,13 +171,13 @@ No runtime behavior, region implementation, model implementation, policy logic, 
 ## 11) Highest-leverage next consolidation measures
 
 1. **Repro-/Test-Baseline-Refresh for post-BR6 — implemented by SC1 Prompt 2**  
-   Fresh Blue-Brain baseline preserved under `out/blue_brain_audit_baseline_2026-05-08/`; `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md` is the canonical action evidence. Historical 2026-05-02/2026-05-04 baselines remain comparison evidence only.
+   Fresh Blue-Brain baseline now preserved under `out/blue_brain_audit_baseline_2026-05-09/`; `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md` remains the canonical action evidence lineage. Historical 2026-05-02/2026-05-04/2026-05-08 baselines remain comparison evidence only.
 
 2. **Cross-line terminology/guard checklist consolidation — implemented by SC1 Prompt 3**  
    `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md` and `CANONICAL_BLUE_BRAIN_CROSS_LINE_TERMINOLOGY_GUARD_CHECKLIST` now map advisory-only/caveated/deferred/blocked/insufficient/diagnostic-only/reference-only/current-model-mode/non-canonical to allowed and forbidden consumer reads without adding behavior.
 
 3. **Final relation/status consolidation review — closed by SC1 Prompt 4**  
-   `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md` records the final stable/caveated/advisory/diagnostic/deferred/non-canonical map and explicitly keeps selection-mediated and execution-interface-mediated IR1 wording as bounded reads, not orchestration language.
+   `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md` records the final architecture-lane versus implementation-lane relation split and explicitly keeps selection-mediated and execution-interface-mediated IR1 wording as bounded reads, not orchestration language.
 
 ## 12) Abschlussnotiz
 
@@ -187,4 +187,4 @@ Geänderte Dateien in diesem Pass:
 - `docs/README.md`
 - `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
 
-Gesamtentscheidung: Der Blue-Brain-Stand ist systemweit **maintenance-ready with caveats**. Die sechs integrierten anatomischen Regionen und die bounded inter-region architecture sind ausreichend klar, sofern BR6/IR1/MD2/System-Audit als aktuelle Authority gelesen werden. Die größte SC1-Restschwäche, die post-BR6 Repro-Baseline-Lücke, wurde in SC1 Prompt 2 geschlossen oder deutlich reduziert; die zweitwichtigste Restschwäche, verteilte Cross-line-Terminologie mit Guard-Drift-Risiko, wurde in SC1 Prompt 3 durch eine kompakte Checklist-Fläche reduziert. Verbleibende Restschwäche ist vor allem relationales Wortlautrisiko, das durch SC1 Prompt 4 als Maintenance-Caveat eingeordnet ist. Nach diesen Konsolidierungsmaßnahmen genügt Maintenance; weiterer Ausbau ist nicht der Default und wäre nur nach explizitem Re-Scope vertretbar.
+Gesamtentscheidung: Der Blue-Brain-Stand ist systemweit eine **clean maintenance-ready baseline**. Die sechs integrierten anatomischen Regionen, die bounded inter-region architecture und die zwei abgeschlossenen Modellvertiefungen sind ausreichend klar, sofern BR6/IR1/MD2/MD3/SC1 und die 2026-05-09 Baseline-Map als aktuelle Authority gelesen werden. Die frühere post-BR6 Repro-Baseline-Lücke ist auf dem aktuellen HEAD geschlossen; Relations-Doku trennt Architecture-Lane und Implementation-Lane explizit. Nach diesen Konsolidierungsmaßnahmen genügt Maintenance; weiterer Ausbau ist nicht der Default und wäre nur nach explizitem Re-Scope vertretbar.
