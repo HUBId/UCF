@@ -273,55 +273,55 @@ pub const CANONICAL_BLUE_BRAIN_CROSS_LINE_TERMINOLOGY_GUARD_CHECKLIST:
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::AdvisoryOnly,
         allowed_consumer_read: "bounded positive read only",
-        forbidden_authority: "no direct action, execution, retry, memory, compute, safety, selection, or promotion authority",
+        forbidden_authority: "no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, no safety override, no direct selection, or promotion authority",
         scope_note: "may inform existing bounded runtime/selection/reference consumers without becoming a trigger",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::Caveated,
         allowed_consumer_read: "bounded read with visible caveat only",
-        forbidden_authority: "no promotion to strong support, no direct action, execution, retry, memory, compute, or safety authority",
+        forbidden_authority: "no promotion to strong support, no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, or safety override authority",
         scope_note: "preserves uncertainty across region, relation, diagnostic, and model wording",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::Deferred,
         allowed_consumer_read: "not-active-yet status read only",
-        forbidden_authority: "no silent activation, no retry orchestration, no direct action, execution, memory, compute, or safety authority",
+        forbidden_authority: "no silent activation, no retry orchestration, no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, or safety override authority",
         scope_note: "distinct from blocked and requires explicit future re-scope before activation",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::Blocked,
         allowed_consumer_read: "fail-closed unavailable or forbidden-path read only",
-        forbidden_authority: "no fallback activation, no override, no direct action, execution, retry, memory, compute, or safety authority",
+        forbidden_authority: "no fallback activation, no override, no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, or safety override authority",
         scope_note: "marks a closed boundary for consumers",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::Insufficient,
         allowed_consumer_read: "weak-evidence diagnostic read only",
-        forbidden_authority: "no support signal, no promotion, no direct action, execution, retry, memory, compute, or safety authority",
+        forbidden_authority: "no support signal, no promotion, no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, or safety override authority",
         scope_note: "keeps absent or weak evidence separate from positive advisory support",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::DiagnosticOnly,
         allowed_consumer_read: "observable diagnostic state read only",
-        forbidden_authority: "no advisory promotion, no direct action, execution, retry, memory, compute, selection, or safety authority",
+        forbidden_authority: "no advisory promotion, no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, no direct selection, or safety override authority",
         scope_note: "diagnostics may explain a state but do not steer transitions",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::ReferenceOnly,
         allowed_consumer_read: "read-only context/reference access only",
-        forbidden_authority: "no mutation, no direct memory commit, no direct action, execution, retry, compute, or safety authority",
+        forbidden_authority: "no mutation, no direct memory commit, no direct action, no direct execution, no direct retry, no direct compute invocation, or safety override authority",
         scope_note: "keeps reference consumption separated from persistence and execution",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::CurrentModelMode,
         allowed_consumer_read: "descriptive model-mode read only",
-        forbidden_authority: "no contract authority, no model-platform expansion, no second deepening candidate, no direct action, execution, retry, memory, compute, or safety authority",
+        forbidden_authority: "no contract authority, no model-platform expansion, no additional model-deepening candidate, no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, or safety override authority",
         scope_note: "describes the maintained model boundary without changing region or relation behavior",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::NonCanonicalInternalOnly,
         allowed_consumer_read: "internal/test/residual traceability read only when explicitly caveated",
-        forbidden_authority: "no consumer-operational behavior, no direct action, execution, retry, memory, compute, safety, region, relation, or model authority",
+        forbidden_authority: "no consumer-operational behavior, no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, no safety override, no region, relation, or model authority",
         scope_note: "prevents residual paths from becoming a second truth source",
     },
 ];
@@ -341,11 +341,15 @@ pub fn blue_brain_cross_line_term_allows_direct_authority(
 ) -> bool {
     let entry = blue_brain_cross_line_term_guard_checklist_entry(term);
     !(entry.forbidden_authority.contains("no direct action")
-        && entry.forbidden_authority.contains("execution")
-        && entry.forbidden_authority.contains("retry")
-        && entry.forbidden_authority.contains("memory")
-        && entry.forbidden_authority.contains("compute")
-        && entry.forbidden_authority.contains("safety"))
+        && entry.forbidden_authority.contains("no direct execution")
+        && entry.forbidden_authority.contains("no direct retry")
+        && entry
+            .forbidden_authority
+            .contains("no direct memory commit")
+        && entry
+            .forbidden_authority
+            .contains("no direct compute invocation")
+        && entry.forbidden_authority.contains("safety override"))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -7092,10 +7096,15 @@ mod tests {
             assert_eq!(entry.term, term);
             assert!(entry.allowed_consumer_read.contains("read"));
             assert!(entry.forbidden_authority.contains("no direct action"));
-            assert!(entry.forbidden_authority.contains("execution"));
-            assert!(entry.forbidden_authority.contains("retry"));
-            assert!(entry.forbidden_authority.contains("compute"));
-            assert!(entry.forbidden_authority.contains("safety"));
+            assert!(entry.forbidden_authority.contains("no direct execution"));
+            assert!(entry.forbidden_authority.contains("no direct retry"));
+            assert!(entry
+                .forbidden_authority
+                .contains("no direct memory commit"));
+            assert!(entry
+                .forbidden_authority
+                .contains("no direct compute invocation"));
+            assert!(entry.forbidden_authority.contains("safety override"));
             assert!(!blue_brain_cross_line_term_allows_direct_authority(term));
         }
 
@@ -7112,7 +7121,7 @@ mod tests {
         );
         assert!(model_entry
             .forbidden_authority
-            .contains("no second deepening candidate"));
+            .contains("no additional model-deepening candidate"));
     }
 
     #[test]
@@ -8033,8 +8042,8 @@ mod tests {
             "docs/blue_brain_region1_final_stabilization_sweep_serie_bb25_prompt3_v1.md"
         ));
         assert!(doc.contains("historische Hippocampus-first-Stabilisierung"));
-        assert!(doc.contains("genau fünf bounded anatomische Regionen"));
-        assert!(doc.contains("keine Region 6 und keine globale Modellplattform"));
+        assert!(doc.contains("genau sechs bounded anatomische Regionen"));
+        assert!(doc.contains("keine siebte Region und keine globale Modellplattform"));
     }
 
     #[test]
@@ -12241,7 +12250,9 @@ mod tests {
         assert!(maintenance_map.contains("no_change_needed"));
         assert!(maintenance_map.contains("NoDeepeningNeededNow"));
         assert!(maintenance_map.contains("No new anatomical region"));
-        assert!(maintenance_map.contains("No implicit second model-deepening candidate"));
+        assert!(
+            maintenance_map.contains("No implicit third or additional model-deepening candidate")
+        );
     }
 
     #[test]
@@ -12915,6 +12926,9 @@ mod tests {
         assert!(doc.contains("Thalamus"));
         assert!(doc.contains("Basal Ganglia"));
         assert!(doc.contains("Cerebellum"));
+        assert!(doc.contains("Hypothalamus"));
+        assert!(doc.contains("BR6-Maintenance-Abgleich"));
+        assert!(doc.contains("no model deepening now"));
         assert!(doc.contains("Priority 1: `Amygdala ↔ Thalamus`"));
         assert!(doc.contains("Priority 2: `Amygdala ↔ Basal Ganglia`"));
         assert!(doc.contains("not direct Action control"));

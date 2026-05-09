@@ -80,9 +80,9 @@ Maintenance-Interpretation folgt der BB23 Allowed-Change-Map: maintenance-safe, 
 - `advisory-only` / `bounded` Linien bleiben ohne direkte Ausführungsautorität.
 - `candidate-only`, `test-only`, `deferred`, `non-canonical` markieren nicht-operative oder nicht-hochgestufte Pfade.
 - `no-direct-*` Guard Rails bleiben verpflichtend.
-- First-anatomical maintenance reference surface (BB31) bleibt als historische Hippocampus-first-Stabilisierung erhalten; der aktuelle BR5-Maintenance-Stand umfasst jedoch genau fünf bounded anatomische Regionen: `hippocampus_like_region`, `amygdala_like_region`, `thalamus_like_region`, `basal_ganglia_like_region`, `cerebellum_like_region`.
+- First-anatomical maintenance reference surface (BB31) bleibt als historische Hippocampus-first-Stabilisierung erhalten; der aktuelle Post-BR6/MD3-Maintenance-Stand umfasst genau sechs bounded anatomische Regionen: `hippocampus_like_region`, `amygdala_like_region`, `thalamus_like_region`, `basal_ganglia_like_region`, `cerebellum_like_region`, `hypothalamus_like_region`.
 - Canonical first-anatomical maintenance docs/tests/index path: `docs/blue_brain_first_anatomical_stabilization_line_serie_bb31_prompt1_v1.md` + `docs/blue_brain_first_anatomical_docs_tests_index_cleanup_serie_bb31_prompt2_v1.md` + `docs/blue_brain_bb31_final_first_anatomical_stabilization_sweep_serie_bb31_prompt3_v1.md`.
-- Der aktuelle Maintenance-Betrieb führt die fünf bounded Regionen nur als advisory/reference/diagnostic contract surfaces mit bounded inter-region relations; daraus folgt keine Region 6 und keine globale Modellplattform.
+- Der aktuelle Maintenance-Betrieb führt die sechs bounded Regionen nur als advisory/reference/diagnostic contract surfaces mit bounded inter-region relations; daraus folgt keine siebte Region und keine globale Modellplattform.
 - Nach BR5 ist **Maintenance/Bugfix/Cleanup ohne neue Serie** der explizite Default.
 - Ein weiterer Regions- oder Modellvertiefungsschritt bleibt bewusst nicht aktiv und ist nur per explizitem Re-Scope möglich (kein automatischer nächster Schritt).
 

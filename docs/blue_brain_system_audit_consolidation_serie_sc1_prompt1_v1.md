@@ -80,7 +80,7 @@ Relational risk: The relation taxonomy is rich enough that wording can drift int
 
 ## 5) Model-deepening audit
 
-Current model boundary:
+Historical MD1/MD2 model boundary at this audit point (superseded for current operational authority by the later MD3/SC1 authority chain):
 
 - Abstract functional current mode: Hippocampus, Thalamus, Basal Ganglia, Cerebellum, Hypothalamus.
 - Bounded Kuramoto-like current/deepened language: Amygdala; exactly one deepened relation, `Amygdala ↔ Thalamus`.
@@ -92,9 +92,9 @@ MD1/MD2 audit result:
 - Model state is not contract state.
 - Diagnostic model output is not operative authority.
 - `diagnostic-only`, `deferred`, `blocked`, `insufficient` and `non-canonical/internal-only` carry no consumer support.
-- No second model-deepening candidate is open.
+- At this MD1/MD2 audit point, no second model-deepening candidate is open; later MD3 authority explicitly opens, implements, hardens, and closes only `Amygdala ↔ Basal Ganglia` as the bounded second model-deepening line.
 
-Model-boundary drift remaining: medium-low. The main risk is wording around Amygdala/Basal-Ganglia or HH-later candidates being misread as active model expansion.
+Model-boundary drift remaining at this historical audit point: medium-low. The current maintenance risk is wording around additional model-deepening or HH-later candidates being misread as active model expansion.
 
 ## 6) Guard-rails and scope boundaries
 
