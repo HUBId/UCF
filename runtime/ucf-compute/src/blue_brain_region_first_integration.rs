@@ -370,7 +370,7 @@ pub const CANONICAL_BLUE_BRAIN_POST_MD3_MAINTENANCE_FINDINGS_MAP:
     BlueBrainPostMd3MaintenanceFinding {
         surface: BlueBrainPostMd3MaintenanceSurface::DocsTestsReadinessReferences,
         finding_class: BlueBrainMaintenanceFindingClass::DocTestDrift,
-        summary: "maintenance finding classes now include the explicit possible-future-expansion-hook bucket and this post-MD3 reference doc",
+        summary: "maintenance finding classes now use cross-surface ambiguity for no-active-rescope wording and include this post-MD3 reference doc",
         maintenance_only: true,
         no_scope_expansion: true,
         direct_action_trigger: false,
@@ -400,7 +400,7 @@ pub const CANONICAL_BLUE_BRAIN_POST_MD3_MAINTENANCE_FINDINGS_MAP:
     BlueBrainPostMd3MaintenanceFinding {
         surface: BlueBrainPostMd3MaintenanceSurface::ExpansionLeverReview,
         finding_class: BlueBrainMaintenanceFindingClass::CrossSurfaceAmbiguity,
-        summary: "expansion review wording is explicit no-active-rescope evidence, not a future expansion hook",
+        summary: "expansion review wording is explicit no-active-rescope evidence, not reusable expansion-hook authority",
         maintenance_only: true,
         no_scope_expansion: true,
         direct_action_trigger: false,
@@ -705,6 +705,7 @@ pub struct BlueBrainCrossLineTerminologyGuardChecklistEntry {
     pub term: BlueBrainCrossLineSemanticTerm,
     pub allowed_consumer_read: &'static str,
     pub forbidden_authority: &'static str,
+    pub forbids_safety_override: bool,
     pub scope_note: &'static str,
 }
 
@@ -714,54 +715,63 @@ pub const CANONICAL_BLUE_BRAIN_CROSS_LINE_TERMINOLOGY_GUARD_CHECKLIST:
         term: BlueBrainCrossLineSemanticTerm::AdvisoryOnly,
         allowed_consumer_read: "bounded positive read only",
         forbidden_authority: "no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, no safety override, no direct selection, or promotion authority",
+        forbids_safety_override: true,
         scope_note: "may inform existing bounded runtime/selection/reference consumers without becoming a trigger",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::Caveated,
         allowed_consumer_read: "bounded read with visible caveat only",
         forbidden_authority: "no promotion to strong support, no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, or safety override authority",
+        forbids_safety_override: true,
         scope_note: "preserves uncertainty across region, relation, diagnostic, and model wording",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::Deferred,
         allowed_consumer_read: "not-active-yet status read only",
         forbidden_authority: "no silent activation, no retry orchestration, no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, or safety override authority",
+        forbids_safety_override: true,
         scope_note: "distinct from blocked and requires explicit future re-scope before activation",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::Blocked,
         allowed_consumer_read: "fail-closed unavailable or forbidden-path read only",
         forbidden_authority: "no fallback activation, no override, no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, or safety override authority",
+        forbids_safety_override: true,
         scope_note: "marks a closed boundary for consumers",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::Insufficient,
         allowed_consumer_read: "weak-evidence diagnostic read only",
         forbidden_authority: "no support signal, no promotion, no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, or safety override authority",
+        forbids_safety_override: true,
         scope_note: "keeps absent or weak evidence separate from positive advisory support",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::DiagnosticOnly,
         allowed_consumer_read: "observable diagnostic state read only",
         forbidden_authority: "no advisory promotion, no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, no direct selection, or safety override authority",
+        forbids_safety_override: true,
         scope_note: "diagnostics may explain a state but do not steer transitions",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::ReferenceOnly,
         allowed_consumer_read: "read-only context/reference access only",
         forbidden_authority: "no mutation, no direct memory commit, no direct action, no direct execution, no direct retry, no direct compute invocation, or safety override authority",
+        forbids_safety_override: true,
         scope_note: "keeps reference consumption separated from persistence and execution",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::CurrentModelMode,
         allowed_consumer_read: "descriptive model-mode read only",
         forbidden_authority: "no contract authority, no model-platform expansion, no additional model-deepening candidate, no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, or safety override authority",
+        forbids_safety_override: true,
         scope_note: "describes the maintained model boundary without changing region or relation behavior",
     },
     BlueBrainCrossLineTerminologyGuardChecklistEntry {
         term: BlueBrainCrossLineSemanticTerm::NonCanonicalInternalOnly,
         allowed_consumer_read: "internal/test/residual traceability read only when explicitly caveated",
         forbidden_authority: "no consumer-operational behavior, no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, no safety override, no region, relation, or model authority",
+        forbids_safety_override: true,
         scope_note: "prevents residual paths from becoming a second truth source",
     },
 ];
@@ -789,7 +799,7 @@ pub fn blue_brain_cross_line_term_allows_direct_authority(
         && entry
             .forbidden_authority
             .contains("no direct compute invocation")
-        && entry.forbidden_authority.contains("safety override"))
+        && entry.forbids_safety_override)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13816,7 +13826,7 @@ mod tests {
     }
 
     #[test]
-    fn post_md3_cross_line_direct_authority_guard_includes_memory_denial() {
+    fn post_md3_cross_line_direct_authority_guard_includes_memory_and_safety_override_denial() {
         for term in [
             BlueBrainCrossLineSemanticTerm::AdvisoryOnly,
             BlueBrainCrossLineSemanticTerm::Caveated,
@@ -13830,6 +13840,7 @@ mod tests {
         ] {
             let entry = blue_brain_cross_line_term_guard_checklist_entry(term);
             assert!(entry.forbidden_authority.contains("memory"));
+            assert!(entry.forbids_safety_override);
             assert!(!blue_brain_cross_line_term_allows_direct_authority(term));
         }
     }
@@ -14015,6 +14026,7 @@ mod tests {
         assert!(doc.contains("no direct retry"));
         assert!(doc.contains("no direct memory"));
         assert!(doc.contains("no direct compute"));
+        assert!(doc.contains("explicit safety-override guard target"));
 
         let verification_doc =
             include_str!("../../../docs/blue_brain_maintenance_verification_findings_map_v1.md");

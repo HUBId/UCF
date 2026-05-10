@@ -1,0 +1,12 @@
+# command: git rev-parse HEAD
+e68d6940fbc402b420a6523840b7d7882b6a2b6b
+# command: git status --short --branch
+## work
+ M docs/README.md
+ M docs/blue_brain_audit_baseline_map_v1.md
+ M docs/blue_brain_authority_chain_status_map.md
+ M docs/blue_brain_post_md3_maintenance_decision_pass_v1.md
+ M docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md
+ M runtime/ucf-compute/src/blue_brain_region_first_integration.rs
+?? docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md
+?? out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/
