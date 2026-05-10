@@ -248,6 +248,176 @@ pub const CANONICAL_BLUE_BRAIN_POST_MD3_MAINTENANCE_FINDINGS_MAP:
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainGuardSemanticDriftFindingClass {
+    SemanticDriftRisk,
+    ModelBoundaryDriftRisk,
+    GuardDriftRisk,
+    AmbiguousStateMeaning,
+    WeakTestCoverage,
+    DocCodeWordingDrift,
+    NoChangeNeededFinding,
+}
+
+pub const CANONICAL_BLUE_BRAIN_GUARD_SEMANTIC_DRIFT_CLASS_MAP:
+    [BlueBrainGuardSemanticDriftFindingClass; 7] = [
+    BlueBrainGuardSemanticDriftFindingClass::SemanticDriftRisk,
+    BlueBrainGuardSemanticDriftFindingClass::ModelBoundaryDriftRisk,
+    BlueBrainGuardSemanticDriftFindingClass::GuardDriftRisk,
+    BlueBrainGuardSemanticDriftFindingClass::AmbiguousStateMeaning,
+    BlueBrainGuardSemanticDriftFindingClass::WeakTestCoverage,
+    BlueBrainGuardSemanticDriftFindingClass::DocCodeWordingDrift,
+    BlueBrainGuardSemanticDriftFindingClass::NoChangeNeededFinding,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainGuardSemanticDriftSurface {
+    RegionSurfaces,
+    InterRegionRelations,
+    FirstModelDeepening,
+    SecondModelDeepening,
+    RuntimeSelectionReferenceContracts,
+    GuardDocumentation,
+    ExistingTestsAndAssertions,
+    ScopeExpansionReview,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainGuardSemanticDriftMapEntry {
+    pub surface: BlueBrainGuardSemanticDriftSurface,
+    pub finding_class: BlueBrainGuardSemanticDriftFindingClass,
+    pub observed_risk: &'static str,
+    pub maintenance_response: &'static str,
+    pub forbids_direct_action: bool,
+    pub forbids_direct_execution: bool,
+    pub forbids_direct_retry: bool,
+    pub forbids_direct_memory_commit: bool,
+    pub forbids_direct_compute_invocation: bool,
+    pub forbids_safety_override: bool,
+    pub forbids_new_region: bool,
+    pub forbids_new_model_deepening: bool,
+}
+
+/// Guard/semantic drift map for the current post-BR6/IR1/MD2/MD3 maintenance
+/// state. It is a maintenance classifier only: it detects wording and guard
+/// drift without creating region, relation, model, planner, retry, memory,
+/// compute, or safety authority.
+pub const CANONICAL_BLUE_BRAIN_GUARD_SEMANTIC_DRIFT_MAP:
+    [BlueBrainGuardSemanticDriftMapEntry; 8] = [
+    BlueBrainGuardSemanticDriftMapEntry {
+        surface: BlueBrainGuardSemanticDriftSurface::RegionSurfaces,
+        finding_class: BlueBrainGuardSemanticDriftFindingClass::SemanticDriftRisk,
+        observed_risk: "advisory-only, caveated, deferred, blocked, insufficient, diagnostic-only, or reference-only region wording could be read as stronger support",
+        maintenance_response: "keep each state distinct and read-only across the six bounded anatomical regions",
+        forbids_direct_action: true,
+        forbids_direct_execution: true,
+        forbids_direct_retry: true,
+        forbids_direct_memory_commit: true,
+        forbids_direct_compute_invocation: true,
+        forbids_safety_override: true,
+        forbids_new_region: true,
+        forbids_new_model_deepening: true,
+    },
+    BlueBrainGuardSemanticDriftMapEntry {
+        surface: BlueBrainGuardSemanticDriftSurface::InterRegionRelations,
+        finding_class: BlueBrainGuardSemanticDriftFindingClass::GuardDriftRisk,
+        observed_risk: "bounded relation wording could be softened into direct action, execution, retry, memory, compute, or safety authority",
+        maintenance_response: "relations remain mediated by runtime, selection, reference, diagnostics, and no-direct-* guards",
+        forbids_direct_action: true,
+        forbids_direct_execution: true,
+        forbids_direct_retry: true,
+        forbids_direct_memory_commit: true,
+        forbids_direct_compute_invocation: true,
+        forbids_safety_override: true,
+        forbids_new_region: true,
+        forbids_new_model_deepening: true,
+    },
+    BlueBrainGuardSemanticDriftMapEntry {
+        surface: BlueBrainGuardSemanticDriftSurface::FirstModelDeepening,
+        finding_class: BlueBrainGuardSemanticDriftFindingClass::ModelBoundaryDriftRisk,
+        observed_risk: "Amygdala-Thalamus bounded Kuramoto-like current mode could be misread as HH/productive or global model platform authority",
+        maintenance_response: "pin MD1/MD2 to relation-local bounded Kuramoto-like advisory/diagnostic support only",
+        forbids_direct_action: true,
+        forbids_direct_execution: true,
+        forbids_direct_retry: true,
+        forbids_direct_memory_commit: true,
+        forbids_direct_compute_invocation: true,
+        forbids_safety_override: true,
+        forbids_new_region: true,
+        forbids_new_model_deepening: true,
+    },
+    BlueBrainGuardSemanticDriftMapEntry {
+        surface: BlueBrainGuardSemanticDriftSurface::SecondModelDeepening,
+        finding_class: BlueBrainGuardSemanticDriftFindingClass::ModelBoundaryDriftRisk,
+        observed_risk: "Amygdala-Basal Ganglia second deepening could be read as opening a third candidate or broader Kuramoto/HH platform",
+        maintenance_response: "pin MD3 to exactly one second relation-local bounded Kuramoto-like advisory/diagnostic line",
+        forbids_direct_action: true,
+        forbids_direct_execution: true,
+        forbids_direct_retry: true,
+        forbids_direct_memory_commit: true,
+        forbids_direct_compute_invocation: true,
+        forbids_safety_override: true,
+        forbids_new_region: true,
+        forbids_new_model_deepening: true,
+    },
+    BlueBrainGuardSemanticDriftMapEntry {
+        surface: BlueBrainGuardSemanticDriftSurface::RuntimeSelectionReferenceContracts,
+        finding_class: BlueBrainGuardSemanticDriftFindingClass::AmbiguousStateMeaning,
+        observed_risk: "reference-only, diagnostic-only, insufficient, blocked, deferred, and caveated reads could collapse into one weak status",
+        maintenance_response: "use the canonical terminology checklist and reference classifiers to preserve separate consumer meanings",
+        forbids_direct_action: true,
+        forbids_direct_execution: true,
+        forbids_direct_retry: true,
+        forbids_direct_memory_commit: true,
+        forbids_direct_compute_invocation: true,
+        forbids_safety_override: true,
+        forbids_new_region: true,
+        forbids_new_model_deepening: true,
+    },
+    BlueBrainGuardSemanticDriftMapEntry {
+        surface: BlueBrainGuardSemanticDriftSurface::GuardDocumentation,
+        finding_class: BlueBrainGuardSemanticDriftFindingClass::DocCodeWordingDrift,
+        observed_risk: "docs, code, and tests may use different current-model-mode or no-direct-* wording over time",
+        maintenance_response: "link this map from authority/discoverability docs and keep wording mechanically asserted",
+        forbids_direct_action: true,
+        forbids_direct_execution: true,
+        forbids_direct_retry: true,
+        forbids_direct_memory_commit: true,
+        forbids_direct_compute_invocation: true,
+        forbids_safety_override: true,
+        forbids_new_region: true,
+        forbids_new_model_deepening: true,
+    },
+    BlueBrainGuardSemanticDriftMapEntry {
+        surface: BlueBrainGuardSemanticDriftSurface::ExistingTestsAndAssertions,
+        finding_class: BlueBrainGuardSemanticDriftFindingClass::WeakTestCoverage,
+        observed_risk: "future cleanup could remove assertions that distinguish status labels and no-direct-* denials",
+        maintenance_response: "add focused regression assertions for drift classes, state labels, model modes, and direct-authority denial",
+        forbids_direct_action: true,
+        forbids_direct_execution: true,
+        forbids_direct_retry: true,
+        forbids_direct_memory_commit: true,
+        forbids_direct_compute_invocation: true,
+        forbids_safety_override: true,
+        forbids_new_region: true,
+        forbids_new_model_deepening: true,
+    },
+    BlueBrainGuardSemanticDriftMapEntry {
+        surface: BlueBrainGuardSemanticDriftSurface::ScopeExpansionReview,
+        finding_class: BlueBrainGuardSemanticDriftFindingClass::NoChangeNeededFinding,
+        observed_risk: "no active repo-backed scope expansion, seventh region, third model-deepening candidate, or direct-authority path was found in this pass",
+        maintenance_response: "record as no-change-needed and keep future expansion behind explicit re-scope only",
+        forbids_direct_action: true,
+        forbids_direct_execution: true,
+        forbids_direct_retry: true,
+        forbids_direct_memory_commit: true,
+        forbids_direct_compute_invocation: true,
+        forbids_safety_override: true,
+        forbids_new_region: true,
+        forbids_new_model_deepening: true,
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainCrossLineSemanticTerm {
     AdvisoryOnly,
     Caveated,
@@ -13391,6 +13561,106 @@ mod tests {
             assert!(entry.forbidden_authority.contains("memory"));
             assert!(!blue_brain_cross_line_term_allows_direct_authority(term));
         }
+    }
+
+    #[test]
+    fn guard_semantic_drift_map_covers_current_maintenance_risk_classes() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_GUARD_SEMANTIC_DRIFT_CLASS_MAP.len(), 7);
+        for finding_class in [
+            BlueBrainGuardSemanticDriftFindingClass::SemanticDriftRisk,
+            BlueBrainGuardSemanticDriftFindingClass::ModelBoundaryDriftRisk,
+            BlueBrainGuardSemanticDriftFindingClass::GuardDriftRisk,
+            BlueBrainGuardSemanticDriftFindingClass::AmbiguousStateMeaning,
+            BlueBrainGuardSemanticDriftFindingClass::WeakTestCoverage,
+            BlueBrainGuardSemanticDriftFindingClass::DocCodeWordingDrift,
+            BlueBrainGuardSemanticDriftFindingClass::NoChangeNeededFinding,
+        ] {
+            assert!(CANONICAL_BLUE_BRAIN_GUARD_SEMANTIC_DRIFT_CLASS_MAP.contains(&finding_class));
+        }
+
+        assert_eq!(CANONICAL_BLUE_BRAIN_GUARD_SEMANTIC_DRIFT_MAP.len(), 8);
+        for entry in CANONICAL_BLUE_BRAIN_GUARD_SEMANTIC_DRIFT_MAP {
+            assert!(entry.forbids_direct_action);
+            assert!(entry.forbids_direct_execution);
+            assert!(entry.forbids_direct_retry);
+            assert!(entry.forbids_direct_memory_commit);
+            assert!(entry.forbids_direct_compute_invocation);
+            assert!(entry.forbids_safety_override);
+            assert!(entry.forbids_new_region);
+            assert!(entry.forbids_new_model_deepening);
+        }
+
+        assert!(CANONICAL_BLUE_BRAIN_GUARD_SEMANTIC_DRIFT_MAP
+            .iter()
+            .any(|entry| {
+                entry.surface == BlueBrainGuardSemanticDriftSurface::FirstModelDeepening
+                    && entry
+                        .observed_risk
+                        .contains("bounded Kuramoto-like current mode")
+                    && entry.observed_risk.contains("HH/productive")
+            }));
+        assert!(CANONICAL_BLUE_BRAIN_GUARD_SEMANTIC_DRIFT_MAP
+            .iter()
+            .any(|entry| {
+                entry.surface == BlueBrainGuardSemanticDriftSurface::SecondModelDeepening
+                    && entry.observed_risk.contains("third candidate")
+            }));
+        assert!(CANONICAL_BLUE_BRAIN_GUARD_SEMANTIC_DRIFT_MAP
+            .iter()
+            .any(|entry| {
+                entry.surface == BlueBrainGuardSemanticDriftSurface::ScopeExpansionReview
+                    && entry.finding_class
+                        == BlueBrainGuardSemanticDriftFindingClass::NoChangeNeededFinding
+            }));
+    }
+
+    #[test]
+    fn cross_line_semantic_terms_remain_distinct_and_bounded() {
+        let advisory = blue_brain_cross_line_term_guard_checklist_entry(
+            BlueBrainCrossLineSemanticTerm::AdvisoryOnly,
+        );
+        let caveated = blue_brain_cross_line_term_guard_checklist_entry(
+            BlueBrainCrossLineSemanticTerm::Caveated,
+        );
+        let deferred = blue_brain_cross_line_term_guard_checklist_entry(
+            BlueBrainCrossLineSemanticTerm::Deferred,
+        );
+        let blocked = blue_brain_cross_line_term_guard_checklist_entry(
+            BlueBrainCrossLineSemanticTerm::Blocked,
+        );
+        let insufficient = blue_brain_cross_line_term_guard_checklist_entry(
+            BlueBrainCrossLineSemanticTerm::Insufficient,
+        );
+        let diagnostic_only = blue_brain_cross_line_term_guard_checklist_entry(
+            BlueBrainCrossLineSemanticTerm::DiagnosticOnly,
+        );
+        let reference_only = blue_brain_cross_line_term_guard_checklist_entry(
+            BlueBrainCrossLineSemanticTerm::ReferenceOnly,
+        );
+        let current_model_mode = blue_brain_cross_line_term_guard_checklist_entry(
+            BlueBrainCrossLineSemanticTerm::CurrentModelMode,
+        );
+
+        assert!(advisory.allowed_consumer_read.contains("positive read"));
+        assert!(caveated.allowed_consumer_read.contains("visible caveat"));
+        assert!(deferred.allowed_consumer_read.contains("not-active-yet"));
+        assert!(blocked.allowed_consumer_read.contains("fail-closed"));
+        assert!(insufficient.allowed_consumer_read.contains("weak-evidence"));
+        assert!(diagnostic_only
+            .allowed_consumer_read
+            .contains("diagnostic state"));
+        assert!(reference_only
+            .allowed_consumer_read
+            .contains("read-only context/reference"));
+        assert!(current_model_mode
+            .allowed_consumer_read
+            .contains("descriptive model-mode"));
+        assert!(current_model_mode
+            .forbidden_authority
+            .contains("no model-platform expansion"));
+        assert!(current_model_mode
+            .forbidden_authority
+            .contains("no additional model-deepening candidate"));
     }
 
     #[test]

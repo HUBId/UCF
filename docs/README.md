@@ -8,6 +8,7 @@ Kanonische Status-/Discoverability-Maps:
 - `docs/blue_brain_authority_chain_status_map.md` (single source for authority classification)
 - `docs/blue_brain_maintenance_discoverability_map_v1.md` (maintenance-facing reading order; supporting reference only)
 - `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md` (shadow-surface inventory; supporting reference only)
+- `docs/blue_brain_guard_semantic_drift_map_v1.md` (guard/semantic drift-control map; supporting reference only)
 
 - **Current operational authority (maßgeblich):**
   - `docs/blue_brain_br6_hypothalamus_readiness_sweep_expansion_boundary_serie_br6_prompt4_v1.md`
@@ -20,7 +21,7 @@ Kanonische Status-/Discoverability-Maps:
   - `docs/blue_brain_post_md3_maintenance_decision_pass_v1.md`
   - `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
   - `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md`
-  - supporting consolidation evidence: `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md` and `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`
+  - supporting consolidation evidence: `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md`, `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`, and `docs/blue_brain_guard_semantic_drift_map_v1.md`
 - **Historical snapshots (nicht aktuelle operative Autorität):**
   - `docs/blue_brain_post_bb25_maintenance_default_decision_map_serie_bb25_prompt5_v1.md`
   - `docs/blue_brain_final_maintenance_handoff_serie_bb25_prompt6_v1.md`
