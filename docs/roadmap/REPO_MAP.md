@@ -79,6 +79,7 @@ Older BB25/BB27/BB29 and transition-era lists below remain useful audit trail/su
   - `docs/blue_brain_br5_cerebellum_readiness_sweep_expansion_boundary_serie_br5_prompt4_v1.md`
 - **Current maintenance findings map:** `docs/blue_brain_maintenance_findings_map_serie_maint_prompt1_v1.md`
 - **Current discoverability findings map:** `docs/blue_brain_discoverability_findings_map_v1.md`
+- **Current relation wording findings map:** `docs/blue_brain_relation_wording_findings_map_v1.md`
 - **Docs operational index:** `docs/README.md`
 
 ## Runtime / compute core

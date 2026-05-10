@@ -2,7 +2,7 @@
 
 Status: **IR1 closeout reference** for the initial bounded inter-region architecture. This file closes the Prompt-1 map, Prompt-2 implementation line, and Prompt-3 diagnostics/contract hardening without creating a second truth source: the canonical code anchor remains `CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP`, and this document only records the readiness reading of that map.
 
-Current-baseline note (2026-05-09): this document is current for the **initial IR1 closeout semantics**, not for collapsing every later BR6/SC1 relation into an active relation. Read the tables below as a separation between architecture-lane existence and implementation-lane activation; `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md` carries the current all-six-region relation split.
+Current-baseline note (2026-05-09): this document is current for the **initial IR1 closeout semantics**, not for collapsing every later BR6/SC1 relation into an active relation. Relation wording findings and maintenance responses are tracked in `docs/blue_brain_relation_wording_findings_map_v1.md`. Read the tables below as a separation between architecture-lane existence and implementation-lane activation; `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md` carries the current all-six-region relation split.
 
 Scope: only the already opened anatomical regions `hippocampus_like_region`, `amygdala_like_region`, `thalamus_like_region`, `basal_ganglia_like_region`, and `cerebellum_like_region`. Hypothalamus is considered only as a next-direction decision, not opened by IR1. BR6 Prompt 2 supersedes that historical waiting state by adding a separate bounded Hypothalamus adjunct integration line.
 
@@ -58,7 +58,7 @@ The canonical relation states and contract signals are:
 | `DiagnosticOnlyVisible` | diagnostic-only relation state; not a contract authority. |
 | `NonCanonicalInternalOnly` | non-canonical/internal-only relation path; never canonical IR1 architecture. |
 
-Runtime, Selection, and Reference must read the same relation state, relation diagnostic class, mediation path, and contract signal for a given pair. A bounded relation contract signal is not an action request, not an execution trigger, not a retry trigger, not a memory commit, not a compute trigger, and not a safety override.
+Runtime, Selection, and Reference must read the same relation state, relation diagnostic class, mediation path, and contract signal for a given pair. A bounded relation contract signal is not an action request, not an execution trigger, not a retry trigger, not a memory commit or memory mutation, not a compute trigger, and not a safety override.
 
 ## 5) No-direct-* and out-of-scope boundary
 
@@ -70,6 +70,7 @@ IR1 Prompt 4 preserves these hard boundaries:
 - no planner, agent, policy, or governance platform;
 - no automatic allowed-actions expansion;
 - no direct memory commit;
+- no relational memory mutation;
 - no automatische Memory-Persistenz;
 - no direct compute invocation;
 - no safety override semantics;
