@@ -2,6 +2,27 @@
 
 Zweck: schneller, repo-treuer Einstieg in die **aktuell operativen** Linien ohne zweite Wahrheitsquelle.
 
+
+## Current Blue-Brain maintenance entrypoint (current-first)
+
+This repo map is a navigation aid only. For Blue-Brain authority, start with `docs/README.md`, then classify through `docs/blue_brain_authority_chain_status_map.md` and use `docs/blue_brain_maintenance_discoverability_map_v1.md` as the compact reading order. The current maintenance-ready state is the post-BR6/IR1/MD2/MD3/SC1 line: six bounded anatomical regions, bounded inter-region architecture, exactly two bounded model-deepening pairs and no active expansion lane.
+
+Current/supporting maintenance references to check before older BB25-BB29 transition docs:
+
+- `docs/blue_brain_authority_chain_status_map.md`
+- `docs/blue_brain_maintenance_discoverability_map_v1.md`
+- `docs/blue_brain_discoverability_findings_map_v1.md`
+- `docs/blue_brain_discoverability_cleanup_pass_v1.md`
+- `docs/blue_brain_br6_hypothalamus_readiness_sweep_expansion_boundary_serie_br6_prompt4_v1.md`
+- `docs/blue_brain_ir1_readiness_sweep_inter_region_closure_serie_ir1_prompt4_v1.md`
+- `docs/blue_brain_md2_model_deepening_docs_tests_reference_cleanup_v1.md`
+- `docs/blue_brain_md3_readiness_sweep_system_closure_v1.md`
+- `docs/blue_brain_post_md3_maintenance_decision_pass_v1.md`
+- `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md`
+- `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`
+
+Older BB25/BB27/BB29 and transition-era lists below remain useful audit trail/supporting references, but they are not the current operational end state when they describe fewer regions, earlier relation closure or pre-MD3 model status.
+
 ## Canonical operational map
 
 - **BlueBrain operational sweep map (BB20 P1):** `docs/blue_brain_bb20_production_readiness_sweep_serie_bb20_prompt1_v1.md`
@@ -57,6 +78,7 @@ Zweck: schneller, repo-treuer Einstieg in die **aktuell operativen** Linien ohne
   - `docs/blue_brain_cerebellum_minimal_bounded_integration_serie_br5_prompt2_v1.md`
   - `docs/blue_brain_br5_cerebellum_readiness_sweep_expansion_boundary_serie_br5_prompt4_v1.md`
 - **Current maintenance findings map:** `docs/blue_brain_maintenance_findings_map_serie_maint_prompt1_v1.md`
+- **Current discoverability findings map:** `docs/blue_brain_discoverability_findings_map_v1.md`
 - **Docs operational index:** `docs/README.md`
 
 ## Runtime / compute core
@@ -83,7 +105,7 @@ Maintenance-Interpretation folgt der BB23 Allowed-Change-Map: maintenance-safe, 
 - First-anatomical maintenance reference surface (BB31) bleibt als historische Hippocampus-first-Stabilisierung erhalten; der aktuelle Post-BR6/MD3-Maintenance-Stand umfasst genau sechs bounded anatomische Regionen: `hippocampus_like_region`, `amygdala_like_region`, `thalamus_like_region`, `basal_ganglia_like_region`, `cerebellum_like_region`, `hypothalamus_like_region`.
 - Canonical first-anatomical maintenance docs/tests/index path: `docs/blue_brain_first_anatomical_stabilization_line_serie_bb31_prompt1_v1.md` + `docs/blue_brain_first_anatomical_docs_tests_index_cleanup_serie_bb31_prompt2_v1.md` + `docs/blue_brain_bb31_final_first_anatomical_stabilization_sweep_serie_bb31_prompt3_v1.md`.
 - Der aktuelle Maintenance-Betrieb führt die sechs bounded Regionen nur als advisory/reference/diagnostic contract surfaces mit bounded inter-region relations; daraus folgt keine siebte Region und keine globale Modellplattform.
-- Nach BR5 ist **Maintenance/Bugfix/Cleanup ohne neue Serie** der explizite Default.
+- Nach SC1/MD3 ist **Maintenance/Bugfix/Cleanup/Report-Refresh ohne neue Serie** der explizite Default.
 - Ein weiterer Regions- oder Modellvertiefungsschritt bleibt bewusst nicht aktiv und ist nur per explizitem Re-Scope möglich (kein automatischer nächster Schritt).
 
 Primäre Referenzen:
