@@ -76,6 +76,7 @@ Die Kohärenz wird über genau eine kompakte Referenz hergestellt:
 - `runtime/ucf-compute/src/lib.rs` re-exportiert die Checklist-Fläche für bestehende Referenznutzer.
 - `docs/README.md` und `docs/blue_brain_authority_chain_status_map.md` verweisen auf diese Datei als supporting reference, nicht als konkurrierende Current Authority.
 - `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md` wird von offener zweitpriorisierter Maßnahme auf umgesetzt/gestützt aktualisiert.
+- `docs/blue_brain_maintenance_verification_findings_map_v1.md` ergänzt die Check-/Evidence-Lesereihenfolge als supporting verification reference; sie ersetzt keine Current Authority.
 
 ## 7) Non-canonical Residuen
 

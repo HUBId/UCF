@@ -248,6 +248,109 @@ pub const CANONICAL_BLUE_BRAIN_POST_MD3_MAINTENANCE_FINDINGS_MAP:
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMaintenanceVerificationFindingClass {
+    UnclearTestNaming,
+    AmbiguousTestScope,
+    MissingVerificationHint,
+    DuplicateCheckReference,
+    StaleVerificationWording,
+    NoChangeNeededFinding,
+}
+
+pub const CANONICAL_BLUE_BRAIN_MAINTENANCE_VERIFICATION_FINDING_CLASS_MAP:
+    [BlueBrainMaintenanceVerificationFindingClass; 6] = [
+    BlueBrainMaintenanceVerificationFindingClass::UnclearTestNaming,
+    BlueBrainMaintenanceVerificationFindingClass::AmbiguousTestScope,
+    BlueBrainMaintenanceVerificationFindingClass::MissingVerificationHint,
+    BlueBrainMaintenanceVerificationFindingClass::DuplicateCheckReference,
+    BlueBrainMaintenanceVerificationFindingClass::StaleVerificationWording,
+    BlueBrainMaintenanceVerificationFindingClass::NoChangeNeededFinding,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainMaintenanceVerificationSurface {
+    RegionSurfaceTests,
+    InterRegionRelationTests,
+    ModelDeepeningBoundaryTests,
+    NoDirectGuardTests,
+    ReadinessBaselineCheckHints,
+    EvidenceReferenceDocs,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainMaintenanceVerificationFinding {
+    pub surface: BlueBrainMaintenanceVerificationSurface,
+    pub finding_class: BlueBrainMaintenanceVerificationFindingClass,
+    pub observed_issue: &'static str,
+    pub maintenance_response: &'static str,
+    pub evidence_hint: &'static str,
+    pub maintenance_only: bool,
+    pub no_scope_expansion: bool,
+}
+
+/// Maintenance-facing verification findings map for test readability and
+/// evidence-path clarity. It is an audit helper only: it classifies naming,
+/// scope, check-reference, and stale-wording issues without changing region,
+/// relation, model, runtime, policy, retry, memory, or compute behavior.
+pub const CANONICAL_BLUE_BRAIN_MAINTENANCE_VERIFICATION_FINDINGS_MAP:
+    [BlueBrainMaintenanceVerificationFinding; 6] = [
+    BlueBrainMaintenanceVerificationFinding {
+        surface: BlueBrainMaintenanceVerificationSurface::RegionSurfaceTests,
+        finding_class: BlueBrainMaintenanceVerificationFindingClass::UnclearTestNaming,
+        observed_issue: "BR6 region test names mixed prompt history with current surface intent",
+        maintenance_response: "prefix region-surface tests with the maintained anatomical surface under check",
+        evidence_hint: "run targeted ucf-compute Blue-Brain tests, then workspace tests for audit evidence",
+        maintenance_only: true,
+        no_scope_expansion: true,
+    },
+    BlueBrainMaintenanceVerificationFinding {
+        surface: BlueBrainMaintenanceVerificationSurface::InterRegionRelationTests,
+        finding_class: BlueBrainMaintenanceVerificationFindingClass::AmbiguousTestScope,
+        observed_issue: "relation assertions were readable as a Hypothalamus prompt adjunct rather than bounded IR1 edge coverage",
+        maintenance_response: "name relation tests around inter-region edge scope and no-direct guard expectations",
+        evidence_hint: "check IR1 relation maps before interpreting region-specific adjunct edges",
+        maintenance_only: true,
+        no_scope_expansion: true,
+    },
+    BlueBrainMaintenanceVerificationFinding {
+        surface: BlueBrainMaintenanceVerificationSurface::ModelDeepeningBoundaryTests,
+        finding_class: BlueBrainMaintenanceVerificationFindingClass::MissingVerificationHint,
+        observed_issue: "MD2 and MD3 boundary tests were clear but the nearby verification path did not say how to read docs with assertions",
+        maintenance_response: "keep MD2 Amygdala-Thalamus and MD3 Amygdala-Basal Ganglia checks explicit, relation-local, and paired with their docs",
+        evidence_hint: "read MD2/MD3 docs with the model-boundary assertions, not as platform enablement",
+        maintenance_only: true,
+        no_scope_expansion: true,
+    },
+    BlueBrainMaintenanceVerificationFinding {
+        surface: BlueBrainMaintenanceVerificationSurface::NoDirectGuardTests,
+        finding_class: BlueBrainMaintenanceVerificationFindingClass::NoChangeNeededFinding,
+        observed_issue: "no-direct action, execution, retry, memory, compute, and safety-denial checks are already load-bearing",
+        maintenance_response: "leave guard predicates behavior-stable and use them as maintenance verification anchors",
+        evidence_hint: "cross-line terminology guard checklist remains the compact no-direct-* reference",
+        maintenance_only: true,
+        no_scope_expansion: true,
+    },
+    BlueBrainMaintenanceVerificationFinding {
+        surface: BlueBrainMaintenanceVerificationSurface::ReadinessBaselineCheckHints,
+        finding_class: BlueBrainMaintenanceVerificationFindingClass::DuplicateCheckReference,
+        observed_issue: "canonical checks, local verification, and audit-baseline evidence were referenced in several nearby docs",
+        maintenance_response: "state one reading order: local targeted checks first, canonical workspace/readiness/docs checks for handoff, out/ baselines as evidence",
+        evidence_hint: "docs/blue_brain_maintenance_verification_findings_map_v1.md records this check-reading order",
+        maintenance_only: true,
+        no_scope_expansion: true,
+    },
+    BlueBrainMaintenanceVerificationFinding {
+        surface: BlueBrainMaintenanceVerificationSurface::EvidenceReferenceDocs,
+        finding_class: BlueBrainMaintenanceVerificationFindingClass::StaleVerificationWording,
+        observed_issue: "post-MD3 check wording said expected checks without distinguishing local maintenance verification from audit evidence",
+        maintenance_response: "clarify that reports and tests are read together and do not create a second verification authority",
+        evidence_hint: "updated maintenance verification docs are supporting evidence below current authority",
+        maintenance_only: true,
+        no_scope_expansion: true,
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainGuardSemanticDriftFindingClass {
     SemanticDriftRisk,
     ModelBoundaryDriftRisk,
@@ -13564,7 +13667,71 @@ mod tests {
     }
 
     #[test]
-    fn guard_semantic_drift_map_covers_current_maintenance_risk_classes() {
+    fn maintenance_verification_findings_map_covers_test_scope_and_check_hint_classes() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_MAINTENANCE_VERIFICATION_FINDING_CLASS_MAP.len(),
+            6
+        );
+        for finding_class in [
+            BlueBrainMaintenanceVerificationFindingClass::UnclearTestNaming,
+            BlueBrainMaintenanceVerificationFindingClass::AmbiguousTestScope,
+            BlueBrainMaintenanceVerificationFindingClass::MissingVerificationHint,
+            BlueBrainMaintenanceVerificationFindingClass::DuplicateCheckReference,
+            BlueBrainMaintenanceVerificationFindingClass::StaleVerificationWording,
+            BlueBrainMaintenanceVerificationFindingClass::NoChangeNeededFinding,
+        ] {
+            assert!(
+                CANONICAL_BLUE_BRAIN_MAINTENANCE_VERIFICATION_FINDING_CLASS_MAP
+                    .contains(&finding_class)
+            );
+        }
+
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_MAINTENANCE_VERIFICATION_FINDINGS_MAP.len(),
+            6
+        );
+        for finding in CANONICAL_BLUE_BRAIN_MAINTENANCE_VERIFICATION_FINDINGS_MAP {
+            assert!(finding.maintenance_only);
+            assert!(finding.no_scope_expansion);
+            assert!(!finding.observed_issue.is_empty());
+            assert!(!finding.maintenance_response.is_empty());
+            assert!(!finding.evidence_hint.is_empty());
+        }
+
+        assert!(CANONICAL_BLUE_BRAIN_MAINTENANCE_VERIFICATION_FINDINGS_MAP
+            .iter()
+            .any(|finding| {
+                finding.surface == BlueBrainMaintenanceVerificationSurface::InterRegionRelationTests
+                    && finding.finding_class
+                        == BlueBrainMaintenanceVerificationFindingClass::AmbiguousTestScope
+                    && finding
+                        .maintenance_response
+                        .contains("inter-region edge scope")
+            }));
+        assert!(CANONICAL_BLUE_BRAIN_MAINTENANCE_VERIFICATION_FINDINGS_MAP
+            .iter()
+            .any(|finding| {
+                finding.surface
+                    == BlueBrainMaintenanceVerificationSurface::ModelDeepeningBoundaryTests
+                    && finding.finding_class
+                        == BlueBrainMaintenanceVerificationFindingClass::MissingVerificationHint
+                    && finding.evidence_hint.contains("MD2/MD3 docs")
+            }));
+        assert!(CANONICAL_BLUE_BRAIN_MAINTENANCE_VERIFICATION_FINDINGS_MAP
+            .iter()
+            .any(|finding| {
+                finding.surface
+                    == BlueBrainMaintenanceVerificationSurface::ReadinessBaselineCheckHints
+                    && finding.finding_class
+                        == BlueBrainMaintenanceVerificationFindingClass::DuplicateCheckReference
+                    && finding
+                        .maintenance_response
+                        .contains("canonical workspace/readiness/docs checks")
+            }));
+    }
+
+    #[test]
+    fn maintenance_guard_semantic_drift_map_covers_region_relation_model_and_guard_risks() {
         assert_eq!(CANONICAL_BLUE_BRAIN_GUARD_SEMANTIC_DRIFT_CLASS_MAP.len(), 7);
         for finding_class in [
             BlueBrainGuardSemanticDriftFindingClass::SemanticDriftRisk,
@@ -13615,7 +13782,7 @@ mod tests {
     }
 
     #[test]
-    fn cross_line_semantic_terms_remain_distinct_and_bounded() {
+    fn no_direct_cross_line_semantic_terms_remain_distinct_and_bounded() {
         let advisory = blue_brain_cross_line_term_guard_checklist_entry(
             BlueBrainCrossLineSemanticTerm::AdvisoryOnly,
         );
@@ -13680,10 +13847,22 @@ mod tests {
         assert!(doc.contains("no direct retry"));
         assert!(doc.contains("no direct memory"));
         assert!(doc.contains("no direct compute"));
+
+        let verification_doc =
+            include_str!("../../../docs/blue_brain_maintenance_verification_findings_map_v1.md");
+        assert!(
+            verification_doc.contains("CANONICAL_BLUE_BRAIN_MAINTENANCE_VERIFICATION_FINDINGS_MAP")
+        );
+        assert!(verification_doc.contains("unclear test naming"));
+        assert!(verification_doc.contains("ambiguous test scope"));
+        assert!(verification_doc.contains("missing verification hint"));
+        assert!(verification_doc.contains("duplicate check reference"));
+        assert!(verification_doc.contains("stale verification wording"));
+        assert!(verification_doc.contains("no-change-needed finding"));
     }
 
     #[test]
-    fn hypothalamus_br6_prompt2_inter_region_adjunct_is_bounded() {
+    fn inter_region_hypothalamus_edge_tests_pin_bounded_relation_scope() {
         assert_eq!(CANONICAL_BLUE_BRAIN_INTER_REGION_ARCHITECTURE_MAP.len(), 15);
         assert_eq!(
             CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP.len(),
@@ -13760,7 +13939,7 @@ mod tests {
     }
 
     #[test]
-    fn hypothalamus_br6_prompt2_doc_pins_surfaces_model_and_boundaries() {
+    fn region_hypothalamus_doc_pins_surfaces_model_mode_and_no_direct_boundaries() {
         let doc = include_str!(
             "../../../docs/blue_brain_hypothalamus_minimal_bounded_integration_serie_br6_prompt2_v1.md"
         );

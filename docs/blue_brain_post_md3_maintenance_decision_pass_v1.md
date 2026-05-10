@@ -71,3 +71,5 @@ Targeted checks should verify:
 - no implicit new model-deepening candidate;
 - no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, and no safety override;
 - docs and tests match code.
+
+Maintenance check-reading order is now pinned in `docs/blue_brain_maintenance_verification_findings_map_v1.md`: local targeted Blue-Brain tests explain the changed surface, canonical workspace/readiness/docs checks are the handoff checks, and `out/` reports are audit/baseline evidence. This clarification removes stale verification wording without creating a second verification authority.
