@@ -89,6 +89,173 @@ pub const CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP: [BlueBrainMainten
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainRelationWordingFindingClass {
+    ImplementedRelationUnclear,
+    DeferredRelationUnclear,
+    BlockedRelationUnclear,
+    MediationPathAmbiguity,
+    ContractWordingDrift,
+    NoChangeNeededFinding,
+}
+
+pub const CANONICAL_BLUE_BRAIN_RELATION_WORDING_FINDING_CLASS_MAP:
+    [BlueBrainRelationWordingFindingClass; 6] = [
+    BlueBrainRelationWordingFindingClass::ImplementedRelationUnclear,
+    BlueBrainRelationWordingFindingClass::DeferredRelationUnclear,
+    BlueBrainRelationWordingFindingClass::BlockedRelationUnclear,
+    BlueBrainRelationWordingFindingClass::MediationPathAmbiguity,
+    BlueBrainRelationWordingFindingClass::ContractWordingDrift,
+    BlueBrainRelationWordingFindingClass::NoChangeNeededFinding,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainRelationWordingSurface {
+    RelationStatusTables,
+    RelationStateMaps,
+    DiagnosticsContractWording,
+    MediationPathWording,
+    RelationAuthorityBoundaries,
+    RegionAndModelDeepeningReferences,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainRelationWordingFinding {
+    pub surface: BlueBrainRelationWordingSurface,
+    pub finding_class: BlueBrainRelationWordingFindingClass,
+    pub observed_ambiguity: &'static str,
+    pub maintenance_response: &'static str,
+    pub implemented_relation_active: bool,
+    pub deferred_relation_active: bool,
+    pub blocked_relation_fail_closed: bool,
+    pub diagnostic_only: bool,
+    pub advisory_only: bool,
+    pub direct_action_authority: bool,
+    pub direct_execution_authority: bool,
+    pub direct_retry_authority: bool,
+    pub direct_memory_mutation_authority: bool,
+    pub direct_compute_authority: bool,
+}
+
+/// Maintenance-only relation wording findings map. It records places where
+/// relation status, mediation path, diagnostic/contract wording, or no-direct
+/// authority wording can drift without changing any relation implementation.
+pub const CANONICAL_BLUE_BRAIN_RELATION_WORDING_FINDINGS_MAP:
+    [BlueBrainRelationWordingFinding; 7] = [
+    BlueBrainRelationWordingFinding {
+        surface: BlueBrainRelationWordingSurface::RelationStatusTables,
+        finding_class: BlueBrainRelationWordingFindingClass::ImplementedRelationUnclear,
+        observed_ambiguity: "implemented relation labels can be read as architecture-class activation unless the implementation lane is named",
+        maintenance_response: "pin implemented relation to active advisory/read-only diagnostics and a canonical mediation path",
+        implemented_relation_active: true,
+        deferred_relation_active: false,
+        blocked_relation_fail_closed: false,
+        diagnostic_only: false,
+        advisory_only: true,
+        direct_action_authority: false,
+        direct_execution_authority: false,
+        direct_retry_authority: false,
+        direct_memory_mutation_authority: false,
+        direct_compute_authority: false,
+    },
+    BlueBrainRelationWordingFinding {
+        surface: BlueBrainRelationWordingSurface::RelationStatusTables,
+        finding_class: BlueBrainRelationWordingFindingClass::DeferredRelationUnclear,
+        observed_ambiguity: "deferred architecture edges can be mistaken for blocked, failed, retried, or scheduled relations",
+        maintenance_response: "state deferred as inactive/not-yet-implemented, diagnostic-only, not failed and not automatically scheduled",
+        implemented_relation_active: false,
+        deferred_relation_active: false,
+        blocked_relation_fail_closed: false,
+        diagnostic_only: true,
+        advisory_only: true,
+        direct_action_authority: false,
+        direct_execution_authority: false,
+        direct_retry_authority: false,
+        direct_memory_mutation_authority: false,
+        direct_compute_authority: false,
+    },
+    BlueBrainRelationWordingFinding {
+        surface: BlueBrainRelationWordingSurface::RelationStateMaps,
+        finding_class: BlueBrainRelationWordingFindingClass::BlockedRelationUnclear,
+        observed_ambiguity: "blocked relation wording can be misread as failed execution or retry-eligible runtime state",
+        maintenance_response: "state blocked as fail-closed/unavailable diagnostics with no retry, execution, or action consequence",
+        implemented_relation_active: false,
+        deferred_relation_active: false,
+        blocked_relation_fail_closed: true,
+        diagnostic_only: true,
+        advisory_only: true,
+        direct_action_authority: false,
+        direct_execution_authority: false,
+        direct_retry_authority: false,
+        direct_memory_mutation_authority: false,
+        direct_compute_authority: false,
+    },
+    BlueBrainRelationWordingFinding {
+        surface: BlueBrainRelationWordingSurface::MediationPathWording,
+        finding_class: BlueBrainRelationWordingFindingClass::MediationPathAmbiguity,
+        observed_ambiguity: "reference-mediated, selection-mediated, execution-interface-mediated, and direct bounded advisory paths can be collapsed into full coupling",
+        maintenance_response: "preserve the named mediation path as the boundary and deny bypass, action-channel authority, execution trigger, and full coupling",
+        implemented_relation_active: true,
+        deferred_relation_active: false,
+        blocked_relation_fail_closed: false,
+        diagnostic_only: false,
+        advisory_only: true,
+        direct_action_authority: false,
+        direct_execution_authority: false,
+        direct_retry_authority: false,
+        direct_memory_mutation_authority: false,
+        direct_compute_authority: false,
+    },
+    BlueBrainRelationWordingFinding {
+        surface: BlueBrainRelationWordingSurface::DiagnosticsContractWording,
+        finding_class: BlueBrainRelationWordingFindingClass::ContractWordingDrift,
+        observed_ambiguity: "bounded contract signal wording can drift from diagnostic/read-only into operational authority",
+        maintenance_response: "keep contract signal as bounded advisory/read-only and explicitly deny action, execution, retry, memory, compute, and safety authority",
+        implemented_relation_active: true,
+        deferred_relation_active: false,
+        blocked_relation_fail_closed: false,
+        diagnostic_only: false,
+        advisory_only: true,
+        direct_action_authority: false,
+        direct_execution_authority: false,
+        direct_retry_authority: false,
+        direct_memory_mutation_authority: false,
+        direct_compute_authority: false,
+    },
+    BlueBrainRelationWordingFinding {
+        surface: BlueBrainRelationWordingSurface::RelationAuthorityBoundaries,
+        finding_class: BlueBrainRelationWordingFindingClass::NoChangeNeededFinding,
+        observed_ambiguity: "no-direct relation authority guards were reviewed for action, execution, retry, memory mutation, and compute authority",
+        maintenance_response: "no change needed: existing relation maps and diagnostics already deny direct authority",
+        implemented_relation_active: false,
+        deferred_relation_active: false,
+        blocked_relation_fail_closed: false,
+        diagnostic_only: true,
+        advisory_only: true,
+        direct_action_authority: false,
+        direct_execution_authority: false,
+        direct_retry_authority: false,
+        direct_memory_mutation_authority: false,
+        direct_compute_authority: false,
+    },
+    BlueBrainRelationWordingFinding {
+        surface: BlueBrainRelationWordingSurface::RegionAndModelDeepeningReferences,
+        finding_class: BlueBrainRelationWordingFindingClass::NoChangeNeededFinding,
+        observed_ambiguity: "region and model-deepening references were checked for accidental new region, third deepening, platform, or compute-core readings",
+        maintenance_response: "no change needed: wording stays maintenance-only and keeps MD2/MD3 as the only current selective deepening lines",
+        implemented_relation_active: false,
+        deferred_relation_active: false,
+        blocked_relation_fail_closed: false,
+        diagnostic_only: true,
+        advisory_only: true,
+        direct_action_authority: false,
+        direct_execution_authority: false,
+        direct_retry_authority: false,
+        direct_memory_mutation_authority: false,
+        direct_compute_authority: false,
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainPostMd3MaintenanceSurface {
     RegionSurfaces,
     InterRegionRelations,
@@ -13859,6 +14026,69 @@ mod tests {
         assert!(verification_doc.contains("duplicate check reference"));
         assert!(verification_doc.contains("stale verification wording"));
         assert!(verification_doc.contains("no-change-needed finding"));
+    }
+
+    #[test]
+    fn relation_wording_findings_map_pins_status_mediation_and_authority_boundaries() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_RELATION_WORDING_FINDING_CLASS_MAP.len(),
+            6
+        );
+        assert_eq!(CANONICAL_BLUE_BRAIN_RELATION_WORDING_FINDINGS_MAP.len(), 7);
+
+        assert!(CANONICAL_BLUE_BRAIN_RELATION_WORDING_FINDINGS_MAP
+            .iter()
+            .any(|finding| finding.finding_class
+                == BlueBrainRelationWordingFindingClass::ImplementedRelationUnclear
+                && finding.implemented_relation_active
+                && finding.advisory_only
+                && !finding.diagnostic_only));
+        assert!(CANONICAL_BLUE_BRAIN_RELATION_WORDING_FINDINGS_MAP
+            .iter()
+            .any(|finding| finding.finding_class
+                == BlueBrainRelationWordingFindingClass::DeferredRelationUnclear
+                && !finding.deferred_relation_active
+                && finding.diagnostic_only));
+        assert!(CANONICAL_BLUE_BRAIN_RELATION_WORDING_FINDINGS_MAP
+            .iter()
+            .any(|finding| finding.finding_class
+                == BlueBrainRelationWordingFindingClass::BlockedRelationUnclear
+                && finding.blocked_relation_fail_closed
+                && finding.diagnostic_only));
+        assert!(CANONICAL_BLUE_BRAIN_RELATION_WORDING_FINDINGS_MAP
+            .iter()
+            .any(|finding| finding.finding_class
+                == BlueBrainRelationWordingFindingClass::MediationPathAmbiguity
+                && finding
+                    .maintenance_response
+                    .contains("named mediation path")));
+        assert!(CANONICAL_BLUE_BRAIN_RELATION_WORDING_FINDINGS_MAP
+            .iter()
+            .any(|finding| finding.finding_class
+                == BlueBrainRelationWordingFindingClass::ContractWordingDrift
+                && finding
+                    .maintenance_response
+                    .contains("bounded advisory/read-only")));
+
+        for finding in CANONICAL_BLUE_BRAIN_RELATION_WORDING_FINDINGS_MAP {
+            assert!(!finding.direct_action_authority);
+            assert!(!finding.direct_execution_authority);
+            assert!(!finding.direct_retry_authority);
+            assert!(!finding.direct_memory_mutation_authority);
+            assert!(!finding.direct_compute_authority);
+        }
+
+        let doc = include_str!("../../../docs/blue_brain_relation_wording_findings_map_v1.md");
+        assert!(doc.contains("implemented relation unclear"));
+        assert!(doc.contains("deferred relation unclear"));
+        assert!(doc.contains("blocked relation unclear"));
+        assert!(doc.contains("mediation-path ambiguity"));
+        assert!(doc.contains("contract wording drift"));
+        assert!(doc.contains("no-change-needed finding"));
+        assert!(doc.contains("reference-mediated remains reference-mediated"));
+        assert!(doc.contains("selection-mediated remains selection-mediated"));
+        assert!(doc.contains("execution-interface-mediated remains bounded diagnostic/read-only"));
+        assert!(doc.contains("direct bounded advisory remains advisory-only"));
     }
 
     #[test]

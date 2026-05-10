@@ -52,6 +52,7 @@ Maintenance reading order: start in this README, classify through `docs/blue_bra
 - **Maintenance discoverability map (supporting reference):** `docs/blue_brain_maintenance_discoverability_map_v1.md`
 - **Discoverability findings map (supporting cleanup evidence):** `docs/blue_brain_discoverability_findings_map_v1.md`
 - **Maintenance verification findings map (supporting check/evidence reference):** `docs/blue_brain_maintenance_verification_findings_map_v1.md`
+- **Relation wording findings map (supporting relational maintenance reference):** `docs/blue_brain_relation_wording_findings_map_v1.md`
 - **Discoverability cleanup closure note (supporting evidence):** `docs/blue_brain_discoverability_cleanup_pass_v1.md`
 - **Non-canonical shadow-surface inventory (supporting reference):** `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`
 - **SC1 cross-line terminology/guard checklist consolidation (supporting evidence):** `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`

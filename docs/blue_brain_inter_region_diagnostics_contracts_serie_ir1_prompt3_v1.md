@@ -1,6 +1,6 @@
 # Blue-Brain IR1 Prompt 3: inter-region diagnostics and contract semantics
 
-> Maintenance-discoverability note: This is an IR1 diagnostics/contract supporting reference. Later IR1 Prompt 4 plus MD2/MD3/SC1 govern current operative status. Diagnostic vocabulary here remains read-only and cannot be used as direct action, execution, retry, memory, compute, safety or platform authority.
+> Maintenance-discoverability note: This is an IR1 diagnostics/contract supporting reference. Later IR1 Prompt 4 plus MD2/MD3/SC1 govern current operative status. Diagnostic vocabulary here remains read-only and cannot be used as direct action, execution, retry, memory mutation, compute, safety or platform authority. Relation wording ambiguity is tracked by `docs/blue_brain_relation_wording_findings_map_v1.md`.
 
 Status: **bounded diagnostics/contract hardening line** for exactly the three original Prompt 2 implemented relations. This document hardens how Runtime, Selection, and Reference read relation diagnostics without adding a global inter-region platform, a planner/agent layer, retry orchestration, policy governance, new memory persistence, or compute-core work.
 
@@ -62,7 +62,7 @@ Consumers must not infer extra authority from consumer-layer identity. A Runtime
 
 ## 5) No-direct-authority contract signal boundaries
 
-A relation contract signal is not an action request, not an execution trigger, not a retry trigger, not a memory commit, not a compute trigger, and not a safety override.
+A relation contract signal is not an action request, not an execution trigger, not a retry trigger, not a memory commit or memory mutation, not a compute trigger, and not a safety override.
 
 The following remain explicitly out of scope:
 
@@ -71,6 +71,7 @@ The following remain explicitly out of scope:
 - no direct retry trigger,
 - no retry orchestration,
 - no direct memory commit,
+- no relational memory mutation,
 - no automatic memory persistence,
 - no direct compute invocation,
 - no safety override,
