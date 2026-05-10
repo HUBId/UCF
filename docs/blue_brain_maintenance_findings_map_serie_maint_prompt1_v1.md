@@ -26,6 +26,7 @@ The canonical code-side finding classes are pinned in `CANONICAL_BLUE_BRAIN_MAIN
 | `guard_weakness` | A boundary condition can be misclassified, consumed too strongly, or read as active scope. | Fail closed, keep no-direct-action/retry/memory/compute/policy/planner/agent guards intact. |
 | `doc_test_drift` | Existing docs/tests describe behavior more strictly than the tested implementation. | Add focused assertions or trim wording; do not broaden scope. |
 | `non_canonical_residual_path` | Legacy/internal/test-only wording or paths look externally promotable. | Mark as non-canonical/internal-only or keep reference-only; never promote to runtime/selection authority. |
+| `cross_surface_ambiguity` | A term or review bucket is clear in one surface but can be read differently across regions, relations, model-deepening, guards, or maintenance docs. | Rename or restate the bucket so it is evidence/cleanup-only and not an expansion hook. |
 | `no_change_needed` | Audited area already matches the maintenance boundary. | Leave unchanged and record the reason briefly. |
 
 ## Findings resolved in this pass
@@ -37,6 +38,7 @@ The canonical code-side finding classes are pinned in `CANONICAL_BLUE_BRAIN_MAIN
 | `guard_weakness` | The current bounded region set was implicit; generic anatomical candidate residues could be misread as currently integrated. | Added a code-side `CURRENT_BOUNDED_BLUE_BRAIN_ANATOMICAL_REGION_MAP` and `is_current_bounded_blue_brain_anatomical_region` guard helper, with tests excluding Prefrontal Cortex, Anterior Cingulate Cortex and Insula from current scope. |
 | `doc_test_drift` | No focused test proved that Hypothalamus is canonical for maintenance but not a new model-deepening candidate. | Added tests pinning the six-region scope, maintenance finding classes, Hypothalamus MD1 no-deepening status and unchanged single bounded Kuramoto-like region candidate count. |
 | `non_canonical_residual_path` | Historical candidate regions remained visible through the broader anatomical candidate map. | Left the historical/candidate map intact for compatibility, but added the explicit current bounded map so consumers have a non-promoting current-scope read. |
+| `cross_surface_ambiguity` | The previous maintenance taxonomy used expansion-hook wording; across authority/docs/tests that looked too much like a sanctioned future lane even though the value was empty. | Replaced it with `cross_surface_ambiguity` and kept the expansion review as no-active-rescope evidence only. |
 | `no_change_needed` | Inter-region relation guards, MD2 no-second-candidate decision, no-direct action/execution/retry/memory/compute/safety flags and Hypothalamus relation boundaries were audited. | No behavior expansion needed; existing advisory/diagnostic/reference semantics remain bounded. |
 
 ## Non-expansion checks

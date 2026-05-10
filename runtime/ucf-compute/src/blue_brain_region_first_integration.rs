@@ -73,8 +73,8 @@ pub enum BlueBrainMaintenanceFindingClass {
     GuardWeakness,
     DocTestDrift,
     NonCanonicalResidualPath,
+    CrossSurfaceAmbiguity,
     NoChangeNeeded,
-    PossibleFutureExpansionHook,
 }
 
 pub const CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP: [BlueBrainMaintenanceFindingClass;
@@ -84,8 +84,8 @@ pub const CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP: [BlueBrainMainten
     BlueBrainMaintenanceFindingClass::GuardWeakness,
     BlueBrainMaintenanceFindingClass::DocTestDrift,
     BlueBrainMaintenanceFindingClass::NonCanonicalResidualPath,
+    BlueBrainMaintenanceFindingClass::CrossSurfaceAmbiguity,
     BlueBrainMaintenanceFindingClass::NoChangeNeeded,
-    BlueBrainMaintenanceFindingClass::PossibleFutureExpansionHook,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -399,8 +399,8 @@ pub const CANONICAL_BLUE_BRAIN_POST_MD3_MAINTENANCE_FINDINGS_MAP:
     },
     BlueBrainPostMd3MaintenanceFinding {
         surface: BlueBrainPostMd3MaintenanceSurface::ExpansionLeverReview,
-        finding_class: BlueBrainMaintenanceFindingClass::PossibleFutureExpansionHook,
-        summary: "no repo-backed post-MD3 expansion hook is active; future work requires explicit re-scope",
+        finding_class: BlueBrainMaintenanceFindingClass::CrossSurfaceAmbiguity,
+        summary: "expansion review wording is explicit no-active-rescope evidence, not a future expansion hook",
         maintenance_only: true,
         no_scope_expansion: true,
         direct_action_trigger: false,
@@ -12625,8 +12625,8 @@ mod tests {
             BlueBrainMaintenanceFindingClass::GuardWeakness,
             BlueBrainMaintenanceFindingClass::DocTestDrift,
             BlueBrainMaintenanceFindingClass::NonCanonicalResidualPath,
+            BlueBrainMaintenanceFindingClass::CrossSurfaceAmbiguity,
             BlueBrainMaintenanceFindingClass::NoChangeNeeded,
-            BlueBrainMaintenanceFindingClass::PossibleFutureExpansionHook,
         ] {
             assert!(CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP.contains(&finding_class));
         }
@@ -12687,6 +12687,7 @@ mod tests {
         assert!(maintenance_map.contains("guard_weakness"));
         assert!(maintenance_map.contains("doc_test_drift"));
         assert!(maintenance_map.contains("non_canonical_residual_path"));
+        assert!(maintenance_map.contains("cross_surface_ambiguity"));
         assert!(maintenance_map.contains("no_change_needed"));
         assert!(maintenance_map.contains("NoDeepeningNeededNow"));
         assert!(maintenance_map.contains("No new anatomical region"));
@@ -13777,8 +13778,8 @@ mod tests {
             BlueBrainMaintenanceFindingClass::GuardWeakness,
             BlueBrainMaintenanceFindingClass::DocTestDrift,
             BlueBrainMaintenanceFindingClass::NonCanonicalResidualPath,
+            BlueBrainMaintenanceFindingClass::CrossSurfaceAmbiguity,
             BlueBrainMaintenanceFindingClass::NoChangeNeeded,
-            BlueBrainMaintenanceFindingClass::PossibleFutureExpansionHook,
         ] {
             assert!(CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP.contains(&finding_class));
         }
@@ -13809,7 +13810,7 @@ mod tests {
             .expect("post-MD3 expansion review finding");
         assert_eq!(
             expansion_review.finding_class,
-            BlueBrainMaintenanceFindingClass::PossibleFutureExpansionHook
+            BlueBrainMaintenanceFindingClass::CrossSurfaceAmbiguity
         );
         assert_eq!(expansion_review.possible_future_rescope_candidate, None);
     }
@@ -14007,7 +14008,7 @@ mod tests {
         assert!(doc.contains("doc/test drift"));
         assert!(doc.contains("non-canonical residual path"));
         assert!(doc.contains("no-change-needed finding"));
-        assert!(doc.contains("possible future expansion hook"));
+        assert!(doc.contains("cross-surface ambiguity"));
         assert!(doc.contains("No active post-MD3 re-scope candidate remains"));
         assert!(doc.contains("no direct action"));
         assert!(doc.contains("no direct execution"));

@@ -12,6 +12,7 @@ Kanonische Status-/Discoverability-Maps:
 - `docs/blue_brain_maintenance_verification_findings_map_v1.md` (test/check/evidence verification findings; supporting reference only)
 - `docs/blue_brain_discoverability_findings_map_v1.md` (maintenance findings evidence for index/reference clarity; supporting reference only)
 - `docs/blue_brain_discoverability_cleanup_pass_v1.md` (closure note for the narrow cleanup pass; supporting reference only)
+- `docs/blue_brain_cross_surface_maintenance_cleanup_pass_v1.md` (cross-surface maintenance cleanup closure note; supporting reference only)
 
 - **Current operational authority (maßgeblich):**
   - `docs/blue_brain_br6_hypothalamus_readiness_sweep_expansion_boundary_serie_br6_prompt4_v1.md`
@@ -54,6 +55,7 @@ Maintenance reading order: start in this README, classify through `docs/blue_bra
 - **Maintenance verification findings map (supporting check/evidence reference):** `docs/blue_brain_maintenance_verification_findings_map_v1.md`
 - **Relation wording findings map (supporting relational maintenance reference):** `docs/blue_brain_relation_wording_findings_map_v1.md`
 - **Discoverability cleanup closure note (supporting evidence):** `docs/blue_brain_discoverability_cleanup_pass_v1.md`
+- **Cross-surface maintenance cleanup closure note (supporting evidence):** `docs/blue_brain_cross_surface_maintenance_cleanup_pass_v1.md`
 - **Non-canonical shadow-surface inventory (supporting reference):** `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`
 - **SC1 cross-line terminology/guard checklist consolidation (supporting evidence):** `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`
 - **BB22 cross-line stabilization/cleanup:**
