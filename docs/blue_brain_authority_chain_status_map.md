@@ -18,7 +18,7 @@ Nur diese Klassen sind für die operative Einordnung zu verwenden:
 5. **non-canonical/internal-only shadow surface**
    - DBM-/Microcircuit-/Neuro-/adjacent-domain Oberfläche außerhalb der aktuellen operativen Blue-Brain-Autorität; keine implizite Region, Relation, Modellplattform oder Consumer-Autorität.
 
-Die kompakte maintenance-facing Discoverability-Map ist `docs/blue_brain_maintenance_discoverability_map_v1.md`; das Shadow-Surface-Inventar ist `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`; die Guard-/Semantic-Drift-Map ist `docs/blue_brain_guard_semantic_drift_map_v1.md`. Diese Dateien sind Supporting References, nicht zweite Wahrheitsquellen.
+Die kompakte maintenance-facing Discoverability-Map ist `docs/blue_brain_maintenance_discoverability_map_v1.md`; das Shadow-Surface-Inventar ist `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`; die Guard-/Semantic-Drift-Map ist `docs/blue_brain_guard_semantic_drift_map_v1.md`; die Discoverability-Findings-Map ist `docs/blue_brain_discoverability_findings_map_v1.md`; die Discoverability-Cleanup-Abschlussnotiz ist `docs/blue_brain_discoverability_cleanup_pass_v1.md`. Diese Dateien sind Supporting References, nicht zweite Wahrheitsquellen.
 
 ## Canonical classification (post-BR6/IR1/MD2/MD3/SC1 current line)
 
@@ -67,6 +67,8 @@ Historische Aussagen bleiben erhalten (BB25/BB27/BB29-Zeitpunkte), werden aber d
 - `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`
 - `docs/blue_brain_audit_baseline_map_v1.md`
 - `docs/blue_brain_maintenance_discoverability_map_v1.md`
+- `docs/blue_brain_discoverability_findings_map_v1.md`
+- `docs/blue_brain_discoverability_cleanup_pass_v1.md`
 - `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`
 - `docs/blue_brain_maintenance_consolidation_pass_v1.md`
 - `docs/blue_brain_guard_semantic_drift_map_v1.md`

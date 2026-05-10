@@ -9,6 +9,8 @@ Kanonische Status-/Discoverability-Maps:
 - `docs/blue_brain_maintenance_discoverability_map_v1.md` (maintenance-facing reading order; supporting reference only)
 - `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md` (shadow-surface inventory; supporting reference only)
 - `docs/blue_brain_guard_semantic_drift_map_v1.md` (guard/semantic drift-control map; supporting reference only)
+- `docs/blue_brain_discoverability_findings_map_v1.md` (maintenance findings evidence for index/reference clarity; supporting reference only)
+- `docs/blue_brain_discoverability_cleanup_pass_v1.md` (closure note for the narrow cleanup pass; supporting reference only)
 
 - **Current operational authority (maßgeblich):**
   - `docs/blue_brain_br6_hypothalamus_readiness_sweep_expansion_boundary_serie_br6_prompt4_v1.md`
@@ -39,12 +41,16 @@ Autoritäts-/Discoverability-Klassen im Repo-Kontext:
 - stale discoverability pointer
 - non-canonical/internal-only shadow surface
 
+Maintenance reading order: start in this README, classify through `docs/blue_brain_authority_chain_status_map.md`, use `docs/blue_brain_maintenance_discoverability_map_v1.md` for the compact path, and treat `docs/blue_brain_discoverability_findings_map_v1.md` as cleanup evidence only. Historical BB25/BB27/BB29 lists below are audit trail, not current operational authority.
+
 
 ## 1) Canonical operational entrypoints
 
 - **Operational readiness map (BB20 P1):** `docs/blue_brain_bb20_production_readiness_sweep_serie_bb20_prompt1_v1.md`
 - **Terminology/state semantics harmonization (BB20 P2):** `docs/blue_brain_bb20_cross_line_terminology_state_harmonization_serie_bb20_prompt2_v1.md`
 - **Maintenance discoverability map (supporting reference):** `docs/blue_brain_maintenance_discoverability_map_v1.md`
+- **Discoverability findings map (supporting cleanup evidence):** `docs/blue_brain_discoverability_findings_map_v1.md`
+- **Discoverability cleanup closure note (supporting evidence):** `docs/blue_brain_discoverability_cleanup_pass_v1.md`
 - **Non-canonical shadow-surface inventory (supporting reference):** `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`
 - **SC1 cross-line terminology/guard checklist consolidation (supporting evidence):** `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`
 - **BB22 cross-line stabilization/cleanup:**
