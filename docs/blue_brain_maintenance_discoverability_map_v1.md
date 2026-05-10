@@ -45,6 +45,7 @@ These docs and artifacts are current support, not competing authority:
 - `docs/blue_brain_guard_semantic_drift_map_v1.md` — guard/semantic drift-control map for status, model-boundary and no-direct-* wording.
 - `docs/blue_brain_discoverability_findings_map_v1.md` — maintenance findings evidence for current-path clarity, historical-pointer prominence and duplicate/non-canonical index risks.
 - `docs/blue_brain_discoverability_cleanup_pass_v1.md` — closure note for changed files, cleanup actions, checks and remaining maintenance need.
+- `docs/blue_brain_cross_surface_maintenance_cleanup_pass_v1.md` — cross-surface maintenance cleanup closure note for region/relation/model/guard/doc consistency.
 - `out/blue_brain_audit_baseline_2026-05-09/` — current Blue-Brain clean maintenance-ready baseline evidence bundle on HEAD `efbeec23b752744dc9f87a2e2e3eeb9efe25104f`.
 - `out/docs_lint_report.json` and `out/gate_report.json` — standard root reports for canonical docs/readiness checks.
 

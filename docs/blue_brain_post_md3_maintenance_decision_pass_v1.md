@@ -16,7 +16,7 @@ Status: maintenance-only pass after MD3 system closure. This file records the na
 | doc/test drift | Documentation or tests lag a canonical code/status surface. |
 | non-canonical residual path | Historical, test-only, or internal-only path that must not become a consumer source of truth. |
 | no-change-needed finding | Checked surface is already aligned and only records evidence. |
-| possible future expansion hook | Explicit review bucket for repo-backed later re-scope candidates; this pass leaves it empty. |
+| cross-surface ambiguity | A review bucket whose wording can be interpreted differently across region, relation, model, guard, or maintenance-documentation surfaces. |
 
 Findings by surface:
 
@@ -27,15 +27,15 @@ Findings by surface:
 | First model deepening | no-change-needed finding | `Amygdala ↔ Thalamus` remains the MD1/MD2 maintenance-hardened advisory-only bounded Kuramoto-like line. |
 | Second model deepening | no-change-needed finding | `Amygdala ↔ Basal Ganglia` remains the only MD3 advisory-only bounded second model-deepening line. |
 | Runtime/selection/reference contracts | guard weakness | The cross-line direct-authority predicate now requires explicit memory-commit denial in addition to action, execution, retry, compute, and safety denial. |
-| Docs/tests/readiness references | doc/test drift | The maintenance finding class map now includes the explicit `possible future expansion hook` bucket, and tests pin this post-MD3 reference. |
+| Docs/tests/readiness references | doc/test drift | The maintenance finding class map now includes this post-MD3 reference and keeps taxonomy wording aligned with code-side tests. |
 | Non-canonical residuals | non-canonical residual path | Historical and test-only paths remain marked non-canonical/internal-only with no consumer-operational authority. |
-| Expansion lever review | possible future expansion hook | No active post-MD3 re-scope candidate remains. |
+| Expansion lever review | cross-surface ambiguity | No active post-MD3 re-scope candidate remains; expansion-review wording is evidence-only, not a reusable future hook. |
 
 ## 2) Bugs, inconsistencies, and guard cleanups applied
 
 - Real bug: none requiring behavioral repair was found in the checked region, relation, model-deepening, runtime/selection/reference, readiness, or docs/test surfaces.
 - Guard weakness fixed: `blue_brain_cross_line_term_allows_direct_authority` now treats a term as non-authoritative only when the checklist denies no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, and safety override authority.
-- Doc/test drift fixed: the maintenance finding taxonomy now includes `possible future expansion hook`; tests pin that the expansion hook is intentionally empty after MD3.
+- Doc/test drift fixed: the maintenance finding taxonomy now uses `cross-surface ambiguity` instead of expansion-hook wording; tests pin that the post-MD3 re-scope candidate remains empty.
 - Non-canonical residual cleanup: residual and test-only paths remain classified as non-canonical/internal-only, not promoted or deleted into a second truth source.
 
 ## 3) Semantic consistency decisions
