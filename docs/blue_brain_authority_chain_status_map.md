@@ -72,6 +72,7 @@ Historische Aussagen bleiben erhalten (BB25/BB27/BB29-Zeitpunkte), werden aber d
 - `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`
 - `docs/blue_brain_maintenance_consolidation_pass_v1.md`
 - `docs/blue_brain_guard_semantic_drift_map_v1.md`
+- `docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md`
 
 ### Historical/supporting implementation-stage references (durch spätere Authority relativiert)
 

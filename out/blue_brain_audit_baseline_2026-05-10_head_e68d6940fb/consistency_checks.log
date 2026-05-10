@@ -1,0 +1,63 @@
+# Blue-Brain maintenance consolidation consistency checks
+# head: e68d6940fbc402b420a6523840b7d7882b6a2b6b
+
+## gate code_version_tag
+out/gate_report.json: e68d6940fbc402b420a6523840b7d7882b6a2b6b status=PASS
+out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/gate_report.json: e68d6940fbc402b420a6523840b7d7882b6a2b6b status=PASS
+
+## README authority/discoverability
+docs/README.md:16:- `docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md` (current HEAD evidence/maintenance action-map closure; supporting evidence only)
+docs/README.md:18:- **Current operational authority (maßgeblich):**
+docs/README.md:50:## 1) Supporting/historical operational entrypoints
+docs/blue_brain_authority_chain_status_map.md:25:### Current operational authority (maßgeblich)
+docs/blue_brain_authority_chain_status_map.md:75:- `docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md`
+
+## taxonomy cleanup
+docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md:13:| terminology/taxonomy cleanup target | Post-MD3 maintenance findings taxonomy and code-side summary | Align stale expansion-hook wording to `cross-surface ambiguity` / no-active-rescope evidence. | No reusable future-expansion hook is implied. |
+docs/blue_brain_post_md3_maintenance_decision_pass_v1.md:19:| cross-surface ambiguity | A review bucket whose wording can be interpreted differently across region, relation, model, guard, or maintenance-documentation surfaces. |
+docs/blue_brain_post_md3_maintenance_decision_pass_v1.md:27:| terminology/taxonomy cleanup target | Post-MD3 expansion-review wording | Use `cross-surface ambiguity` / no-active-rescope wording instead of stale expansion-hook language. |
+docs/blue_brain_post_md3_maintenance_decision_pass_v1.md:42:| Expansion lever review | cross-surface ambiguity | No active post-MD3 re-scope candidate remains; expansion-review wording is evidence-only, not a reusable future hook. |
+docs/blue_brain_post_md3_maintenance_decision_pass_v1.md:48:- Doc/test drift fixed: the maintenance finding taxonomy now uses `cross-surface ambiguity` instead of expansion-hook wording; tests pin that the post-MD3 re-scope candidate remains empty.
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:373:        summary: "maintenance finding classes now use cross-surface ambiguity for no-active-rescope wording and include this post-MD3 reference doc",
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:403:        summary: "expansion review wording is explicit no-active-rescope evidence, not reusable expansion-hook authority",
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:14022:        assert!(doc.contains("cross-surface ambiguity"));
+
+## explicit safety override guard
+docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md:14:| guard explicitness target | Post-MD3 no-direct guard and cross-line checklist | Add explicit `forbids_safety_override` guard state beside existing forbidden-authority wording. | Safety override is directly visible and testable, not only inferred from a string. |
+docs/blue_brain_post_md3_maintenance_decision_pass_v1.md:28:| guard explicitness target | Cross-line no-direct guard checklist | Make `safety override` an explicit safety-override guard target beside action, execution, retry, memory, and compute denial. |
+docs/blue_brain_post_md3_maintenance_decision_pass_v1.md:39:| Runtime/selection/reference contracts | guard weakness | The cross-line direct-authority predicate now requires explicit memory-commit denial in addition to action, execution, retry, compute, and an explicit safety-override guard target. |
+docs/blue_brain_post_md3_maintenance_decision_pass_v1.md:47:- Guard weakness fixed: `blue_brain_cross_line_term_allows_direct_authority` now treats a term as non-authoritative only when the checklist denies no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, and the explicit `forbids_safety_override` guard state denies safety override authority.
+docs/blue_brain_post_md3_maintenance_decision_pass_v1.md:82:- no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, and explicit no safety override / `forbids_safety_override` visibility;
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:565:    pub forbids_safety_override: bool,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:586:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:600:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:614:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:628:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:642:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:656:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:670:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:684:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:708:    pub forbids_safety_override: bool,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:718:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:725:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:732:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:739:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:746:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:753:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:760:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:767:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:774:        forbids_safety_override: true,
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:802:        && entry.forbids_safety_override)
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:13843:            assert!(entry.forbids_safety_override);
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:13934:            assert!(entry.forbids_safety_override);
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:14029:        assert!(doc.contains("explicit safety-override guard target"));
+
+## no scope expansion assertions
+docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md:3:Status: maintenance/consolidation pass only; no new region, no third model-deepening candidate, no global neurodynamics/model platform, no planner/agent/policy/retry logic, and no compute-core expansion.
+docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md:53:The resulting Blue-Brain state is clean maintenance-ready for normal Maintenance-/Bugfix-/Cleanup mode. No additional expansion block is justified by this pass.
+docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md:47:10. Targeted consistency checks for HEAD tags, README authority wording, expansion-hook cleanup, explicit safety-override guard visibility, and no scope expansion.
+docs/blue_brain_audit_baseline_map_v1.md:14:- MD3 exactly one bounded second model-deepening pair (`Amygdala ↔ Basal Ganglia`);
+docs/blue_brain_post_md3_maintenance_decision_pass_v1.md:29:| no-change-needed finding | Region, relation, and model-deepening boundaries | Record evidence that the existing six regions, IR1 bounded relations, and exactly two selective model-deepening lines remain unchanged. |
+docs/blue_brain_post_md3_maintenance_decision_pass_v1.md:67:- six bounded anatomical regions;
+docs/blue_brain_post_md3_maintenance_decision_pass_v1.md:79:- no scope expansion;
+runtime/ucf-compute/src/blue_brain_region_first_integration.rs:580:        maintenance_response: "keep each state distinct and read-only across the six bounded anatomical regions",

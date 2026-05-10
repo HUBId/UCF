@@ -1,0 +1,6 @@
+# command: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json
+# head: e68d6940fbc402b420a6523840b7d7882b6a2b6b
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.42s
+     Running `target/debug/ucf-ops readiness-gate --profile test --out ./out/gate_report.json`
+status=Pass
+out=./out/gate_report.json

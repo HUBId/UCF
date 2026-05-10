@@ -18,6 +18,16 @@ Status: maintenance-only pass after MD3 system closure. This file records the na
 | no-change-needed finding | Checked surface is already aligned and only records evidence. |
 | cross-surface ambiguity | A review bucket whose wording can be interpreted differently across region, relation, model, guard, or maintenance-documentation surfaces. |
 
+## 1a) Maintenance action map
+
+| Action class | Maintenance target | Decision |
+| --- | --- | --- |
+| evidence sync target | Current HEAD reports and HEAD-qualified baseline folder | Refresh evidence only; do not change region, relation, model, policy, retry, or compute behavior. |
+| discoverability cleanup target | README entrypoint and authority-chain reading order | Keep the current authority chain primary; older entrypoints remain supporting/historical only. |
+| terminology/taxonomy cleanup target | Post-MD3 expansion-review wording | Use `cross-surface ambiguity` / no-active-rescope wording instead of stale expansion-hook language. |
+| guard explicitness target | Cross-line no-direct guard checklist | Make `safety override` an explicit safety-override guard target beside action, execution, retry, memory, and compute denial. |
+| no-change-needed finding | Region, relation, and model-deepening boundaries | Record evidence that the existing six regions, IR1 bounded relations, and exactly two selective model-deepening lines remain unchanged. |
+
 Findings by surface:
 
 | Surface | Finding class | Decision |
@@ -26,7 +36,7 @@ Findings by surface:
 | Inter-region relations | no-change-needed finding | IR1 remains bounded; relation reads stay direct-bounded-advisory, reference-mediated, selection-mediated, caveated, deferred/blocked, or non-canonical/internal-only as already defined. |
 | First model deepening | no-change-needed finding | `Amygdala ↔ Thalamus` remains the MD1/MD2 maintenance-hardened advisory-only bounded Kuramoto-like line. |
 | Second model deepening | no-change-needed finding | `Amygdala ↔ Basal Ganglia` remains the only MD3 advisory-only bounded second model-deepening line. |
-| Runtime/selection/reference contracts | guard weakness | The cross-line direct-authority predicate now requires explicit memory-commit denial in addition to action, execution, retry, compute, and safety denial. |
+| Runtime/selection/reference contracts | guard weakness | The cross-line direct-authority predicate now requires explicit memory-commit denial in addition to action, execution, retry, compute, and an explicit safety-override guard target. |
 | Docs/tests/readiness references | doc/test drift | The maintenance finding class map now includes this post-MD3 reference and keeps taxonomy wording aligned with code-side tests. |
 | Non-canonical residuals | non-canonical residual path | Historical and test-only paths remain marked non-canonical/internal-only with no consumer-operational authority. |
 | Expansion lever review | cross-surface ambiguity | No active post-MD3 re-scope candidate remains; expansion-review wording is evidence-only, not a reusable future hook. |
@@ -34,7 +44,7 @@ Findings by surface:
 ## 2) Bugs, inconsistencies, and guard cleanups applied
 
 - Real bug: none requiring behavioral repair was found in the checked region, relation, model-deepening, runtime/selection/reference, readiness, or docs/test surfaces.
-- Guard weakness fixed: `blue_brain_cross_line_term_allows_direct_authority` now treats a term as non-authoritative only when the checklist denies no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, and safety override authority.
+- Guard weakness fixed: `blue_brain_cross_line_term_allows_direct_authority` now treats a term as non-authoritative only when the checklist denies no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, and the explicit `forbids_safety_override` guard state denies safety override authority.
 - Doc/test drift fixed: the maintenance finding taxonomy now uses `cross-surface ambiguity` instead of expansion-hook wording; tests pin that the post-MD3 re-scope candidate remains empty.
 - Non-canonical residual cleanup: residual and test-only paths remain classified as non-canonical/internal-only, not promoted or deleted into a second truth source.
 
@@ -69,7 +79,7 @@ Targeted checks should verify:
 - no scope expansion;
 - no implicit new region;
 - no implicit new model-deepening candidate;
-- no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, and no safety override;
+- no direct action, no direct execution, no direct retry, no direct memory commit, no direct compute invocation, and explicit no safety override / `forbids_safety_override` visibility;
 - docs and tests match code.
 
 Maintenance check-reading order is now pinned in `docs/blue_brain_maintenance_verification_findings_map_v1.md`: local targeted Blue-Brain tests explain the changed surface, canonical workspace/readiness/docs checks are the handoff checks, and `out/` reports are audit/baseline evidence. This clarification removes stale verification wording without creating a second verification authority.
