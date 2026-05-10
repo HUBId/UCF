@@ -18,7 +18,7 @@ Nur diese Klassen sind für die operative Einordnung zu verwenden:
 5. **non-canonical/internal-only shadow surface**
    - DBM-/Microcircuit-/Neuro-/adjacent-domain Oberfläche außerhalb der aktuellen operativen Blue-Brain-Autorität; keine implizite Region, Relation, Modellplattform oder Consumer-Autorität.
 
-Die kompakte maintenance-facing Discoverability-Map ist `docs/blue_brain_maintenance_discoverability_map_v1.md`; das Shadow-Surface-Inventar ist `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`. Beide sind Supporting References, nicht zweite Wahrheitsquellen.
+Die kompakte maintenance-facing Discoverability-Map ist `docs/blue_brain_maintenance_discoverability_map_v1.md`; das Shadow-Surface-Inventar ist `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`; die Guard-/Semantic-Drift-Map ist `docs/blue_brain_guard_semantic_drift_map_v1.md`. Diese Dateien sind Supporting References, nicht zweite Wahrheitsquellen.
 
 ## Canonical classification (post-BR6/IR1/MD2/MD3/SC1 current line)
 
@@ -69,6 +69,7 @@ Historische Aussagen bleiben erhalten (BB25/BB27/BB29-Zeitpunkte), werden aber d
 - `docs/blue_brain_maintenance_discoverability_map_v1.md`
 - `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`
 - `docs/blue_brain_maintenance_consolidation_pass_v1.md`
+- `docs/blue_brain_guard_semantic_drift_map_v1.md`
 
 ### Historical/supporting implementation-stage references (durch spätere Authority relativiert)
 

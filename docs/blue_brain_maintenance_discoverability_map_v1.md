@@ -40,6 +40,7 @@ These docs and artifacts are current support, not competing authority:
 - `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md` — compact terminology and no-direct-* guard checklist.
 - `docs/blue_brain_audit_baseline_map_v1.md` — current audit baseline and artifact map.
 - `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md` — non-canonical/internal-only shadow-surface inventory.
+- `docs/blue_brain_guard_semantic_drift_map_v1.md` — guard/semantic drift-control map for status, model-boundary and no-direct-* wording.
 - `out/blue_brain_audit_baseline_2026-05-09/` — current Blue-Brain clean maintenance-ready baseline evidence bundle on HEAD `efbeec23b752744dc9f87a2e2e3eeb9efe25104f`.
 - `out/docs_lint_report.json` and `out/gate_report.json` — standard root reports for canonical docs/readiness checks.
 
