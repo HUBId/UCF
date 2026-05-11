@@ -35,7 +35,7 @@ Die kompakte maintenance-facing Discoverability-Map ist `docs/blue_brain_mainten
 - `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
 - `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md`
 
-Operative Endlage: **Hippocampus, Amygdala, Thalamus, Basal Ganglia, Cerebellum und Hypothalamus** gelten als bounded, advisory/reference/diagnostic integrierte anatomische Regionen. IR1 bleibt die führende bounded inter-region architecture; die kompakte Relation-Closure-Referenz ist `docs/blue_brain_canonical_inter_region_relation_map_v1.md`; MD1/MD2 bleibt genau eine maintenance-gehärtete erste Modellvertiefung (`Amygdala ↔ Thalamus`). MD3 Prompt 1 öffnet auf Re-Scope-Ebene genau einen zweiten Kandidaten (`Amygdala ↔ Basal Ganglia`); MD3 Prompt 2 implementiert genau diesen Kandidaten minimal als relation-level bounded Kuramoto-like advisory/diagnostic line; MD3 Prompt 3 härtet die Grenzen; MD3 Prompt 4 schließt den Stand als maintenance-ready. Der Post-MD3-Maintenance-/Decision-Pass hält den Befund fest: keine aktive spätere Re-Scope-Option bleibt repo-basiert offen. Plattformbildung oder direkte Action-/Execution-/Retry-/Memory-/Compute-/Safety-Autorität bleiben ausgeschlossen. Der finale Default bleibt Maintenance/Bugfix/Cleanup/Report-Refresh; weiterer Regionsausbau, dritte Modellvertiefung und Plattformbildung sind nicht aktiv.
+Operative Endlage: **Hippocampus, Amygdala, Thalamus, Basal Ganglia, Cerebellum und Hypothalamus** gelten als bounded, advisory/reference/diagnostic integrierte anatomische Regionen. IR1 bleibt die führende bounded inter-region architecture; die kompakte Relation-Closure-Referenz ist `docs/blue_brain_canonical_inter_region_relation_map_v1.md`; die kompakte systemweite Modellgrenzen-Referenz ist `docs/blue_brain_canonical_model_boundary_map_v1.md`; MD1/MD2 bleibt genau eine maintenance-gehärtete erste Modellvertiefung (`Amygdala ↔ Thalamus`). MD3 Prompt 1 öffnet auf Re-Scope-Ebene genau einen zweiten Kandidaten (`Amygdala ↔ Basal Ganglia`); MD3 Prompt 2 implementiert genau diesen Kandidaten minimal als relation-level bounded Kuramoto-like advisory/diagnostic line; MD3 Prompt 3 härtet die Grenzen; MD3 Prompt 4 schließt den Stand als maintenance-ready. Der Post-MD3-Maintenance-/Decision-Pass hält den Befund fest: keine aktive spätere Re-Scope-Option bleibt repo-basiert offen. Plattformbildung oder direkte Action-/Execution-/Retry-/Memory-/Compute-/Safety-Autorität bleiben ausgeschlossen. Der finale Default bleibt Maintenance/Bugfix/Cleanup/Report-Refresh; weiterer Regionsausbau, dritte Modellvertiefung und Plattformbildung sind nicht aktiv.
 
 ### Historical snapshot (nicht aktuelle operative Autorität)
 
@@ -72,6 +72,7 @@ Historische Aussagen bleiben erhalten (BB25/BB27/BB29-Zeitpunkte), werden aber d
 - `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`
 - `docs/blue_brain_canonical_region_inventory_map_v1.md`
 - `docs/blue_brain_canonical_inter_region_relation_map_v1.md`
+- `docs/blue_brain_canonical_model_boundary_map_v1.md`
 - `docs/blue_brain_maintenance_consolidation_pass_v1.md`
 - `docs/blue_brain_guard_semantic_drift_map_v1.md`
 - `docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md`
