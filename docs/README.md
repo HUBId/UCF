@@ -18,6 +18,7 @@ Kanonische Status-/Discoverability-Maps:
 - `docs/blue_brain_cross_surface_maintenance_cleanup_pass_v1.md` (cross-surface maintenance cleanup closure note; supporting reference only)
 - `docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md` (current HEAD evidence/maintenance action-map closure; supporting evidence only)
 - `docs/blue_brain_current_maintenance_action_map_v1.md` (current maintenance action map; supporting reference only)
+- `docs/blue_brain_hh_readiness_decision_map_v1.md` (HH-readiness prerequisite/boundary map; supporting current reference only, not HH implementation)
 
 - **Current operational authority (maßgeblich):**
   - `docs/blue_brain_br6_hypothalamus_readiness_sweep_expansion_boundary_serie_br6_prompt4_v1.md`

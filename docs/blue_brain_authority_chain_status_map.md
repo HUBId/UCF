@@ -78,6 +78,7 @@ Historische Aussagen bleiben erhalten (BB25/BB27/BB29-Zeitpunkte), werden aber d
 - `docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md`
 - `docs/blue_brain_current_maintenance_action_map_v1.md`
 - `docs/blue_brain_structural_closure_map_v1.md`
+- `docs/blue_brain_hh_readiness_decision_map_v1.md`
 
 ### Historical/supporting implementation-stage references (durch spätere Authority relativiert)
 
@@ -100,4 +101,4 @@ Diese Dateien bleiben wichtig für Implementierungs- und Guard-Trail-Nachvollzie
 
 ## Conflict rule (single truth)
 
-Wenn historische BB25/BB27/BB29-Aussagen und die post-BR6/MD3-Endlage unterschiedlich sind, gilt **ausschließlich** die BR6/IR1/MD2/MD3/System-Audit/SC1-Prompt-4-Current-Authority-Linie als operativ verbindlich. MD3 Prompt 4 ist die finale MD3-Readiness-Map nach der zweiten Vertiefung; SC1 Prompt 4 bleibt die systemweite Maintenance-Entscheidung; die Structural-Closure-Map v1 bündelt diesen Stand ohne neue Autorität und erklärt nur, dass ein separater HH-Readiness-Block vertretbar ist, nicht HH-Implementierung. Keine der Dateien ist eine neue Funktions- oder Plattformquelle.
+Wenn historische BB25/BB27/BB29-Aussagen und die post-BR6/MD3-Endlage unterschiedlich sind, gilt **ausschließlich** die BR6/IR1/MD2/MD3/System-Audit/SC1-Prompt-4-Current-Authority-Linie als operativ verbindlich. MD3 Prompt 4 ist die finale MD3-Readiness-Map nach der zweiten Vertiefung; SC1 Prompt 4 bleibt die systemweite Maintenance-Entscheidung; die Structural-Closure-Map v1 bündelt diesen Stand ohne neue Autorität und erklärt nur, dass ein separater HH-Readiness-Block vertretbar ist, nicht HH-Implementierung. Die HH-Readiness-Decision-Map v1 konkretisiert nur Voraussetzungen, Grenzen, Nicht-Ziele und spätere Re-Scope-Kriterien; sie ist ebenfalls keine HH-Implementierung. Keine der Dateien ist eine neue Funktions- oder Plattformquelle.
