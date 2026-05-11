@@ -4149,6 +4149,141 @@ pub fn blue_brain_anatomical_region_model_mode(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainRegionInventoryClass {
+    CanonicalActiveAnatomicalRegion,
+    SupportingFunctionalSurface,
+    HistoricalFunctionalPrecursor,
+    NonCanonicalInternalOnlyShadowSurface,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCanonicalRegionRole {
+    ContextReferenceEpisodeIndexing,
+    SalienceValenceCaveatPriority,
+    RelayGatingRouting,
+    ActionGatingSuppressionChannelSelection,
+    PredictionTimingCorrectionMismatch,
+    BoundedDriveHomeostasisUrgencyStatePressure,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainRegionBoundedEffectSurface {
+    RuntimeRead,
+    SelectionRead,
+    ReferenceContextRead,
+    ExecutionDiagnosticRead,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCanonicalRegionInventoryEntry {
+    pub region: BlueBrainAnatomicalRegionClass,
+    pub inventory_class: BlueBrainRegionInventoryClass,
+    pub role: BlueBrainCanonicalRegionRole,
+    pub effect_surfaces: &'static [BlueBrainRegionBoundedEffectSurface],
+    pub non_overlap_boundary: &'static str,
+}
+
+pub const BLUE_BRAIN_ALL_BOUNDED_EFFECT_SURFACES: [BlueBrainRegionBoundedEffectSurface; 4] = [
+    BlueBrainRegionBoundedEffectSurface::RuntimeRead,
+    BlueBrainRegionBoundedEffectSurface::SelectionRead,
+    BlueBrainRegionBoundedEffectSurface::ReferenceContextRead,
+    BlueBrainRegionBoundedEffectSurface::ExecutionDiagnosticRead,
+];
+
+pub const CANONICAL_BLUE_BRAIN_REGION_INVENTORY_MAP: [BlueBrainCanonicalRegionInventoryEntry; 6] = [
+    BlueBrainCanonicalRegionInventoryEntry {
+        region: BlueBrainAnatomicalRegionClass::Hippocampus,
+        inventory_class: BlueBrainRegionInventoryClass::CanonicalActiveAnatomicalRegion,
+        role: BlueBrainCanonicalRegionRole::ContextReferenceEpisodeIndexing,
+        effect_surfaces: &BLUE_BRAIN_ALL_BOUNDED_EFFECT_SURFACES,
+        non_overlap_boundary: "context/reference/episode/indexing only; no salience, relay, action-gating, prediction, drive, memory-commit, execution, retry, compute, policy, planner, agent, or safety authority",
+    },
+    BlueBrainCanonicalRegionInventoryEntry {
+        region: BlueBrainAnatomicalRegionClass::Amygdala,
+        inventory_class: BlueBrainRegionInventoryClass::CanonicalActiveAnatomicalRegion,
+        role: BlueBrainCanonicalRegionRole::SalienceValenceCaveatPriority,
+        effect_surfaces: &BLUE_BRAIN_ALL_BOUNDED_EFFECT_SURFACES,
+        non_overlap_boundary: "salience/valence/caveat/priority only; no context indexing, relay routing, action execution, timing correction ownership, drive homeostasis, policy, planner, agent, or safety override",
+    },
+    BlueBrainCanonicalRegionInventoryEntry {
+        region: BlueBrainAnatomicalRegionClass::Thalamus,
+        inventory_class: BlueBrainRegionInventoryClass::CanonicalActiveAnatomicalRegion,
+        role: BlueBrainCanonicalRegionRole::RelayGatingRouting,
+        effect_surfaces: &BLUE_BRAIN_ALL_BOUNDED_EFFECT_SURFACES,
+        non_overlap_boundary: "relay/gating/routing only; no global router, action-channel authority, memory commit, salience ownership, prediction ownership, drive authority, compute invocation, or safety override",
+    },
+    BlueBrainCanonicalRegionInventoryEntry {
+        region: BlueBrainAnatomicalRegionClass::BasalGanglia,
+        inventory_class: BlueBrainRegionInventoryClass::CanonicalActiveAnatomicalRegion,
+        role: BlueBrainCanonicalRegionRole::ActionGatingSuppressionChannelSelection,
+        effect_surfaces: &BLUE_BRAIN_ALL_BOUNDED_EFFECT_SURFACES,
+        non_overlap_boundary: "action-gating/suppression/channel-selection readiness only; no action execution, relay ownership, context indexing, salience authority, timing correction authority, retry, allowed-actions expansion, or policy authority",
+    },
+    BlueBrainCanonicalRegionInventoryEntry {
+        region: BlueBrainAnatomicalRegionClass::Cerebellum,
+        inventory_class: BlueBrainRegionInventoryClass::CanonicalActiveAnatomicalRegion,
+        role: BlueBrainCanonicalRegionRole::PredictionTimingCorrectionMismatch,
+        effect_surfaces: &BLUE_BRAIN_ALL_BOUNDED_EFFECT_SURFACES,
+        non_overlap_boundary: "prediction/timing/correction/mismatch only; no execution trigger, action selection, relay routing ownership, salience ownership, context indexing, drive authority, compute invocation, or safety override",
+    },
+    BlueBrainCanonicalRegionInventoryEntry {
+        region: BlueBrainAnatomicalRegionClass::Hypothalamus,
+        inventory_class: BlueBrainRegionInventoryClass::CanonicalActiveAnatomicalRegion,
+        role: BlueBrainCanonicalRegionRole::BoundedDriveHomeostasisUrgencyStatePressure,
+        effect_surfaces: &BLUE_BRAIN_ALL_BOUNDED_EFFECT_SURFACES,
+        non_overlap_boundary: "bounded drive/homeostasis/urgency/state-pressure only; no planner, agent, policy, retry orchestration, memory mutation, action execution, compute invocation, salience override, or safety override",
+    },
+];
+
+pub const BLUE_BRAIN_SUPPORTING_FUNCTIONAL_SURFACES: [&str; 8] = [
+    "Runtime transition/feedback read surface",
+    "Selection/priority/deferral contract read surface",
+    "Reference/Context read surface",
+    "Memory retrieval/reference diagnostic surface",
+    "Execution eligibility/reference interaction diagnostic surface",
+    "Bounded dynamics advisory diagnostics",
+    "IR1 bounded inter-region relation diagnostics",
+    "MD1/MD3 relation-local model-deepening diagnostics",
+];
+
+pub const BLUE_BRAIN_HISTORICAL_FUNCTIONAL_PRECURSORS: [&str; 6] = [
+    "attention/selection-related functional path",
+    "caveat/threat salience lane",
+    "relay integration lane",
+    "action-gating mediation lane",
+    "prediction/timing/correction/mismatch calibration lane",
+    "bounded drive/homeostasis/urgency modulation lane",
+];
+
+pub const BLUE_BRAIN_NON_CANONICAL_SHADOW_SURFACES: [&str; 7] = [
+    "Prefrontal Cortex historical/deferred anatomical option",
+    "Anterior Cingulate Cortex historical/deferred anatomical option",
+    "Insula historical/deferred anatomical option",
+    "DBM shadow crates",
+    "microcircuit shadow crates",
+    "biophys/neuro shadow crates",
+    "adjacent Brain/DigitalBrain/Neuromod/SNN/FEP shadow surfaces",
+];
+
+pub fn blue_brain_region_inventory_entry(
+    region: BlueBrainAnatomicalRegionClass,
+) -> Option<&'static BlueBrainCanonicalRegionInventoryEntry> {
+    CANONICAL_BLUE_BRAIN_REGION_INVENTORY_MAP
+        .iter()
+        .find(|entry| entry.region == region)
+}
+
+pub fn blue_brain_region_inventory_class_for_region(
+    region: BlueBrainAnatomicalRegionClass,
+) -> BlueBrainRegionInventoryClass {
+    if blue_brain_region_inventory_entry(region).is_some() {
+        BlueBrainRegionInventoryClass::CanonicalActiveAnatomicalRegion
+    } else {
+        BlueBrainRegionInventoryClass::NonCanonicalInternalOnlyShadowSurface
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainFirstAnatomicalRegionContractSignal {
     AnatomicalToRuntimeAdvisory,
     RuntimeToAnatomicalBoundedInput,
@@ -14179,6 +14314,112 @@ mod tests {
                 pair
             ));
         }
+    }
+
+    #[test]
+    fn canonical_region_inventory_map_pins_six_active_regions_and_unique_roles() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_REGION_INVENTORY_MAP.len(), 6);
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_REGION_INVENTORY_MAP
+                .iter()
+                .map(|entry| entry.region)
+                .collect::<Vec<_>>(),
+            CURRENT_BOUNDED_BLUE_BRAIN_ANATOMICAL_REGION_MAP.to_vec()
+        );
+
+        let expected_roles = [
+            BlueBrainCanonicalRegionRole::ContextReferenceEpisodeIndexing,
+            BlueBrainCanonicalRegionRole::SalienceValenceCaveatPriority,
+            BlueBrainCanonicalRegionRole::RelayGatingRouting,
+            BlueBrainCanonicalRegionRole::ActionGatingSuppressionChannelSelection,
+            BlueBrainCanonicalRegionRole::PredictionTimingCorrectionMismatch,
+            BlueBrainCanonicalRegionRole::BoundedDriveHomeostasisUrgencyStatePressure,
+        ];
+        for role in expected_roles {
+            assert_eq!(
+                CANONICAL_BLUE_BRAIN_REGION_INVENTORY_MAP
+                    .iter()
+                    .filter(|entry| entry.role == role)
+                    .count(),
+                1,
+                "canonical region role must remain non-overlapping: {role:?}"
+            );
+        }
+
+        for entry in CANONICAL_BLUE_BRAIN_REGION_INVENTORY_MAP {
+            assert_eq!(
+                entry.inventory_class,
+                BlueBrainRegionInventoryClass::CanonicalActiveAnatomicalRegion
+            );
+            assert_eq!(
+                blue_brain_region_inventory_class_for_region(entry.region),
+                BlueBrainRegionInventoryClass::CanonicalActiveAnatomicalRegion
+            );
+            assert_eq!(
+                entry.effect_surfaces,
+                &BLUE_BRAIN_ALL_BOUNDED_EFFECT_SURFACES
+            );
+            assert!(entry.non_overlap_boundary.contains("only"));
+            assert!(entry.non_overlap_boundary.contains("no"));
+        }
+    }
+
+    #[test]
+    fn canonical_region_inventory_classifies_deferred_anatomical_options_as_shadow_surfaces() {
+        for region in [
+            BlueBrainAnatomicalRegionClass::PrefrontalCortex,
+            BlueBrainAnatomicalRegionClass::AnteriorCingulateCortex,
+            BlueBrainAnatomicalRegionClass::Insula,
+        ] {
+            assert_eq!(
+                blue_brain_region_inventory_entry(region),
+                None,
+                "deferred/historical anatomical option must not be active inventory: {region:?}"
+            );
+            assert_eq!(
+                blue_brain_region_inventory_class_for_region(region),
+                BlueBrainRegionInventoryClass::NonCanonicalInternalOnlyShadowSurface
+            );
+        }
+
+        assert!(BLUE_BRAIN_SUPPORTING_FUNCTIONAL_SURFACES
+            .contains(&"Runtime transition/feedback read surface"));
+        assert!(BLUE_BRAIN_HISTORICAL_FUNCTIONAL_PRECURSORS
+            .contains(&"attention/selection-related functional path"));
+        assert!(BLUE_BRAIN_NON_CANONICAL_SHADOW_SURFACES.contains(&"DBM shadow crates"));
+        assert!(BLUE_BRAIN_NON_CANONICAL_SHADOW_SURFACES.contains(&"microcircuit shadow crates"));
+        assert!(BLUE_BRAIN_NON_CANONICAL_SHADOW_SURFACES.contains(&"biophys/neuro shadow crates"));
+    }
+
+    #[test]
+    fn canonical_region_inventory_doc_and_authority_map_do_not_conflict() {
+        let doc = include_str!("../../../docs/blue_brain_canonical_region_inventory_map_v1.md");
+        assert!(doc.contains("canonical active anatomical region"));
+        assert!(doc.contains("supporting functional surface"));
+        assert!(doc.contains("historical functional precursor"));
+        assert!(doc.contains("non-canonical/internal-only shadow surface"));
+        assert!(doc.contains("Hippocampus | context / reference / episode / indexing"));
+        assert!(doc.contains("Amygdala | salience / valence / caveat / priority"));
+        assert!(doc.contains("Thalamus | relay / gating / routing"));
+        assert!(doc.contains("Basal Ganglia | action-gating / suppression / channel-selection"));
+        assert!(doc.contains("Cerebellum | prediction / timing / correction / mismatch"));
+        assert!(
+            doc.contains("Hypothalamus | bounded drive / homeostasis / urgency / state-pressure")
+        );
+        assert!(doc.contains("Prefrontal Cortex, Anterior Cingulate Cortex and Insula"));
+        assert!(doc.contains("no seventh region"));
+        assert!(doc.contains("no global platform"));
+        assert!(doc.contains("no compute-core work"));
+
+        let authority = include_str!("../../../docs/blue_brain_authority_chain_status_map.md");
+        assert!(authority.contains("docs/blue_brain_canonical_region_inventory_map_v1.md"));
+        assert!(authority.contains(
+            "Hippocampus, Amygdala, Thalamus, Basal Ganglia, Cerebellum und Hypothalamus"
+        ));
+
+        let readme = include_str!("../../../docs/README.md");
+        assert!(readme.contains("Canonical six-region inventory/role map"));
+        assert!(readme.contains("docs/blue_brain_canonical_region_inventory_map_v1.md"));
     }
 
     #[test]
