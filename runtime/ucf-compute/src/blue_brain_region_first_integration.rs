@@ -3068,6 +3068,273 @@ pub const CANONICAL_BLUE_BRAIN_HH_READINESS_DECISION_MAP: [BlueBrainHhReadinessD
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFirstHhCandidateSelectionState {
+    FirstLaterHhCandidate,
+    PlausibleButNotFirst,
+    KuramotoLikeStillPreferable,
+    AbstractSufficient,
+    HhBlockedByCurrentArchitecture,
+    NonCanonicalInternalOnlyHhPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_FIRST_HH_CANDIDATE_SELECTION_STATE_MAP:
+    [BlueBrainFirstHhCandidateSelectionState; 6] = [
+    BlueBrainFirstHhCandidateSelectionState::FirstLaterHhCandidate,
+    BlueBrainFirstHhCandidateSelectionState::PlausibleButNotFirst,
+    BlueBrainFirstHhCandidateSelectionState::KuramotoLikeStillPreferable,
+    BlueBrainFirstHhCandidateSelectionState::AbstractSufficient,
+    BlueBrainFirstHhCandidateSelectionState::HhBlockedByCurrentArchitecture,
+    BlueBrainFirstHhCandidateSelectionState::NonCanonicalInternalOnlyHhPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainFirstHhCandidateRelevanceClass {
+    RelationLevelSelectionTimingExcitabilityProbe,
+    RegionLevelMembraneNearDiagnosticProbe,
+    CouplingSynchronyAlreadyCoveredByKuramotoLike,
+    AbstractContractSemanticsSufficient,
+    ArchitectureOrAuthorityBlocked,
+    InternalOnlyNonCanonicalResearchPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainFirstHhCandidateMapEntry {
+    pub surface_id: &'static str,
+    pub surface_kind: BlueBrainHhReadinessSurfaceKind,
+    pub region: Option<BlueBrainAnatomicalRegionClass>,
+    pub relation: Option<BlueBrainInterRegionArchitecturePair>,
+    pub selection_state: BlueBrainFirstHhCandidateSelectionState,
+    pub readiness_class: BlueBrainHhReadinessClass,
+    pub relevance_class: BlueBrainFirstHhCandidateRelevanceClass,
+    pub model_boundary_mode: Option<BlueBrainCanonicalModelBoundaryMode>,
+    pub minimal_hh_relevance: &'static str,
+    pub why_not_current_hh: &'static str,
+    pub first_candidate: bool,
+    pub candidate_is_region: bool,
+    pub candidate_is_relation: bool,
+    pub current_productive_hh_allowed: bool,
+    pub implementation_opened_now: bool,
+    pub opens_new_model_deepening_now: bool,
+    pub kuramoto_like_preferred_for_current_scope: bool,
+    pub abstract_sufficient_for_current_scope: bool,
+    pub no_direct_action_trigger: bool,
+    pub no_direct_execution_trigger: bool,
+    pub no_direct_retry_trigger: bool,
+    pub no_direct_memory_commit: bool,
+    pub no_direct_compute_invocation: bool,
+    pub no_safety_override: bool,
+    pub opens_global_model_platform: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+const fn blue_brain_first_hh_candidate_map_entry(
+    surface_id: &'static str,
+    surface_kind: BlueBrainHhReadinessSurfaceKind,
+    region: Option<BlueBrainAnatomicalRegionClass>,
+    relation: Option<BlueBrainInterRegionArchitecturePair>,
+    selection_state: BlueBrainFirstHhCandidateSelectionState,
+    readiness_class: BlueBrainHhReadinessClass,
+    relevance_class: BlueBrainFirstHhCandidateRelevanceClass,
+    model_boundary_mode: Option<BlueBrainCanonicalModelBoundaryMode>,
+    minimal_hh_relevance: &'static str,
+    why_not_current_hh: &'static str,
+    first_candidate: bool,
+    kuramoto_like_preferred_for_current_scope: bool,
+    abstract_sufficient_for_current_scope: bool,
+) -> BlueBrainFirstHhCandidateMapEntry {
+    BlueBrainFirstHhCandidateMapEntry {
+        surface_id,
+        surface_kind,
+        region,
+        relation,
+        selection_state,
+        readiness_class,
+        relevance_class,
+        model_boundary_mode,
+        minimal_hh_relevance,
+        why_not_current_hh,
+        first_candidate,
+        candidate_is_region: region.is_some(),
+        candidate_is_relation: relation.is_some(),
+        current_productive_hh_allowed: false,
+        implementation_opened_now: false,
+        opens_new_model_deepening_now: false,
+        kuramoto_like_preferred_for_current_scope,
+        abstract_sufficient_for_current_scope,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+        opens_global_model_platform: false,
+    }
+}
+
+/// Canonical first-HH-candidate map for HH-readiness Prompt 2.
+///
+/// This map narrows the Prompt-1 HH-readiness space to exactly one later-HH
+/// candidate without implementing HH. The chosen candidate is the bounded
+/// `Basal Ganglia ↔ Cerebellum` relation because it is the only repo-backed
+/// later-HH relation placeholder with execution/timing/excitability-adjacent
+/// leverage. Region-level HH paths remain diagnostic-only, Kuramoto-like
+/// deepenings remain preferable where already selected, abstract surfaces remain
+/// sufficient, blocked surfaces stay blocked, and internal-only HH paths remain
+/// non-canonical.
+pub const CANONICAL_BLUE_BRAIN_FIRST_HH_CANDIDATE_MAP: [BlueBrainFirstHhCandidateMapEntry; 10] = [
+    blue_brain_first_hh_candidate_map_entry(
+        "basal_ganglia_cerebellum_relation_first_later_hh_candidate",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum),
+        BlueBrainFirstHhCandidateSelectionState::FirstLaterHhCandidate,
+        BlueBrainHhReadinessClass::HhTheoreticallyPlausibleLater,
+        BlueBrainFirstHhCandidateRelevanceClass::RelationLevelSelectionTimingExcitabilityProbe,
+        Some(BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode),
+        "bounded relation-level probe for selection-channel suppression versus timing/correction excitability, spike threshold and refractory-shape questions",
+        "later-HH candidate only; no HH implementation, no execution authority, no action authority, no retry authority and no compute invocation are opened",
+        true,
+        false,
+        false,
+    ),
+    blue_brain_first_hh_candidate_map_entry(
+        "cerebellum_region_plausible_but_not_first_hh_candidate",
+        BlueBrainHhReadinessSurfaceKind::RegionSurface,
+        Some(BlueBrainAnatomicalRegionClass::Cerebellum),
+        None,
+        BlueBrainFirstHhCandidateSelectionState::PlausibleButNotFirst,
+        BlueBrainHhReadinessClass::HhSimulationOnlyDiagnosticOnlyCandidate,
+        BlueBrainFirstHhCandidateRelevanceClass::RegionLevelMembraneNearDiagnosticProbe,
+        Some(BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode),
+        "membrane-near diagnostic questions around correction timing, spike threshold and refractory-like traces",
+        "region-level microcircuit modeling would be broader and more biologically suggestive than the current UCF function needs",
+        false,
+        false,
+        false,
+    ),
+    blue_brain_first_hh_candidate_map_entry(
+        "hypothalamus_region_plausible_but_not_first_hh_candidate",
+        BlueBrainHhReadinessSurfaceKind::RegionSurface,
+        Some(BlueBrainAnatomicalRegionClass::Hypothalamus),
+        None,
+        BlueBrainFirstHhCandidateSelectionState::PlausibleButNotFirst,
+        BlueBrainHhReadinessClass::HhSimulationOnlyDiagnosticOnlyCandidate,
+        BlueBrainFirstHhCandidateRelevanceClass::RegionLevelMembraneNearDiagnosticProbe,
+        Some(BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode),
+        "diagnostic-only drive/urgency excitability proxy questions, without homeostatic neuron simulation",
+        "drive and urgency semantics remain abstract advisory pressure; HH would overfit current contract needs",
+        false,
+        false,
+        false,
+    ),
+    blue_brain_first_hh_candidate_map_entry(
+        "amygdala_thalamus_kuramoto_still_preferable_for_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::SelectiveModelDeepeningSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaThalamus),
+        BlueBrainFirstHhCandidateSelectionState::KuramotoLikeStillPreferable,
+        BlueBrainHhReadinessClass::KuramotoLikeStillPreferable,
+        BlueBrainFirstHhCandidateRelevanceClass::CouplingSynchronyAlreadyCoveredByKuramotoLike,
+        Some(BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode),
+        "coupling and synchrony questions are already served by bounded Kuramoto-like advisory diagnostics",
+        "HH would be lower-level than the relation-local salience/gating/timing contract needs",
+        false,
+        true,
+        false,
+    ),
+    blue_brain_first_hh_candidate_map_entry(
+        "amygdala_basal_ganglia_kuramoto_still_preferable_for_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::SelectiveModelDeepeningSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia),
+        BlueBrainFirstHhCandidateSelectionState::KuramotoLikeStillPreferable,
+        BlueBrainHhReadinessClass::KuramotoLikeStillPreferable,
+        BlueBrainFirstHhCandidateRelevanceClass::CouplingSynchronyAlreadyCoveredByKuramotoLike,
+        Some(BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode),
+        "bounded urgency/salience-to-selection coupling remains a Kuramoto-like advisory diagnostic concern",
+        "HH would imply unnecessary membrane-near detail for the second closed model deepening",
+        false,
+        true,
+        false,
+    ),
+    blue_brain_first_hh_candidate_map_entry(
+        "abstract_region_surfaces_sufficient_for_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RegionSurface,
+        None,
+        None,
+        BlueBrainFirstHhCandidateSelectionState::AbstractSufficient,
+        BlueBrainHhReadinessClass::AbstractSufficient,
+        BlueBrainFirstHhCandidateRelevanceClass::AbstractContractSemanticsSufficient,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        "no membrane-near HH property is needed for current Hippocampus/Amygdala/Thalamus/Basal-Ganglia region semantics",
+        "context, salience, relay and selection semantics are contract-level and remain abstract sufficient",
+        false,
+        false,
+        true,
+    ),
+    blue_brain_first_hh_candidate_map_entry(
+        "abstract_hypothalamus_relations_sufficient_for_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        None,
+        BlueBrainFirstHhCandidateSelectionState::AbstractSufficient,
+        BlueBrainHhReadinessClass::AbstractSufficient,
+        BlueBrainFirstHhCandidateRelevanceClass::AbstractContractSemanticsSufficient,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        "drive/relay/reference interactions remain advisory contract pressure, not membrane-near dynamics",
+        "HH would not add repo-backed value to current Hypothalamus-mediated relation contracts",
+        false,
+        false,
+        true,
+    ),
+    blue_brain_first_hh_candidate_map_entry(
+        "blocked_architecture_relations_not_first_hh_candidates",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        None,
+        BlueBrainFirstHhCandidateSelectionState::HhBlockedByCurrentArchitecture,
+        BlueBrainHhReadinessClass::HhBlockedByCurrentArchitecture,
+        BlueBrainFirstHhCandidateRelevanceClass::ArchitectureOrAuthorityBlocked,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        "no minimal HH property is admitted while the relation is architecture-lane-only or authority-blocked",
+        "deferred relation lanes cannot become HH candidates before an explicit architecture and fixture re-scope",
+        false,
+        false,
+        false,
+    ),
+    blue_brain_first_hh_candidate_map_entry(
+        "bb10_hh_diagnostic_surface_plausible_but_not_first",
+        BlueBrainHhReadinessSurfaceKind::DynamicsReferenceSurface,
+        None,
+        None,
+        BlueBrainFirstHhCandidateSelectionState::PlausibleButNotFirst,
+        BlueBrainHhReadinessClass::HhSimulationOnlyDiagnosticOnlyCandidate,
+        BlueBrainFirstHhCandidateRelevanceClass::RegionLevelMembraneNearDiagnosticProbe,
+        Some(BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode),
+        "bounded diagnostic HH inputs and outputs can summarize simulation-only membrane proxy behavior",
+        "a generic diagnostic surface is not a concrete UCF first candidate and cannot become productive authority",
+        false,
+        false,
+        false,
+    ),
+    blue_brain_first_hh_candidate_map_entry(
+        "non_canonical_internal_only_hh_paths_not_first",
+        BlueBrainHhReadinessSurfaceKind::NonCanonicalInternalOnlySurface,
+        None,
+        None,
+        BlueBrainFirstHhCandidateSelectionState::NonCanonicalInternalOnlyHhPath,
+        BlueBrainHhReadinessClass::NonCanonicalInternalOnlyHhPath,
+        BlueBrainFirstHhCandidateRelevanceClass::InternalOnlyNonCanonicalResearchPath,
+        Some(BlueBrainCanonicalModelBoundaryMode::NonCanonicalInternalOnlyModelPath),
+        "non-canonical HH-like research paths define no canonical minimal HH property for UCF",
+        "internal-only paths have no consumer read, no contract support and no implementation lane",
+        false,
+        false,
+        false,
+    ),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainStructuralClosureClass {
     CanonicalActiveRegion,
     CanonicalImplementedRelation,
@@ -16584,6 +16851,98 @@ mod tests {
     }
 
     #[test]
+    fn canonical_first_hh_candidate_map_selects_exactly_one_relation_candidate() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_FIRST_HH_CANDIDATE_SELECTION_STATE_MAP.len(),
+            6
+        );
+        assert_eq!(CANONICAL_BLUE_BRAIN_FIRST_HH_CANDIDATE_MAP.len(), 10);
+
+        for state in CANONICAL_BLUE_BRAIN_FIRST_HH_CANDIDATE_SELECTION_STATE_MAP {
+            assert!(CANONICAL_BLUE_BRAIN_FIRST_HH_CANDIDATE_MAP
+                .iter()
+                .any(|entry| entry.selection_state == state));
+        }
+
+        let first_candidates: Vec<_> = CANONICAL_BLUE_BRAIN_FIRST_HH_CANDIDATE_MAP
+            .iter()
+            .filter(|entry| entry.first_candidate)
+            .collect();
+        assert_eq!(first_candidates.len(), 1);
+
+        let first = first_candidates[0];
+        assert_eq!(
+            first.selection_state,
+            BlueBrainFirstHhCandidateSelectionState::FirstLaterHhCandidate
+        );
+        assert_eq!(
+            first.readiness_class,
+            BlueBrainHhReadinessClass::HhTheoreticallyPlausibleLater
+        );
+        assert_eq!(
+            first.relation,
+            Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum)
+        );
+        assert_eq!(first.region, None);
+        assert!(first.candidate_is_relation);
+        assert!(!first.candidate_is_region);
+        assert_eq!(
+            first.model_boundary_mode,
+            Some(BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode)
+        );
+    }
+
+    #[test]
+    fn canonical_first_hh_candidate_map_keeps_non_first_paths_distinct_and_bounded() {
+        let plausible_not_first: Vec<_> = CANONICAL_BLUE_BRAIN_FIRST_HH_CANDIDATE_MAP
+            .iter()
+            .filter(|entry| {
+                entry.selection_state
+                    == BlueBrainFirstHhCandidateSelectionState::PlausibleButNotFirst
+            })
+            .collect();
+        assert_eq!(plausible_not_first.len(), 3);
+        assert!(plausible_not_first
+            .iter()
+            .all(|entry| !entry.first_candidate));
+        assert!(plausible_not_first
+            .iter()
+            .any(|entry| { entry.region == Some(BlueBrainAnatomicalRegionClass::Cerebellum) }));
+        assert!(plausible_not_first
+            .iter()
+            .any(|entry| { entry.region == Some(BlueBrainAnatomicalRegionClass::Hypothalamus) }));
+
+        let kuramoto_preferred: Vec<_> = CANONICAL_BLUE_BRAIN_FIRST_HH_CANDIDATE_MAP
+            .iter()
+            .filter(|entry| {
+                entry.selection_state
+                    == BlueBrainFirstHhCandidateSelectionState::KuramotoLikeStillPreferable
+            })
+            .collect();
+        assert_eq!(kuramoto_preferred.len(), 2);
+        assert!(kuramoto_preferred
+            .iter()
+            .all(|entry| entry.kuramoto_like_preferred_for_current_scope));
+        assert!(kuramoto_preferred.iter().all(|entry| {
+            entry.model_boundary_mode
+                == Some(BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode)
+        }));
+
+        for entry in CANONICAL_BLUE_BRAIN_FIRST_HH_CANDIDATE_MAP {
+            assert!(!entry.current_productive_hh_allowed);
+            assert!(!entry.implementation_opened_now);
+            assert!(!entry.opens_new_model_deepening_now);
+            assert!(entry.no_direct_action_trigger);
+            assert!(entry.no_direct_execution_trigger);
+            assert!(entry.no_direct_retry_trigger);
+            assert!(entry.no_direct_memory_commit);
+            assert!(entry.no_direct_compute_invocation);
+            assert!(entry.no_safety_override);
+            assert!(!entry.opens_global_model_platform);
+        }
+    }
+
+    #[test]
     fn canonical_hh_readiness_doc_matches_code_boundaries() {
         let doc = include_str!("../../../docs/blue_brain_hh_readiness_decision_map_v1.md");
         assert!(doc.contains("HH not justified"));
@@ -16607,5 +16966,32 @@ mod tests {
         assert!(doc.contains("no safety override"));
         assert!(doc.contains("no implicit third model deepening"));
         assert!(doc.contains("no global model platform"));
+    }
+
+    #[test]
+    fn canonical_first_hh_candidate_doc_matches_code_boundaries() {
+        let doc = include_str!("../../../docs/blue_brain_first_hh_candidate_map_v1.md");
+        assert!(doc.contains("first later-HH candidate"));
+        assert!(doc.contains("plausible but not first"));
+        assert!(doc.contains("Kuramoto-like still preferable"));
+        assert!(doc.contains("abstract sufficient"));
+        assert!(doc.contains("HH blocked by current architecture"));
+        assert!(doc.contains("non-canonical/internal-only HH path"));
+        assert!(doc.contains(
+            "the first later-HH candidate is `Basal Ganglia ↔ Cerebellum` as a relation"
+        ));
+        assert!(doc.contains("`Cerebellum` | region | `plausible but not first`"));
+        assert!(doc.contains("`Hypothalamus` | region | `plausible but not first`"));
+        assert!(doc.contains(
+            "`Amygdala ↔ Thalamus` | selective model deepening | `Kuramoto-like still preferable`"
+        ));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("no direct HH implementation"));
+        assert!(doc.contains("no productive HH use"));
     }
 }
