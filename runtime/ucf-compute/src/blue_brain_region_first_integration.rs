@@ -3335,6 +3335,344 @@ pub const CANONICAL_BLUE_BRAIN_FIRST_HH_CANDIDATE_MAP: [BlueBrainFirstHhCandidat
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHhPrerequisiteBoundaryClass {
+    PrerequisiteAlreadySatisfied,
+    PrerequisiteMissing,
+    HardContractBoundary,
+    HardGuardBoundary,
+    HardRuntimeSelectionReferenceBoundary,
+    SimulationOnlyHhAllowance,
+    ForbiddenProductiveHhPath,
+    NonCanonicalInternalOnlyHhPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_BOUNDARY_CLASS_MAP:
+    [BlueBrainHhPrerequisiteBoundaryClass; 8] = [
+    BlueBrainHhPrerequisiteBoundaryClass::PrerequisiteAlreadySatisfied,
+    BlueBrainHhPrerequisiteBoundaryClass::PrerequisiteMissing,
+    BlueBrainHhPrerequisiteBoundaryClass::HardContractBoundary,
+    BlueBrainHhPrerequisiteBoundaryClass::HardGuardBoundary,
+    BlueBrainHhPrerequisiteBoundaryClass::HardRuntimeSelectionReferenceBoundary,
+    BlueBrainHhPrerequisiteBoundaryClass::SimulationOnlyHhAllowance,
+    BlueBrainHhPrerequisiteBoundaryClass::ForbiddenProductiveHhPath,
+    BlueBrainHhPrerequisiteBoundaryClass::NonCanonicalInternalOnlyHhPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHhCandidateIoAllowanceClass {
+    AlreadyCanonicalReferenceInput,
+    LaterRescopeSimulationDiagnosticInputOnly,
+    DiagnosticOnlyOutputOnly,
+    BoundedAdvisoryOnlyAfterSeparateRescope,
+    OutputForbiddenAsAuthority,
+    NotAnIoSurface,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainHhPrerequisiteMapEntry {
+    pub surface_id: &'static str,
+    pub boundary_class: BlueBrainHhPrerequisiteBoundaryClass,
+    pub relation: BlueBrainInterRegionArchitecturePair,
+    pub model_boundary_mode: Option<BlueBrainCanonicalModelBoundaryMode>,
+    pub io_allowance: BlueBrainHhCandidateIoAllowanceClass,
+    pub prerequisite_or_boundary: &'static str,
+    pub current_status: &'static str,
+    pub later_re_scope_requirement: &'static str,
+    pub already_satisfied: bool,
+    pub missing: bool,
+    pub hard_boundary: bool,
+    pub simulation_only_hh_allowed_after_re_scope: bool,
+    pub productive_hh_forbidden: bool,
+    pub non_canonical_internal_only: bool,
+    pub runtime_may_read_bounded_diagnostic_or_advisory_only: bool,
+    pub selection_may_read_as_action_authority: bool,
+    pub reference_context_mutation_allowed: bool,
+    pub hh_state_is_contract_state: bool,
+    pub hh_output_is_operative_authority: bool,
+    pub hh_diagnostic_output_auto_advisory_support: bool,
+    pub opens_hh_implementation_now: bool,
+    pub opens_new_model_deepening_now: bool,
+    pub opens_global_hh_platform: bool,
+    pub opens_other_hh_candidates: bool,
+    pub no_direct_action_trigger: bool,
+    pub no_direct_execution_trigger: bool,
+    pub no_direct_retry_trigger: bool,
+    pub no_direct_memory_commit: bool,
+    pub no_direct_compute_invocation: bool,
+    pub no_safety_override: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+const fn blue_brain_hh_prerequisite_map_entry(
+    surface_id: &'static str,
+    boundary_class: BlueBrainHhPrerequisiteBoundaryClass,
+    model_boundary_mode: Option<BlueBrainCanonicalModelBoundaryMode>,
+    io_allowance: BlueBrainHhCandidateIoAllowanceClass,
+    prerequisite_or_boundary: &'static str,
+    current_status: &'static str,
+    later_re_scope_requirement: &'static str,
+    already_satisfied: bool,
+    missing: bool,
+    hard_boundary: bool,
+    simulation_only_hh_allowed_after_re_scope: bool,
+    productive_hh_forbidden: bool,
+    non_canonical_internal_only: bool,
+    runtime_may_read_bounded_diagnostic_or_advisory_only: bool,
+) -> BlueBrainHhPrerequisiteMapEntry {
+    BlueBrainHhPrerequisiteMapEntry {
+        surface_id,
+        boundary_class,
+        relation: BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum,
+        model_boundary_mode,
+        io_allowance,
+        prerequisite_or_boundary,
+        current_status,
+        later_re_scope_requirement,
+        already_satisfied,
+        missing,
+        hard_boundary,
+        simulation_only_hh_allowed_after_re_scope,
+        productive_hh_forbidden,
+        non_canonical_internal_only,
+        runtime_may_read_bounded_diagnostic_or_advisory_only,
+        selection_may_read_as_action_authority: false,
+        reference_context_mutation_allowed: false,
+        hh_state_is_contract_state: false,
+        hh_output_is_operative_authority: false,
+        hh_diagnostic_output_auto_advisory_support: false,
+        opens_hh_implementation_now: false,
+        opens_new_model_deepening_now: false,
+        opens_global_hh_platform: false,
+        opens_other_hh_candidates: false,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+    }
+}
+
+/// Canonical HH-prerequisite map for HH-readiness Prompt 3.
+///
+/// This map tightens prerequisites and non-negotiable boundaries for exactly
+/// the first later-HH candidate selected by Prompt 2: the `Basal Ganglia ↔
+/// Cerebellum` relation. It is a fixture-free prerequisite/contract map only;
+/// it does not implement HH, activate the relation, promote diagnostic output,
+/// open compute-core work, add planner/orchestration logic, or create a global
+/// HH platform.
+pub const CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_MAP: [BlueBrainHhPrerequisiteMapEntry; 13] = [
+    blue_brain_hh_prerequisite_map_entry(
+        "candidate_relation_selected_and_bounded",
+        BlueBrainHhPrerequisiteBoundaryClass::PrerequisiteAlreadySatisfied,
+        Some(BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode),
+        BlueBrainHhCandidateIoAllowanceClass::NotAnIoSurface,
+        "exactly one first later-HH relation candidate exists",
+        "Basal Ganglia ↔ Cerebellum is selected as relation-only, not region-level HH",
+        "preserve one-candidate scope and do not open Cerebellum, Basal Ganglia, or additional HH candidates",
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_prerequisite_map_entry(
+        "ir1_relation_surface_not_implemented",
+        BlueBrainHhPrerequisiteBoundaryClass::PrerequisiteMissing,
+        Some(BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode),
+        BlueBrainHhCandidateIoAllowanceClass::NotAnIoSurface,
+        "candidate relation has only an architecture lane",
+        "IR1 marks Basal Ganglia ↔ Cerebellum as execution-interface-mediated architecture lane only and not-yet-implemented",
+        "a separate architecture/fixture re-scope must exist before any HH diagnostic surface can be wired",
+        false,
+        true,
+        false,
+        false,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_prerequisite_map_entry(
+        "candidate_input_contract_missing",
+        BlueBrainHhPrerequisiteBoundaryClass::PrerequisiteMissing,
+        Some(BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode),
+        BlueBrainHhCandidateIoAllowanceClass::LaterRescopeSimulationDiagnosticInputOnly,
+        "HH input contract is absent",
+        "no canonical HH inputs exist for selection-channel suppression, timing/correction, excitability, threshold or refractory-shape probes",
+        "later inputs may only be deterministic simulation/diagnostic fixtures derived from approved relation evidence, never live action/execution/retry/memory/compute triggers",
+        false,
+        true,
+        false,
+        true,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_prerequisite_map_entry(
+        "candidate_output_contract_missing",
+        BlueBrainHhPrerequisiteBoundaryClass::PrerequisiteMissing,
+        Some(BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode),
+        BlueBrainHhCandidateIoAllowanceClass::DiagnosticOnlyOutputOnly,
+        "HH output contract is absent",
+        "no canonical HH outputs, fixtures, thresholds, caveats or consumer mappings exist",
+        "later outputs may be simulation-only diagnostic summaries; advisory use would require a separate bounded advisory contract and still no authority",
+        false,
+        true,
+        false,
+        true,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_prerequisite_map_entry(
+        "hard_contract_boundary_hh_not_contract_state",
+        BlueBrainHhPrerequisiteBoundaryClass::HardContractBoundary,
+        Some(BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode),
+        BlueBrainHhCandidateIoAllowanceClass::OutputForbiddenAsAuthority,
+        "HH state and output cannot become contract state or operative authority",
+        "canonical model-boundary rules already keep model state outside contract state and model output outside direct authority",
+        "any later HH re-scope must down-map to diagnostics only unless separately bounded as advisory support without authority",
+        true,
+        false,
+        true,
+        true,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_prerequisite_map_entry(
+        "hard_guard_boundary_no_direct_authority",
+        BlueBrainHhPrerequisiteBoundaryClass::HardGuardBoundary,
+        None,
+        BlueBrainHhCandidateIoAllowanceClass::OutputForbiddenAsAuthority,
+        "no direct action, execution, retry, memory, compute or safety authority",
+        "existing Blue-Brain guard line forbids direct action selection, execution trigger, retry trigger, memory commit, compute invocation and safety override",
+        "later HH must inherit this guard unchanged and fail closed on any attempted authority promotion",
+        true,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_prerequisite_map_entry(
+        "hard_runtime_selection_reference_boundary",
+        BlueBrainHhPrerequisiteBoundaryClass::HardRuntimeSelectionReferenceBoundary,
+        None,
+        BlueBrainHhCandidateIoAllowanceClass::BoundedAdvisoryOnlyAfterSeparateRescope,
+        "Runtime/Selection/Reference may not treat HH as authority",
+        "Runtime has no HH productive read path; Selection cannot read HH as action authority; Reference/Context remains read/reference and non-mutative",
+        "a later runtime read may be bounded diagnostic/advisory-only after separate contract approval; Selection, Reference and Execution authority stay external to HH",
+        true,
+        false,
+        true,
+        true,
+        true,
+        false,
+        true,
+    ),
+    blue_brain_hh_prerequisite_map_entry(
+        "simulation_only_hh_allowance",
+        BlueBrainHhPrerequisiteBoundaryClass::SimulationOnlyHhAllowance,
+        Some(BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode),
+        BlueBrainHhCandidateIoAllowanceClass::LaterRescopeSimulationDiagnosticInputOnly,
+        "only simulation-only/diagnostic-only HH is conceivable later",
+        "BB10 allows HH only as deferred diagnostic vocabulary and the candidate map keeps this relation later-HH/deferred",
+        "later HH evidence must remain deterministic, fixture-bounded, diagnostic-only, and separated from productive runtime authority",
+        false,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+    ),
+    blue_brain_hh_prerequisite_map_entry(
+        "forbidden_productive_hh_path",
+        BlueBrainHhPrerequisiteBoundaryClass::ForbiddenProductiveHhPath,
+        Some(BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode),
+        BlueBrainHhCandidateIoAllowanceClass::OutputForbiddenAsAuthority,
+        "productive HH path is forbidden",
+        "HH is nowhere productive mode and the candidate relation is still deferred",
+        "no later re-scope may silently convert HH diagnostics into productive action, execution, retry, memory, compute or safety behavior",
+        true,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_prerequisite_map_entry(
+        "non_canonical_internal_only_hh_paths",
+        BlueBrainHhPrerequisiteBoundaryClass::NonCanonicalInternalOnlyHhPath,
+        Some(BlueBrainCanonicalModelBoundaryMode::NonCanonicalInternalOnlyModelPath),
+        BlueBrainHhCandidateIoAllowanceClass::OutputForbiddenAsAuthority,
+        "microcircuit, network simulation, CoreNEURON, Neurodamus and adjacent biophysical paths are non-canonical here",
+        "no canonical consumer, contract support, runtime path or implementation lane exists",
+        "keep these paths internal-only unless an explicit future repo decision creates a new scope outside this prerequisite line",
+        false,
+        false,
+        true,
+        false,
+        true,
+        true,
+        false,
+    ),
+    blue_brain_hh_prerequisite_map_entry(
+        "kuramoto_deepening_interaction_boundary",
+        BlueBrainHhPrerequisiteBoundaryClass::HardContractBoundary,
+        Some(BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode),
+        BlueBrainHhCandidateIoAllowanceClass::NotAnIoSurface,
+        "existing Kuramoto-like deepenings do not imply HH authority",
+        "Amygdala ↔ Thalamus and Amygdala ↔ Basal Ganglia remain the only bounded Kuramoto-like advisory/diagnostic deepenings",
+        "HH for Basal Ganglia ↔ Cerebellum must not substitute, extend or backdoor-promote those active deepenings",
+        true,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_prerequisite_map_entry(
+        "fixture_performance_determinism_prerequisites_missing",
+        BlueBrainHhPrerequisiteBoundaryClass::PrerequisiteMissing,
+        Some(BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode),
+        BlueBrainHhCandidateIoAllowanceClass::NotAnIoSurface,
+        "fixtures, golden references, deterministic encoding and performance envelope are absent",
+        "no HH fixture corpus, golden comparison, fixed-point/canonical encoding rule, or bounded performance budget is approved",
+        "later re-scope must provide deterministic fixtures and explicit budgets before any simulation-only diagnostic can be considered",
+        false,
+        true,
+        false,
+        true,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_prerequisite_map_entry(
+        "no_scope_expansion_boundary",
+        BlueBrainHhPrerequisiteBoundaryClass::HardGuardBoundary,
+        None,
+        BlueBrainHhCandidateIoAllowanceClass::NotAnIoSurface,
+        "no direct HH implementation, production switch, network simulation, global platform, planner/orchestration, policy, retry, memory or compute-core work",
+        "this prompt only tightens prerequisites and boundaries for one relation candidate",
+        "future work must remain a separate HH-readiness re-scope and cannot infer implementation permission from this map",
+        true,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false,
+    ),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainStructuralClosureClass {
     CanonicalActiveRegion,
     CanonicalImplementedRelation,
@@ -16943,6 +17281,107 @@ mod tests {
     }
 
     #[test]
+    fn canonical_hh_prerequisite_map_keeps_candidate_prerequisites_and_boundaries_explicit() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_BOUNDARY_CLASS_MAP.len(),
+            8
+        );
+        assert_eq!(CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_MAP.len(), 13);
+
+        for class in CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_BOUNDARY_CLASS_MAP {
+            assert!(CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_MAP
+                .iter()
+                .any(|entry| entry.boundary_class == class));
+        }
+
+        let satisfied = CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_MAP
+            .iter()
+            .filter(|entry| {
+                entry.boundary_class
+                    == BlueBrainHhPrerequisiteBoundaryClass::PrerequisiteAlreadySatisfied
+            })
+            .count();
+        let missing = CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_MAP
+            .iter()
+            .filter(|entry| {
+                entry.boundary_class == BlueBrainHhPrerequisiteBoundaryClass::PrerequisiteMissing
+            })
+            .count();
+        assert!(satisfied >= 1);
+        assert!(missing >= 1);
+
+        assert!(CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_MAP
+            .iter()
+            .all(|entry| {
+                entry.relation == BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum
+            }));
+        assert!(CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_MAP
+            .iter()
+            .any(|entry| entry.surface_id == "candidate_input_contract_missing"
+                && entry.missing
+                && entry.io_allowance
+                    == BlueBrainHhCandidateIoAllowanceClass::LaterRescopeSimulationDiagnosticInputOnly));
+        assert!(CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_MAP
+            .iter()
+            .any(
+                |entry| entry.surface_id == "candidate_output_contract_missing"
+                    && entry.missing
+                    && entry.io_allowance
+                        == BlueBrainHhCandidateIoAllowanceClass::DiagnosticOnlyOutputOnly
+            ));
+    }
+
+    #[test]
+    fn canonical_hh_prerequisite_map_blocks_productive_authority_and_scope_expansion() {
+        let simulation_allowance = CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_MAP
+            .iter()
+            .find(|entry| {
+                entry.boundary_class
+                    == BlueBrainHhPrerequisiteBoundaryClass::SimulationOnlyHhAllowance
+            })
+            .expect("simulation-only HH allowance entry must exist");
+        assert!(simulation_allowance.simulation_only_hh_allowed_after_re_scope);
+        assert!(!simulation_allowance.productive_hh_forbidden);
+
+        let forbidden_productive = CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_MAP
+            .iter()
+            .find(|entry| {
+                entry.boundary_class
+                    == BlueBrainHhPrerequisiteBoundaryClass::ForbiddenProductiveHhPath
+            })
+            .expect("forbidden productive HH path entry must exist");
+        assert!(forbidden_productive.productive_hh_forbidden);
+        assert!(!forbidden_productive.simulation_only_hh_allowed_after_re_scope);
+
+        let runtime_boundary = CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_MAP
+            .iter()
+            .find(|entry| {
+                entry.boundary_class
+                    == BlueBrainHhPrerequisiteBoundaryClass::HardRuntimeSelectionReferenceBoundary
+            })
+            .expect("runtime/selection/reference boundary entry must exist");
+        assert!(runtime_boundary.runtime_may_read_bounded_diagnostic_or_advisory_only);
+        assert!(!runtime_boundary.selection_may_read_as_action_authority);
+        assert!(!runtime_boundary.reference_context_mutation_allowed);
+
+        for entry in CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_MAP {
+            assert!(!entry.hh_state_is_contract_state);
+            assert!(!entry.hh_output_is_operative_authority);
+            assert!(!entry.hh_diagnostic_output_auto_advisory_support);
+            assert!(!entry.opens_hh_implementation_now);
+            assert!(!entry.opens_new_model_deepening_now);
+            assert!(!entry.opens_global_hh_platform);
+            assert!(!entry.opens_other_hh_candidates);
+            assert!(entry.no_direct_action_trigger);
+            assert!(entry.no_direct_execution_trigger);
+            assert!(entry.no_direct_retry_trigger);
+            assert!(entry.no_direct_memory_commit);
+            assert!(entry.no_direct_compute_invocation);
+            assert!(entry.no_safety_override);
+        }
+    }
+
+    #[test]
     fn canonical_hh_readiness_doc_matches_code_boundaries() {
         let doc = include_str!("../../../docs/blue_brain_hh_readiness_decision_map_v1.md");
         assert!(doc.contains("HH not justified"));
@@ -16993,5 +17432,32 @@ mod tests {
         assert!(doc.contains("no safety override"));
         assert!(doc.contains("no direct HH implementation"));
         assert!(doc.contains("no productive HH use"));
+    }
+
+    #[test]
+    fn canonical_hh_prerequisite_doc_matches_code_boundaries() {
+        let doc = include_str!("../../../docs/blue_brain_hh_prerequisite_map_v1.md");
+        assert!(doc.contains("HH-prerequisite map"));
+        assert!(doc.contains("Basal Ganglia ↔ Cerebellum"));
+        assert!(doc.contains("prerequisite already satisfied"));
+        assert!(doc.contains("prerequisite missing"));
+        assert!(doc.contains("hard contract boundary"));
+        assert!(doc.contains("hard guard boundary"));
+        assert!(doc.contains("hard runtime/selection/reference boundary"));
+        assert!(doc.contains("simulation-only HH allowance"));
+        assert!(doc.contains("forbidden productive HH path"));
+        assert!(doc.contains("non-canonical/internal-only HH path"));
+        assert!(doc.contains("direct action selection"));
+        assert!(doc.contains("direct execution trigger"));
+        assert!(doc.contains("direct retry trigger"));
+        assert!(doc.contains("direct memory commit"));
+        assert!(doc.contains("direct compute invocation"));
+        assert!(doc.contains("safety override"));
+        assert!(doc.contains("HH state is not Contract state"));
+        assert!(doc.contains("HH output is not operative authority"));
+        assert!(doc.contains("HH diagnostic output is not automatically advisory support"));
+        assert!(doc.contains("no direct HH implementation"));
+        assert!(doc.contains("no productive HH use"));
+        assert!(doc.contains("no global HH platform"));
     }
 }
