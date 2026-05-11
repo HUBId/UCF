@@ -2400,6 +2400,279 @@ pub const CANONICAL_BLUE_BRAIN_MODEL_BOUNDARY_MAP: [BlueBrainCanonicalModelBound
     ),
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainStructuralClosureClass {
+    CanonicalActiveRegion,
+    CanonicalImplementedRelation,
+    CanonicalMediatedRelation,
+    CanonicalModelBoundary,
+    DeferredBlockedNonActive,
+    NonCanonicalInternalOnly,
+}
+
+pub const CANONICAL_BLUE_BRAIN_STRUCTURAL_CLOSURE_CLASS_MAP: [BlueBrainStructuralClosureClass; 6] = [
+    BlueBrainStructuralClosureClass::CanonicalActiveRegion,
+    BlueBrainStructuralClosureClass::CanonicalImplementedRelation,
+    BlueBrainStructuralClosureClass::CanonicalMediatedRelation,
+    BlueBrainStructuralClosureClass::CanonicalModelBoundary,
+    BlueBrainStructuralClosureClass::DeferredBlockedNonActive,
+    BlueBrainStructuralClosureClass::NonCanonicalInternalOnly,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainStructuralClosureMapEntry {
+    pub surface_id: &'static str,
+    pub closure_class: BlueBrainStructuralClosureClass,
+    pub region: Option<BlueBrainAnatomicalRegionClass>,
+    pub relation: Option<BlueBrainInterRegionArchitecturePair>,
+    pub model_mode: Option<BlueBrainCanonicalModelBoundaryMode>,
+    pub maintenance_hardened: bool,
+    pub advisory_only: bool,
+    pub diagnostic_only_or_deferred: bool,
+    pub no_direct_action_trigger: bool,
+    pub no_direct_execution_trigger: bool,
+    pub no_direct_retry_trigger: bool,
+    pub no_direct_memory_commit: bool,
+    pub no_direct_compute_invocation: bool,
+    pub no_safety_override: bool,
+    pub opens_new_region: bool,
+    pub opens_new_model_deepening: bool,
+    pub global_model_platform: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+const fn blue_brain_structural_closure_entry(
+    surface_id: &'static str,
+    closure_class: BlueBrainStructuralClosureClass,
+    region: Option<BlueBrainAnatomicalRegionClass>,
+    relation: Option<BlueBrainInterRegionArchitecturePair>,
+    model_mode: Option<BlueBrainCanonicalModelBoundaryMode>,
+    maintenance_hardened: bool,
+    advisory_only: bool,
+    diagnostic_only_or_deferred: bool,
+) -> BlueBrainStructuralClosureMapEntry {
+    BlueBrainStructuralClosureMapEntry {
+        surface_id,
+        closure_class,
+        region,
+        relation,
+        model_mode,
+        maintenance_hardened,
+        advisory_only,
+        diagnostic_only_or_deferred,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+        opens_new_region: false,
+        opens_new_model_deepening: false,
+        global_model_platform: false,
+    }
+}
+
+/// Canonical structural closure map for the Blue-Brain A4 closeout sweep.
+///
+/// This is a compact roll-up over the separately canonical region inventory,
+/// IR1 relation map, model-boundary map, MD1/MD2 first deepening, and MD3
+/// second deepening. It is deliberately status/guard evidence only: it creates
+/// no new region, no new relation implementation, no new model deepening, no
+/// planner/agent/policy/retry logic, no compute-core work, and no global
+/// neurodynamics platform.
+pub const CANONICAL_BLUE_BRAIN_STRUCTURAL_CLOSURE_MAP: [BlueBrainStructuralClosureMapEntry; 19] = [
+    blue_brain_structural_closure_entry(
+        "hippocampus_region",
+        BlueBrainStructuralClosureClass::CanonicalActiveRegion,
+        Some(BlueBrainAnatomicalRegionClass::Hippocampus),
+        None,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        true,
+        false,
+    ),
+    blue_brain_structural_closure_entry(
+        "amygdala_region",
+        BlueBrainStructuralClosureClass::CanonicalActiveRegion,
+        Some(BlueBrainAnatomicalRegionClass::Amygdala),
+        None,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        true,
+        false,
+    ),
+    blue_brain_structural_closure_entry(
+        "thalamus_region",
+        BlueBrainStructuralClosureClass::CanonicalActiveRegion,
+        Some(BlueBrainAnatomicalRegionClass::Thalamus),
+        None,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        true,
+        false,
+    ),
+    blue_brain_structural_closure_entry(
+        "basal_ganglia_region",
+        BlueBrainStructuralClosureClass::CanonicalActiveRegion,
+        Some(BlueBrainAnatomicalRegionClass::BasalGanglia),
+        None,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        true,
+        false,
+    ),
+    blue_brain_structural_closure_entry(
+        "cerebellum_region",
+        BlueBrainStructuralClosureClass::CanonicalActiveRegion,
+        Some(BlueBrainAnatomicalRegionClass::Cerebellum),
+        None,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        true,
+        false,
+    ),
+    blue_brain_structural_closure_entry(
+        "hypothalamus_region",
+        BlueBrainStructuralClosureClass::CanonicalActiveRegion,
+        Some(BlueBrainAnatomicalRegionClass::Hypothalamus),
+        None,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        true,
+        false,
+    ),
+    blue_brain_structural_closure_entry(
+        "amygdala_thalamus_relation",
+        BlueBrainStructuralClosureClass::CanonicalImplementedRelation,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaThalamus),
+        Some(BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode),
+        true,
+        true,
+        false,
+    ),
+    blue_brain_structural_closure_entry(
+        "amygdala_hypothalamus_relation",
+        BlueBrainStructuralClosureClass::CanonicalImplementedRelation,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaHypothalamus),
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        true,
+        false,
+    ),
+    blue_brain_structural_closure_entry(
+        "thalamus_hypothalamus_relation",
+        BlueBrainStructuralClosureClass::CanonicalImplementedRelation,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::ThalamusHypothalamus),
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        true,
+        false,
+    ),
+    blue_brain_structural_closure_entry(
+        "hippocampus_thalamus_relation",
+        BlueBrainStructuralClosureClass::CanonicalMediatedRelation,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::HippocampusThalamus),
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        true,
+        false,
+    ),
+    blue_brain_structural_closure_entry(
+        "amygdala_basal_ganglia_relation",
+        BlueBrainStructuralClosureClass::CanonicalMediatedRelation,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia),
+        Some(BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode),
+        true,
+        true,
+        false,
+    ),
+    blue_brain_structural_closure_entry(
+        "hippocampus_hypothalamus_relation",
+        BlueBrainStructuralClosureClass::CanonicalMediatedRelation,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::HippocampusHypothalamus),
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        true,
+        false,
+    ),
+    blue_brain_structural_closure_entry(
+        "basal_ganglia_hypothalamus_relation",
+        BlueBrainStructuralClosureClass::CanonicalMediatedRelation,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaHypothalamus),
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        true,
+        false,
+    ),
+    blue_brain_structural_closure_entry(
+        "deferred_blocked_architecture_lanes",
+        BlueBrainStructuralClosureClass::DeferredBlockedNonActive,
+        None,
+        None,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        true,
+        true,
+    ),
+    blue_brain_structural_closure_entry(
+        "region_abstract_current_mode_boundary",
+        BlueBrainStructuralClosureClass::CanonicalModelBoundary,
+        None,
+        None,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        true,
+        false,
+    ),
+    blue_brain_structural_closure_entry(
+        "bounded_kuramoto_like_boundary",
+        BlueBrainStructuralClosureClass::CanonicalModelBoundary,
+        None,
+        None,
+        Some(BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode),
+        true,
+        true,
+        false,
+    ),
+    blue_brain_structural_closure_entry(
+        "hh_simulation_diagnostic_only_boundary",
+        BlueBrainStructuralClosureClass::CanonicalModelBoundary,
+        None,
+        None,
+        Some(BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode),
+        true,
+        false,
+        true,
+    ),
+    blue_brain_structural_closure_entry(
+        "later_hh_deferred_boundary",
+        BlueBrainStructuralClosureClass::DeferredBlockedNonActive,
+        None,
+        None,
+        Some(BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode),
+        true,
+        false,
+        true,
+    ),
+    blue_brain_structural_closure_entry(
+        "non_canonical_internal_only_shadow_surfaces",
+        BlueBrainStructuralClosureClass::NonCanonicalInternalOnly,
+        None,
+        None,
+        Some(BlueBrainCanonicalModelBoundaryMode::NonCanonicalInternalOnlyModelPath),
+        true,
+        false,
+        true,
+    ),
+];
+
 pub fn blue_brain_canonical_inter_region_relation_for_pair(
     pair: BlueBrainInterRegionArchitecturePair,
 ) -> BlueBrainCanonicalInterRegionRelationMapEntry {
@@ -15332,6 +15605,64 @@ mod tests {
         assert!(readme.contains(
             "docs/blue_brain_hypothalamus_minimal_bounded_integration_serie_br6_prompt2_v1.md"
         ));
+    }
+
+    #[test]
+    fn structural_closure_map_rolls_up_regions_relations_models_and_guards() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_STRUCTURAL_CLOSURE_CLASS_MAP.len(), 6);
+        assert_eq!(CANONICAL_BLUE_BRAIN_STRUCTURAL_CLOSURE_MAP.len(), 19);
+
+        let active_regions = CANONICAL_BLUE_BRAIN_STRUCTURAL_CLOSURE_MAP
+            .iter()
+            .filter(|entry| {
+                entry.closure_class == BlueBrainStructuralClosureClass::CanonicalActiveRegion
+            })
+            .count();
+        assert_eq!(active_regions, 6);
+
+        let implemented_relations = CANONICAL_BLUE_BRAIN_STRUCTURAL_CLOSURE_MAP
+            .iter()
+            .filter(|entry| {
+                entry.closure_class == BlueBrainStructuralClosureClass::CanonicalImplementedRelation
+            })
+            .count();
+        assert_eq!(implemented_relations, 3);
+
+        let mediated_relations = CANONICAL_BLUE_BRAIN_STRUCTURAL_CLOSURE_MAP
+            .iter()
+            .filter(|entry| {
+                entry.closure_class == BlueBrainStructuralClosureClass::CanonicalMediatedRelation
+            })
+            .count();
+        assert_eq!(mediated_relations, 4);
+
+        assert!(CANONICAL_BLUE_BRAIN_STRUCTURAL_CLOSURE_MAP
+            .iter()
+            .any(|entry| {
+                entry.surface_id == "deferred_blocked_architecture_lanes"
+                    && entry.closure_class
+                        == BlueBrainStructuralClosureClass::DeferredBlockedNonActive
+            }));
+        assert!(CANONICAL_BLUE_BRAIN_STRUCTURAL_CLOSURE_MAP
+            .iter()
+            .any(|entry| {
+                entry.surface_id == "non_canonical_internal_only_shadow_surfaces"
+                    && entry.closure_class
+                        == BlueBrainStructuralClosureClass::NonCanonicalInternalOnly
+            }));
+
+        for entry in CANONICAL_BLUE_BRAIN_STRUCTURAL_CLOSURE_MAP {
+            assert!(entry.maintenance_hardened);
+            assert!(entry.no_direct_action_trigger);
+            assert!(entry.no_direct_execution_trigger);
+            assert!(entry.no_direct_retry_trigger);
+            assert!(entry.no_direct_memory_commit);
+            assert!(entry.no_direct_compute_invocation);
+            assert!(entry.no_safety_override);
+            assert!(!entry.opens_new_region);
+            assert!(!entry.opens_new_model_deepening);
+            assert!(!entry.global_model_platform);
+        }
     }
 
     #[test]

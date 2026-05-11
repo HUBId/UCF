@@ -187,6 +187,7 @@ Referenzpunkte für die technische Scope-Grenze:
 - Canonical second-deepening implementation map: `docs/blue_brain_md3_second_model_deepening_implementation_line_v1.md`
 - Canonical MD3 final readiness/system closure: `docs/blue_brain_md3_readiness_sweep_system_closure_v1.md`
 - Canonical post-MD3 maintenance/decision pass: `docs/blue_brain_post_md3_maintenance_decision_pass_v1.md`
+- Canonical structural closure map: `docs/blue_brain_structural_closure_map_v1.md`
 
 
 ## 2.2) Audit-Baseline (Blue-Brain / aktuelle post-BR6 Konsolidierungsevidenz) — 2026-05-09
