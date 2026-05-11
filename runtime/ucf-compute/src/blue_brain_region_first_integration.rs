@@ -2522,6 +2522,552 @@ pub const CANONICAL_BLUE_BRAIN_MODEL_BOUNDARY_MAP: [BlueBrainCanonicalModelBound
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHhReadinessClass {
+    HhNotJustified,
+    HhTheoreticallyPlausibleLater,
+    HhSimulationOnlyDiagnosticOnlyCandidate,
+    HhBlockedByCurrentArchitecture,
+    AbstractSufficient,
+    KuramotoLikeStillPreferable,
+    NonCanonicalInternalOnlyHhPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_HH_READINESS_CLASS_MAP: [BlueBrainHhReadinessClass; 7] = [
+    BlueBrainHhReadinessClass::HhNotJustified,
+    BlueBrainHhReadinessClass::HhTheoreticallyPlausibleLater,
+    BlueBrainHhReadinessClass::HhSimulationOnlyDiagnosticOnlyCandidate,
+    BlueBrainHhReadinessClass::HhBlockedByCurrentArchitecture,
+    BlueBrainHhReadinessClass::AbstractSufficient,
+    BlueBrainHhReadinessClass::KuramotoLikeStillPreferable,
+    BlueBrainHhReadinessClass::NonCanonicalInternalOnlyHhPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHhReadinessSurfaceKind {
+    RegionSurface,
+    RelationSurface,
+    SelectiveModelDeepeningSurface,
+    DynamicsReferenceSurface,
+    PrerequisiteBoundary,
+    NonCanonicalInternalOnlySurface,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainHhReadinessDecisionEntry {
+    pub surface_id: &'static str,
+    pub surface_kind: BlueBrainHhReadinessSurfaceKind,
+    pub region: Option<BlueBrainAnatomicalRegionClass>,
+    pub relation: Option<BlueBrainInterRegionArchitecturePair>,
+    pub primary_class: BlueBrainHhReadinessClass,
+    pub model_boundary_mode: Option<BlueBrainCanonicalModelBoundaryMode>,
+    pub current_productive_hh_allowed: bool,
+    pub abstract_functional_default_preserved: bool,
+    pub kuramoto_like_preferred_for_current_scope: bool,
+    pub simulation_or_diagnostic_only: bool,
+    pub later_re_scope_required: bool,
+    pub blocked_by_current_architecture: bool,
+    pub non_canonical_internal_only: bool,
+    pub requires_explicit_evidence_fixture_contract_gate: bool,
+    pub no_direct_action_trigger: bool,
+    pub no_direct_execution_trigger: bool,
+    pub no_direct_retry_trigger: bool,
+    pub no_direct_memory_commit: bool,
+    pub no_direct_compute_invocation: bool,
+    pub no_safety_override: bool,
+    pub opens_new_model_deepening_now: bool,
+    pub opens_global_model_platform: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+const fn blue_brain_hh_readiness_decision_entry(
+    surface_id: &'static str,
+    surface_kind: BlueBrainHhReadinessSurfaceKind,
+    region: Option<BlueBrainAnatomicalRegionClass>,
+    relation: Option<BlueBrainInterRegionArchitecturePair>,
+    primary_class: BlueBrainHhReadinessClass,
+    model_boundary_mode: Option<BlueBrainCanonicalModelBoundaryMode>,
+    abstract_functional_default_preserved: bool,
+    kuramoto_like_preferred_for_current_scope: bool,
+    simulation_or_diagnostic_only: bool,
+    later_re_scope_required: bool,
+    blocked_by_current_architecture: bool,
+    non_canonical_internal_only: bool,
+    requires_explicit_evidence_fixture_contract_gate: bool,
+) -> BlueBrainHhReadinessDecisionEntry {
+    BlueBrainHhReadinessDecisionEntry {
+        surface_id,
+        surface_kind,
+        region,
+        relation,
+        primary_class,
+        model_boundary_mode,
+        current_productive_hh_allowed: false,
+        abstract_functional_default_preserved,
+        kuramoto_like_preferred_for_current_scope,
+        simulation_or_diagnostic_only,
+        later_re_scope_required,
+        blocked_by_current_architecture,
+        non_canonical_internal_only,
+        requires_explicit_evidence_fixture_contract_gate,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+        opens_new_model_deepening_now: false,
+        opens_global_model_platform: false,
+    }
+}
+
+/// Canonical HH-readiness decision map for the post-structural-closure audit.
+///
+/// This map is a prerequisite and boundary analysis only. It classifies where a
+/// later Hodgkin-Huxley re-scope might be theoretically plausible, where HH is
+/// not justified, where abstract or bounded Kuramoto-like modes remain the
+/// correct current layer, and where HH stays simulation-only, diagnostic-only,
+/// blocked, or non-canonical. It does not implement HH, add a third model
+/// deepening, change runtime/selection/reference/execution authority, invoke
+/// compute, or create a global neurodynamics platform.
+pub const CANONICAL_BLUE_BRAIN_HH_READINESS_DECISION_MAP: [BlueBrainHhReadinessDecisionEntry; 29] = [
+    blue_brain_hh_readiness_decision_entry(
+        "hippocampus_region_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RegionSurface,
+        Some(BlueBrainAnatomicalRegionClass::Hippocampus),
+        None,
+        BlueBrainHhReadinessClass::AbstractSufficient,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "amygdala_region_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RegionSurface,
+        Some(BlueBrainAnatomicalRegionClass::Amygdala),
+        None,
+        BlueBrainHhReadinessClass::AbstractSufficient,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "thalamus_region_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RegionSurface,
+        Some(BlueBrainAnatomicalRegionClass::Thalamus),
+        None,
+        BlueBrainHhReadinessClass::AbstractSufficient,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "basal_ganglia_region_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RegionSurface,
+        Some(BlueBrainAnatomicalRegionClass::BasalGanglia),
+        None,
+        BlueBrainHhReadinessClass::AbstractSufficient,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "cerebellum_region_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RegionSurface,
+        Some(BlueBrainAnatomicalRegionClass::Cerebellum),
+        None,
+        BlueBrainHhReadinessClass::HhSimulationOnlyDiagnosticOnlyCandidate,
+        Some(BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode),
+        true,
+        false,
+        true,
+        true,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "hypothalamus_region_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RegionSurface,
+        Some(BlueBrainAnatomicalRegionClass::Hypothalamus),
+        None,
+        BlueBrainHhReadinessClass::HhSimulationOnlyDiagnosticOnlyCandidate,
+        Some(BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode),
+        true,
+        false,
+        true,
+        true,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "hippocampus_amygdala_relation_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::HippocampusAmygdala),
+        BlueBrainHhReadinessClass::HhNotJustified,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "hippocampus_thalamus_relation_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::HippocampusThalamus),
+        BlueBrainHhReadinessClass::AbstractSufficient,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "hippocampus_basal_ganglia_relation_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::HippocampusBasalGanglia),
+        BlueBrainHhReadinessClass::HhBlockedByCurrentArchitecture,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "hippocampus_cerebellum_relation_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::HippocampusCerebellum),
+        BlueBrainHhReadinessClass::HhBlockedByCurrentArchitecture,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "amygdala_thalamus_relation_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::SelectiveModelDeepeningSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaThalamus),
+        BlueBrainHhReadinessClass::KuramotoLikeStillPreferable,
+        Some(BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode),
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "amygdala_basal_ganglia_relation_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::SelectiveModelDeepeningSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia),
+        BlueBrainHhReadinessClass::KuramotoLikeStillPreferable,
+        Some(BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode),
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "amygdala_cerebellum_relation_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaCerebellum),
+        BlueBrainHhReadinessClass::HhBlockedByCurrentArchitecture,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "thalamus_basal_ganglia_relation_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::ThalamusBasalGanglia),
+        BlueBrainHhReadinessClass::HhBlockedByCurrentArchitecture,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "thalamus_cerebellum_relation_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::ThalamusCerebellum),
+        BlueBrainHhReadinessClass::HhBlockedByCurrentArchitecture,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "basal_ganglia_cerebellum_relation_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum),
+        BlueBrainHhReadinessClass::HhTheoreticallyPlausibleLater,
+        Some(BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode),
+        true,
+        false,
+        true,
+        true,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "hippocampus_hypothalamus_relation_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::HippocampusHypothalamus),
+        BlueBrainHhReadinessClass::AbstractSufficient,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "amygdala_hypothalamus_relation_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaHypothalamus),
+        BlueBrainHhReadinessClass::AbstractSufficient,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "thalamus_hypothalamus_relation_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::ThalamusHypothalamus),
+        BlueBrainHhReadinessClass::AbstractSufficient,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "basal_ganglia_hypothalamus_relation_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaHypothalamus),
+        BlueBrainHhReadinessClass::AbstractSufficient,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "cerebellum_hypothalamus_relation_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::CerebellumHypothalamus),
+        BlueBrainHhReadinessClass::HhBlockedByCurrentArchitecture,
+        Some(BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode),
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "bb12_bounded_advisory_dynamics_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::DynamicsReferenceSurface,
+        None,
+        None,
+        BlueBrainHhReadinessClass::KuramotoLikeStillPreferable,
+        Some(BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode),
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "bb10_hh_diagnostic_surface_hh_readiness",
+        BlueBrainHhReadinessSurfaceKind::DynamicsReferenceSurface,
+        None,
+        None,
+        BlueBrainHhReadinessClass::HhSimulationOnlyDiagnosticOnlyCandidate,
+        Some(BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode),
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "cerebellum_microcircuit_hh_diagnostic_readiness",
+        BlueBrainHhReadinessSurfaceKind::DynamicsReferenceSurface,
+        Some(BlueBrainAnatomicalRegionClass::Cerebellum),
+        None,
+        BlueBrainHhReadinessClass::HhSimulationOnlyDiagnosticOnlyCandidate,
+        Some(BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode),
+        true,
+        false,
+        true,
+        true,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "hypothalamus_hh_diagnostic_readiness",
+        BlueBrainHhReadinessSurfaceKind::DynamicsReferenceSurface,
+        Some(BlueBrainAnatomicalRegionClass::Hypothalamus),
+        None,
+        BlueBrainHhReadinessClass::HhSimulationOnlyDiagnosticOnlyCandidate,
+        Some(BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode),
+        true,
+        false,
+        true,
+        true,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "later_selective_hh_re_scope_prerequisite_gate",
+        BlueBrainHhReadinessSurfaceKind::PrerequisiteBoundary,
+        None,
+        None,
+        BlueBrainHhReadinessClass::HhTheoreticallyPlausibleLater,
+        Some(BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode),
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        true,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "runtime_selection_reference_execution_hh_authority_boundary",
+        BlueBrainHhReadinessSurfaceKind::PrerequisiteBoundary,
+        None,
+        None,
+        BlueBrainHhReadinessClass::HhBlockedByCurrentArchitecture,
+        None,
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "compute_core_hh_authority_boundary",
+        BlueBrainHhReadinessSurfaceKind::PrerequisiteBoundary,
+        None,
+        None,
+        BlueBrainHhReadinessClass::HhBlockedByCurrentArchitecture,
+        None,
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+    ),
+    blue_brain_hh_readiness_decision_entry(
+        "non_canonical_internal_only_hh_path_readiness",
+        BlueBrainHhReadinessSurfaceKind::NonCanonicalInternalOnlySurface,
+        None,
+        None,
+        BlueBrainHhReadinessClass::NonCanonicalInternalOnlyHhPath,
+        Some(BlueBrainCanonicalModelBoundaryMode::NonCanonicalInternalOnlyModelPath),
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+    ),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainStructuralClosureClass {
     CanonicalActiveRegion,
     CanonicalImplementedRelation,
@@ -15957,6 +16503,109 @@ mod tests {
         assert!(doc.contains("HH is nowhere a current productive mode"));
         assert!(doc.contains("model state is not contract state"));
         assert!(doc.contains("model output is not direct authority"));
+        assert!(doc.contains("no global model platform"));
+    }
+
+    #[test]
+    fn canonical_hh_readiness_map_separates_all_readiness_classes() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_HH_READINESS_CLASS_MAP.len(), 7);
+        assert_eq!(CANONICAL_BLUE_BRAIN_HH_READINESS_DECISION_MAP.len(), 29);
+
+        for class in CANONICAL_BLUE_BRAIN_HH_READINESS_CLASS_MAP {
+            assert!(CANONICAL_BLUE_BRAIN_HH_READINESS_DECISION_MAP
+                .iter()
+                .any(|entry| entry.primary_class == class));
+        }
+
+        let region_entries: Vec<_> = CANONICAL_BLUE_BRAIN_HH_READINESS_DECISION_MAP
+            .iter()
+            .filter(|entry| entry.surface_kind == BlueBrainHhReadinessSurfaceKind::RegionSurface)
+            .collect();
+        assert_eq!(region_entries.len(), 6);
+        assert_eq!(
+            region_entries
+                .iter()
+                .filter(|entry| entry.primary_class == BlueBrainHhReadinessClass::AbstractSufficient)
+                .count(),
+            4
+        );
+        assert_eq!(
+            region_entries
+                .iter()
+                .filter(|entry| {
+                    entry.primary_class
+                        == BlueBrainHhReadinessClass::HhSimulationOnlyDiagnosticOnlyCandidate
+                })
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn canonical_hh_readiness_keeps_current_modes_and_guards_closed() {
+        for entry in CANONICAL_BLUE_BRAIN_HH_READINESS_DECISION_MAP {
+            assert!(!entry.current_productive_hh_allowed);
+            assert!(entry.no_direct_action_trigger);
+            assert!(entry.no_direct_execution_trigger);
+            assert!(entry.no_direct_retry_trigger);
+            assert!(entry.no_direct_memory_commit);
+            assert!(entry.no_direct_compute_invocation);
+            assert!(entry.no_safety_override);
+            assert!(!entry.opens_new_model_deepening_now);
+            assert!(!entry.opens_global_model_platform);
+        }
+
+        let kuramoto_preferred: Vec<_> = CANONICAL_BLUE_BRAIN_HH_READINESS_DECISION_MAP
+            .iter()
+            .filter(|entry| {
+                entry.primary_class == BlueBrainHhReadinessClass::KuramotoLikeStillPreferable
+            })
+            .collect();
+        assert_eq!(kuramoto_preferred.len(), 3);
+        assert!(kuramoto_preferred.iter().all(|entry| {
+            entry.model_boundary_mode
+                == Some(BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode)
+        }));
+        assert!(kuramoto_preferred
+            .iter()
+            .all(|entry| entry.kuramoto_like_preferred_for_current_scope));
+
+        let later_hh: Vec<_> = CANONICAL_BLUE_BRAIN_HH_READINESS_DECISION_MAP
+            .iter()
+            .filter(|entry| {
+                entry.primary_class == BlueBrainHhReadinessClass::HhTheoreticallyPlausibleLater
+            })
+            .collect();
+        assert_eq!(later_hh.len(), 2);
+        assert!(later_hh.iter().all(|entry| entry.later_re_scope_required));
+        assert!(later_hh
+            .iter()
+            .all(|entry| entry.requires_explicit_evidence_fixture_contract_gate));
+    }
+
+    #[test]
+    fn canonical_hh_readiness_doc_matches_code_boundaries() {
+        let doc = include_str!("../../../docs/blue_brain_hh_readiness_decision_map_v1.md");
+        assert!(doc.contains("HH not justified"));
+        assert!(doc.contains("HH theoretically plausible later"));
+        assert!(doc.contains("HH simulation-only/diagnostic-only candidate"));
+        assert!(doc.contains("HH blocked by current architecture"));
+        assert!(doc.contains("abstract sufficient"));
+        assert!(doc.contains("Kuramoto-like still preferable"));
+        assert!(doc.contains("non-canonical/internal-only HH path"));
+        assert!(doc.contains("Hippocampus | region | abstract sufficient"));
+        assert!(doc.contains(
+            "Amygdala ↔ Thalamus | selective model deepening | Kuramoto-like still preferable"
+        ));
+        assert!(doc
+            .contains("Basal Ganglia ↔ Cerebellum | relation | HH theoretically plausible later"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("no implicit third model deepening"));
         assert!(doc.contains("no global model platform"));
     }
 }
