@@ -102,7 +102,7 @@ This map explicitly does not allow:
 
 The HH-Readiness Pack can now proceed only through narrow prerequisites:
 
-1. Define a fixture-free prerequisite checklist for the single `Basal Ganglia ↔ Cerebellum` relation candidate.
+1. Define a fixture-free prerequisite checklist for the single `Basal Ganglia ↔ Cerebellum` relation candidate. Prompt 3 records that prerequisite line in `docs/blue_brain_hh_prerequisite_map_v1.md`.
 2. Specify allowed diagnostic-only HH input/output vocabulary without implementing it.
 3. Prove that any later diagnostic artifact cannot affect Runtime/Selection/Reference/Execution contracts.
 4. Reconcile the candidate wording with BB10, BB12, BB16, IR1 and the canonical model-boundary map before any implementation re-scope is considered.
