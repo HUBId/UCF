@@ -113,3 +113,8 @@ This closure explicitly does not allow:
 ## 8) Maintenance conclusion
 
 Maintenance is sufficient now. A later conscious HH re-scope remains thinkable only for the single `Basal Ganglia ↔ Cerebellum` relation and only as deterministic simulation-only/diagnostic-only evidence. That future re-scope would first need to close the relation, contract, fixture, determinism, performance and consumer-boundary gaps above. Until then, HH remains closed/deferred.
+
+## 9) Candidate scope handoff
+
+The follow-up preparation scope line is `docs/blue_brain_hh_candidate_scope_map_v1.md` and `CANONICAL_BLUE_BRAIN_HH_CANDIDATE_SCOPE_MAP`. It finalizes `Basal Ganglia ↔ Cerebellum` as relation-level only, not-yet-implemented, simulation-only/diagnostic-only only and no productive mode. It adds no HH implementation, no network simulation, no global HH platform, no Runtime/Selection/Execution authority, no compute-core reopening and no additional HH candidate.
+

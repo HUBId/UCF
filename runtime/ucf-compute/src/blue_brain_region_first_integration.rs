@@ -3905,6 +3905,157 @@ pub const CANONICAL_BLUE_BRAIN_HH_READINESS_CLOSURE_MAP: [BlueBrainHhReadinessCl
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHhCandidateScopeClass {
+    FinalSingleRelationCandidate,
+    ScopeInvariant,
+    ModelBoundarySeparation,
+    NonGoalBoundary,
+    NextPreparationStep,
+}
+
+pub const CANONICAL_BLUE_BRAIN_HH_CANDIDATE_SCOPE_CLASS_MAP: [BlueBrainHhCandidateScopeClass; 5] = [
+    BlueBrainHhCandidateScopeClass::FinalSingleRelationCandidate,
+    BlueBrainHhCandidateScopeClass::ScopeInvariant,
+    BlueBrainHhCandidateScopeClass::ModelBoundarySeparation,
+    BlueBrainHhCandidateScopeClass::NonGoalBoundary,
+    BlueBrainHhCandidateScopeClass::NextPreparationStep,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainHhCandidateScopeMapEntry {
+    pub surface_id: &'static str,
+    pub scope_class: BlueBrainHhCandidateScopeClass,
+    pub relation: BlueBrainInterRegionArchitecturePair,
+    pub architecture_relation_class: BlueBrainInterRegionArchitectureRelationClass,
+    pub model_boundary_mode: Option<BlueBrainCanonicalModelBoundaryMode>,
+    pub scope_statement: &'static str,
+    pub boundary_statement: &'static str,
+    pub final_candidate: bool,
+    pub relation_level_only: bool,
+    pub not_yet_implemented: bool,
+    pub simulation_only_diagnostic_only: bool,
+    pub current_productive_hh_allowed: bool,
+    pub separates_from_kuramoto_like: bool,
+    pub separates_from_abstract_current_mode: bool,
+    pub opens_network_simulation: bool,
+    pub opens_global_hh_platform: bool,
+    pub opens_runtime_selection_execution_authority: bool,
+    pub opens_compute_core_work: bool,
+    pub opens_new_region_functionality: bool,
+    pub opens_planner_agent_policy_retry_work: bool,
+    pub opens_additional_hh_candidates: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+const fn blue_brain_hh_candidate_scope_map_entry(
+    surface_id: &'static str,
+    scope_class: BlueBrainHhCandidateScopeClass,
+    model_boundary_mode: Option<BlueBrainCanonicalModelBoundaryMode>,
+    scope_statement: &'static str,
+    boundary_statement: &'static str,
+    final_candidate: bool,
+    separates_from_kuramoto_like: bool,
+    separates_from_abstract_current_mode: bool,
+) -> BlueBrainHhCandidateScopeMapEntry {
+    BlueBrainHhCandidateScopeMapEntry {
+        surface_id,
+        scope_class,
+        relation: BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum,
+        architecture_relation_class:
+            BlueBrainInterRegionArchitectureRelationClass::ExecutionInterfaceMediatedRelation,
+        model_boundary_mode,
+        scope_statement,
+        boundary_statement,
+        final_candidate,
+        relation_level_only: true,
+        not_yet_implemented: true,
+        simulation_only_diagnostic_only: true,
+        current_productive_hh_allowed: false,
+        separates_from_kuramoto_like,
+        separates_from_abstract_current_mode,
+        opens_network_simulation: false,
+        opens_global_hh_platform: false,
+        opens_runtime_selection_execution_authority: false,
+        opens_compute_core_work: false,
+        opens_new_region_functionality: false,
+        opens_planner_agent_policy_retry_work: false,
+        opens_additional_hh_candidates: false,
+    }
+}
+
+/// Canonical HH-candidate scope map for the post-closure preparation block.
+///
+/// This map does not implement HH. It freezes what a later HH re-scope would
+/// mean for the only isolated candidate: a relation-level, not-yet-implemented,
+/// simulation-only/diagnostic-only `Basal Ganglia ↔ Cerebellum` preparation
+/// line. It also records what the line does not mean: no network simulation,
+/// no global HH platform, no runtime/selection/execution authority, no
+/// compute-core reopening, no new region functionality, and no planner, agent,
+/// policy or retry work.
+pub const CANONICAL_BLUE_BRAIN_HH_CANDIDATE_SCOPE_MAP: [BlueBrainHhCandidateScopeMapEntry; 6] = [
+    blue_brain_hh_candidate_scope_map_entry(
+        "basal_ganglia_cerebellum_final_relation_candidate",
+        BlueBrainHhCandidateScopeClass::FinalSingleRelationCandidate,
+        Some(BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode),
+        "the final bounded HH candidate is the Basal Ganglia ↔ Cerebellum relation, not either region by itself",
+        "the IR1 execution-interface-mediated diagnostic relation is the only architecture edge under consideration",
+        true,
+        true,
+        true,
+    ),
+    blue_brain_hh_candidate_scope_map_entry(
+        "relation_level_not_yet_implemented_scope_invariant",
+        BlueBrainHhCandidateScopeClass::ScopeInvariant,
+        Some(BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode),
+        "scope is relation-level only, not-yet-implemented and not a live runtime path",
+        "a later re-scope must start from missing input/output contracts, fixtures and budgets before any diagnostic implementation discussion",
+        false,
+        false,
+        false,
+    ),
+    blue_brain_hh_candidate_scope_map_entry(
+        "simulation_diagnostic_only_no_productive_mode_invariant",
+        BlueBrainHhCandidateScopeClass::ScopeInvariant,
+        Some(BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode),
+        "the only conceivable later HH mode is simulation-only/diagnostic-only",
+        "HH diagnostics cannot become Contract state, action selection, execution trigger, retry trigger, memory commit, compute invocation or safety override",
+        false,
+        false,
+        false,
+    ),
+    blue_brain_hh_candidate_scope_map_entry(
+        "kuramoto_and_abstract_current_mode_separation",
+        BlueBrainHhCandidateScopeClass::ModelBoundarySeparation,
+        Some(BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode),
+        "HH does not substitute for the two existing bounded Kuramoto-like relation deepenings and does not replace abstract current modes",
+        "Amygdala ↔ Thalamus and Amygdala ↔ Basal Ganglia remain Kuramoto-like; current productive region semantics remain abstract functional/current mode",
+        false,
+        true,
+        true,
+    ),
+    blue_brain_hh_candidate_scope_map_entry(
+        "explicit_non_goals_no_platform_or_authority",
+        BlueBrainHhCandidateScopeClass::NonGoalBoundary,
+        None,
+        "non-goals are part of the scope line, not optional caveats",
+        "no network simulation, no global HH platform, no runtime/selection/execution authority, no compute-core reopening, no new region functionality, and no planner/agent/policy/retry work",
+        false,
+        false,
+        false,
+    ),
+    blue_brain_hh_candidate_scope_map_entry(
+        "next_preparation_step_scope_basis",
+        BlueBrainHhCandidateScopeClass::NextPreparationStep,
+        Some(BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode),
+        "the next preparation step can only define a fixture-free relation contract review checklist",
+        "the checklist must stay offline, deterministic, diagnostic-only and bounded to the single relation without opening HH implementation",
+        false,
+        false,
+        false,
+    ),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainStructuralClosureClass {
     CanonicalActiveRegion,
     CanonicalImplementedRelation,
@@ -17779,6 +17930,104 @@ mod tests {
             assert!(!entry.opens_other_hh_candidates);
             assert!(!entry.opens_compute_core_work);
         }
+    }
+
+    #[test]
+    fn canonical_hh_candidate_scope_map_finalizes_single_relation_scope() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_HH_CANDIDATE_SCOPE_CLASS_MAP.len(), 5);
+        assert_eq!(CANONICAL_BLUE_BRAIN_HH_CANDIDATE_SCOPE_MAP.len(), 6);
+
+        for class in CANONICAL_BLUE_BRAIN_HH_CANDIDATE_SCOPE_CLASS_MAP {
+            assert!(CANONICAL_BLUE_BRAIN_HH_CANDIDATE_SCOPE_MAP
+                .iter()
+                .any(|entry| entry.scope_class == class));
+        }
+
+        let final_candidates: Vec<_> = CANONICAL_BLUE_BRAIN_HH_CANDIDATE_SCOPE_MAP
+            .iter()
+            .filter(|entry| entry.final_candidate)
+            .collect();
+        assert_eq!(final_candidates.len(), 1);
+
+        let final_candidate = final_candidates[0];
+        assert_eq!(
+            final_candidate.relation,
+            BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum
+        );
+        assert_eq!(
+            final_candidate.architecture_relation_class,
+            BlueBrainInterRegionArchitectureRelationClass::ExecutionInterfaceMediatedRelation
+        );
+        assert!(final_candidate.relation_level_only);
+        assert!(final_candidate.not_yet_implemented);
+        assert!(final_candidate.simulation_only_diagnostic_only);
+        assert!(!final_candidate.current_productive_hh_allowed);
+    }
+
+    #[test]
+    fn canonical_hh_candidate_scope_map_blocks_platform_authority_and_scope_creep() {
+        let separation = CANONICAL_BLUE_BRAIN_HH_CANDIDATE_SCOPE_MAP
+            .iter()
+            .find(|entry| {
+                entry.scope_class == BlueBrainHhCandidateScopeClass::ModelBoundarySeparation
+            })
+            .expect("model boundary separation entry must exist");
+        assert!(separation.separates_from_kuramoto_like);
+        assert!(separation.separates_from_abstract_current_mode);
+
+        let non_goals = CANONICAL_BLUE_BRAIN_HH_CANDIDATE_SCOPE_MAP
+            .iter()
+            .find(|entry| entry.scope_class == BlueBrainHhCandidateScopeClass::NonGoalBoundary)
+            .expect("non-goal boundary entry must exist");
+        assert!(non_goals
+            .boundary_statement
+            .contains("no network simulation"));
+        assert!(non_goals
+            .boundary_statement
+            .contains("no global HH platform"));
+        assert!(non_goals
+            .boundary_statement
+            .contains("no compute-core reopening"));
+
+        for entry in CANONICAL_BLUE_BRAIN_HH_CANDIDATE_SCOPE_MAP {
+            assert_eq!(
+                entry.relation,
+                BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum
+            );
+            assert!(entry.relation_level_only);
+            assert!(entry.not_yet_implemented);
+            assert!(entry.simulation_only_diagnostic_only);
+            assert!(!entry.current_productive_hh_allowed);
+            assert!(!entry.opens_network_simulation);
+            assert!(!entry.opens_global_hh_platform);
+            assert!(!entry.opens_runtime_selection_execution_authority);
+            assert!(!entry.opens_compute_core_work);
+            assert!(!entry.opens_new_region_functionality);
+            assert!(!entry.opens_planner_agent_policy_retry_work);
+            assert!(!entry.opens_additional_hh_candidates);
+        }
+    }
+
+    #[test]
+    fn canonical_hh_candidate_scope_doc_matches_code_boundaries() {
+        let doc = include_str!("../../../docs/blue_brain_hh_candidate_scope_map_v1.md");
+        assert!(doc.contains("HH candidate scope map"));
+        assert!(doc.contains("Basal Ganglia ↔ Cerebellum"));
+        assert!(doc.contains("relation-level only"));
+        assert!(doc.contains("not-yet-implemented"));
+        assert!(doc.contains("simulation-only/diagnostic-only only"));
+        assert!(doc.contains("no productive HH mode"));
+        assert!(doc.contains("execution-interface-mediated relation"));
+        assert!(doc.contains(
+            "does not substitute for the two existing bounded Kuramoto-like relation deepenings"
+        ));
+        assert!(doc.contains("abstract current mode is not an HH gap"));
+        assert!(doc.contains("network simulation"));
+        assert!(doc.contains("global HH platform"));
+        assert!(doc.contains("Runtime/Selection/Reference/Execution authority"));
+        assert!(doc.contains("compute-core work or compute-core reopening"));
+        assert!(doc.contains("planner, agent, policy or retry work"));
+        assert!(doc.contains("fixture-free relation contract review checklist"));
     }
 
     #[test]
