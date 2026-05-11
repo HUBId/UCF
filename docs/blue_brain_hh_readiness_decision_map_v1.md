@@ -110,7 +110,11 @@ The HH-readiness line preserves these hard guards:
 - no retry orchestration;
 - no hidden HH productive mode.
 
-## 8) Decision
+## 8) Prompt-2 first candidate narrowing
+
+Prompt 2 narrows this map without changing its boundaries: exactly one first later-HH candidate is isolated in `docs/blue_brain_first_hh_candidate_map_v1.md` and `CANONICAL_BLUE_BRAIN_FIRST_HH_CANDIDATE_MAP`. The selected candidate is `Basal Ganglia ↔ Cerebellum` as a relation, not a region. Cerebellum and Hypothalamus remain plausible but not first diagnostic-only region paths; `Amygdala ↔ Thalamus`, `Amygdala ↔ Basal Ganglia` and BB12 remain Kuramoto-like-preferable; abstract surfaces remain abstract sufficient; architecture-blocked and non-canonical/internal-only paths remain blocked or outside canonical authority. This narrowing does not implement HH, does not open a third model deepening, and does not change any no-direct guard.
+
+## 9) Decision
 
 Decision: **HH-Readiness is admissible only as prerequisite analysis and guard clarification.**
 
