@@ -1717,6 +1717,279 @@ pub const CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP:
     ),
 ];
 
+const fn blue_brain_first_inter_region_implementation_relation_for_pair_const(
+    pair: BlueBrainInterRegionArchitecturePair,
+) -> BlueBrainInterRegionImplementationRelation {
+    match pair {
+        BlueBrainInterRegionArchitecturePair::HippocampusAmygdala => {
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[0]
+        }
+        BlueBrainInterRegionArchitecturePair::HippocampusThalamus => {
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[1]
+        }
+        BlueBrainInterRegionArchitecturePair::HippocampusBasalGanglia => {
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[2]
+        }
+        BlueBrainInterRegionArchitecturePair::HippocampusCerebellum => {
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[3]
+        }
+        BlueBrainInterRegionArchitecturePair::AmygdalaThalamus => {
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[4]
+        }
+        BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia => {
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[5]
+        }
+        BlueBrainInterRegionArchitecturePair::AmygdalaCerebellum => {
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[6]
+        }
+        BlueBrainInterRegionArchitecturePair::ThalamusBasalGanglia => {
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[7]
+        }
+        BlueBrainInterRegionArchitecturePair::ThalamusCerebellum => {
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[8]
+        }
+        BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum => {
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[9]
+        }
+        BlueBrainInterRegionArchitecturePair::HippocampusHypothalamus => {
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[10]
+        }
+        BlueBrainInterRegionArchitecturePair::AmygdalaHypothalamus => {
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[11]
+        }
+        BlueBrainInterRegionArchitecturePair::ThalamusHypothalamus => {
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[12]
+        }
+        BlueBrainInterRegionArchitecturePair::BasalGangliaHypothalamus => {
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[13]
+        }
+        BlueBrainInterRegionArchitecturePair::CerebellumHypothalamus => {
+            CANONICAL_BLUE_BRAIN_FIRST_INTER_REGION_IMPLEMENTATION_MAP[14]
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCanonicalInterRegionRelationStatus {
+    CanonicalImplementedRelation,
+    CanonicalMediatedRelation,
+    CanonicalDeferredRelation,
+    CanonicalBlockedRelation,
+    ArchitecturalLaneOnly,
+    NonCanonicalInternalOnlyRelationPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_CANONICAL_INTER_REGION_RELATION_STATUS_MAP:
+    [BlueBrainCanonicalInterRegionRelationStatus; 6] = [
+    BlueBrainCanonicalInterRegionRelationStatus::CanonicalImplementedRelation,
+    BlueBrainCanonicalInterRegionRelationStatus::CanonicalMediatedRelation,
+    BlueBrainCanonicalInterRegionRelationStatus::CanonicalDeferredRelation,
+    BlueBrainCanonicalInterRegionRelationStatus::CanonicalBlockedRelation,
+    BlueBrainCanonicalInterRegionRelationStatus::ArchitecturalLaneOnly,
+    BlueBrainCanonicalInterRegionRelationStatus::NonCanonicalInternalOnlyRelationPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCanonicalInterRegionRelationMapEntry {
+    pub pair: BlueBrainInterRegionArchitecturePair,
+    pub canonical_status: BlueBrainCanonicalInterRegionRelationStatus,
+    pub architecture_relation_class: BlueBrainInterRegionArchitectureRelationClass,
+    pub implementation_relation_class: BlueBrainInterRegionImplementationRelationClass,
+    pub mediation_path: BlueBrainInterRegionImplementationMediationPath,
+    pub source_role: BlueBrainInterRegionArchitectureRegionRoleClass,
+    pub target_role: BlueBrainInterRegionArchitectureRegionRoleClass,
+    pub operationally_active: bool,
+    pub architectural_lane_only: bool,
+    pub mediated_only: bool,
+    pub advisory_only: bool,
+    pub caveated: bool,
+    pub deferred: bool,
+    pub blocked: bool,
+    pub diagnostic_only: bool,
+    pub non_canonical_internal_only: bool,
+    pub direct_action_trigger: bool,
+    pub direct_execution_trigger: bool,
+    pub direct_retry_trigger: bool,
+    pub direct_memory_commit: bool,
+    pub direct_compute_invocation: bool,
+    pub safety_override: bool,
+    pub global_region_orchestration: bool,
+}
+
+const fn blue_brain_canonical_inter_region_relation_map_entry(
+    pair: BlueBrainInterRegionArchitecturePair,
+    canonical_status: BlueBrainCanonicalInterRegionRelationStatus,
+) -> BlueBrainCanonicalInterRegionRelationMapEntry {
+    let architecture_relation = blue_brain_inter_region_architecture_relation_for_pair_const(pair);
+    let implementation_relation =
+        blue_brain_first_inter_region_implementation_relation_for_pair_const(pair);
+
+    BlueBrainCanonicalInterRegionRelationMapEntry {
+        pair,
+        canonical_status,
+        architecture_relation_class: architecture_relation.relation_class,
+        implementation_relation_class: implementation_relation.implementation_relation_class,
+        mediation_path: implementation_relation.mediation_path,
+        source_role: architecture_relation.source_role,
+        target_role: architecture_relation.target_role,
+        operationally_active: matches!(
+            canonical_status,
+            BlueBrainCanonicalInterRegionRelationStatus::CanonicalImplementedRelation
+                | BlueBrainCanonicalInterRegionRelationStatus::CanonicalMediatedRelation
+        ),
+        architectural_lane_only: matches!(
+            canonical_status,
+            BlueBrainCanonicalInterRegionRelationStatus::ArchitecturalLaneOnly
+        ),
+        mediated_only: matches!(
+            canonical_status,
+            BlueBrainCanonicalInterRegionRelationStatus::CanonicalMediatedRelation
+        ),
+        advisory_only: true,
+        caveated: matches!(
+            architecture_relation.relation_class,
+            BlueBrainInterRegionArchitectureRelationClass::CaveatedInterRegionRelation
+        ),
+        deferred: matches!(
+            canonical_status,
+            BlueBrainCanonicalInterRegionRelationStatus::CanonicalDeferredRelation
+                | BlueBrainCanonicalInterRegionRelationStatus::ArchitecturalLaneOnly
+        ),
+        blocked: matches!(
+            canonical_status,
+            BlueBrainCanonicalInterRegionRelationStatus::CanonicalBlockedRelation
+        ),
+        diagnostic_only: matches!(
+            canonical_status,
+            BlueBrainCanonicalInterRegionRelationStatus::CanonicalDeferredRelation
+                | BlueBrainCanonicalInterRegionRelationStatus::CanonicalBlockedRelation
+                | BlueBrainCanonicalInterRegionRelationStatus::ArchitecturalLaneOnly
+                | BlueBrainCanonicalInterRegionRelationStatus::NonCanonicalInternalOnlyRelationPath
+        ),
+        non_canonical_internal_only: matches!(
+            canonical_status,
+            BlueBrainCanonicalInterRegionRelationStatus::NonCanonicalInternalOnlyRelationPath
+        ),
+        direct_action_trigger: false,
+        direct_execution_trigger: false,
+        direct_retry_trigger: false,
+        direct_memory_commit: false,
+        direct_compute_invocation: false,
+        safety_override: false,
+        global_region_orchestration: false,
+    }
+}
+
+/// Canonical structural-closure view over the bounded IR1 relation map.
+///
+/// This map intentionally separates architecture lanes from implementation
+/// status. `CanonicalImplementedRelation` and `CanonicalMediatedRelation` are
+/// currently readable only as advisory/diagnostic contract signals;
+/// `ArchitecturalLaneOnly` means the bounded lane is named but inactive;
+/// `CanonicalDeferredRelation` and `CanonicalBlockedRelation` are distinct
+/// inactive states; and non-canonical/internal-only paths have no consumer
+/// authority.
+pub const CANONICAL_BLUE_BRAIN_CANONICAL_INTER_REGION_RELATION_MAP:
+    [BlueBrainCanonicalInterRegionRelationMapEntry; 15] = [
+    blue_brain_canonical_inter_region_relation_map_entry(
+        BlueBrainInterRegionArchitecturePair::HippocampusAmygdala,
+        BlueBrainCanonicalInterRegionRelationStatus::ArchitecturalLaneOnly,
+    ),
+    blue_brain_canonical_inter_region_relation_map_entry(
+        BlueBrainInterRegionArchitecturePair::HippocampusThalamus,
+        BlueBrainCanonicalInterRegionRelationStatus::CanonicalMediatedRelation,
+    ),
+    blue_brain_canonical_inter_region_relation_map_entry(
+        BlueBrainInterRegionArchitecturePair::HippocampusBasalGanglia,
+        BlueBrainCanonicalInterRegionRelationStatus::CanonicalBlockedRelation,
+    ),
+    blue_brain_canonical_inter_region_relation_map_entry(
+        BlueBrainInterRegionArchitecturePair::HippocampusCerebellum,
+        BlueBrainCanonicalInterRegionRelationStatus::ArchitecturalLaneOnly,
+    ),
+    blue_brain_canonical_inter_region_relation_map_entry(
+        BlueBrainInterRegionArchitecturePair::AmygdalaThalamus,
+        BlueBrainCanonicalInterRegionRelationStatus::CanonicalImplementedRelation,
+    ),
+    blue_brain_canonical_inter_region_relation_map_entry(
+        BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia,
+        BlueBrainCanonicalInterRegionRelationStatus::CanonicalMediatedRelation,
+    ),
+    blue_brain_canonical_inter_region_relation_map_entry(
+        BlueBrainInterRegionArchitecturePair::AmygdalaCerebellum,
+        BlueBrainCanonicalInterRegionRelationStatus::CanonicalDeferredRelation,
+    ),
+    blue_brain_canonical_inter_region_relation_map_entry(
+        BlueBrainInterRegionArchitecturePair::ThalamusBasalGanglia,
+        BlueBrainCanonicalInterRegionRelationStatus::ArchitecturalLaneOnly,
+    ),
+    blue_brain_canonical_inter_region_relation_map_entry(
+        BlueBrainInterRegionArchitecturePair::ThalamusCerebellum,
+        BlueBrainCanonicalInterRegionRelationStatus::ArchitecturalLaneOnly,
+    ),
+    blue_brain_canonical_inter_region_relation_map_entry(
+        BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum,
+        BlueBrainCanonicalInterRegionRelationStatus::ArchitecturalLaneOnly,
+    ),
+    blue_brain_canonical_inter_region_relation_map_entry(
+        BlueBrainInterRegionArchitecturePair::HippocampusHypothalamus,
+        BlueBrainCanonicalInterRegionRelationStatus::CanonicalMediatedRelation,
+    ),
+    blue_brain_canonical_inter_region_relation_map_entry(
+        BlueBrainInterRegionArchitecturePair::AmygdalaHypothalamus,
+        BlueBrainCanonicalInterRegionRelationStatus::CanonicalImplementedRelation,
+    ),
+    blue_brain_canonical_inter_region_relation_map_entry(
+        BlueBrainInterRegionArchitecturePair::ThalamusHypothalamus,
+        BlueBrainCanonicalInterRegionRelationStatus::CanonicalImplementedRelation,
+    ),
+    blue_brain_canonical_inter_region_relation_map_entry(
+        BlueBrainInterRegionArchitecturePair::BasalGangliaHypothalamus,
+        BlueBrainCanonicalInterRegionRelationStatus::CanonicalMediatedRelation,
+    ),
+    blue_brain_canonical_inter_region_relation_map_entry(
+        BlueBrainInterRegionArchitecturePair::CerebellumHypothalamus,
+        BlueBrainCanonicalInterRegionRelationStatus::CanonicalDeferredRelation,
+    ),
+];
+
+pub fn blue_brain_canonical_inter_region_relation_for_pair(
+    pair: BlueBrainInterRegionArchitecturePair,
+) -> BlueBrainCanonicalInterRegionRelationMapEntry {
+    CANONICAL_BLUE_BRAIN_CANONICAL_INTER_REGION_RELATION_MAP
+        .iter()
+        .copied()
+        .find(|entry| entry.pair == pair)
+        .unwrap_or(BlueBrainCanonicalInterRegionRelationMapEntry {
+                pair,
+                canonical_status:
+                    BlueBrainCanonicalInterRegionRelationStatus::NonCanonicalInternalOnlyRelationPath,
+                architecture_relation_class:
+                    BlueBrainInterRegionArchitectureRelationClass::NonCanonicalInternalOnlyRelationPath,
+                implementation_relation_class: BlueBrainInterRegionImplementationRelationClass::NonCanonicalInternalOnlyRelationPath,
+                mediation_path: BlueBrainInterRegionImplementationMediationPath::NonCanonicalInternalOnly,
+                source_role: BlueBrainInterRegionArchitectureRegionRoleClass::NonCanonicalDeferredRegionRole,
+                target_role: BlueBrainInterRegionArchitectureRegionRoleClass::NonCanonicalDeferredRegionRole,
+                operationally_active: false,
+                architectural_lane_only: false,
+                mediated_only: false,
+                advisory_only: true,
+                caveated: false,
+                deferred: false,
+                blocked: false,
+                diagnostic_only: true,
+                non_canonical_internal_only: true,
+                direct_action_trigger: false,
+                direct_execution_trigger: false,
+                direct_retry_trigger: false,
+                direct_memory_commit: false,
+                direct_compute_invocation: false,
+                safety_override: false,
+                global_region_orchestration: false,
+            }
+        )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainInterRegionDiagnosticsContractClass {
     AdvisoryOnlyRelationDiagnostic,
@@ -14237,6 +14510,156 @@ mod tests {
         assert!(doc.contains("selection-mediated remains selection-mediated"));
         assert!(doc.contains("execution-interface-mediated remains bounded diagnostic/read-only"));
         assert!(doc.contains("direct bounded advisory remains advisory-only"));
+    }
+
+    #[test]
+    fn canonical_inter_region_relation_map_separates_architecture_and_implementation_status() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_CANONICAL_INTER_REGION_RELATION_MAP.len(),
+            15
+        );
+
+        let implemented = CANONICAL_BLUE_BRAIN_CANONICAL_INTER_REGION_RELATION_MAP
+            .iter()
+            .filter(|entry| {
+                entry.canonical_status
+                    == BlueBrainCanonicalInterRegionRelationStatus::CanonicalImplementedRelation
+            })
+            .count();
+        let mediated = CANONICAL_BLUE_BRAIN_CANONICAL_INTER_REGION_RELATION_MAP
+            .iter()
+            .filter(|entry| {
+                entry.canonical_status
+                    == BlueBrainCanonicalInterRegionRelationStatus::CanonicalMediatedRelation
+            })
+            .count();
+        let deferred = CANONICAL_BLUE_BRAIN_CANONICAL_INTER_REGION_RELATION_MAP
+            .iter()
+            .filter(|entry| {
+                entry.canonical_status
+                    == BlueBrainCanonicalInterRegionRelationStatus::CanonicalDeferredRelation
+            })
+            .count();
+        let blocked = CANONICAL_BLUE_BRAIN_CANONICAL_INTER_REGION_RELATION_MAP
+            .iter()
+            .filter(|entry| {
+                entry.canonical_status
+                    == BlueBrainCanonicalInterRegionRelationStatus::CanonicalBlockedRelation
+            })
+            .count();
+        let architecture_only = CANONICAL_BLUE_BRAIN_CANONICAL_INTER_REGION_RELATION_MAP
+            .iter()
+            .filter(|entry| {
+                entry.canonical_status
+                    == BlueBrainCanonicalInterRegionRelationStatus::ArchitecturalLaneOnly
+            })
+            .count();
+
+        assert_eq!(implemented, 3);
+        assert_eq!(mediated, 4);
+        assert_eq!(deferred, 2);
+        assert_eq!(blocked, 1);
+        assert_eq!(architecture_only, 5);
+
+        let execution_lane = blue_brain_canonical_inter_region_relation_for_pair(
+            BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum,
+        );
+        assert_eq!(
+            execution_lane.architecture_relation_class,
+            BlueBrainInterRegionArchitectureRelationClass::ExecutionInterfaceMediatedRelation
+        );
+        assert_eq!(
+            execution_lane.canonical_status,
+            BlueBrainCanonicalInterRegionRelationStatus::ArchitecturalLaneOnly
+        );
+        assert!(!execution_lane.operationally_active);
+        assert!(execution_lane.diagnostic_only);
+        assert!(!execution_lane.direct_execution_trigger);
+    }
+
+    #[test]
+    fn canonical_inter_region_relation_map_pins_mediation_paths_and_no_direct_boundaries() {
+        for entry in CANONICAL_BLUE_BRAIN_CANONICAL_INTER_REGION_RELATION_MAP {
+            assert!(entry.advisory_only);
+            assert!(!entry.direct_action_trigger);
+            assert!(!entry.direct_execution_trigger);
+            assert!(!entry.direct_retry_trigger);
+            assert!(!entry.direct_memory_commit);
+            assert!(!entry.direct_compute_invocation);
+            assert!(!entry.safety_override);
+            assert!(!entry.global_region_orchestration);
+
+            match entry.canonical_status {
+                BlueBrainCanonicalInterRegionRelationStatus::CanonicalImplementedRelation => {
+                    assert!(entry.operationally_active);
+                    assert!(!entry.mediated_only);
+                    assert_eq!(
+                        entry.mediation_path,
+                        BlueBrainInterRegionImplementationMediationPath::DirectBoundedAdvisoryOnly
+                    );
+                }
+                BlueBrainCanonicalInterRegionRelationStatus::CanonicalMediatedRelation => {
+                    assert!(entry.operationally_active);
+                    assert!(entry.mediated_only);
+                    assert!(matches!(
+                        entry.mediation_path,
+                        BlueBrainInterRegionImplementationMediationPath::ReferenceContextMediatedOnly
+                            | BlueBrainInterRegionImplementationMediationPath::SelectionContractMediatedOnly
+                    ));
+                }
+                BlueBrainCanonicalInterRegionRelationStatus::CanonicalDeferredRelation => {
+                    assert!(!entry.operationally_active);
+                    assert!(entry.deferred);
+                    assert!(entry.diagnostic_only);
+                    assert_eq!(
+                        entry.architecture_relation_class,
+                        BlueBrainInterRegionArchitectureRelationClass::DeferredNotYetActiveRelation
+                    );
+                }
+                BlueBrainCanonicalInterRegionRelationStatus::CanonicalBlockedRelation => {
+                    assert!(!entry.operationally_active);
+                    assert!(entry.blocked);
+                    assert!(entry.diagnostic_only);
+                    assert_eq!(
+                        entry.mediation_path,
+                        BlueBrainInterRegionImplementationMediationPath::BlockedUnavailable
+                    );
+                }
+                BlueBrainCanonicalInterRegionRelationStatus::ArchitecturalLaneOnly => {
+                    assert!(!entry.operationally_active);
+                    assert!(entry.architectural_lane_only);
+                    assert!(entry.deferred);
+                    assert!(entry.diagnostic_only);
+                    assert_eq!(
+                        entry.implementation_relation_class,
+                        BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation
+                    );
+                }
+                BlueBrainCanonicalInterRegionRelationStatus::NonCanonicalInternalOnlyRelationPath => {
+                    assert!(entry.non_canonical_internal_only);
+                    assert!(entry.diagnostic_only);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn canonical_inter_region_relation_doc_matches_code_closure_categories() {
+        let doc =
+            include_str!("../../../docs/blue_brain_canonical_inter_region_relation_map_v1.md");
+        assert!(doc.contains("canonical implemented relation"));
+        assert!(doc.contains("canonical mediated relation"));
+        assert!(doc.contains("canonical deferred relation"));
+        assert!(doc.contains("canonical blocked relation"));
+        assert!(doc.contains("architectural lane only"));
+        assert!(doc.contains("non-canonical/internal-only relation path"));
+        assert!(doc.contains(
+            "Hippocampus ↔ Thalamus | reference-mediated relation | canonical mediated relation"
+        ));
+        assert!(doc.contains("Basal Ganglia ↔ Cerebellum | execution-interface-mediated relation | architectural lane only"));
+        assert!(doc.contains("advisory-only relation is not an action signal"));
+        assert!(doc.contains("blocked relation is not failed execution"));
+        assert!(doc.contains("no direct compute invocation"));
     }
 
     #[test]
