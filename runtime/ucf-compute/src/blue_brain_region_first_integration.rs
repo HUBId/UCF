@@ -1953,6 +1953,453 @@ pub const CANONICAL_BLUE_BRAIN_CANONICAL_INTER_REGION_RELATION_MAP:
     ),
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCanonicalModelBoundaryMode {
+    AbstractFunctionalCurrentMode,
+    BoundedKuramotoLikeCurrentMode,
+    HodgkinHuxleySimulationOnlyDiagnosticOnlyMode,
+    LaterHodgkinHuxleyDeferredMode,
+    NonCanonicalInternalOnlyModelPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_MODEL_BOUNDARY_MODE_MAP: [BlueBrainCanonicalModelBoundaryMode; 5] = [
+    BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+    BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode,
+    BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode,
+    BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode,
+    BlueBrainCanonicalModelBoundaryMode::NonCanonicalInternalOnlyModelPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCanonicalModelBoundarySurfaceKind {
+    RegionSurface,
+    RelationSurface,
+    SelectiveModelDeepeningSurface,
+    DynamicsReferenceSurface,
+    NonCanonicalInternalOnlySurface,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCanonicalModelBoundaryMapEntry {
+    pub surface_id: &'static str,
+    pub surface_kind: BlueBrainCanonicalModelBoundarySurfaceKind,
+    pub region: Option<BlueBrainAnatomicalRegionClass>,
+    pub relation: Option<BlueBrainInterRegionArchitecturePair>,
+    pub model_mode: BlueBrainCanonicalModelBoundaryMode,
+    pub current_productive_mode: bool,
+    pub selective_model_deepening_active: bool,
+    pub bounded_kuramoto_like_active: bool,
+    pub hh_productive_mode: bool,
+    pub hh_simulation_only_or_later: bool,
+    pub deferred_or_internal_only: bool,
+    pub region_surface_semantics_leading: bool,
+    pub relation_contract_semantics_leading: bool,
+    pub model_state_is_contract_state: bool,
+    pub model_output_direct_authority: bool,
+    pub no_further_deepening_current: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+const fn blue_brain_canonical_model_boundary_entry(
+    surface_id: &'static str,
+    surface_kind: BlueBrainCanonicalModelBoundarySurfaceKind,
+    region: Option<BlueBrainAnatomicalRegionClass>,
+    relation: Option<BlueBrainInterRegionArchitecturePair>,
+    model_mode: BlueBrainCanonicalModelBoundaryMode,
+    selective_model_deepening_active: bool,
+    bounded_kuramoto_like_active: bool,
+    hh_simulation_only_or_later: bool,
+    deferred_or_internal_only: bool,
+    region_surface_semantics_leading: bool,
+    relation_contract_semantics_leading: bool,
+) -> BlueBrainCanonicalModelBoundaryMapEntry {
+    BlueBrainCanonicalModelBoundaryMapEntry {
+        surface_id,
+        surface_kind,
+        region,
+        relation,
+        model_mode,
+        current_productive_mode: matches!(
+            model_mode,
+            BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode
+                | BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode
+        ),
+        selective_model_deepening_active,
+        bounded_kuramoto_like_active,
+        hh_productive_mode: false,
+        hh_simulation_only_or_later,
+        deferred_or_internal_only,
+        region_surface_semantics_leading,
+        relation_contract_semantics_leading,
+        model_state_is_contract_state: false,
+        model_output_direct_authority: false,
+        no_further_deepening_current: !selective_model_deepening_active,
+    }
+}
+
+/// Canonical system-wide model-boundary map for the structural-closure line.
+///
+/// The map is descriptive and boundary-setting only. It records where abstract
+/// functional/current mode, bounded Kuramoto-like current mode, HH
+/// simulation-only/diagnostic-only mode, later-HH/deferred mode, and
+/// non-canonical/internal-only paths may be read. It deliberately does not add
+/// a global model platform, model-led contract authority, productive HH mode,
+/// planner/agent logic, retry orchestration, policy governance, or compute-core
+/// behavior.
+pub const CANONICAL_BLUE_BRAIN_MODEL_BOUNDARY_MAP: [BlueBrainCanonicalModelBoundaryMapEntry; 27] = [
+    blue_brain_canonical_model_boundary_entry(
+        "hippocampus_region",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RegionSurface,
+        Some(BlueBrainAnatomicalRegionClass::Hippocampus),
+        None,
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "amygdala_region",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RegionSurface,
+        Some(BlueBrainAnatomicalRegionClass::Amygdala),
+        None,
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "thalamus_region",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RegionSurface,
+        Some(BlueBrainAnatomicalRegionClass::Thalamus),
+        None,
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "basal_ganglia_region",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RegionSurface,
+        Some(BlueBrainAnatomicalRegionClass::BasalGanglia),
+        None,
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "cerebellum_region",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RegionSurface,
+        Some(BlueBrainAnatomicalRegionClass::Cerebellum),
+        None,
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "hypothalamus_region",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RegionSurface,
+        Some(BlueBrainAnatomicalRegionClass::Hypothalamus),
+        None,
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "hippocampus_amygdala_relation",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::HippocampusAmygdala),
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "hippocampus_thalamus_relation",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::HippocampusThalamus),
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "hippocampus_basal_ganglia_relation",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::HippocampusBasalGanglia),
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "hippocampus_cerebellum_relation",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::HippocampusCerebellum),
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "amygdala_thalamus_relation_first_deepening",
+        BlueBrainCanonicalModelBoundarySurfaceKind::SelectiveModelDeepeningSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaThalamus),
+        BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode,
+        true,
+        true,
+        false,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "amygdala_basal_ganglia_relation_second_deepening",
+        BlueBrainCanonicalModelBoundarySurfaceKind::SelectiveModelDeepeningSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia),
+        BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode,
+        true,
+        true,
+        false,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "amygdala_cerebellum_relation",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaCerebellum),
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "thalamus_basal_ganglia_relation",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::ThalamusBasalGanglia),
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "thalamus_cerebellum_relation",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::ThalamusCerebellum),
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "basal_ganglia_cerebellum_later_hh_relation",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum),
+        BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode,
+        false,
+        false,
+        true,
+        true,
+        false,
+        true,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "hippocampus_hypothalamus_relation",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::HippocampusHypothalamus),
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "amygdala_hypothalamus_relation",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::AmygdalaHypothalamus),
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "thalamus_hypothalamus_relation",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::ThalamusHypothalamus),
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "basal_ganglia_hypothalamus_relation",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaHypothalamus),
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "cerebellum_hypothalamus_relation",
+        BlueBrainCanonicalModelBoundarySurfaceKind::RelationSurface,
+        None,
+        Some(BlueBrainInterRegionArchitecturePair::CerebellumHypothalamus),
+        BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "bb12_bounded_advisory_dynamics_surface",
+        BlueBrainCanonicalModelBoundarySurfaceKind::DynamicsReferenceSurface,
+        None,
+        None,
+        BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "bb10_hh_diagnostic_surface",
+        BlueBrainCanonicalModelBoundarySurfaceKind::DynamicsReferenceSurface,
+        None,
+        None,
+        BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode,
+        false,
+        false,
+        true,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "cerebellum_microcircuit_hh_diagnostic_path",
+        BlueBrainCanonicalModelBoundarySurfaceKind::DynamicsReferenceSurface,
+        Some(BlueBrainAnatomicalRegionClass::Cerebellum),
+        None,
+        BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode,
+        false,
+        false,
+        true,
+        true,
+        true,
+        false,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "hypothalamus_hh_diagnostic_path",
+        BlueBrainCanonicalModelBoundarySurfaceKind::DynamicsReferenceSurface,
+        Some(BlueBrainAnatomicalRegionClass::Hypothalamus),
+        None,
+        BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode,
+        false,
+        false,
+        true,
+        true,
+        true,
+        false,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "later_selective_hh_deepening_path",
+        BlueBrainCanonicalModelBoundarySurfaceKind::DynamicsReferenceSurface,
+        None,
+        None,
+        BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode,
+        false,
+        false,
+        true,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_canonical_model_boundary_entry(
+        "non_canonical_internal_only_model_path",
+        BlueBrainCanonicalModelBoundarySurfaceKind::NonCanonicalInternalOnlySurface,
+        None,
+        None,
+        BlueBrainCanonicalModelBoundaryMode::NonCanonicalInternalOnlyModelPath,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+    ),
+];
+
 pub fn blue_brain_canonical_inter_region_relation_for_pair(
     pair: BlueBrainInterRegionArchitecturePair,
 ) -> BlueBrainCanonicalInterRegionRelationMapEntry {
@@ -14885,5 +15332,122 @@ mod tests {
         assert!(readme.contains(
             "docs/blue_brain_hypothalamus_minimal_bounded_integration_serie_br6_prompt2_v1.md"
         ));
+    }
+
+    #[test]
+    fn canonical_model_boundary_map_separates_regions_relations_and_model_modes() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_MODEL_BOUNDARY_MODE_MAP.len(), 5);
+        assert_eq!(CANONICAL_BLUE_BRAIN_MODEL_BOUNDARY_MAP.len(), 27);
+
+        let region_entries: Vec<_> = CANONICAL_BLUE_BRAIN_MODEL_BOUNDARY_MAP
+            .iter()
+            .filter(|entry| {
+                entry.surface_kind == BlueBrainCanonicalModelBoundarySurfaceKind::RegionSurface
+            })
+            .collect();
+        assert_eq!(region_entries.len(), 6);
+        for entry in region_entries {
+            assert_eq!(
+                entry.model_mode,
+                BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode
+            );
+            assert!(entry.current_productive_mode);
+            assert!(entry.region_surface_semantics_leading);
+            assert!(!entry.selective_model_deepening_active);
+            assert!(!entry.bounded_kuramoto_like_active);
+            assert!(!entry.hh_productive_mode);
+            assert!(!entry.model_state_is_contract_state);
+            assert!(!entry.model_output_direct_authority);
+        }
+
+        let active_deepenings: Vec<_> = CANONICAL_BLUE_BRAIN_MODEL_BOUNDARY_MAP
+            .iter()
+            .filter(|entry| entry.selective_model_deepening_active)
+            .collect();
+        assert_eq!(active_deepenings.len(), 2);
+        assert!(active_deepenings.iter().any(|entry| {
+            entry.relation == Some(BlueBrainInterRegionArchitecturePair::AmygdalaThalamus)
+        }));
+        assert!(active_deepenings.iter().any(|entry| {
+            entry.relation == Some(BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia)
+        }));
+        for entry in active_deepenings {
+            assert_eq!(
+                entry.model_mode,
+                BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode
+            );
+            assert!(entry.bounded_kuramoto_like_active);
+            assert!(entry.relation_contract_semantics_leading);
+            assert!(!entry.hh_productive_mode);
+            assert!(!entry.model_state_is_contract_state);
+            assert!(!entry.model_output_direct_authority);
+        }
+    }
+
+    #[test]
+    fn canonical_model_boundary_map_keeps_hh_non_productive_and_kuramoto_bounded() {
+        let hh_entries: Vec<_> = CANONICAL_BLUE_BRAIN_MODEL_BOUNDARY_MAP
+            .iter()
+            .filter(|entry| entry.hh_simulation_only_or_later)
+            .collect();
+        assert_eq!(hh_entries.len(), 5);
+        for entry in hh_entries {
+            assert!(!entry.hh_productive_mode);
+            assert!(!entry.selective_model_deepening_active);
+            assert!(entry.deferred_or_internal_only);
+            assert!(!entry.model_output_direct_authority);
+            assert!(matches!(
+                entry.model_mode,
+                BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode
+                    | BlueBrainCanonicalModelBoundaryMode::LaterHodgkinHuxleyDeferredMode
+            ));
+        }
+
+        let kuramoto_entries: Vec<_> = CANONICAL_BLUE_BRAIN_MODEL_BOUNDARY_MAP
+            .iter()
+            .filter(|entry| entry.bounded_kuramoto_like_active)
+            .collect();
+        assert_eq!(kuramoto_entries.len(), 3);
+        assert_eq!(
+            kuramoto_entries
+                .iter()
+                .filter(|entry| entry.selective_model_deepening_active)
+                .count(),
+            2
+        );
+        assert!(kuramoto_entries
+            .iter()
+            .any(|entry| { entry.surface_id == "bb12_bounded_advisory_dynamics_surface" }));
+        for entry in kuramoto_entries {
+            assert_eq!(
+                entry.model_mode,
+                BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode
+            );
+            assert!(!entry.hh_productive_mode);
+            assert!(!entry.model_state_is_contract_state);
+            assert!(!entry.model_output_direct_authority);
+        }
+    }
+
+    #[test]
+    fn canonical_model_boundary_doc_matches_code_boundaries() {
+        let doc = include_str!("../../../docs/blue_brain_canonical_model_boundary_map_v1.md");
+        assert!(doc.contains("canonical abstract functional/current mode"));
+        assert!(doc.contains("canonical bounded Kuramoto-like mode"));
+        assert!(doc.contains("canonical HH simulation-only/diagnostic-only mode"));
+        assert!(doc.contains("canonical later-HH/deferred mode"));
+        assert!(doc.contains("non-canonical/internal-only model path"));
+        assert!(doc.contains("Hippocampus | region | abstract functional/current mode"));
+        assert!(doc.contains(
+            "Amygdala ↔ Thalamus | selective model deepening | bounded Kuramoto-like current mode"
+        ));
+        assert!(doc.contains("Amygdala ↔ Basal Ganglia | selective model deepening | bounded Kuramoto-like current mode"));
+        assert!(doc.contains(
+            "BB10 HH diagnostic surface | dynamics reference | HH simulation-only/diagnostic-only"
+        ));
+        assert!(doc.contains("HH is nowhere a current productive mode"));
+        assert!(doc.contains("model state is not contract state"));
+        assert!(doc.contains("model output is not direct authority"));
+        assert!(doc.contains("no global model platform"));
     }
 }

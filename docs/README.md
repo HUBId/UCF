@@ -10,6 +10,7 @@ Kanonische Status-/Discoverability-Maps:
 - `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md` (shadow-surface inventory; supporting reference only)
 - `docs/blue_brain_canonical_region_inventory_map_v1.md` (canonical six-region inventory/role map; supporting reference only)
 - `docs/blue_brain_canonical_inter_region_relation_map_v1.md` (canonical bounded inter-region relation closure map; supporting reference only)
+- `docs/blue_brain_canonical_model_boundary_map_v1.md` (canonical system-wide model-boundary map; supporting current reference only)
 - `docs/blue_brain_guard_semantic_drift_map_v1.md` (guard/semantic drift-control map; supporting reference only)
 - `docs/blue_brain_maintenance_verification_findings_map_v1.md` (test/check/evidence verification findings; supporting reference only)
 - `docs/blue_brain_discoverability_findings_map_v1.md` (maintenance findings evidence for index/reference clarity; supporting reference only)
@@ -64,6 +65,7 @@ The links in this section are supporting or historical entrypoints retained for 
 - **Non-canonical shadow-surface inventory (supporting reference):** `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md`
 - **Canonical six-region inventory/role map (supporting reference):** `docs/blue_brain_canonical_region_inventory_map_v1.md`
 - **Canonical bounded inter-region relation closure map (supporting reference):** `docs/blue_brain_canonical_inter_region_relation_map_v1.md`
+- **Canonical system-wide model-boundary map (supporting current reference):** `docs/blue_brain_canonical_model_boundary_map_v1.md`
 - **SC1 cross-line terminology/guard checklist consolidation (supporting evidence):** `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`
 - **BB22 cross-line stabilization/cleanup:**
   - `docs/blue_brain_bb22_narrow_cross_line_stabilization_pass_serie_bb22_prompt1_v1.md`
