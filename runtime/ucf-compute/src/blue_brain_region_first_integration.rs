@@ -89,6 +89,127 @@ pub const CANONICAL_BLUE_BRAIN_MAINTENANCE_FINDINGS_CLASS_MAP: [BlueBrainMainten
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCurrentMaintenanceActionClass {
+    AuthorityDiscoverabilityCleanup,
+    RelationWordingCleanup,
+    ModelBoundaryWordingCleanup,
+    GuardWordingVisibilityCleanup,
+    EvidenceReferenceCleanup,
+    NoChangeNeededFinding,
+}
+
+pub const CANONICAL_BLUE_BRAIN_CURRENT_MAINTENANCE_ACTION_CLASS_MAP:
+    [BlueBrainCurrentMaintenanceActionClass; 6] = [
+    BlueBrainCurrentMaintenanceActionClass::AuthorityDiscoverabilityCleanup,
+    BlueBrainCurrentMaintenanceActionClass::RelationWordingCleanup,
+    BlueBrainCurrentMaintenanceActionClass::ModelBoundaryWordingCleanup,
+    BlueBrainCurrentMaintenanceActionClass::GuardWordingVisibilityCleanup,
+    BlueBrainCurrentMaintenanceActionClass::EvidenceReferenceCleanup,
+    BlueBrainCurrentMaintenanceActionClass::NoChangeNeededFinding,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCurrentMaintenanceAction {
+    pub action_class: BlueBrainCurrentMaintenanceActionClass,
+    pub target: &'static str,
+    pub maintenance_response: &'static str,
+    pub authority_only_via_status_map: bool,
+    pub no_scope_expansion: bool,
+    pub no_direct_action_trigger: bool,
+    pub no_direct_execution_trigger: bool,
+    pub no_direct_retry_trigger: bool,
+    pub no_direct_memory_commit: bool,
+    pub no_direct_compute_invocation: bool,
+    pub no_safety_override: bool,
+}
+
+/// Current maintenance action map for readability/wording cleanup only. It
+/// classifies authority/discoverability, relation wording, model-boundary,
+/// guard, evidence/reference, and no-change-needed findings without changing
+/// region, relation, model, runtime, policy, retry, memory, or compute behavior.
+pub const CANONICAL_BLUE_BRAIN_CURRENT_MAINTENANCE_ACTION_MAP:
+    [BlueBrainCurrentMaintenanceAction; 6] = [
+    BlueBrainCurrentMaintenanceAction {
+        action_class: BlueBrainCurrentMaintenanceActionClass::AuthorityDiscoverabilityCleanup,
+        target: "README entrypoint, authority chain, and supporting-reference routing",
+        maintenance_response: "keep the authority chain as the classifier and prevent supporting maps from becoming parallel authority",
+        authority_only_via_status_map: true,
+        no_scope_expansion: true,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+    },
+    BlueBrainCurrentMaintenanceAction {
+        action_class: BlueBrainCurrentMaintenanceActionClass::RelationWordingCleanup,
+        target: "implemented, mediated, deferred, blocked, caveated, and diagnostic-only relation wording",
+        maintenance_response: "preserve canonical relation status and mediation path; deny platform, action, execution, retry, and promotion readings",
+        authority_only_via_status_map: true,
+        no_scope_expansion: true,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+    },
+    BlueBrainCurrentMaintenanceAction {
+        action_class: BlueBrainCurrentMaintenanceActionClass::ModelBoundaryWordingCleanup,
+        target: "abstract current mode, bounded Kuramoto-like mode, HH simulation-only/diagnostic-only, and later-HH/deferred wording",
+        maintenance_response: "keep current model wording bounded and relation-local; HH remains non-productive and deferred or diagnostic-only",
+        authority_only_via_status_map: true,
+        no_scope_expansion: true,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+    },
+    BlueBrainCurrentMaintenanceAction {
+        action_class: BlueBrainCurrentMaintenanceActionClass::GuardWordingVisibilityCleanup,
+        target: "no-direct action, execution, retry, memory, compute, and safety override guard wording",
+        maintenance_response: "keep all no-direct denials visible together in current documentation and tests",
+        authority_only_via_status_map: true,
+        no_scope_expansion: true,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+    },
+    BlueBrainCurrentMaintenanceAction {
+        action_class: BlueBrainCurrentMaintenanceActionClass::EvidenceReferenceCleanup,
+        target: "baseline, report, and check references under out plus tracked evidence docs",
+        maintenance_response: "treat reports as evidence for their recorded run or commit and do not promote report files into operational authority",
+        authority_only_via_status_map: true,
+        no_scope_expansion: true,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+    },
+    BlueBrainCurrentMaintenanceAction {
+        action_class: BlueBrainCurrentMaintenanceActionClass::NoChangeNeededFinding,
+        target: "six-region inventory, IR1 bounded architecture, and exactly two selective model-deepening lines",
+        maintenance_response: "record that no new region, third deepening, platform, policy, retry, memory, HH production, or compute-core work is justified",
+        authority_only_via_status_map: true,
+        no_scope_expansion: true,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainRelationWordingFindingClass {
     ImplementedRelationUnclear,
     DeferredRelationUnclear,
@@ -14951,6 +15072,63 @@ mod tests {
             BlueBrainMaintenanceFindingClass::CrossSurfaceAmbiguity
         );
         assert_eq!(expansion_review.possible_future_rescope_candidate, None);
+    }
+
+    #[test]
+    fn current_maintenance_action_map_covers_readability_cleanup_without_scope_expansion() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_CURRENT_MAINTENANCE_ACTION_CLASS_MAP.len(),
+            6
+        );
+        for action_class in [
+            BlueBrainCurrentMaintenanceActionClass::AuthorityDiscoverabilityCleanup,
+            BlueBrainCurrentMaintenanceActionClass::RelationWordingCleanup,
+            BlueBrainCurrentMaintenanceActionClass::ModelBoundaryWordingCleanup,
+            BlueBrainCurrentMaintenanceActionClass::GuardWordingVisibilityCleanup,
+            BlueBrainCurrentMaintenanceActionClass::EvidenceReferenceCleanup,
+            BlueBrainCurrentMaintenanceActionClass::NoChangeNeededFinding,
+        ] {
+            assert!(
+                CANONICAL_BLUE_BRAIN_CURRENT_MAINTENANCE_ACTION_CLASS_MAP.contains(&action_class)
+            );
+        }
+
+        assert_eq!(CANONICAL_BLUE_BRAIN_CURRENT_MAINTENANCE_ACTION_MAP.len(), 6);
+        for action in CANONICAL_BLUE_BRAIN_CURRENT_MAINTENANCE_ACTION_MAP {
+            assert!(action.authority_only_via_status_map);
+            assert!(action.no_scope_expansion);
+            assert!(action.no_direct_action_trigger);
+            assert!(action.no_direct_execution_trigger);
+            assert!(action.no_direct_retry_trigger);
+            assert!(action.no_direct_memory_commit);
+            assert!(action.no_direct_compute_invocation);
+            assert!(action.no_safety_override);
+            assert!(!action.target.is_empty());
+            assert!(!action.maintenance_response.is_empty());
+        }
+
+        assert!(CANONICAL_BLUE_BRAIN_CURRENT_MAINTENANCE_ACTION_MAP
+            .iter()
+            .any(|action| {
+                action.action_class
+                    == BlueBrainCurrentMaintenanceActionClass::RelationWordingCleanup
+                    && action.target.contains("implemented")
+                    && action.target.contains("mediated")
+                    && action.target.contains("deferred")
+                    && action.target.contains("blocked")
+                    && action.maintenance_response.contains("mediation path")
+            }));
+        assert!(CANONICAL_BLUE_BRAIN_CURRENT_MAINTENANCE_ACTION_MAP
+            .iter()
+            .any(|action| {
+                action.action_class
+                    == BlueBrainCurrentMaintenanceActionClass::ModelBoundaryWordingCleanup
+                    && action.target.contains("bounded Kuramoto-like")
+                    && action.target.contains("HH simulation-only/diagnostic-only")
+                    && action
+                        .maintenance_response
+                        .contains("HH remains non-productive")
+            }));
     }
 
     #[test]

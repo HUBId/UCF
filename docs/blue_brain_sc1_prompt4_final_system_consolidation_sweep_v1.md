@@ -113,6 +113,7 @@ For this final sweep, the required consistency criteria are:
 - Doku does not contradict the region/relation/model surfaces in `runtime/ucf-compute/src/blue_brain_region_first_integration.rs`.
 - Reproducibility and audit references point to SC1 Prompt 2, the audit baseline map, the 2026-05-09 baseline bundle and the standard docs/readiness reports; the 2026-05-08 bundle is historical.
 - Current-authority docs stay compact and do not create a second operative truth source.
+- The current maintenance action map remains a supporting reference only and separates authority/discoverability cleanup, relation wording cleanup, model-boundary wording cleanup, guard visibility cleanup, evidence/reference cleanup, and no-change-needed findings.
 
 ## 7) Maintenance decision
 
