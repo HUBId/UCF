@@ -118,3 +118,8 @@ HH remains closed because the candidate relation is not implemented, the input a
 1. If continued, define a fixture-free review checklist for the missing `Basal Ganglia ↔ Cerebellum` input/output contract without implementing HH.
 2. Cross-check the checklist against IR1, BB10, BB12, BB16, BB17, BB19 and BB21 for wording drift.
 3. Decide separately whether a later simulation-only diagnostic fixture proposal is warranted; do not infer implementation approval from this prerequisite map.
+
+
+## 11) Prompt-4 closure link
+
+Prompt 4 consumes this prerequisite map in `docs/blue_brain_hh_readiness_closure_map_v1.md` and `CANONICAL_BLUE_BRAIN_HH_READINESS_CLOSURE_MAP`. The closure keeps HH closed/deferred now and preserves only a later explicit simulation-only/diagnostic-only re-scope option for the single `Basal Ganglia ↔ Cerebellum` relation candidate. No prerequisite entry in this map is implementation permission.

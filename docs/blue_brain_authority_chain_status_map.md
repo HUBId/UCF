@@ -80,6 +80,8 @@ Historische Aussagen bleiben erhalten (BB25/BB27/BB29-Zeitpunkte), werden aber d
 - `docs/blue_brain_structural_closure_map_v1.md`
 - `docs/blue_brain_hh_readiness_decision_map_v1.md`
 - `docs/blue_brain_first_hh_candidate_map_v1.md`
+- `docs/blue_brain_hh_prerequisite_map_v1.md`
+- `docs/blue_brain_hh_readiness_closure_map_v1.md`
 
 ### Historical/supporting implementation-stage references (durch spätere Authority relativiert)
 
