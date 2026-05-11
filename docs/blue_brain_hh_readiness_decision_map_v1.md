@@ -119,3 +119,8 @@ Prompt 2 narrows this map without changing its boundaries: exactly one first lat
 Decision: **HH-Readiness is admissible only as prerequisite analysis and guard clarification.**
 
 The plausible later HH space is narrow: Cerebellum and Hypothalamus are simulation-only/diagnostic-only candidates, and Basal Ganglia ↔ Cerebellum is a later-HH/deferred relation placeholder. Amygdala ↔ Thalamus, Amygdala ↔ Basal Ganglia and BB12 remain better served by bounded Kuramoto-like advisory/diagnostic dynamics. Hippocampus, Amygdala, Thalamus, Basal Ganglia and most implemented or mediated relations remain abstract sufficient or HH not justified. Deferred architecture lanes are blocked by current architecture until an explicit later re-scope supplies evidence, fixtures, contracts and performance limits.
+
+
+## 10) Prompt-4 closure
+
+Prompt 4 closes the HH-readiness sweep in `docs/blue_brain_hh_readiness_closure_map_v1.md` and `CANONICAL_BLUE_BRAIN_HH_READINESS_CLOSURE_MAP`: HH stays closed/deferred now, while exactly one later path remains technically plausible only under an explicit, narrow, simulation-only/diagnostic-only re-scope for `Basal Ganglia ↔ Cerebellum`. This closure adds no HH implementation, no productive HH mode, no compute-core reopening, no global HH platform and no additional HH candidate.

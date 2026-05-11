@@ -3673,6 +3673,238 @@ pub const CANONICAL_BLUE_BRAIN_HH_PREREQUISITE_MAP: [BlueBrainHhPrerequisiteMapE
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHhReadinessClosureState {
+    HhNotJustified,
+    HhBlockedForCurrentArchitecture,
+    HhPlausibleOnlyAsSimulationOnlyDiagnosticOnly,
+    HhPlausibleLaterUnderExplicitRescope,
+    PrerequisiteGapRemains,
+    NonCanonicalInternalOnlyHhPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_HH_READINESS_CLOSURE_STATE_MAP: [BlueBrainHhReadinessClosureState;
+    6] = [
+    BlueBrainHhReadinessClosureState::HhNotJustified,
+    BlueBrainHhReadinessClosureState::HhBlockedForCurrentArchitecture,
+    BlueBrainHhReadinessClosureState::HhPlausibleOnlyAsSimulationOnlyDiagnosticOnly,
+    BlueBrainHhReadinessClosureState::HhPlausibleLaterUnderExplicitRescope,
+    BlueBrainHhReadinessClosureState::PrerequisiteGapRemains,
+    BlueBrainHhReadinessClosureState::NonCanonicalInternalOnlyHhPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHhReadinessClosureDecision {
+    LaterSimulationDiagnosticRescopePlausibleButClosedNow,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainHhReadinessClosureEntry {
+    pub closure_id: &'static str,
+    pub closure_state: BlueBrainHhReadinessClosureState,
+    pub relation: Option<BlueBrainInterRegionArchitecturePair>,
+    pub checked_candidate: bool,
+    pub current_status: &'static str,
+    pub satisfied_prerequisites: &'static str,
+    pub missing_prerequisites: &'static str,
+    pub blockers: &'static str,
+    pub later_optimization_only: &'static str,
+    pub final_decision: BlueBrainHhReadinessClosureDecision,
+    pub current_hh_opened: bool,
+    pub current_productive_hh_allowed: bool,
+    pub later_simulation_diagnostic_rescope_plausible: bool,
+    pub abstract_functional_default_preserved: bool,
+    pub kuramoto_like_current_scope_preserved: bool,
+    pub prerequisite_gap_remains: bool,
+    pub blocker_remains: bool,
+    pub simulation_only_diagnostic_only: bool,
+    pub non_canonical_internal_only: bool,
+    pub no_direct_action_trigger: bool,
+    pub no_direct_execution_trigger: bool,
+    pub no_direct_retry_trigger: bool,
+    pub no_direct_memory_commit: bool,
+    pub no_direct_compute_invocation: bool,
+    pub no_safety_override: bool,
+    pub opens_global_hh_platform: bool,
+    pub opens_other_hh_candidates: bool,
+    pub opens_compute_core_work: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+const fn blue_brain_hh_readiness_closure_entry(
+    closure_id: &'static str,
+    closure_state: BlueBrainHhReadinessClosureState,
+    relation: Option<BlueBrainInterRegionArchitecturePair>,
+    checked_candidate: bool,
+    current_status: &'static str,
+    satisfied_prerequisites: &'static str,
+    missing_prerequisites: &'static str,
+    blockers: &'static str,
+    later_optimization_only: &'static str,
+    later_simulation_diagnostic_rescope_plausible: bool,
+    prerequisite_gap_remains: bool,
+    blocker_remains: bool,
+    simulation_only_diagnostic_only: bool,
+    non_canonical_internal_only: bool,
+) -> BlueBrainHhReadinessClosureEntry {
+    BlueBrainHhReadinessClosureEntry {
+        closure_id,
+        closure_state,
+        relation,
+        checked_candidate,
+        current_status,
+        satisfied_prerequisites,
+        missing_prerequisites,
+        blockers,
+        later_optimization_only,
+        final_decision:
+            BlueBrainHhReadinessClosureDecision::LaterSimulationDiagnosticRescopePlausibleButClosedNow,
+        current_hh_opened: false,
+        current_productive_hh_allowed: false,
+        later_simulation_diagnostic_rescope_plausible,
+        abstract_functional_default_preserved: true,
+        kuramoto_like_current_scope_preserved: true,
+        prerequisite_gap_remains,
+        blocker_remains,
+        simulation_only_diagnostic_only,
+        non_canonical_internal_only,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+        opens_global_hh_platform: false,
+        opens_other_hh_candidates: false,
+        opens_compute_core_work: false,
+    }
+}
+
+/// Canonical HH-readiness closure map for Prompt 4.
+///
+/// This map performs the final HH-readiness sweep for the single Prompt-2/3
+/// candidate, `Basal Ganglia ↔ Cerebellum`. It records the final decision that
+/// HH stays closed now, while a later explicit, narrow, simulation-only /
+/// diagnostic-only re-scope remains technically plausible if missing
+/// prerequisites, architecture blockers, fixtures, contracts, and deterministic
+/// budgets are supplied. It is status clarification only: no HH implementation,
+/// productive HH mode, compute-core reopening, global platform, or additional
+/// HH candidate is opened.
+pub const CANONICAL_BLUE_BRAIN_HH_READINESS_CLOSURE_MAP: [BlueBrainHhReadinessClosureEntry; 7] = [
+    blue_brain_hh_readiness_closure_entry(
+        "basal_ganglia_cerebellum_candidate_final_sweep",
+        BlueBrainHhReadinessClosureState::HhPlausibleLaterUnderExplicitRescope,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum),
+        true,
+        "exactly one relation candidate checked; HH is closed now and not productive",
+        "candidate is relation-only, one-candidate scope is bounded, no-direct guards and model-boundary separation already exist",
+        "IR1 relation implementation, HH input contract, HH output contract, fixture/golden corpus, deterministic encoding, performance budget and consumer mapping are absent",
+        "current architecture keeps the relation deferred/not-yet-active and forbids direct authority promotion",
+        "parameter tuning, richer diagnostic vocabulary and fixture coverage are later optimization-only after blockers and prerequisites are solved",
+        true,
+        true,
+        true,
+        true,
+        false,
+    ),
+    blue_brain_hh_readiness_closure_entry(
+        "abstract_current_mode_default_final_sweep",
+        BlueBrainHhReadinessClosureState::HhNotJustified,
+        None,
+        false,
+        "BR1-BR6 region semantics and non-deepened relations remain abstract functional/current mode by default",
+        "canonical region, relation and model-boundary maps preserve abstract sufficiency",
+        "no HH-specific prerequisite is missing because HH is not justified for these surfaces",
+        "no current blocker needs removal because no HH path should open here",
+        "none",
+        false,
+        false,
+        false,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_closure_entry(
+        "bounded_kuramoto_current_mode_final_sweep",
+        BlueBrainHhReadinessClosureState::HhNotJustified,
+        None,
+        false,
+        "Amygdala ↔ Thalamus and Amygdala ↔ Basal Ganglia remain bounded Kuramoto-like advisory/diagnostic deepenings",
+        "bounded advisory/diagnostic semantics already cover current coupling, synchrony, gating and timing needs",
+        "no HH prerequisite is pursued because HH would be the wrong current model layer",
+        "HH may not substitute for or backdoor-promote current Kuramoto-like deepenings",
+        "none",
+        false,
+        false,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_closure_entry(
+        "current_architecture_block_final_sweep",
+        BlueBrainHhReadinessClosureState::HhBlockedForCurrentArchitecture,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum),
+        true,
+        "candidate relation remains deferred/not-yet-active in the bounded inter-region architecture",
+        "architecture lane is named and bounded",
+        "implemented relation surface and approved diagnostic wiring are absent",
+        "architecture-lane-only status blocks HH promotion before a separate relation and fixture re-scope",
+        "none before architecture status changes",
+        false,
+        true,
+        true,
+        false,
+        false,
+    ),
+    blue_brain_hh_readiness_closure_entry(
+        "simulation_diagnostic_only_path_final_sweep",
+        BlueBrainHhReadinessClosureState::HhPlausibleOnlyAsSimulationOnlyDiagnosticOnly,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum),
+        true,
+        "the only potentially meaningful later HH path is deterministic simulation-only/diagnostic-only evidence",
+        "BB10/Prompt-3 boundaries already forbid productive HH and direct authority",
+        "approved fixtures, input/output vocabulary and consumer mapping are still absent",
+        "diagnostic evidence cannot become Contract state, execution state, selection authority, reference mutation, retry authority, memory authority or compute invocation",
+        "diagnostic vocabulary detail is later optimization-only after a separate re-scope",
+        true,
+        true,
+        true,
+        true,
+        false,
+    ),
+    blue_brain_hh_readiness_closure_entry(
+        "prerequisite_gap_final_sweep",
+        BlueBrainHhReadinessClosureState::PrerequisiteGapRemains,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum),
+        true,
+        "Prompt-3 prerequisite gaps remain decisive",
+        "one-candidate selection and guard boundaries are satisfied",
+        "relation implementation, input contract, output contract, fixtures, golden references, fixed encoding, performance budget and tests are missing",
+        "missing prerequisites block any implementation or productive interpretation",
+        "quality tuning is not relevant until required contracts and fixtures exist",
+        true,
+        true,
+        true,
+        true,
+        false,
+    ),
+    blue_brain_hh_readiness_closure_entry(
+        "non_canonical_internal_only_final_sweep",
+        BlueBrainHhReadinessClosureState::NonCanonicalInternalOnlyHhPath,
+        None,
+        false,
+        "microcircuit, biophysical, network simulation, CoreNEURON, Neurodamus and adjacent HH paths stay outside canonical authority",
+        "non-canonical/internal-only separation already exists",
+        "no canonical consumer contract or implementation lane exists",
+        "internal-only paths cannot create Runtime, Selection, Reference, Execution, memory, retry, compute or safety authority",
+        "none in this scope",
+        false,
+        false,
+        true,
+        false,
+        true,
+    ),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainStructuralClosureClass {
     CanonicalActiveRegion,
     CanonicalImplementedRelation,
@@ -17459,5 +17691,116 @@ mod tests {
         assert!(doc.contains("no direct HH implementation"));
         assert!(doc.contains("no productive HH use"));
         assert!(doc.contains("no global HH platform"));
+    }
+
+    #[test]
+    fn canonical_hh_readiness_closure_map_separates_status_classes() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_HH_READINESS_CLOSURE_STATE_MAP.len(), 6);
+        assert_eq!(CANONICAL_BLUE_BRAIN_HH_READINESS_CLOSURE_MAP.len(), 7);
+
+        for state in CANONICAL_BLUE_BRAIN_HH_READINESS_CLOSURE_STATE_MAP {
+            assert!(CANONICAL_BLUE_BRAIN_HH_READINESS_CLOSURE_MAP
+                .iter()
+                .any(|entry| entry.closure_state == state));
+        }
+
+        let checked_candidates: Vec<_> = CANONICAL_BLUE_BRAIN_HH_READINESS_CLOSURE_MAP
+            .iter()
+            .filter(|entry| entry.checked_candidate)
+            .collect();
+        assert!(checked_candidates.iter().all(|entry| {
+            entry.relation == Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum)
+        }));
+        assert!(checked_candidates.iter().all(|entry| {
+            entry.final_decision
+                == BlueBrainHhReadinessClosureDecision::LaterSimulationDiagnosticRescopePlausibleButClosedNow
+        }));
+    }
+
+    #[test]
+    fn canonical_hh_readiness_closure_keeps_prerequisites_blockers_and_simulation_distinct() {
+        let prerequisite_gap = CANONICAL_BLUE_BRAIN_HH_READINESS_CLOSURE_MAP
+            .iter()
+            .find(|entry| {
+                entry.closure_state == BlueBrainHhReadinessClosureState::PrerequisiteGapRemains
+            })
+            .expect("prerequisite gap entry must exist");
+        assert!(prerequisite_gap.prerequisite_gap_remains);
+        assert!(prerequisite_gap.blocker_remains);
+        assert!(prerequisite_gap
+            .missing_prerequisites
+            .contains("input contract"));
+        assert!(prerequisite_gap
+            .missing_prerequisites
+            .contains("output contract"));
+        assert!(prerequisite_gap.blockers.contains("block"));
+
+        let architecture_block = CANONICAL_BLUE_BRAIN_HH_READINESS_CLOSURE_MAP
+            .iter()
+            .find(|entry| {
+                entry.closure_state
+                    == BlueBrainHhReadinessClosureState::HhBlockedForCurrentArchitecture
+            })
+            .expect("architecture blocker entry must exist");
+        assert!(architecture_block.blocker_remains);
+        assert!(architecture_block
+            .blockers
+            .contains("architecture-lane-only status blocks HH promotion"));
+        assert!(!architecture_block.later_simulation_diagnostic_rescope_plausible);
+
+        let simulation_only = CANONICAL_BLUE_BRAIN_HH_READINESS_CLOSURE_MAP
+            .iter()
+            .find(|entry| {
+                entry.closure_state
+                    == BlueBrainHhReadinessClosureState::HhPlausibleOnlyAsSimulationOnlyDiagnosticOnly
+            })
+            .expect("simulation-only diagnostic entry must exist");
+        assert!(simulation_only.simulation_only_diagnostic_only);
+        assert!(simulation_only.later_simulation_diagnostic_rescope_plausible);
+        assert!(simulation_only
+            .blockers
+            .contains("diagnostic evidence cannot become Contract state"));
+    }
+
+    #[test]
+    fn canonical_hh_readiness_closure_keeps_all_guards_closed() {
+        for entry in CANONICAL_BLUE_BRAIN_HH_READINESS_CLOSURE_MAP {
+            assert!(!entry.current_hh_opened);
+            assert!(!entry.current_productive_hh_allowed);
+            assert!(entry.abstract_functional_default_preserved);
+            assert!(entry.kuramoto_like_current_scope_preserved);
+            assert!(entry.no_direct_action_trigger);
+            assert!(entry.no_direct_execution_trigger);
+            assert!(entry.no_direct_retry_trigger);
+            assert!(entry.no_direct_memory_commit);
+            assert!(entry.no_direct_compute_invocation);
+            assert!(entry.no_safety_override);
+            assert!(!entry.opens_global_hh_platform);
+            assert!(!entry.opens_other_hh_candidates);
+            assert!(!entry.opens_compute_core_work);
+        }
+    }
+
+    #[test]
+    fn canonical_hh_readiness_closure_doc_matches_code_boundaries() {
+        let doc = include_str!("../../../docs/blue_brain_hh_readiness_closure_map_v1.md");
+        assert!(doc.contains("HH-readiness closure map"));
+        assert!(doc.contains("HH may remain plausible later only under an explicit, narrow, simulation-only/diagnostic-only re-scope"));
+        assert!(doc.contains("Basal Ganglia ↔ Cerebellum"));
+        assert!(doc.contains("HH not justified"));
+        assert!(doc.contains("HH blocked for current architecture"));
+        assert!(doc.contains("HH plausible only as simulation-only/diagnostic-only"));
+        assert!(doc.contains("HH plausible later under explicit rescope"));
+        assert!(doc.contains("prerequisite gap remains"));
+        assert!(doc.contains("non-canonical/internal-only HH path"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("no global HH platform"));
+        assert!(doc.contains("no direct HH implementation"));
+        assert!(doc.contains("Maintenance is sufficient now"));
     }
 }
