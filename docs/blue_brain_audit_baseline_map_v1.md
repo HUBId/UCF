@@ -4,6 +4,8 @@ Stand: 2026-05-10 (UTC).
 
 Ziel dieser Referenz ist eine **kanonische, reproduzierbare Audit-Baseline** für den aktuellen Blue-Brain-Stand nach BR6, IR1, MD2, MD3 und SC1, ohne neue Feature-Arbeit. Maßgeblicher HEAD für diesen Refresh ist `e68d6940fbc402b420a6523840b7d7882b6a2b6b`. Alle neu erzeugten Reports, Logs und Baseline-Referenzen in diesem Refresh gelten genau für diesen Commit; spätere Commits/Merges brauchen einen neuen, expliziten Evidence-Refresh und invalidieren den erreichten Abschlusszustand dieses Audit-Ankers nicht automatisch.
 
+Maintenance-facing update: later cleanup commits may refresh `out/docs_lint_report.json` and `out/gate_report.json` as current check evidence. Those root reports are run evidence, not operative authority; this baseline map remains the classifier for the recorded `e68d6940fbc402b420a6523840b7d7882b6a2b6b` audit anchor until a new HEAD-qualified baseline folder is deliberately produced.
+
 ## Authority scope of this baseline
 
 Diese Baseline belegt die aktuelle maintenance-facing Evidenzlage für:
@@ -96,7 +98,7 @@ Diese Baseline erlaubt Aussagen zu:
 - reproduzierbarer Ausführbarkeit der kanonischen Repo-Checks im aktuellen maintenance-facing Blue-Brain-Stand,
 - konsistenter Ablage der verwendeten Audit-Reports,
 - sauberer Trennung von aktuellen Reports, historischen Baselines und non-canonical leftover artifacts,
-- aktualisierter `code_version_tag`-Evidence auf den aktuellen HEAD,
+- aktualisierter `code_version_tag`-Evidence auf den audit-anchor HEAD; later root `out/` reports are maintenance check evidence until a new HEAD-qualified baseline is produced,
 - selbsterklärender fmt-Evidence,
 - geklärter Trennung zwischen Architecture-Lane und tatsächlich aktiv implementiertem Relationsstatus in den current-authority-nahen Relationsdokumenten.
 

@@ -22,11 +22,15 @@ Status: maintenance-only pass after MD3 system closure. This file records the na
 
 | Action class | Maintenance target | Decision |
 | --- | --- | --- |
-| evidence sync target | Current HEAD reports and HEAD-qualified baseline folder | Refresh evidence only; do not change region, relation, model, policy, retry, or compute behavior. |
-| discoverability cleanup target | README entrypoint and authority-chain reading order | Keep the current authority chain primary; older entrypoints remain supporting/historical only. |
-| terminology/taxonomy cleanup target | Post-MD3 expansion-review wording | Use `cross-surface ambiguity` / no-active-rescope wording instead of stale expansion-hook language. |
-| guard explicitness target | Cross-line no-direct guard checklist | Make `safety override` an explicit safety-override guard target beside action, execution, retry, memory, and compute denial. |
+| authority/discoverability cleanup | README entrypoint and authority-chain reading order | Keep the current authority chain primary; older entrypoints and compact maps remain supporting/historical only, not parallel authority. |
+| relation wording cleanup | Implemented, mediated, deferred, blocked, caveated, and diagnostic-only relation wording | Preserve implemented vs mediated vs deferred vs blocked relation semantics; no implicit platform, action, execution, retry, or promotion authority. |
+| model-boundary wording cleanup | Abstract current mode, bounded Kuramoto-like current mode, HH simulation-only/diagnostic-only, and later-HH/deferred wording | Keep current model wording bounded; no HH productive upgrade and no model mixing. |
+| guard wording/visibility cleanup | Cross-line no-direct guard checklist | Keep no direct action, execution, retry, memory commit, compute invocation, and safety override denials visible together. |
+| evidence/reference cleanup | Current reports, HEAD-qualified baseline folders, and supporting evidence docs | Refresh or cite evidence only; reports remain evidence for recorded runs/commits and do not change region, relation, model, policy, retry, or compute behavior. |
 | no-change-needed finding | Region, relation, and model-deepening boundaries | Record evidence that the existing six regions, IR1 bounded relations, and exactly two selective model-deepening lines remain unchanged. |
+
+
+Supporting action-map reference for the current maintenance pass: `docs/blue_brain_current_maintenance_action_map_v1.md`.
 
 Findings by surface:
 
