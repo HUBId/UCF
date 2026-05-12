@@ -76,6 +76,7 @@ Historische Aussagen bleiben erhalten (BB25/BB27/BB29-Zeitpunkte), werden aber d
 - `docs/blue_brain_maintenance_consolidation_pass_v1.md`
 - `docs/blue_brain_guard_semantic_drift_map_v1.md`
 - `docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md`
+- `docs/blue_brain_finale_maintenance_convergence_evidence_sync_2026_05_12.md`
 - `docs/blue_brain_current_maintenance_action_map_v1.md`
 - `docs/blue_brain_structural_closure_map_v1.md`
 - `docs/blue_brain_hh_readiness_decision_map_v1.md`

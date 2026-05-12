@@ -1,0 +1,8 @@
+command: git status --short --branch && git rev-parse HEAD && git log -1 --format='%H%n%ci%n%s'
+baseline_dir: out/blue_brain_audit_baseline_2026-05-12_head_cf54660512
+## work
+?? out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/
+cf54660512118d5071585d85572a5a0d9e72fe81
+cf54660512118d5071585d85572a5a0d9e72fe81
+2026-05-12 11:23:01 +0200
+Merge pull request #1013 from HUBId/codex/finalize-hh-preparation-closure-steps

@@ -1,0 +1,8 @@
+command: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json
+head: cf54660512118d5071585d85572a5a0d9e72fe81
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.39s
+     Running `target/debug/ucf-ops readiness-gate --profile test --out ./out/gate_report.json`
+status=Pass
+out=./out/gate_report.json
+exit_status: 0
+PASS: readiness gate root

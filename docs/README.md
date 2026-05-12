@@ -16,7 +16,8 @@ Kanonische Status-/Discoverability-Maps:
 - `docs/blue_brain_discoverability_findings_map_v1.md` (maintenance findings evidence for index/reference clarity; supporting reference only)
 - `docs/blue_brain_discoverability_cleanup_pass_v1.md` (closure note for the narrow cleanup pass; supporting reference only)
 - `docs/blue_brain_cross_surface_maintenance_cleanup_pass_v1.md` (cross-surface maintenance cleanup closure note; supporting reference only)
-- `docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md` (current HEAD evidence/maintenance action-map closure; supporting evidence only)
+- `docs/blue_brain_finale_maintenance_convergence_evidence_sync_2026_05_12.md` (current HEAD evidence/maintenance convergence closure; supporting evidence only)
+- `docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md` (historical HEAD evidence/maintenance action-map closure; supporting evidence only)
 - `docs/blue_brain_current_maintenance_action_map_v1.md` (current maintenance action map; supporting reference only)
 - `docs/blue_brain_hh_readiness_decision_map_v1.md` (HH-readiness prerequisite/boundary map; supporting current reference only, not HH implementation)
 - `docs/blue_brain_first_hh_candidate_map_v1.md` (first later-HH candidate selection map; supporting current reference only, not HH implementation)
@@ -204,39 +205,41 @@ Referenzpunkte für die technische Scope-Grenze:
 SC1 Prompt 2 hat die höchste priorisierte SC1-Konsolidierungsmaßnahme umgesetzt: ein frischer Repro-/Test-Baseline-Refresh für die aktuelle post-BR6/IR1/MD2/MD3/SC1-Linie mit sechs integrierten anatomischen Regionen, bounded inter-region semantics und zwei exakt abgeschlossenen Modellvertiefungen. Der letzte Konsolidierungsblock hebt diese Evidence auf den aktuellen HEAD, trennt Relations-Architecture-Lanes von tatsächlich aktiven Implementierungen und macht fmt-Evidence selbsterklärend. Die kanonische Action-Evidence-Line ist:
 
 - `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md`
-- `docs/blue_brain_final_evidence_baseline_refresh_2026_05_09.md`
+- `docs/blue_brain_finale_maintenance_convergence_evidence_sync_2026_05_12.md`
+- historische Vorgänger-Notiz: `docs/blue_brain_maintenance_consolidation_refresh_2026_05_10.md`
+- historische Vorgänger-Notiz: `docs/blue_brain_final_evidence_baseline_refresh_2026_05_09.md`
 - historische Vorgänger-Notiz: `docs/blue_brain_final_evidence_baseline_refresh_2026_05_08.md`
 
-Der maßgebliche finale Baseline-Lauf referenziert den explizit festgezogenen Audit-Target-HEAD `e68d6940fbc402b420a6523840b7d7882b6a2b6b` und ist als **clean maintenance-ready baseline** eingestuft. Diese Einstufung ist commit-gebunden: spätere Commits/Merges sind nicht automatisch Teil derselben Baseline und benötigen bewusst einen neuen Refresh, entwerten aber den abgeschlossenen Status dieses Ankers nicht nachträglich. Die aktuellen versionierten Reports liegen unter:
+Der maßgebliche finale Baseline-Lauf referenziert den explizit festgezogenen Audit-Target-HEAD `cf54660512118d5071585d85572a5a0d9e72fe81` und ist als **clean maintenance-ready baseline** eingestuft. Diese Einstufung ist commit-gebunden: spätere Commits/Merges sind nicht automatisch Teil derselben Baseline und benötigen bewusst einen neuen Refresh, entwerten aber den abgeschlossenen Status dieses Ankers nicht nachträglich. Die aktuellen versionierten Reports liegen unter:
 
-- `out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/head_status.log`
-- `out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/cargo_test_workspace.log`
-- `out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/docs_lint.log`
-- `out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/docs_lint_report.json`
-- `out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/docs_lint_root.log`
-- `out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/readiness_gate.log`
-- `out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/readiness_gate_root.log`
-- `out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/gate_report.json`
-- `out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/cargo_fmt_check.log`
-- `out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/cargo_clippy_workspace.log`
-- `out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/consistency_checks.log`
-- `out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/audit_anchor_summary.md`
+- `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/head_status.log`
+- `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/cargo_test_workspace.log`
+- `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/docs_lint.log`
+- `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/docs_lint_report.json`
+- `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/docs_lint_root.log`
+- `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/readiness_gate.log`
+- `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/readiness_gate_root.log`
+- `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/gate_report.json`
+- `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/cargo_fmt_check.log`
+- `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/cargo_clippy_workspace.log`
+- `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/consistency_checks.log`
+- `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/audit_anchor_summary.md`
 
 Ausgeführt wurden:
 
 - `cargo test --workspace`
-- `cargo run -p ucf-ops -- docs lint --strict --out ./out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/docs_lint_report.json`
-- `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/gate_report.json`
+- `cargo run -p ucf-ops -- docs lint --strict --out ./out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/docs_lint_report.json`
+- `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/gate_report.json`
 - `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 - `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json`
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
 
-Die aktuelle Root-Evidence für den current maintenance-consolidation refresh liegt zusätzlich unter `out/docs_lint_report.json` und `out/gate_report.json`; beide aktuellen Gate-Reports tragen `code_version_tag = e68d6940fbc402b420a6523840b7d7882b6a2b6b`. Die fmt-Evidence unter `out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/cargo_fmt_check.log` enthält Command, HEAD und einen expliziten PASS/OK-Marker. Die frühere `workspace.features`-Cargo-Warnung tritt im frischen Lauf nicht mehr auf und bleibt nur in historischen 2026-05-02-Logs sichtbar.
+Die aktuelle Root-Evidence für den current finale maintenance-convergence refresh liegt zusätzlich unter `out/docs_lint_report.json` und `out/gate_report.json`; beide aktuellen Gate-Reports tragen `code_version_tag = cf54660512118d5071585d85572a5a0d9e72fe81`. Die fmt-Evidence unter `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/cargo_fmt_check.log` enthält Command, HEAD und einen expliziten PASS/OK-Marker. Die frühere `workspace.features`-Cargo-Warnung tritt im frischen Lauf nicht mehr auf und bleibt nur in historischen 2026-05-02-Logs sichtbar.
 
-Die älteren Baselines `out/blue_brain_audit_baseline_2026-05-02/`, `out/blue_brain_audit_baseline_2026-05-04/`, `out/blue_brain_audit_baseline_2026-05-08/`, die unqualifizierte Same-Day-Vorgänger-Baseline `out/blue_brain_audit_baseline_2026-05-09/` und frühere HEAD-qualifizierte Same-Day-Läufe wie `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/`, `out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/`, `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/` und `out/blue_brain_audit_baseline_2026-05-09_head_ffa017d613/`, `out/blue_brain_audit_baseline_2026-05-09_head_c500cc14ae/` bleiben historische Vergleichs- und Auditspuren.
+Die älteren Baselines `out/blue_brain_audit_baseline_2026-05-02/`, `out/blue_brain_audit_baseline_2026-05-04/`, `out/blue_brain_audit_baseline_2026-05-08/`, die unqualifizierte Same-Day-Vorgänger-Baseline `out/blue_brain_audit_baseline_2026-05-09/`, frühere HEAD-qualifizierte Same-Day-Läufe wie `out/blue_brain_audit_baseline_2026-05-09_head_13615edd74/`, `out/blue_brain_audit_baseline_2026-05-09_head_895c3d1175/`, `out/blue_brain_audit_baseline_2026-05-09_head_9f263aac7e/`, `out/blue_brain_audit_baseline_2026-05-09_head_ffa017d613/`, `out/blue_brain_audit_baseline_2026-05-09_head_c500cc14ae/` und der vorherige HEAD-Anker `out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/` bleiben historische Vergleichs- und Auditspuren.
 
-Für operative Regionen-/Relations-/Modellaussagen gilt weiterhin ausschließlich die post-BR6 Authority-Linie aus Abschnitt 0/2.1; die HEAD-qualifizierte 2026-05-09-Baseline `out/blue_brain_audit_baseline_2026-05-10_head_e68d6940fb/` ist aktuelle Evidence, keine neue operative Wahrheit und kein Ausbauhebel.
+Für operative Regionen-/Relations-/Modellaussagen gilt weiterhin ausschließlich die post-BR6 Authority-Linie aus Abschnitt 0/2.1; die HEAD-qualifizierte 2026-05-12-Baseline `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/` ist aktuelle Evidence, keine neue operative Wahrheit und kein Ausbauhebel.
 
 ## 3) Guard rails and boundaries (must stay visible)
 

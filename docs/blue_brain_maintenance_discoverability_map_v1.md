@@ -40,13 +40,14 @@ These docs and artifacts are current support, not competing authority:
 
 - `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md` — current repro/test evidence line.
 - `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md` — compact terminology and no-direct-* guard checklist.
+- `docs/blue_brain_finale_maintenance_convergence_evidence_sync_2026_05_12.md` — current HEAD evidence-sync closure note.
 - `docs/blue_brain_audit_baseline_map_v1.md` — current audit baseline and artifact map.
 - `docs/blue_brain_non_canonical_shadow_surface_inventory_v1.md` — non-canonical/internal-only shadow-surface inventory.
 - `docs/blue_brain_guard_semantic_drift_map_v1.md` — guard/semantic drift-control map for status, model-boundary and no-direct-* wording.
 - `docs/blue_brain_discoverability_findings_map_v1.md` — maintenance findings evidence for current-path clarity, historical-pointer prominence and duplicate/non-canonical index risks.
 - `docs/blue_brain_discoverability_cleanup_pass_v1.md` — closure note for changed files, cleanup actions, checks and remaining maintenance need.
 - `docs/blue_brain_cross_surface_maintenance_cleanup_pass_v1.md` — cross-surface maintenance cleanup closure note for region/relation/model/guard/doc consistency.
-- `out/blue_brain_audit_baseline_2026-05-09/` — current Blue-Brain clean maintenance-ready baseline evidence bundle on HEAD `efbeec23b752744dc9f87a2e2e3eeb9efe25104f`.
+- `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/` — current Blue-Brain clean maintenance-ready baseline evidence bundle on HEAD `cf54660512118d5071585d85572a5a0d9e72fe81`.
 - `out/docs_lint_report.json` and `out/gate_report.json` — standard root reports for canonical docs/readiness checks.
 
 Supporting references can clarify evidence, terminology and maintenance caveats. They must not be used to override the authority map or infer new features.
@@ -69,6 +70,6 @@ The current state is a **clean maintenance-ready baseline**. Remaining items are
 
 - historical docs remain searchable and require authority-map disambiguation;
 - `selection-mediated` and `execution-interface-mediated` remain read/diagnostic labels only;
-- current audit evidence is the 2026-05-09 baseline bundle, while 2026-05-08 and earlier bundles are historical;
+- current audit evidence is the 2026-05-12 HEAD-qualified baseline bundle, while 2026-05-10 and earlier bundles are historical;
 - shadow surfaces remain non-canonical/internal-only/deferred unless a future explicit re-scope changes the authority chain;
 - the former Cargo `workspace.features` warning has been removed at the root manifest instead of accepted as recurring maintenance noise.
