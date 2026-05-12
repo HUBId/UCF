@@ -85,7 +85,7 @@ A later HH re-scope must remain bounded to the single `Basal Ganglia ↔ Cerebel
 
 ## 8) Documentation and test hook
 
-The canonical code map, this document, `docs/blue_brain_hh_candidate_scope_map_v1.md`, `docs/blue_brain_hh_prerequisite_map_v1.md`, `docs/README.md` and `docs/blue_brain_authority_chain_status_map.md` form the HH guard-barrier line. The targeted checks assert that every map entry keeps all no-direct barriers true and all authority-opening flags false.
+The canonical code map, this document, `docs/blue_brain_hh_candidate_scope_map_v1.md`, `docs/blue_brain_hh_prerequisite_map_v1.md`, `docs/blue_brain_hh_preparation_closure_map_v1.md`, `docs/README.md` and `docs/blue_brain_authority_chain_status_map.md` form the HH guard-barrier line. The targeted checks assert that every map entry keeps all no-direct barriers true and all authority-opening flags false.
 
 ## 9) Abschlussnotiz
 
