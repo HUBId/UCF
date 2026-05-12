@@ -536,6 +536,121 @@ pub const CANONICAL_BLUE_BRAIN_POST_MD3_MAINTENANCE_FINDINGS_MAP:
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCompletionThirdDeepeningDecisionClass {
+    ReviewedFirstCandidate,
+    StrongestRemainingButNotJustified,
+    ExistingTwoDeepeningsSufficient,
+    DeferredArchitectureLaneOnly,
+    NonCanonicalInternalOnlyPath,
+}
+
+pub const CANONICAL_BLUE_BRAIN_COMPLETION_THIRD_DEEPENING_DECISION_CLASS_MAP:
+    [BlueBrainCompletionThirdDeepeningDecisionClass; 5] = [
+    BlueBrainCompletionThirdDeepeningDecisionClass::ReviewedFirstCandidate,
+    BlueBrainCompletionThirdDeepeningDecisionClass::StrongestRemainingButNotJustified,
+    BlueBrainCompletionThirdDeepeningDecisionClass::ExistingTwoDeepeningsSufficient,
+    BlueBrainCompletionThirdDeepeningDecisionClass::DeferredArchitectureLaneOnly,
+    BlueBrainCompletionThirdDeepeningDecisionClass::NonCanonicalInternalOnlyPath,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCompletionThirdDeepeningDecisionEntry {
+    pub pair: Option<BlueBrainInterRegionArchitecturePair>,
+    pub decision_class: BlueBrainCompletionThirdDeepeningDecisionClass,
+    pub reviewed_first: bool,
+    pub timing_prediction_correction_leverage: bool,
+    pub bounded_routing_relay_connection: bool,
+    pub low_scope_risk: bool,
+    pub repo_backed_implementation: bool,
+    pub opens_third_model_deepening: bool,
+    pub existing_two_deepenings_sufficient: bool,
+    pub input_surface: &'static str,
+    pub state_surface: &'static str,
+    pub output_surface: &'static str,
+    pub diagnostic_surface: &'static str,
+    pub contract_boundary: &'static str,
+    pub no_hh_implementation: bool,
+    pub no_fourth_deepening: bool,
+    pub no_new_region_functionality: bool,
+    pub no_global_model_platform: bool,
+}
+
+/// Completion-series decision map for the remaining justified bounded model
+/// deepening question. It reviews Thalamus-Cerebellum first, but closes without
+/// opening a third deepening because the only strong remaining timing/relay
+/// candidate is still architecture-lane-only and not implemented in IR1.
+pub const CANONICAL_BLUE_BRAIN_COMPLETION_THIRD_DEEPENING_DECISION_MAP:
+    [BlueBrainCompletionThirdDeepeningDecisionEntry; 3] = [
+    BlueBrainCompletionThirdDeepeningDecisionEntry {
+        pair: Some(BlueBrainInterRegionArchitecturePair::ThalamusCerebellum),
+        decision_class:
+            BlueBrainCompletionThirdDeepeningDecisionClass::StrongestRemainingButNotJustified,
+        reviewed_first: true,
+        timing_prediction_correction_leverage: true,
+        bounded_routing_relay_connection: true,
+        low_scope_risk: true,
+        repo_backed_implementation: false,
+        opens_third_model_deepening: false,
+        existing_two_deepenings_sufficient: true,
+        input_surface: "no new input surface; Thalamus-Cerebellum remains NotYetImplemented",
+        state_surface: "no third relation-local Kuramoto-like state opened",
+        output_surface: "no advisory output beyond existing two deepened surfaces",
+        diagnostic_surface: "diagnostic note only: timing/relay candidate remains deferred architecture-lane-only",
+        contract_boundary: "relation contract remains NotYetImplemented; no Runtime/Selection/Reference consumer read",
+        no_hh_implementation: true,
+        no_fourth_deepening: true,
+        no_new_region_functionality: true,
+        no_global_model_platform: true,
+    },
+    BlueBrainCompletionThirdDeepeningDecisionEntry {
+        pair: Some(BlueBrainInterRegionArchitecturePair::AmygdalaThalamus),
+        decision_class:
+            BlueBrainCompletionThirdDeepeningDecisionClass::ExistingTwoDeepeningsSufficient,
+        reviewed_first: false,
+        timing_prediction_correction_leverage: false,
+        bounded_routing_relay_connection: true,
+        low_scope_risk: true,
+        repo_backed_implementation: true,
+        opens_third_model_deepening: false,
+        existing_two_deepenings_sufficient: true,
+        input_surface: "existing first bounded Kuramoto-like input surface only",
+        state_surface: "existing first relation-local state only",
+        output_surface: "existing first advisory/caveated output only",
+        diagnostic_surface: "existing first model diagnostic only",
+        contract_boundary: "existing advisory/diagnostic contract boundary remains leading",
+        no_hh_implementation: true,
+        no_fourth_deepening: true,
+        no_new_region_functionality: true,
+        no_global_model_platform: true,
+    },
+    BlueBrainCompletionThirdDeepeningDecisionEntry {
+        pair: Some(BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia),
+        decision_class:
+            BlueBrainCompletionThirdDeepeningDecisionClass::ExistingTwoDeepeningsSufficient,
+        reviewed_first: false,
+        timing_prediction_correction_leverage: false,
+        bounded_routing_relay_connection: false,
+        low_scope_risk: true,
+        repo_backed_implementation: true,
+        opens_third_model_deepening: false,
+        existing_two_deepenings_sufficient: true,
+        input_surface: "existing second bounded Kuramoto-like input surface only",
+        state_surface: "existing second relation-local state only",
+        output_surface: "existing second advisory/caveated output only",
+        diagnostic_surface: "existing second model diagnostic only",
+        contract_boundary: "existing selection-mediated advisory/diagnostic boundary remains leading",
+        no_hh_implementation: true,
+        no_fourth_deepening: true,
+        no_new_region_functionality: true,
+        no_global_model_platform: true,
+    },
+];
+
+pub const BLUE_BRAIN_COMPLETION_THIRD_DEEPENING_OPENED: bool = false;
+pub const BLUE_BRAIN_COMPLETION_THIRD_DEEPENING_REVIEWED_FIRST_PAIR:
+    BlueBrainInterRegionArchitecturePair = BlueBrainInterRegionArchitecturePair::ThalamusCerebellum;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainMaintenanceVerificationFindingClass {
     UnclearTestNaming,
     AmbiguousTestScope,
@@ -17256,6 +17371,80 @@ mod tests {
         assert!(current_model_mode
             .forbidden_authority
             .contains("no additional model-deepening candidate"));
+    }
+
+    #[test]
+    fn completion_third_deepening_decision_reviews_thalamus_cerebellum_and_closes() {
+        let third_opened = BLUE_BRAIN_COMPLETION_THIRD_DEEPENING_OPENED;
+        let reviewed_first_pair = BLUE_BRAIN_COMPLETION_THIRD_DEEPENING_REVIEWED_FIRST_PAIR;
+        assert!(!third_opened);
+        assert_eq!(
+            reviewed_first_pair,
+            BlueBrainInterRegionArchitecturePair::ThalamusCerebellum
+        );
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_COMPLETION_THIRD_DEEPENING_DECISION_MAP.len(),
+            3
+        );
+
+        let thalamus_cerebellum = CANONICAL_BLUE_BRAIN_COMPLETION_THIRD_DEEPENING_DECISION_MAP
+            .iter()
+            .find(|entry| {
+                entry.pair == Some(BlueBrainInterRegionArchitecturePair::ThalamusCerebellum)
+            })
+            .expect("Thalamus-Cerebellum completion decision entry");
+        assert_eq!(
+            thalamus_cerebellum.decision_class,
+            BlueBrainCompletionThirdDeepeningDecisionClass::StrongestRemainingButNotJustified
+        );
+        assert!(thalamus_cerebellum.reviewed_first);
+        assert!(thalamus_cerebellum.timing_prediction_correction_leverage);
+        assert!(thalamus_cerebellum.bounded_routing_relay_connection);
+        assert!(thalamus_cerebellum.low_scope_risk);
+        assert!(!thalamus_cerebellum.repo_backed_implementation);
+        assert!(!thalamus_cerebellum.opens_third_model_deepening);
+        assert!(thalamus_cerebellum.existing_two_deepenings_sufficient);
+        assert!(thalamus_cerebellum
+            .contract_boundary
+            .contains("NotYetImplemented"));
+        assert!(thalamus_cerebellum.no_hh_implementation);
+        assert!(thalamus_cerebellum.no_fourth_deepening);
+        assert!(thalamus_cerebellum.no_new_region_functionality);
+        assert!(thalamus_cerebellum.no_global_model_platform);
+
+        let existing_deepenings = CANONICAL_BLUE_BRAIN_COMPLETION_THIRD_DEEPENING_DECISION_MAP
+            .iter()
+            .filter(|entry| {
+                entry.decision_class
+                    == BlueBrainCompletionThirdDeepeningDecisionClass::ExistingTwoDeepeningsSufficient
+            })
+            .count();
+        assert_eq!(existing_deepenings, 2);
+    }
+
+    #[test]
+    fn completion_third_deepening_doc_and_maps_pin_no_third_opening() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_completion_third_deepening_decision_closure_v1.md"
+        );
+        let readme = include_str!("../../../docs/README.md");
+        let authority = include_str!("../../../docs/blue_brain_authority_chain_status_map.md");
+        let model_map = include_str!("../../../docs/blue_brain_canonical_model_boundary_map_v1.md");
+        let relation_map =
+            include_str!("../../../docs/blue_brain_canonical_inter_region_relation_map_v1.md");
+
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_COMPLETION_THIRD_DEEPENING_DECISION_MAP"));
+        assert!(doc.contains("Thalamus ↔ Cerebellum"));
+        assert!(doc.contains("keine dritte bounded Modellvertiefung geöffnet"));
+        assert!(doc.contains("NotYetImplemented"));
+        assert!(doc.contains("genau zwei bestehenden bounded Kuramoto-like Vertiefungen genügen"));
+        assert!(doc.contains("keine HH-Implementierung"));
+        assert!(doc.contains("keine vierte Modellvertiefung"));
+        assert!(doc.contains("keine globale Modellplattform"));
+        assert!(readme.contains("Blue-Brain Completion third-deepening decision closure"));
+        assert!(authority.contains("blue_brain_completion_third_deepening_decision_closure_v1.md"));
+        assert!(model_map.contains("Completion-third-deepening closure"));
+        assert!(relation_map.contains("Completion-third-deepening closure"));
     }
 
     #[test]
