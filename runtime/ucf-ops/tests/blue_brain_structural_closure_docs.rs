@@ -74,3 +74,30 @@ fn structural_closure_doc_is_indexed_by_authority_and_readme() {
     assert!(readme.contains("docs/blue_brain_structural_closure_map_v1.md"));
     assert!(authority.contains("docs/blue_brain_structural_closure_map_v1.md"));
 }
+
+#[test]
+fn final_canonical_matrices_freeze_doc_is_indexed_and_pins_counts() {
+    let doc = read_doc("docs/blue_brain_canonical_matrices_final_freeze_v1.md");
+    let readme = read_doc("docs/README.md");
+    let authority = read_doc("docs/blue_brain_authority_chain_status_map.md");
+
+    assert_contains_all(
+        &doc,
+        &[
+            "Finale kanonische Regionenmatrix",
+            "Finale kanonische Relationsmatrix",
+            "Finale kanonische Modellmatrix",
+            "Exactly six canonical active regions",
+            "exactly three implemented",
+            "exactly four mediated",
+            "exactly two bounded Kuramoto-like",
+            "HH simulation-only/diagnostic-only",
+            "later-HH/deferred",
+            "architecture-lane-only is not implementation",
+            "no new region",
+            "no new model deepening",
+        ],
+    );
+    assert!(readme.contains("docs/blue_brain_canonical_matrices_final_freeze_v1.md"));
+    assert!(authority.contains("docs/blue_brain_canonical_matrices_final_freeze_v1.md"));
+}
