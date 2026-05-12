@@ -71,3 +71,7 @@ If any condition is missing, the backlog item fails closed and this preparation 
 ## 7) Abschlussnotiz
 
 HH-Preparation is closed. Scope, prerequisites and guard boundaries are consolidated into one decision: `Basal Ganglia ↔ Cerebellum` may remain as a later narrow backlog re-scope, and HH remains deferred. This closure adds no HH implementation, no productive HH mode, no global HH platform, no compute-core reopening, no additional HH candidate and no Runtime/Selection/Reference/Execution authority.
+
+## 8) Pilot-opening follow-up decision
+
+The follow-up pilot-opening check is `docs/blue_brain_hh_pilot_decision_map_v1.md` and `CANONICAL_BLUE_BRAIN_HH_PILOT_DECISION_MAP`. It re-checks the single `Basal Ganglia ↔ Cerebellum` relation against this prerequisite/closure state and keeps the candidate consciously deferred: no HH pilot is opened because relation implementation, input/output contracts, deterministic fixtures/goldens, fixed encoding, performance budget, diagnostic consumer mapping and authority proofs remain missing. The follow-up preserves no-direct guards, separates HH model state from Contract state, separates diagnostic output from operative authority and adds no productive HH use.

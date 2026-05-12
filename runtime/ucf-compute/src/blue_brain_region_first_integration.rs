@@ -4269,6 +4269,146 @@ pub const CANONICAL_BLUE_BRAIN_HH_PREPARATION_CLOSURE_MAP: [BlueBrainHhPreparati
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHhPilotDecisionClass {
+    CandidatePrerequisiteReview,
+    DeferredPrerequisitesInsufficient,
+    GuardContractPinned,
+    ProductiveUseForbidden,
+}
+
+pub const CANONICAL_BLUE_BRAIN_HH_PILOT_DECISION_CLASS_MAP: [BlueBrainHhPilotDecisionClass; 4] = [
+    BlueBrainHhPilotDecisionClass::CandidatePrerequisiteReview,
+    BlueBrainHhPilotDecisionClass::DeferredPrerequisitesInsufficient,
+    BlueBrainHhPilotDecisionClass::GuardContractPinned,
+    BlueBrainHhPilotDecisionClass::ProductiveUseForbidden,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainHhPilotDecisionEntry {
+    pub decision_id: &'static str,
+    pub decision_class: BlueBrainHhPilotDecisionClass,
+    pub relation: BlueBrainInterRegionArchitecturePair,
+    pub prerequisite_basis: &'static str,
+    pub decision_statement: &'static str,
+    pub required_follow_up: &'static str,
+    pub pilot_opened: bool,
+    pub deferred: bool,
+    pub relation_level_only: bool,
+    pub simulation_only_diagnostic_only: bool,
+    pub productive_use_allowed: bool,
+    pub current_mode: bool,
+    pub runtime_authority: bool,
+    pub selection_authority: bool,
+    pub reference_mutation_authority: bool,
+    pub execution_authority: bool,
+    pub hh_state_is_contract_state: bool,
+    pub diagnostic_output_is_operative_authority: bool,
+    pub opens_new_region_functionality: bool,
+    pub opens_global_hh_platform: bool,
+    pub opens_compute_core_work: bool,
+    pub opens_planner_agent_policy_retry_work: bool,
+    pub opens_additional_hh_candidates: bool,
+    pub no_direct_action_trigger: bool,
+    pub no_direct_execution_trigger: bool,
+    pub no_direct_retry_trigger: bool,
+    pub no_direct_memory_commit: bool,
+    pub no_direct_compute_invocation: bool,
+    pub no_safety_override: bool,
+}
+
+const fn blue_brain_hh_pilot_decision_entry(
+    decision_id: &'static str,
+    decision_class: BlueBrainHhPilotDecisionClass,
+    prerequisite_basis: &'static str,
+    decision_statement: &'static str,
+    required_follow_up: &'static str,
+    pilot_opened: bool,
+    deferred: bool,
+) -> BlueBrainHhPilotDecisionEntry {
+    BlueBrainHhPilotDecisionEntry {
+        decision_id,
+        decision_class,
+        relation: BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum,
+        prerequisite_basis,
+        decision_statement,
+        required_follow_up,
+        pilot_opened,
+        deferred,
+        relation_level_only: true,
+        simulation_only_diagnostic_only: true,
+        productive_use_allowed: false,
+        current_mode: false,
+        runtime_authority: false,
+        selection_authority: false,
+        reference_mutation_authority: false,
+        execution_authority: false,
+        hh_state_is_contract_state: false,
+        diagnostic_output_is_operative_authority: false,
+        opens_new_region_functionality: false,
+        opens_global_hh_platform: false,
+        opens_compute_core_work: false,
+        opens_planner_agent_policy_retry_work: false,
+        opens_additional_hh_candidates: false,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+    }
+}
+
+/// Canonical HH pilot decision map for the single `Basal Ganglia ↔ Cerebellum`
+/// candidate.
+///
+/// This map performs the requested pilot-opening check against the existing
+/// prerequisite map. Because the relation implementation, input/output
+/// contracts, deterministic fixtures/goldens, fixed encoding, performance
+/// budget, diagnostic consumer mapping and authority proofs are still missing,
+/// it deliberately does not open even a simulation-only/diagnostic-only pilot.
+/// The candidate remains relation-level only and deferred, with all no-direct,
+/// model-state/contract-state and diagnostic-output/operative-authority guards
+/// pinned.
+pub const CANONICAL_BLUE_BRAIN_HH_PILOT_DECISION_MAP: [BlueBrainHhPilotDecisionEntry; 4] = [
+    blue_brain_hh_pilot_decision_entry(
+        "hh_pilot_candidate_prerequisite_review",
+        BlueBrainHhPilotDecisionClass::CandidatePrerequisiteReview,
+        "prerequisite map confirms only candidate selection and bounded region/relation surfaces are already satisfied",
+        "the Basal Ganglia ↔ Cerebellum candidate is reviewed as exactly one relation-level HH pilot candidate",
+        "do not expand beyond the single relation; keep every later input/output derived from existing bounded surfaces only",
+        false,
+        true,
+    ),
+    blue_brain_hh_pilot_decision_entry(
+        "hh_pilot_deferred_prerequisites_insufficient",
+        BlueBrainHhPilotDecisionClass::DeferredPrerequisitesInsufficient,
+        "relation implementation, HH input/output contracts, fixtures, goldens, fixed encoding, performance budget, diagnostic consumer mapping and authority proofs are missing",
+        "pilot is not opened; the candidate remains consciously deferred rather than partially implemented",
+        "a future re-scope must supply the missing deterministic contracts, fixture corpus, budgets and fail-closed checks before any simulation-only diagnostic path can run",
+        false,
+        true,
+    ),
+    blue_brain_hh_pilot_decision_entry(
+        "hh_pilot_guard_contract_boundaries_pinned",
+        BlueBrainHhPilotDecisionClass::GuardContractPinned,
+        "guard-boundary map separates HH model state from contract state and HH diagnostic output from operative authority",
+        "no-direct guards and Contract/Runtime/Selection/Reference/Execution authority barriers remain pinned while deferred",
+        "any future pilot proposal must restate no-direct-action, no-direct-execution, no-direct-retry, no-direct-memory, no-direct-compute and no-safety-override barriers",
+        false,
+        true,
+    ),
+    blue_brain_hh_pilot_decision_entry(
+        "hh_pilot_productive_use_forbidden",
+        BlueBrainHhPilotDecisionClass::ProductiveUseForbidden,
+        "candidate scope and preparation closure both forbid productive HH and current-mode HH",
+        "no productive output, Runtime authority, Selection authority, Execution authority, global HH platform, compute-core reopening or additional HH candidate is opened",
+        "keep the backlog item non-productive unless an explicit future policy/spec decision replaces this deferred decision",
+        false,
+        true,
+    ),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainHhCandidateScopeClass {
     FinalSingleRelationCandidate,
     ScopeInvariant,
@@ -18632,6 +18772,90 @@ mod tests {
         assert!(doc.contains("no direct compute invocation"));
         assert!(doc.contains("no safety override"));
         assert!(doc.contains("HH remains deferred"));
+    }
+
+    #[test]
+    fn canonical_hh_pilot_decision_defers_when_prerequisites_are_insufficient() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_HH_PILOT_DECISION_CLASS_MAP.len(), 4);
+        assert_eq!(CANONICAL_BLUE_BRAIN_HH_PILOT_DECISION_MAP.len(), 4);
+
+        for decision_class in CANONICAL_BLUE_BRAIN_HH_PILOT_DECISION_CLASS_MAP {
+            assert!(CANONICAL_BLUE_BRAIN_HH_PILOT_DECISION_MAP
+                .iter()
+                .any(|entry| entry.decision_class == decision_class));
+        }
+
+        let deferred = CANONICAL_BLUE_BRAIN_HH_PILOT_DECISION_MAP
+            .iter()
+            .find(|entry| {
+                entry.decision_class
+                    == BlueBrainHhPilotDecisionClass::DeferredPrerequisitesInsufficient
+            })
+            .expect("deferred HH pilot decision must exist");
+        assert!(deferred.deferred);
+        assert!(!deferred.pilot_opened);
+        assert!(deferred
+            .prerequisite_basis
+            .contains("input/output contracts"));
+        assert!(deferred.prerequisite_basis.contains("fixtures"));
+        assert!(deferred.prerequisite_basis.contains("fixed encoding"));
+        assert!(deferred.prerequisite_basis.contains("performance budget"));
+        assert!(deferred.required_follow_up.contains("future re-scope"));
+    }
+
+    #[test]
+    fn canonical_hh_pilot_decision_pins_guards_contract_state_and_non_productive_use() {
+        for entry in CANONICAL_BLUE_BRAIN_HH_PILOT_DECISION_MAP {
+            assert_eq!(
+                entry.relation,
+                BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum
+            );
+            assert!(!entry.pilot_opened);
+            assert!(entry.deferred);
+            assert!(entry.relation_level_only);
+            assert!(entry.simulation_only_diagnostic_only);
+            assert!(!entry.productive_use_allowed);
+            assert!(!entry.current_mode);
+            assert!(!entry.runtime_authority);
+            assert!(!entry.selection_authority);
+            assert!(!entry.reference_mutation_authority);
+            assert!(!entry.execution_authority);
+            assert!(!entry.hh_state_is_contract_state);
+            assert!(!entry.diagnostic_output_is_operative_authority);
+            assert!(!entry.opens_new_region_functionality);
+            assert!(!entry.opens_global_hh_platform);
+            assert!(!entry.opens_compute_core_work);
+            assert!(!entry.opens_planner_agent_policy_retry_work);
+            assert!(!entry.opens_additional_hh_candidates);
+            assert!(entry.no_direct_action_trigger);
+            assert!(entry.no_direct_execution_trigger);
+            assert!(entry.no_direct_retry_trigger);
+            assert!(entry.no_direct_memory_commit);
+            assert!(entry.no_direct_compute_invocation);
+            assert!(entry.no_safety_override);
+        }
+    }
+
+    #[test]
+    fn canonical_hh_pilot_decision_doc_matches_deferred_boundaries() {
+        let doc = include_str!("../../../docs/blue_brain_hh_pilot_decision_map_v1.md");
+        assert!(doc.contains("HH-pilot decision map"));
+        assert!(doc.contains("Pilot opened: no"));
+        assert!(doc.contains("consciously deferred"));
+        assert!(doc.contains("Basal Ganglia ↔ Cerebellum"));
+        assert!(doc.contains("relation-level only"));
+        assert!(doc.contains("simulation-only/diagnostic-only"));
+        assert!(doc.contains("HH model state is not Contract state"));
+        assert!(doc.contains("diagnostic output is not operative authority"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("no productive HH use"));
+        assert!(doc.contains("no global HH platform"));
+        assert!(doc.contains("no compute-core reopening"));
     }
 
     #[test]
