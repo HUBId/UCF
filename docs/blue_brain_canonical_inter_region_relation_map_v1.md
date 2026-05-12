@@ -37,7 +37,7 @@ Architecture lane and implementation status are separate fields: an architecture
 | Basal Ganglia ↔ Hypothalamus | selection-mediated relation | canonical mediated relation | implemented selection-mediated relation | SelectionContractMediatedOnly |
 | Cerebellum ↔ Hypothalamus | deferred/not-yet-active relation | canonical deferred relation | deferred/not-yet-implemented relation | NotYetImplemented |
 
-Canonical active relations are therefore exactly three canonical implemented direct bounded advisory relations plus four canonical mediated relations. All other named lanes are deferred, blocked, or architecture-lane-only.
+Canonical active relations are therefore exactly three canonical implemented direct bounded advisory relations plus four canonical mediated relations. Completion-third-deepening closure reviews `Thalamus ↔ Cerebellum` first for timing/relay leverage, but leaves it unopened because this row remains architecture-lane-only and `NotYetImplemented`. All other named lanes are deferred, blocked, or architecture-lane-only.
 
 ## Mediation boundaries
 
@@ -80,5 +80,5 @@ The closure map preserves:
 
 ## Structural Closure Pack next steps
 
-1. Use this compact relation basis to harden model-boundary wording for MD2/MD3 without adding another model-deepening candidate.
+1. Use this compact relation basis to harden model-boundary wording for MD2/MD3 and Completion-third-deepening closure without adding another model-deepening candidate.
 2. Refresh maintenance evidence/reports against this closure map so future cleanup can detect relation-status drift without opening new region or compute scope.

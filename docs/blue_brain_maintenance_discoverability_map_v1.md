@@ -32,7 +32,7 @@ The single authority path remains the authority map plus the final current-autho
 - `docs/blue_brain_system_audit_consolidation_serie_sc1_prompt1_v1.md`
 - `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md`
 
-Summary: current authority is six bounded anatomical regions; IR1 bounded relation semantics; MD2 exactly one first deepened pair (`Amygdala ↔ Thalamus`); MD3 exactly one second bounded deepened pair (`Amygdala ↔ Basal Ganglia`); SC1 maintenance default. No seventh region, no additional model candidate, no inter-region platform, no global model platform, no planner/agent/policy/retry expansion, and no compute-core expansion are active.
+Summary: current authority is six bounded anatomical regions; IR1 bounded relation semantics; MD2 exactly one first deepened pair (`Amygdala ↔ Thalamus`); MD3 exactly one second bounded deepened pair (`Amygdala ↔ Basal Ganglia`); SC1 maintenance default; Completion-third-deepening closure reviews `Thalamus ↔ Cerebellum` first and opens no third bounded model deepening. No seventh region, no additional model candidate, no inter-region platform, no global model platform, no planner/agent/policy/retry expansion, and no compute-core expansion are active.
 
 ## 3) Supporting current references
 
@@ -47,6 +47,7 @@ These docs and artifacts are current support, not competing authority:
 - `docs/blue_brain_discoverability_findings_map_v1.md` — maintenance findings evidence for current-path clarity, historical-pointer prominence and duplicate/non-canonical index risks.
 - `docs/blue_brain_discoverability_cleanup_pass_v1.md` — closure note for changed files, cleanup actions, checks and remaining maintenance need.
 - `docs/blue_brain_cross_surface_maintenance_cleanup_pass_v1.md` — cross-surface maintenance cleanup closure note for region/relation/model/guard/doc consistency.
+- `docs/blue_brain_completion_third_deepening_decision_closure_v1.md` — supporting closure note for the no-third-model-deepening decision after reviewing `Thalamus ↔ Cerebellum`.
 - `out/blue_brain_audit_baseline_2026-05-12_head_cf54660512/` — current Blue-Brain clean maintenance-ready baseline evidence bundle on HEAD `cf54660512118d5071585d85572a5a0d9e72fe81`.
 - `out/docs_lint_report.json` and `out/gate_report.json` — standard root reports for canonical docs/readiness checks.
 
@@ -61,6 +62,7 @@ Common stale readings to avoid:
 - treating a two-region or three-region document as the current Blue-Brain state;
 - treating early IR1 implementation text as the complete current relation set after later authority docs;
 - treating pre-MD3 model-deepening language as leaving an open candidate after MD3/SC1 closure;
+- treating `Thalamus ↔ Cerebellum` architecture-lane-only wording as a third opened model-deepening path;
 - treating old baseline folders as current audit evidence;
 - treating non-canonical DBM/microcircuit/neuro crates as region expansion.
 

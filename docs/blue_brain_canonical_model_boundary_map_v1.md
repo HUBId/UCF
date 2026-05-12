@@ -45,7 +45,7 @@ All six canonical regions keep region-surface semantics leading. Relation-local 
 | Basal Ganglia ↔ Hypothalamus | relation | abstract functional/current mode | canonical mediated relation | Selection-mediated contract read only. |
 | Cerebellum ↔ Hypothalamus | relation | abstract functional/current mode | canonical deferred relation | Deferred relation is not model deepening. |
 
-Canonical active model deepening is exactly two surfaces: `Amygdala ↔ Thalamus` and `Amygdala ↔ Basal Ganglia`. Relation diagnostics, caveats, mediated reads, deferred states, blocked states, and architecture lanes do not automatically become model-deepened surfaces.
+Canonical active model deepening is exactly two surfaces: `Amygdala ↔ Thalamus` and `Amygdala ↔ Basal Ganglia`. Completion-third-deepening closure reviews `Thalamus ↔ Cerebellum` first but leaves it unopened because it is still architecture-lane-only/NotYetImplemented. Relation diagnostics, caveats, mediated reads, deferred states, blocked states, and architecture lanes do not automatically become model-deepened surfaces.
 
 ## Dynamics-reference boundaries
 
@@ -64,7 +64,7 @@ HH is nowhere a current productive mode. HH remains either HH simulation-only/di
 
 ## Kuramoto-like boundary
 
-Bounded Kuramoto-like mode is active only where explicitly listed: the first model-deepened `Amygdala ↔ Thalamus` surface, the second model-deepened `Amygdala ↔ Basal Ganglia` surface, and the BB12 bounded advisory dynamics reference. It remains bounded, advisory, and diagnostic. It is not a global region model, not a global relation model, not a planner, not action selection, not execution control, and not a compute-core platform.
+Bounded Kuramoto-like mode is active only where explicitly listed: the first model-deepened `Amygdala ↔ Thalamus` surface, the second model-deepened `Amygdala ↔ Basal Ganglia` surface, and the BB12 bounded advisory dynamics reference. Completion-third-deepening closure does not add `Thalamus ↔ Cerebellum` to this active set. It remains bounded, advisory, and diagnostic. It is not a global region model, not a global relation model, not a planner, not action selection, not execution control, and not a compute-core platform.
 
 ## Contract, guard, and runtime authority separation
 
