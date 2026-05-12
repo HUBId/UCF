@@ -4039,10 +4039,18 @@ pub struct BlueBrainHhCandidateScopeMapEntry {
     pub opens_network_simulation: bool,
     pub opens_global_hh_platform: bool,
     pub opens_runtime_selection_execution_authority: bool,
+    pub opens_contract_authority: bool,
+    pub opens_diagnostic_output_as_operative_authority: bool,
     pub opens_compute_core_work: bool,
     pub opens_new_region_functionality: bool,
     pub opens_planner_agent_policy_retry_work: bool,
     pub opens_additional_hh_candidates: bool,
+    pub no_direct_action_trigger: bool,
+    pub no_direct_execution_trigger: bool,
+    pub no_direct_retry_trigger: bool,
+    pub no_direct_memory_commit: bool,
+    pub no_direct_compute_invocation: bool,
+    pub no_safety_override: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4075,10 +4083,18 @@ const fn blue_brain_hh_candidate_scope_map_entry(
         opens_network_simulation: false,
         opens_global_hh_platform: false,
         opens_runtime_selection_execution_authority: false,
+        opens_contract_authority: false,
+        opens_diagnostic_output_as_operative_authority: false,
         opens_compute_core_work: false,
         opens_new_region_functionality: false,
         opens_planner_agent_policy_retry_work: false,
         opens_additional_hh_candidates: false,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
     }
 }
 
@@ -4151,6 +4167,123 @@ pub const CANONICAL_BLUE_BRAIN_HH_CANDIDATE_SCOPE_MAP: [BlueBrainHhCandidateScop
         false,
         false,
         false,
+    ),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHhGuardBoundaryClass {
+    NoDirectTriggerBarrier,
+    ContractAuthoritySeparation,
+    RuntimeSelectionExecutionSeparation,
+    StateSeparation,
+    DiagnosticAuthoritySeparation,
+    ScopeDriftBarrier,
+}
+
+pub const CANONICAL_BLUE_BRAIN_HH_GUARD_BOUNDARY_CLASS_MAP: [BlueBrainHhGuardBoundaryClass; 6] = [
+    BlueBrainHhGuardBoundaryClass::NoDirectTriggerBarrier,
+    BlueBrainHhGuardBoundaryClass::ContractAuthoritySeparation,
+    BlueBrainHhGuardBoundaryClass::RuntimeSelectionExecutionSeparation,
+    BlueBrainHhGuardBoundaryClass::StateSeparation,
+    BlueBrainHhGuardBoundaryClass::DiagnosticAuthoritySeparation,
+    BlueBrainHhGuardBoundaryClass::ScopeDriftBarrier,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainHhGuardBoundaryMapEntry {
+    pub boundary_id: &'static str,
+    pub boundary_class: BlueBrainHhGuardBoundaryClass,
+    pub relation: BlueBrainInterRegionArchitecturePair,
+    pub boundary_statement: &'static str,
+    pub rescope_requirement: &'static str,
+    pub hh_state_is_contract_state: bool,
+    pub diagnostic_output_is_operative_authority: bool,
+    pub opens_contract_authority: bool,
+    pub opens_runtime_authority: bool,
+    pub opens_selection_authority: bool,
+    pub opens_execution_authority: bool,
+    pub opens_reference_mutation_authority: bool,
+    pub opens_scope_drift: bool,
+    pub no_direct_action_trigger: bool,
+    pub no_direct_execution_trigger: bool,
+    pub no_direct_retry_trigger: bool,
+    pub no_direct_memory_commit: bool,
+    pub no_direct_compute_invocation: bool,
+    pub no_safety_override: bool,
+}
+
+const fn blue_brain_hh_guard_boundary_map_entry(
+    boundary_id: &'static str,
+    boundary_class: BlueBrainHhGuardBoundaryClass,
+    boundary_statement: &'static str,
+    rescope_requirement: &'static str,
+) -> BlueBrainHhGuardBoundaryMapEntry {
+    BlueBrainHhGuardBoundaryMapEntry {
+        boundary_id,
+        boundary_class,
+        relation: BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum,
+        boundary_statement,
+        rescope_requirement,
+        hh_state_is_contract_state: false,
+        diagnostic_output_is_operative_authority: false,
+        opens_contract_authority: false,
+        opens_runtime_authority: false,
+        opens_selection_authority: false,
+        opens_execution_authority: false,
+        opens_reference_mutation_authority: false,
+        opens_scope_drift: false,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+    }
+}
+
+/// Canonical HH guard boundary map for the post-scope preparation block.
+///
+/// This map hardens the single later-HH candidate against authority drift. It
+/// pins the no-direct barriers at HH level, separates HH-state from contract
+/// state, separates diagnostic output from operative authority, and requires any
+/// future re-scope to restate the same barriers before implementation can be
+/// discussed.
+pub const CANONICAL_BLUE_BRAIN_HH_GUARD_BOUNDARY_MAP: [BlueBrainHhGuardBoundaryMapEntry; 6] = [
+    blue_brain_hh_guard_boundary_map_entry(
+        "hh_level_no_direct_trigger_barriers",
+        BlueBrainHhGuardBoundaryClass::NoDirectTriggerBarrier,
+        "HH-level no-direct barriers are pinned: no direct action trigger, no direct execution trigger, no direct retry trigger, no direct memory commit, no direct compute invocation and no safety override",
+        "a later re-scope must restate every no-direct barrier explicitly and fail closed if any barrier is absent",
+    ),
+    blue_brain_hh_guard_boundary_map_entry(
+        "hh_contract_authority_separation",
+        BlueBrainHhGuardBoundaryClass::ContractAuthoritySeparation,
+        "HH diagnostics are not Contract state and do not grant contract-authority changes, contract-state writes or contract-version promotion",
+        "a later re-scope must define a separate bounded diagnostic contract and prove it cannot mutate or satisfy existing Contract state",
+    ),
+    blue_brain_hh_guard_boundary_map_entry(
+        "hh_runtime_selection_execution_authority_separation",
+        BlueBrainHhGuardBoundaryClass::RuntimeSelectionExecutionSeparation,
+        "HH diagnostics do not create Runtime authority, Selection authority, Reference mutation authority or Execution authority",
+        "a later re-scope must keep Runtime, Selection, Reference and Execution consumers read-only or absent unless a separate authority change is approved",
+    ),
+    blue_brain_hh_guard_boundary_map_entry(
+        "hh_state_vs_contract_state_separation",
+        BlueBrainHhGuardBoundaryClass::StateSeparation,
+        "HH-state is diagnostic/simulation state only; HH-state is not contract-state, memory state, execution state or selection state",
+        "a later re-scope must encode HH-state separately from contract-state and must not reuse Contract-state fields as HH-state carriers",
+    ),
+    blue_brain_hh_guard_boundary_map_entry(
+        "hh_diagnostic_output_vs_operative_authority_separation",
+        BlueBrainHhGuardBoundaryClass::DiagnosticAuthoritySeparation,
+        "HH diagnostic output is evidence only and is not operative authority, not automatic advisory support and not an action, execution, retry, memory, compute or safety channel",
+        "a later re-scope must label every output as diagnostic-only and prove no consumer treats diagnostic output as operative authority",
+    ),
+    blue_brain_hh_guard_boundary_map_entry(
+        "hh_rescope_scope_drift_barrier",
+        BlueBrainHhGuardBoundaryClass::ScopeDriftBarrier,
+        "The HH candidate remains the single Basal Ganglia ↔ Cerebellum relation and cannot drift into regions, platforms, extra candidates, productive HH mode or compute-core reopening",
+        "a later re-scope must preserve the single relation candidate or explicitly close this preparation line before any different HH proposal is opened",
     ),
 ];
 
@@ -18134,6 +18267,94 @@ mod tests {
             assert!(!entry.opens_planner_agent_policy_retry_work);
             assert!(!entry.opens_additional_hh_candidates);
         }
+    }
+
+    #[test]
+    fn canonical_hh_candidate_scope_map_pins_hh_level_authority_barriers() {
+        for entry in CANONICAL_BLUE_BRAIN_HH_CANDIDATE_SCOPE_MAP {
+            assert!(entry.no_direct_action_trigger);
+            assert!(entry.no_direct_execution_trigger);
+            assert!(entry.no_direct_retry_trigger);
+            assert!(entry.no_direct_memory_commit);
+            assert!(entry.no_direct_compute_invocation);
+            assert!(entry.no_safety_override);
+            assert!(!entry.opens_contract_authority);
+            assert!(!entry.opens_diagnostic_output_as_operative_authority);
+            assert!(!entry.opens_runtime_selection_execution_authority);
+        }
+    }
+
+    #[test]
+    fn canonical_hh_guard_boundary_map_hardens_contract_and_runtime_separation() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_HH_GUARD_BOUNDARY_CLASS_MAP.len(), 6);
+        assert_eq!(CANONICAL_BLUE_BRAIN_HH_GUARD_BOUNDARY_MAP.len(), 6);
+
+        for class in CANONICAL_BLUE_BRAIN_HH_GUARD_BOUNDARY_CLASS_MAP {
+            assert!(CANONICAL_BLUE_BRAIN_HH_GUARD_BOUNDARY_MAP
+                .iter()
+                .any(|entry| entry.boundary_class == class));
+        }
+
+        let state_boundary = CANONICAL_BLUE_BRAIN_HH_GUARD_BOUNDARY_MAP
+            .iter()
+            .find(|entry| entry.boundary_class == BlueBrainHhGuardBoundaryClass::StateSeparation)
+            .expect("HH state separation boundary must exist");
+        assert!(!state_boundary.hh_state_is_contract_state);
+        assert!(state_boundary
+            .boundary_statement
+            .contains("HH-state is not contract-state"));
+
+        let diagnostic_boundary = CANONICAL_BLUE_BRAIN_HH_GUARD_BOUNDARY_MAP
+            .iter()
+            .find(|entry| {
+                entry.boundary_class == BlueBrainHhGuardBoundaryClass::DiagnosticAuthoritySeparation
+            })
+            .expect("diagnostic authority separation boundary must exist");
+        assert!(!diagnostic_boundary.diagnostic_output_is_operative_authority);
+        assert!(diagnostic_boundary
+            .boundary_statement
+            .contains("not operative authority"));
+
+        for entry in CANONICAL_BLUE_BRAIN_HH_GUARD_BOUNDARY_MAP {
+            assert_eq!(
+                entry.relation,
+                BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum
+            );
+            assert!(entry.no_direct_action_trigger);
+            assert!(entry.no_direct_execution_trigger);
+            assert!(entry.no_direct_retry_trigger);
+            assert!(entry.no_direct_memory_commit);
+            assert!(entry.no_direct_compute_invocation);
+            assert!(entry.no_safety_override);
+            assert!(!entry.opens_contract_authority);
+            assert!(!entry.opens_runtime_authority);
+            assert!(!entry.opens_selection_authority);
+            assert!(!entry.opens_execution_authority);
+            assert!(!entry.opens_reference_mutation_authority);
+            assert!(!entry.opens_scope_drift);
+            assert!(!entry.hh_state_is_contract_state);
+            assert!(!entry.diagnostic_output_is_operative_authority);
+        }
+    }
+
+    #[test]
+    fn canonical_hh_guard_boundary_doc_matches_code_boundaries() {
+        let doc = include_str!("../../../docs/blue_brain_hh_guard_boundary_map_v1.md");
+        assert!(doc.contains("HH guard boundary map"));
+        assert!(doc.contains("Basal Ganglia ↔ Cerebellum"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("HH-state is not contract-state"));
+        assert!(doc.contains("HH diagnostic output is evidence only"));
+        assert!(doc.contains("not operative authority"));
+        assert!(doc.contains("no HH-based Runtime authority"));
+        assert!(doc.contains("no HH-based Selection authority"));
+        assert!(doc.contains("no HH-based Execution authority"));
+        assert!(doc.contains("scope drift"));
     }
 
     #[test]

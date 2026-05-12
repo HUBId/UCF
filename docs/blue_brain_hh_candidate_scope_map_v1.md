@@ -1,6 +1,6 @@
 # Blue-Brain HH candidate scope map v1
 
-Status: canonical HH preparation scope map for the single later Hodgkin-Huxley candidate. This document mirrors `CANONICAL_BLUE_BRAIN_HH_CANDIDATE_SCOPE_MAP` in `runtime/ucf-compute/src/blue_brain_region_first_integration.rs`; it is not a second truth source, not HH implementation, not a productive HH mode, not a global HH/neurodynamics platform, and not new Runtime/Selection/Reference/Execution authority.
+Status: canonical HH preparation scope map for the single later Hodgkin-Huxley candidate. This document mirrors `CANONICAL_BLUE_BRAIN_HH_CANDIDATE_SCOPE_MAP` in `runtime/ucf-compute/src/blue_brain_region_first_integration.rs`; it is not a second truth source, not HH implementation, not a productive HH mode, not a global HH/neurodynamics platform, and not new Runtime/Selection/Reference/Execution authority. The HH-level guard-barrier companion is `docs/blue_brain_hh_guard_boundary_map_v1.md` and `CANONICAL_BLUE_BRAIN_HH_GUARD_BOUNDARY_MAP`.
 
 ## 1) Final candidate line
 
@@ -76,6 +76,10 @@ This scope map explicitly does not open:
 
 The next preparation step, if any, is a fixture-free relation contract review checklist for `Basal Ganglia ↔ Cerebellum`. That checklist may identify required future inputs, outputs, fixtures, deterministic encodings and budgets, but it must not implement HH, must not create a runtime path, and must not introduce productive authority.
 
-## 7) Closure note
+## 7) HH guard-boundary companion
+
+Prompt 3 hardens this scope line in `docs/blue_brain_hh_guard_boundary_map_v1.md` and `CANONICAL_BLUE_BRAIN_HH_GUARD_BOUNDARY_MAP`: no direct action trigger, no direct execution trigger, no direct retry trigger, no direct memory commit, no direct compute invocation and no safety override are pinned at HH level. HH-state is not Contract state, HH diagnostic output is not operative authority, HH does not open contract authority, and HH does not open Runtime/Selection/Reference/Execution authority. Any later re-scope must preserve these barriers or explicitly close this preparation line first.
+
+## 8) Closure note
 
 The HH candidate scope line is now final for preparation purposes: exactly one relation candidate is named, the scope is deliberately small, HH is separated from Kuramoto-like and abstract current modes, non-goals are explicit, and any later work must begin from this bounded simulation-only/diagnostic-only scope basis.

@@ -83,6 +83,7 @@ Historische Aussagen bleiben erhalten (BB25/BB27/BB29-Zeitpunkte), werden aber d
 - `docs/blue_brain_hh_prerequisite_map_v1.md`
 - `docs/blue_brain_hh_readiness_closure_map_v1.md`
 - `docs/blue_brain_hh_candidate_scope_map_v1.md`
+- `docs/blue_brain_hh_guard_boundary_map_v1.md`
 
 ### Historical/supporting implementation-stage references (durch spätere Authority relativiert)
 
@@ -105,4 +106,4 @@ Diese Dateien bleiben wichtig für Implementierungs- und Guard-Trail-Nachvollzie
 
 ## Conflict rule (single truth)
 
-Wenn historische BB25/BB27/BB29-Aussagen und die post-BR6/MD3-Endlage unterschiedlich sind, gilt **ausschließlich** die BR6/IR1/MD2/MD3/System-Audit/SC1-Prompt-4-Current-Authority-Linie als operativ verbindlich. MD3 Prompt 4 ist die finale MD3-Readiness-Map nach der zweiten Vertiefung; SC1 Prompt 4 bleibt die systemweite Maintenance-Entscheidung; die Structural-Closure-Map v1 bündelt diesen Stand ohne neue Autorität und erklärt nur, dass ein separater HH-Readiness-Block vertretbar ist, nicht HH-Implementierung. Die HH-Readiness-Decision-Map v1 konkretisiert nur Voraussetzungen, Grenzen, Nicht-Ziele und spätere Re-Scope-Kriterien; die First-HH-Candidate-Map v1 isoliert genau `Basal Ganglia ↔ Cerebellum` als ersten späteren HH-Kandidaten auf Kandidatenebene; die HH-Candidate-Scope-Map v1 finalisiert diesen Kandidaten als relation-level only, not-yet-implemented, simulation-only/diagnostic-only only und no productive mode. Diese Dateien sind keine HH-Implementierung. Keine der Dateien ist eine neue Funktions- oder Plattformquelle.
+Wenn historische BB25/BB27/BB29-Aussagen und die post-BR6/MD3-Endlage unterschiedlich sind, gilt **ausschließlich** die BR6/IR1/MD2/MD3/System-Audit/SC1-Prompt-4-Current-Authority-Linie als operativ verbindlich. MD3 Prompt 4 ist die finale MD3-Readiness-Map nach der zweiten Vertiefung; SC1 Prompt 4 bleibt die systemweite Maintenance-Entscheidung; die Structural-Closure-Map v1 bündelt diesen Stand ohne neue Autorität und erklärt nur, dass ein separater HH-Readiness-Block vertretbar ist, nicht HH-Implementierung. Die HH-Readiness-Decision-Map v1 konkretisiert nur Voraussetzungen, Grenzen, Nicht-Ziele und spätere Re-Scope-Kriterien; die First-HH-Candidate-Map v1 isoliert genau `Basal Ganglia ↔ Cerebellum` als ersten späteren HH-Kandidaten auf Kandidatenebene; die HH-Candidate-Scope-Map v1 finalisiert diesen Kandidaten als relation-level only, not-yet-implemented, simulation-only/diagnostic-only only und no productive mode; die HH-Guard-Boundary-Map v1 pinnt no-direct, Contract-state, diagnostic-output und Runtime/Selection/Reference/Execution authority barriers auf HH-Ebene. Diese Dateien sind keine HH-Implementierung. Keine der Dateien ist eine neue Funktions- oder Plattformquelle.
