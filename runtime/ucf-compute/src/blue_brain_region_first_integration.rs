@@ -7723,6 +7723,131 @@ pub const CANONICAL_BLUE_BRAIN_FINAL_RELATION_MATRIX:
 pub const CANONICAL_BLUE_BRAIN_FINAL_MODEL_MATRIX: [BlueBrainCanonicalModelBoundaryMapEntry; 27] =
     CANONICAL_BLUE_BRAIN_MODEL_BOUNDARY_MAP;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCompletionSweepClass {
+    CanonicalActiveRegion,
+    CanonicalActiveRelation,
+    CanonicalModelMode,
+    SimulationOnlyDeferred,
+    Blocked,
+    NonCanonicalInternalOnly,
+}
+
+pub const CANONICAL_BLUE_BRAIN_COMPLETION_SWEEP_CLASS_MAP: [BlueBrainCompletionSweepClass; 6] = [
+    BlueBrainCompletionSweepClass::CanonicalActiveRegion,
+    BlueBrainCompletionSweepClass::CanonicalActiveRelation,
+    BlueBrainCompletionSweepClass::CanonicalModelMode,
+    BlueBrainCompletionSweepClass::SimulationOnlyDeferred,
+    BlueBrainCompletionSweepClass::Blocked,
+    BlueBrainCompletionSweepClass::NonCanonicalInternalOnly,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCompletionSweepMapEntry {
+    pub completion_class: BlueBrainCompletionSweepClass,
+    pub scope: &'static str,
+    pub repo_current_count: usize,
+    pub canonical_active: bool,
+    pub productive: bool,
+    pub advisory_or_diagnostic_only: bool,
+    pub deferred: bool,
+    pub blocked: bool,
+    pub non_canonical_internal_only: bool,
+    pub completion_reading: &'static str,
+}
+
+/// Final completion sweep over the repo-current Blue-Brain state. It aliases
+/// the final region/relation/model matrices into one compact completion map so
+/// consumers can see what is active, deferred, blocked, or non-canonical without
+/// opening new regions, relations, model depth, HH mode, platform authority, or
+/// direct action/execution/retry/memory/compute/safety authority.
+pub const CANONICAL_BLUE_BRAIN_COMPLETION_SWEEP_MAP: [BlueBrainCompletionSweepMapEntry; 6] = [
+    BlueBrainCompletionSweepMapEntry {
+        completion_class: BlueBrainCompletionSweepClass::CanonicalActiveRegion,
+        scope: "Hippocampus, Amygdala, Thalamus, Basal Ganglia, Cerebellum, Hypothalamus",
+        repo_current_count: 6,
+        canonical_active: true,
+        productive: false,
+        advisory_or_diagnostic_only: true,
+        deferred: false,
+        blocked: false,
+        non_canonical_internal_only: false,
+        completion_reading: "canonical active regions only; bounded advisory/reference/diagnostic consumers may read them, but no region gains direct authority",
+    },
+    BlueBrainCompletionSweepMapEntry {
+        completion_class: BlueBrainCompletionSweepClass::CanonicalActiveRelation,
+        scope: "three implemented plus four mediated bounded inter-region relations",
+        repo_current_count: 7,
+        canonical_active: true,
+        productive: false,
+        advisory_or_diagnostic_only: true,
+        deferred: false,
+        blocked: false,
+        non_canonical_internal_only: false,
+        completion_reading: "canonical active relation reads are bounded advisory/diagnostic only; architecture lanes remain distinct from implementation",
+    },
+    BlueBrainCompletionSweepMapEntry {
+        completion_class: BlueBrainCompletionSweepClass::CanonicalModelMode,
+        scope: "six abstract functional region modes plus exactly two bounded Kuramoto-like relation-local deepenings",
+        repo_current_count: 8,
+        canonical_active: true,
+        productive: false,
+        advisory_or_diagnostic_only: true,
+        deferred: false,
+        blocked: false,
+        non_canonical_internal_only: false,
+        completion_reading: "model state may inform bounded diagnostics/contracts only; it is not Runtime, Selection, Reference, Execution or compute authority",
+    },
+    BlueBrainCompletionSweepMapEntry {
+        completion_class: BlueBrainCompletionSweepClass::SimulationOnlyDeferred,
+        scope: "HH candidate and residual architecture-lane/deferred model paths",
+        repo_current_count: 1,
+        canonical_active: false,
+        productive: false,
+        advisory_or_diagnostic_only: true,
+        deferred: true,
+        blocked: false,
+        non_canonical_internal_only: false,
+        completion_reading: "HH remains simulation-only/diagnostic-only and deferred; the single pilot candidate is not opened",
+    },
+    BlueBrainCompletionSweepMapEntry {
+        completion_class: BlueBrainCompletionSweepClass::Blocked,
+        scope: "Hippocampus-Basal Ganglia relation and any direct-authority interpretation",
+        repo_current_count: 1,
+        canonical_active: false,
+        productive: false,
+        advisory_or_diagnostic_only: true,
+        deferred: false,
+        blocked: true,
+        non_canonical_internal_only: false,
+        completion_reading: "blocked relation and no-direct-* boundaries stay fail-closed; no action, execution, retry, memory, compute or safety override opens",
+    },
+    BlueBrainCompletionSweepMapEntry {
+        completion_class: BlueBrainCompletionSweepClass::NonCanonicalInternalOnly,
+        scope: "historical/deferred anatomical options, DBM/microcircuit/biophys/neuro shadow crates and adjacent-domain surfaces",
+        repo_current_count: 7,
+        canonical_active: false,
+        productive: false,
+        advisory_or_diagnostic_only: true,
+        deferred: false,
+        blocked: false,
+        non_canonical_internal_only: true,
+        completion_reading: "internal/shadow surfaces remain non-canonical and cannot promote themselves to active regions, relations, models or consumers",
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCompletionDecision {
+    CompleteEnoughForMaintenance,
+    MissingSmallResidualBlock,
+}
+
+pub const CANONICAL_BLUE_BRAIN_COMPLETION_DECISION: BlueBrainCompletionDecision =
+    BlueBrainCompletionDecision::CompleteEnoughForMaintenance;
+
+pub const CANONICAL_BLUE_BRAIN_COMPLETION_DECISION_NOTE: &str =
+    "UCF-relevant Blue-Brain scope is complete enough: no small residual implementation block remains; Maintenance, bugfix, cleanup and report refresh are sufficient unless an explicit future re-scope replaces this closure";
+
 pub fn blue_brain_region_inventory_entry(
     region: BlueBrainAnatomicalRegionClass,
 ) -> Option<&'static BlueBrainCanonicalRegionInventoryEntry> {
@@ -19347,6 +19472,105 @@ mod tests {
         assert!(doc.contains("no global HH platform"));
         assert!(doc.contains("no direct HH implementation"));
         assert!(doc.contains("Maintenance is sufficient now"));
+    }
+
+    #[test]
+    fn completion_sweep_map_closes_to_maintenance_without_new_scope() {
+        assert_eq!(CANONICAL_BLUE_BRAIN_COMPLETION_SWEEP_CLASS_MAP.len(), 6);
+        assert_eq!(CANONICAL_BLUE_BRAIN_COMPLETION_SWEEP_MAP.len(), 6);
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_COMPLETION_DECISION,
+            BlueBrainCompletionDecision::CompleteEnoughForMaintenance
+        );
+        assert_ne!(
+            CANONICAL_BLUE_BRAIN_COMPLETION_DECISION,
+            BlueBrainCompletionDecision::MissingSmallResidualBlock
+        );
+
+        let active_regions = CANONICAL_BLUE_BRAIN_COMPLETION_SWEEP_MAP
+            .iter()
+            .find(|entry| {
+                entry.completion_class == BlueBrainCompletionSweepClass::CanonicalActiveRegion
+            })
+            .expect("canonical active region completion row");
+        assert_eq!(active_regions.repo_current_count, 6);
+        assert!(active_regions.canonical_active);
+        assert!(!active_regions.productive);
+
+        let active_relations = CANONICAL_BLUE_BRAIN_COMPLETION_SWEEP_MAP
+            .iter()
+            .find(|entry| {
+                entry.completion_class == BlueBrainCompletionSweepClass::CanonicalActiveRelation
+            })
+            .expect("canonical active relation completion row");
+        assert_eq!(active_relations.repo_current_count, 7);
+        assert!(active_relations.advisory_or_diagnostic_only);
+
+        let model_modes = CANONICAL_BLUE_BRAIN_COMPLETION_SWEEP_MAP
+            .iter()
+            .find(|entry| {
+                entry.completion_class == BlueBrainCompletionSweepClass::CanonicalModelMode
+            })
+            .expect("canonical model mode completion row");
+        assert_eq!(model_modes.repo_current_count, 8);
+        assert!(model_modes
+            .completion_reading
+            .contains("bounded diagnostics/contracts"));
+
+        let hh = CANONICAL_BLUE_BRAIN_COMPLETION_SWEEP_MAP
+            .iter()
+            .find(|entry| {
+                entry.completion_class == BlueBrainCompletionSweepClass::SimulationOnlyDeferred
+            })
+            .expect("HH/deferred completion row");
+        assert!(hh.deferred);
+        assert!(!hh.productive);
+        assert!(hh
+            .completion_reading
+            .contains("pilot candidate is not opened"));
+
+        let blocked = CANONICAL_BLUE_BRAIN_COMPLETION_SWEEP_MAP
+            .iter()
+            .find(|entry| entry.completion_class == BlueBrainCompletionSweepClass::Blocked)
+            .expect("blocked completion row");
+        assert!(blocked.blocked);
+        assert!(blocked.completion_reading.contains("no-direct-*"));
+
+        let internal_only = CANONICAL_BLUE_BRAIN_COMPLETION_SWEEP_MAP
+            .iter()
+            .find(|entry| {
+                entry.completion_class == BlueBrainCompletionSweepClass::NonCanonicalInternalOnly
+            })
+            .expect("non-canonical/internal-only completion row");
+        assert!(internal_only.non_canonical_internal_only);
+        assert!(!internal_only.canonical_active);
+
+        assert!(CANONICAL_BLUE_BRAIN_COMPLETION_SWEEP_MAP
+            .iter()
+            .all(|entry| !entry.productive));
+        assert!(CANONICAL_BLUE_BRAIN_COMPLETION_DECISION_NOTE.contains("Maintenance"));
+        assert!(CANONICAL_BLUE_BRAIN_COMPLETION_DECISION_NOTE.contains("no small residual"));
+    }
+
+    #[test]
+    fn completion_sweep_doc_matches_code_decision_and_boundaries() {
+        let doc = include_str!("../../../docs/blue_brain_completion_sweep_final_decision_v1.md");
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_COMPLETION_SWEEP_MAP"));
+        assert!(doc.contains("Exactly six canonical active regions"));
+        assert!(doc.contains("seven canonical active relation reads"));
+        assert!(doc.contains("exactly two bounded Kuramoto-like"));
+        assert!(doc.contains("HH remains simulation-only/diagnostic-only and deferred"));
+        assert!(doc.contains("Hippocampus ↔ Basal Ganglia remains blocked"));
+        assert!(doc.contains("non-canonical/internal-only"));
+        assert!(doc.contains("CompleteEnoughForMaintenance"));
+        assert!(doc.contains("kein kleiner Restblock"));
+        assert!(doc.contains("Maintenance/Bugfix/Cleanup/Report-Refresh genügt"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
     }
 
     #[test]
