@@ -14,6 +14,7 @@ Kanonische Status-/Discoverability-Maps:
 - `docs/blue_brain_canonical_matrices_final_freeze_v1.md` (final canonical regions/relations/model-modes matrix freeze; supporting current reference only)
 - `docs/blue_brain_completion_third_deepening_decision_closure_v1.md` (Blue-Brain Completion third-deepening decision closure; supporting current reference only, no third model deepening opened)
 - `docs/blue_brain_completion_model_contract_boundary_hardening_v1.md` (Completion model/contract boundary hardening; supporting current reference only, no model takeover, no additional HH opening)
+- `docs/blue_brain_completion_sweep_final_decision_v1.md` (Completion final sweep and decision; supporting current reference only, CompleteEnoughForMaintenance, no residual implementation block)
 - `docs/blue_brain_guard_semantic_drift_map_v1.md` (guard/semantic drift-control map; supporting reference only)
 - `docs/blue_brain_maintenance_verification_findings_map_v1.md` (test/check/evidence verification findings; supporting reference only)
 - `docs/blue_brain_discoverability_findings_map_v1.md` (maintenance findings evidence for index/reference clarity; supporting reference only)
@@ -44,6 +45,7 @@ Kanonische Status-/Discoverability-Maps:
   - `docs/blue_brain_sc1_prompt4_final_system_consolidation_sweep_v1.md`
   - supporting completion closure: `docs/blue_brain_completion_third_deepening_decision_closure_v1.md`
   - supporting Completion model/contract boundary hardening: `docs/blue_brain_completion_model_contract_boundary_hardening_v1.md`
+  - supporting Completion final sweep/decision: `docs/blue_brain_completion_sweep_final_decision_v1.md`
   - supporting consolidation evidence: `docs/blue_brain_sc1_prompt2_post_br6_repro_baseline_refresh_v1.md`, `docs/blue_brain_sc1_prompt3_cross_line_terminology_guard_checklist_consolidation_v1.md`, and `docs/blue_brain_guard_semantic_drift_map_v1.md`
 - **Historical snapshots (nicht aktuelle operative Autorität):**
   - `docs/blue_brain_post_bb25_maintenance_default_decision_map_serie_bb25_prompt5_v1.md`
