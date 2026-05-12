@@ -651,6 +651,152 @@ pub const BLUE_BRAIN_COMPLETION_THIRD_DEEPENING_REVIEWED_FIRST_PAIR:
     BlueBrainInterRegionArchitecturePair = BlueBrainInterRegionArchitecturePair::ThalamusCerebellum;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainCompletionModelContractBoundaryClass {
+    FirstBoundedKuramotoDeepening,
+    SecondBoundedKuramotoDeepening,
+    ThirdDeepeningClosed,
+    HhPilotDeferredDiagnosticOnly,
+}
+
+pub const CANONICAL_BLUE_BRAIN_COMPLETION_MODEL_CONTRACT_BOUNDARY_CLASS_MAP:
+    [BlueBrainCompletionModelContractBoundaryClass; 4] = [
+    BlueBrainCompletionModelContractBoundaryClass::FirstBoundedKuramotoDeepening,
+    BlueBrainCompletionModelContractBoundaryClass::SecondBoundedKuramotoDeepening,
+    BlueBrainCompletionModelContractBoundaryClass::ThirdDeepeningClosed,
+    BlueBrainCompletionModelContractBoundaryClass::HhPilotDeferredDiagnosticOnly,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainCompletionModelContractBoundaryEntry {
+    pub boundary_class: BlueBrainCompletionModelContractBoundaryClass,
+    pub pair: Option<BlueBrainInterRegionArchitecturePair>,
+    pub model_boundary_mode: BlueBrainCanonicalModelBoundaryMode,
+    pub relation_class: Option<BlueBrainInterRegionImplementationRelationClass>,
+    pub active_model_deepening: bool,
+    pub hh_pilot_open: bool,
+    pub model_state_is_contract_state: bool,
+    pub diagnostic_output_is_authority: bool,
+    pub region_surface_semantics_leading: bool,
+    pub relation_contract_semantics_leading: bool,
+    pub runtime_selection_reference_execution_bounded_reads_only: bool,
+    pub no_direct_action_trigger: bool,
+    pub no_direct_execution_trigger: bool,
+    pub no_direct_retry_trigger: bool,
+    pub no_direct_memory_commit: bool,
+    pub no_direct_compute_invocation: bool,
+    pub no_safety_override: bool,
+    pub no_global_model_logic: bool,
+    pub boundary_note: &'static str,
+}
+
+/// Final completion-series model/contract hardening map.
+///
+/// This map is a boundary checklist only: it does not add model behavior. It
+/// binds the two existing bounded Kuramoto-like relation-local deepenings, the
+/// explicitly closed third-deepening decision, and the single HH candidate line
+/// to the region/relation contracts. Model state never becomes contract state;
+/// diagnostics never become authority; Runtime/Selection/Reference/Execution
+/// surfaces may only read bounded/caveated contract signals.
+pub const CANONICAL_BLUE_BRAIN_COMPLETION_MODEL_CONTRACT_BOUNDARY_MAP:
+    [BlueBrainCompletionModelContractBoundaryEntry; 4] = [
+    BlueBrainCompletionModelContractBoundaryEntry {
+        boundary_class:
+            BlueBrainCompletionModelContractBoundaryClass::FirstBoundedKuramotoDeepening,
+        pair: Some(BlueBrainInterRegionArchitecturePair::AmygdalaThalamus),
+        model_boundary_mode: BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode,
+        relation_class: Some(
+            BlueBrainInterRegionImplementationRelationClass::ImplementedDirectBoundedAdvisoryRelation,
+        ),
+        active_model_deepening: true,
+        hh_pilot_open: false,
+        model_state_is_contract_state: false,
+        diagnostic_output_is_authority: false,
+        region_surface_semantics_leading: true,
+        relation_contract_semantics_leading: true,
+        runtime_selection_reference_execution_bounded_reads_only: true,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+        no_global_model_logic: true,
+        boundary_note: "first deepening remains relation-local bounded advisory/diagnostic; model state is not contract state",
+    },
+    BlueBrainCompletionModelContractBoundaryEntry {
+        boundary_class:
+            BlueBrainCompletionModelContractBoundaryClass::SecondBoundedKuramotoDeepening,
+        pair: Some(BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia),
+        model_boundary_mode: BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode,
+        relation_class: Some(
+            BlueBrainInterRegionImplementationRelationClass::ImplementedSelectionMediatedRelation,
+        ),
+        active_model_deepening: true,
+        hh_pilot_open: false,
+        model_state_is_contract_state: false,
+        diagnostic_output_is_authority: false,
+        region_surface_semantics_leading: true,
+        relation_contract_semantics_leading: true,
+        runtime_selection_reference_execution_bounded_reads_only: true,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+        no_global_model_logic: true,
+        boundary_note: "second deepening remains selection-mediated relation-local bounded advisory/diagnostic; no action or execution authority",
+    },
+    BlueBrainCompletionModelContractBoundaryEntry {
+        boundary_class: BlueBrainCompletionModelContractBoundaryClass::ThirdDeepeningClosed,
+        pair: Some(BlueBrainInterRegionArchitecturePair::ThalamusCerebellum),
+        model_boundary_mode: BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode,
+        relation_class: Some(
+            BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+        ),
+        active_model_deepening: false,
+        hh_pilot_open: false,
+        model_state_is_contract_state: false,
+        diagnostic_output_is_authority: false,
+        region_surface_semantics_leading: true,
+        relation_contract_semantics_leading: true,
+        runtime_selection_reference_execution_bounded_reads_only: true,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+        no_global_model_logic: true,
+        boundary_note: "third deepening candidate remains closed because the relation is architecture-lane-only/not-yet-implemented",
+    },
+    BlueBrainCompletionModelContractBoundaryEntry {
+        boundary_class: BlueBrainCompletionModelContractBoundaryClass::HhPilotDeferredDiagnosticOnly,
+        pair: Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum),
+        model_boundary_mode:
+            BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode,
+        relation_class: Some(
+            BlueBrainInterRegionImplementationRelationClass::DeferredNotYetImplementedRelation,
+        ),
+        active_model_deepening: false,
+        hh_pilot_open: false,
+        model_state_is_contract_state: false,
+        diagnostic_output_is_authority: false,
+        region_surface_semantics_leading: true,
+        relation_contract_semantics_leading: true,
+        runtime_selection_reference_execution_bounded_reads_only: true,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+        no_global_model_logic: true,
+        boundary_note: "single HH candidate line remains deferred simulation-only/diagnostic-only; no productive HH pilot or global HH platform",
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainMaintenanceVerificationFindingClass {
     UnclearTestNaming,
     AmbiguousTestScope,
@@ -17585,6 +17731,142 @@ mod tests {
         assert!(authority.contains("blue_brain_completion_third_deepening_decision_closure_v1.md"));
         assert!(model_map.contains("Completion-third-deepening closure"));
         assert!(relation_map.contains("Completion-third-deepening closure"));
+    }
+
+    #[test]
+    fn completion_model_contract_boundary_map_pins_all_model_lines() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_COMPLETION_MODEL_CONTRACT_BOUNDARY_CLASS_MAP.len(),
+            4
+        );
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_COMPLETION_MODEL_CONTRACT_BOUNDARY_MAP.len(),
+            4
+        );
+
+        for boundary_class in CANONICAL_BLUE_BRAIN_COMPLETION_MODEL_CONTRACT_BOUNDARY_CLASS_MAP {
+            assert!(CANONICAL_BLUE_BRAIN_COMPLETION_MODEL_CONTRACT_BOUNDARY_MAP
+                .iter()
+                .any(|entry| entry.boundary_class == boundary_class));
+        }
+
+        let active_deepenings = CANONICAL_BLUE_BRAIN_COMPLETION_MODEL_CONTRACT_BOUNDARY_MAP
+            .iter()
+            .filter(|entry| entry.active_model_deepening)
+            .count();
+        assert_eq!(active_deepenings, 2);
+
+        let first = CANONICAL_BLUE_BRAIN_COMPLETION_MODEL_CONTRACT_BOUNDARY_MAP
+            .iter()
+            .find(|entry| {
+                entry.boundary_class
+                    == BlueBrainCompletionModelContractBoundaryClass::FirstBoundedKuramotoDeepening
+            })
+            .expect("first bounded Kuramoto-like deepening boundary");
+        assert_eq!(
+            first.pair,
+            Some(BlueBrainInterRegionArchitecturePair::AmygdalaThalamus)
+        );
+        assert_eq!(
+            first.relation_class,
+            Some(
+                BlueBrainInterRegionImplementationRelationClass::ImplementedDirectBoundedAdvisoryRelation
+            )
+        );
+
+        let second = CANONICAL_BLUE_BRAIN_COMPLETION_MODEL_CONTRACT_BOUNDARY_MAP
+            .iter()
+            .find(|entry| {
+                entry.boundary_class
+                    == BlueBrainCompletionModelContractBoundaryClass::SecondBoundedKuramotoDeepening
+            })
+            .expect("second bounded Kuramoto-like deepening boundary");
+        assert_eq!(
+            second.pair,
+            Some(BlueBrainInterRegionArchitecturePair::AmygdalaBasalGanglia)
+        );
+        assert_eq!(
+            second.relation_class,
+            Some(BlueBrainInterRegionImplementationRelationClass::ImplementedSelectionMediatedRelation)
+        );
+
+        let closed_third = CANONICAL_BLUE_BRAIN_COMPLETION_MODEL_CONTRACT_BOUNDARY_MAP
+            .iter()
+            .find(|entry| {
+                entry.boundary_class
+                    == BlueBrainCompletionModelContractBoundaryClass::ThirdDeepeningClosed
+            })
+            .expect("closed third deepening boundary");
+        assert_eq!(
+            closed_third.pair,
+            Some(BlueBrainInterRegionArchitecturePair::ThalamusCerebellum)
+        );
+        assert!(!closed_third.active_model_deepening);
+        assert!(closed_third.boundary_note.contains("not-yet-implemented"));
+
+        let hh = CANONICAL_BLUE_BRAIN_COMPLETION_MODEL_CONTRACT_BOUNDARY_MAP
+            .iter()
+            .find(|entry| {
+                entry.boundary_class
+                    == BlueBrainCompletionModelContractBoundaryClass::HhPilotDeferredDiagnosticOnly
+            })
+            .expect("HH pilot/deferred boundary");
+        assert_eq!(
+            hh.pair,
+            Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum)
+        );
+        assert!(!hh.hh_pilot_open);
+        assert!(!hh.active_model_deepening);
+        assert_eq!(
+            hh.model_boundary_mode,
+            BlueBrainCanonicalModelBoundaryMode::HodgkinHuxleySimulationOnlyDiagnosticOnlyMode
+        );
+    }
+
+    #[test]
+    fn completion_model_contract_boundary_map_blocks_model_authority_takeover() {
+        for entry in CANONICAL_BLUE_BRAIN_COMPLETION_MODEL_CONTRACT_BOUNDARY_MAP {
+            assert!(!entry.model_state_is_contract_state);
+            assert!(!entry.diagnostic_output_is_authority);
+            assert!(entry.region_surface_semantics_leading);
+            assert!(entry.relation_contract_semantics_leading);
+            assert!(entry.runtime_selection_reference_execution_bounded_reads_only);
+            assert!(entry.no_direct_action_trigger);
+            assert!(entry.no_direct_execution_trigger);
+            assert!(entry.no_direct_retry_trigger);
+            assert!(entry.no_direct_memory_commit);
+            assert!(entry.no_direct_compute_invocation);
+            assert!(entry.no_safety_override);
+            assert!(entry.no_global_model_logic);
+        }
+    }
+
+    #[test]
+    fn completion_model_contract_boundary_doc_matches_code() {
+        let doc = include_str!(
+            "../../../docs/blue_brain_completion_model_contract_boundary_hardening_v1.md"
+        );
+        let readme = include_str!("../../../docs/README.md");
+        let authority = include_str!("../../../docs/blue_brain_authority_chain_status_map.md");
+
+        assert!(doc.contains("CANONICAL_BLUE_BRAIN_COMPLETION_MODEL_CONTRACT_BOUNDARY_MAP"));
+        assert!(doc.contains("model state ≠ contract state"));
+        assert!(doc.contains("diagnostic output ≠ authority"));
+        assert!(doc.contains("Amygdala ↔ Thalamus"));
+        assert!(doc.contains("Amygdala ↔ Basal Ganglia"));
+        assert!(doc.contains("Thalamus ↔ Cerebellum"));
+        assert!(doc.contains("Basal Ganglia ↔ Cerebellum"));
+        assert!(doc.contains("Runtime/Selection/Reference/Execution-interface only bounded reads"));
+        assert!(doc.contains("no-direct-action"));
+        assert!(doc.contains("no-direct-execution"));
+        assert!(doc.contains("no-direct-retry"));
+        assert!(doc.contains("no-direct-memory"));
+        assert!(doc.contains("no-direct-compute"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("no global model logic"));
+        assert!(doc.contains("readiness for the Completion-Sweep"));
+        assert!(readme.contains("Completion model/contract boundary hardening"));
+        assert!(authority.contains("blue_brain_completion_model_contract_boundary_hardening_v1.md"));
     }
 
     #[test]
