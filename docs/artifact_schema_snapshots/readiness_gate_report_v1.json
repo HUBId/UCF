@@ -5,6 +5,8 @@
   "required_fields": [
     "checks",
     "code_version_tag",
+    "metadata",
+    "profile",
     "status"
   ],
   "optional_fields": [
@@ -23,6 +25,8 @@
     "code_version_tag": "String",
     "fixtures_digest_prefix": "Option<String>",
     "gpu_lane": "Option<CheckResult>",
+    "metadata": "ReportFreshnessMetadata",
+    "profile": "String",
     "sae_real": "Option<CheckResult>",
     "ssm_opt": "Option<CheckResult>",
     "status": "GateStatus",

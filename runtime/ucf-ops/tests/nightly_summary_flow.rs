@@ -2,9 +2,9 @@ use std::fs;
 
 use tempfile::tempdir;
 use ucf_ops::{
-    nightly_summarize, DocsLintMode, DocsLintReport, GateStatus, GoldenRefreshHeuristic,
-    GoldenVerifyReport, GoldenVerifyScenarioReport, NightlyOverallStatus, NightlySummarizeArgs,
-    ReadinessGateReport,
+    nightly_summarize, DocsLintMode, DocsLintReport, DocsLintStatus, GateStatus,
+    GoldenRefreshHeuristic, GoldenVerifyReport, GoldenVerifyScenarioReport, NightlyOverallStatus,
+    NightlySummarizeArgs, ReadinessGateReport, ReportFreshnessMetadata,
 };
 
 #[test]
@@ -19,7 +19,9 @@ fn nightly_summary_is_deterministic_and_actionable() {
     fs::write(
         &docs_path,
         serde_json::to_string_pretty(&DocsLintReport {
+            metadata: ReportFreshnessMetadata::default(),
             ok: true,
+            status: DocsLintStatus::Pass,
             mode: DocsLintMode::Strict,
             checks: Vec::new(),
         })
@@ -29,7 +31,9 @@ fn nightly_summary_is_deterministic_and_actionable() {
     fs::write(
         &gate_path,
         serde_json::to_string_pretty(&ReadinessGateReport {
+            metadata: ReportFreshnessMetadata::default(),
             code_version_tag: "x".to_string(),
+            profile: "test".to_string(),
             fixtures_digest_prefix: None,
             backend_pack_digest_prefix: None,
             timestamp: None,
