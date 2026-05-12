@@ -1,0 +1,4 @@
+command: cargo fmt --all -- --check
+head: cf54660512118d5071585d85572a5a0d9e72fe81
+exit_status: 0
+PASS: cargo fmt --all -- --check

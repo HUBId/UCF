@@ -1,0 +1,327 @@
+command: cargo clippy --workspace --all-targets -- -D warnings
+head: cf54660512118d5071585d85572a5a0d9e72fe81
+    Checking cfg-if v1.0.4
+   Compiling libc v0.2.178
+    Checking constant_time_eq v0.3.1
+    Checking arrayref v0.3.9
+    Checking arrayvec v0.7.6
+    Checking serde_core v1.0.225
+   Compiling jobserver v0.1.34
+   Compiling cc v1.2.49
+    Checking serde v1.0.225
+   Compiling anyhow v1.0.100
+   Compiling prost-derive v0.12.6
+   Compiling blake3 v1.8.2
+    Checking bytes v1.11.0
+    Checking typenum v1.19.0
+    Checking prost v0.12.6
+    Checking ucf-protocol v0.1.0 (/workspace/UCF/protocol/crates/ucf-protocol)
+    Checking generic-array v0.14.7
+    Checking crypto-common v0.1.7
+    Checking block-buffer v0.10.4
+    Checking digest v0.10.7
+    Checking cpufeatures v0.2.17
+    Checking sha2 v0.10.9
+    Checking ucf-core v0.1.0 (/workspace/UCF/core/ucf-core)
+    Checking ucf-frames v0.1.0 (/workspace/UCF/domains/ucf-frames)
+    Checking biophys_core v0.1.0 (/workspace/UCF/crates/biophys_core)
+    Checking thiserror v1.0.69
+    Checking ucf-types v0.1.0 (/workspace/UCF/core/crates/ucf-types)
+    Checking ucf-brainbus v0.1.0 (/workspace/UCF/domains/ucf-brainbus)
+    Checking ucf-crypto v0.1.0 (/workspace/UCF/core/crates/ucf-crypto)
+    Checking once_cell v1.21.3
+    Checking itoa v1.0.15
+    Checking ryu v1.0.20
+    Checking memchr v2.7.6
+    Checking ucf-commit v0.1.0 (/workspace/UCF/core/crates/ucf-commit)
+    Checking ucf-onn v0.1.0 (/workspace/UCF/core/crates/ucf-onn)
+    Checking zerocopy v0.8.33
+    Checking ucf-spikebus v0.1.0 (/workspace/UCF/core/crates/ucf-spikebus)
+    Checking dbm_core v0.1.0 (/workspace/UCF/crates/dbm_core)
+    Checking ucf-sandbox v0.1.0 (/workspace/UCF/core/crates/ucf-sandbox)
+    Checking serde_json v1.0.145
+    Checking ucf-coupling v0.1.0 (/workspace/UCF/core/crates/ucf-coupling)
+    Checking ahash v0.8.12
+    Checking ucf-ncde v0.1.0 (/workspace/UCF/core/crates/ucf-ncde)
+    Checking ucf-ssm v0.1.0 (/workspace/UCF/core/crates/ucf-ssm)
+    Checking biophys_governance v0.1.0 (/workspace/UCF/crates/biophys_governance)
+    Checking metrics v0.24.3
+    Checking equivalent v1.0.2
+    Checking biophys_feedback v0.1.0 (/workspace/UCF/crates/biophys_feedback)
+    Checking ucf-structural-store v0.1.0 (/workspace/UCF/core/crates/ucf-structural-store)
+    Checking microcircuit_core v0.1.0 (/workspace/UCF/crates/microcircuit_core)
+    Checking hashbrown v0.16.1
+    Checking ucf-influence v0.1.0 (/workspace/UCF/core/crates/ucf-influence)
+    Checking ucf-cde-scm v0.1.0 (/workspace/UCF/domains/causal/crates/ucf-cde-scm)
+    Checking indexmap v2.12.1
+    Checking ucf-nsr v0.1.0 (/workspace/UCF/core/crates/ucf-nsr)
+    Checking ucf-bus v0.1.0 (/workspace/UCF/core/crates/ucf-bus)
+    Checking bincode v1.3.3
+    Checking ucf-predictive-coding v0.1.0 (/workspace/UCF/core/crates/ucf-predictive-coding)
+    Checking ucf-archive-store v0.1.0 (/workspace/UCF/domains/archive/crates/ucf-archive-store)
+    Checking serde_spanned v0.6.9
+    Checking toml_datetime v0.6.11
+    Checking serde-big-array v0.5.1
+    Checking hex v0.4.3
+    Checking winnow v0.7.14
+    Checking toml_write v0.1.2
+    Checking ucf-fold v0.1.0 (/workspace/UCF/core/crates/ucf-fold)
+    Checking ucf-policy-ecology v0.1.0 (/workspace/UCF/core/crates/ucf-policy-ecology)
+    Checking ucf-evidence v0.1.0 (/workspace/UCF/core/crates/ucf-evidence)
+    Checking num-traits v0.2.19
+    Checking toml_edit v0.22.27
+    Checking tracing-core v0.1.36
+    Checking pin-project-lite v0.2.16
+    Checking tracing v0.1.44
+    Checking ucf-archive v0.1.0 (/workspace/UCF/domains/archive/crates/ucf-archive)
+    Checking toml v0.8.23
+    Checking ucf-attn-controller v0.1.0 (/workspace/UCF/core/crates/ucf-attn-controller)
+    Checking ucf-nsr-port v0.1.0 (/workspace/UCF/core/crates/ucf-nsr-port)
+    Checking ucf-openevolve-port v0.1.0 (/workspace/UCF/core/crates/ucf-openevolve-port)
+    Checking ucf-params-registry v0.1.0 (/workspace/UCF/core/crates/ucf-params-registry)
+    Checking ucf-recursion-controller v0.1.0 (/workspace/UCF/core/crates/ucf-recursion-controller)
+    Checking ucf-rsa v0.1.0 (/workspace/UCF/core/crates/ucf-rsa)
+    Checking ucf-ism v0.1.0 (/workspace/UCF/core/crates/ucf-ism)
+    Checking ucf-cde-port v0.1.0 (/workspace/UCF/core/crates/ucf-cde-port)
+    Checking ucf-sleep-coordinator v0.1.0 (/workspace/UCF/core/crates/ucf-sleep-coordinator)
+    Checking ucf-scm-port v0.1.0 (/workspace/UCF/core/crates/ucf-scm-port)
+    Checking ucf-geist v0.1.0 (/workspace/UCF/domains/geist/crates/ucf-geist)
+    Checking ucf-tom-port v0.1.0 (/workspace/UCF/core/crates/ucf-tom-port)
+    Checking ucf-consistency-engine v0.1.0 (/workspace/UCF/core/crates/ucf-consistency-engine)
+    Checking ucf-risk-gate v0.1.0 (/workspace/UCF/core/crates/ucf-risk-gate)
+    Checking ucf-output-router v0.1.0 (/workspace/UCF/core/crates/ucf-output-router)
+    Checking rmp v0.8.15
+    Checking ucf-iit v0.1.0 (/workspace/UCF/core/crates/ucf-iit)
+    Checking byteorder v1.5.0
+    Checking safetensors v0.4.5
+    Checking rmp-serde v1.3.0
+    Checking half v2.7.1
+    Checking getrandom v0.3.4
+    Checking ucf-workspace v0.1.0 (/workspace/UCF/core/crates/ucf-workspace)
+    Checking ucf-compute v0.1.0 (/workspace/UCF/runtime/ucf-compute)
+    Checking bitflags v2.10.0
+    Checking linux-raw-sys v0.11.0
+    Checking rustix v1.1.3
+    Checking fastrand v2.3.0
+    Checking tempfile v3.23.0
+    Checking ucf-ess v0.1.0 (/workspace/UCF/domains/ucf-ess)
+    Checking ucf-sle v0.1.0 (/workspace/UCF/core/crates/ucf-sle)
+    Checking ucf-cde v0.1.0 (/workspace/UCF/core/crates/ucf-cde)
+    Checking ucf-tcf v0.1.0 (/workspace/UCF/core/crates/ucf-tcf)
+    Checking biophys_plasticity_l4 v0.1.0 (/workspace/UCF/crates/biophys_plasticity_l4)
+    Checking biophys_synapses_l4 v0.1.0 (/workspace/UCF/crates/biophys_synapses_l4)
+    Checking ucf-bluebrain-bridge v0.1.0 (/workspace/UCF/domains/ucf-bluebrain-bridge)
+    Checking ucf-policy v0.1.0 (/workspace/UCF/runtime/ucf-policy)
+    Checking log v0.4.29
+    Checking ucf-neuromod v0.1.0 (/workspace/UCF/domains/ucf-neuromod)
+    Checking ucf-snn v0.1.0 (/workspace/UCF/domains/ucf-snn)
+    Checking ucf-fep v0.1.0 (/workspace/UCF/domains/ucf-fep)
+    Checking ucf-biophys v0.1.0 (/workspace/UCF/domains/ucf-biophys)
+    Checking ucf-spikes v0.1.0 (/workspace/UCF/core/ucf-spikes)
+    Checking ucf-dbm v0.1.0 (/workspace/UCF/domains/ucf-dbm)
+    Checking ucf-iit-proxy v0.1.0 (/workspace/UCF/domains/ucf-iit)
+    Checking ppv-lite86 v0.2.21
+    Checking regex-syntax v0.8.8
+    Checking thiserror v2.0.12
+    Checking getrandom v0.2.17
+    Checking simd-adler32 v0.3.8
+    Checking rand_core v0.6.4
+    Checking crc32fast v1.5.0
+    Checking adler2 v2.0.1
+    Checking miniz_oxide v0.8.9
+    Checking ucf-runtime v0.1.0 (/workspace/UCF/runtime/ucf-runtime)
+    Checking ucf-replay v0.1.0 (/workspace/UCF/runtime/ucf-replay)
+    Checking aho-corasick v1.1.4
+    Checking bumpalo v3.19.1
+    Checking signature v2.2.0
+    Checking zeroize v1.8.2
+    Checking subtle v2.6.1
+    Checking ed25519 v2.2.3
+    Checking curve25519-dalek v4.1.3
+    Checking zopfli v0.8.3
+    Checking regex-automata v0.4.14
+    Checking flate2 v1.1.9
+    Checking rand_chacha v0.3.1
+    Checking same-file v1.0.6
+    Checking walkdir v2.5.0
+    Checking zip v2.4.2
+    Checking regex v1.12.3
+    Checking rand v0.8.5
+    Checking ed25519-dalek v2.2.0
+    Checking microcircuit_pag_stub v0.1.0 (/workspace/UCF/crates/microcircuit_pag_stub)
+    Checking ucf-platform v0.1.0 (/workspace/UCF/runtime/ucf-platform)
+    Checking biophys_injection v0.1.0 (/workspace/UCF/crates/biophys_injection)
+    Checking ucf-ops v0.1.0 (/workspace/UCF/runtime/ucf-ops)
+    Checking microcircuit_pmrf_stub v0.1.0 (/workspace/UCF/crates/microcircuit_pmrf_stub)
+   Compiling zstd-sys v2.0.16+zstd.1.5.7
+    Checking microcircuit_sn_stub v0.1.0 (/workspace/UCF/crates/microcircuit_sn_stub)
+    Checking microcircuit_amygdala_stub v0.1.0 (/workspace/UCF/crates/microcircuit_amygdala_stub)
+    Checking microcircuit_lc_stub v0.1.0 (/workspace/UCF/crates/microcircuit_lc_stub)
+   Compiling zstd-safe v7.2.4
+    Checking microcircuit_hypothalamus_setpoint v0.1.0 (/workspace/UCF/crates/microcircuit_hypothalamus_setpoint)
+    Checking microcircuit_insula_stub v0.1.0 (/workspace/UCF/crates/microcircuit_insula_stub)
+    Checking microcircuit_stn_stub v0.1.0 (/workspace/UCF/crates/microcircuit_stn_stub)
+    Checking microcircuit_sc_stub v0.1.0 (/workspace/UCF/crates/microcircuit_sc_stub)
+    Checking biophys_morphology v0.1.0 (/workspace/UCF/crates/biophys_morphology)
+    Checking zstd v0.13.3
+    Checking microcircuit_dopamin_stub v0.1.0 (/workspace/UCF/crates/microcircuit_dopamin_stub)
+    Checking microcircuit_serotonin_stub v0.1.0 (/workspace/UCF/crates/microcircuit_serotonin_stub)
+    Checking microcircuit_cerebellum_stub v0.1.0 (/workspace/UCF/crates/microcircuit_cerebellum_stub)
+    Checking memristor_backend v0.1.0 (/workspace/UCF/crates/memristor_backend)
+    Checking biophys_channels v0.1.0 (/workspace/UCF/crates/biophys_channels)
+    Checking biophys_assets v0.1.0 (/workspace/UCF/crates/biophys_assets)
+    Checking biophys_compartmental_solver v0.1.0 (/workspace/UCF/crates/biophys_compartmental_solver)
+    Checking microcircuit_hpa_memristor v0.1.0 (/workspace/UCF/crates/microcircuit_hpa_memristor)
+    Checking dbm_sc v0.1.0 (/workspace/UCF/crates/dbm_sc)
+    Checking microcircuit_insula_fusion v0.1.0 (/workspace/UCF/crates/microcircuit_insula_fusion)
+    Checking microcircuit_lc_spike v0.1.0 (/workspace/UCF/crates/microcircuit_lc_spike)
+    Checking dbm_pag v0.1.0 (/workspace/UCF/crates/dbm_pag)
+    Checking emotion_field v0.1.0 (/workspace/UCF/crates/emotion_field)
+    Checking dbm_7_lc v0.1.0 (/workspace/UCF/crates/dbm_7_lc)
+    Checking dbm_12_insula v0.1.0 (/workspace/UCF/crates/dbm_12_insula)
+    Checking dbm_pprf v0.1.0 (/workspace/UCF/crates/dbm_pprf)
+    Checking dbm_hpa v0.1.0 (/workspace/UCF/crates/dbm_hpa)
+    Checking dbm_18_cerebellum v0.1.0 (/workspace/UCF/crates/dbm_18_cerebellum)
+    Checking dbm_8_serotonin v0.1.0 (/workspace/UCF/crates/dbm_8_serotonin)
+    Checking dbm_6_dopamin_nacc v0.1.0 (/workspace/UCF/crates/dbm_6_dopamin_nacc)
+    Checking dbm_stn v0.1.0 (/workspace/UCF/crates/dbm_stn)
+    Checking dbm_13_hypothalamus v0.1.0 (/workspace/UCF/crates/dbm_13_hypothalamus)
+    Checking dbm_9_amygdala v0.1.0 (/workspace/UCF/crates/dbm_9_amygdala)
+    Checking dbm_0_sn v0.1.0 (/workspace/UCF/crates/dbm_0_sn)
+    Checking dbm_pmrf v0.1.0 (/workspace/UCF/crates/dbm_pmrf)
+    Checking baseline_resolver v0.1.0 (/workspace/UCF/crates/baseline_resolver)
+    Checking chip4 v0.1.0 (/workspace/UCF/chip4)
+    Checking biophys_solver v0.1.0 (/workspace/UCF/crates/biophys_solver)
+   Compiling petgraph v0.6.5
+   Compiling prost-types v0.12.6
+    Checking pvgs_client v0.1.0 (/workspace/UCF/pvgs_client)
+    Checking dbm_bus v0.1.0 (/workspace/UCF/crates/dbm_bus)
+   Compiling prost-build v0.12.6
+    Checking biophys_runtime v0.1.0 (/workspace/UCF/crates/biophys_runtime)
+    Checking ucf-digitalbrain-port v0.1.0 (/workspace/UCF/domains/digitalbrain/crates/ucf-digitalbrain-port)
+    Checking ucf-tcf-port v0.1.0 (/workspace/UCF/core/crates/ucf-tcf-port)
+    Checking biophys_event_queue_l4 v0.1.0 (/workspace/UCF/crates/biophys_event_queue_l4)
+   Compiling ucf-gateway v0.1.0 (/workspace/UCF/runtime/ucf-gateway)
+    Checking asset_chunker v0.1.0 (/workspace/UCF/crates/asset_chunker)
+    Checking ucf-iit-monitor v0.1.0 (/workspace/UCF/core/crates/ucf-iit-monitor)
+    Checking ucf-feature-translator v0.1.0 (/workspace/UCF/domains/ai/crates/ucf-feature-translator)
+    Checking ucf-lens-port v0.1.0 (/workspace/UCF/core/crates/ucf-lens-port)
+    Checking ucf-ai-host-abi v0.1.0 (/workspace/UCF/domains/ai-host-abi)
+    Checking rand_core v0.9.5
+    Checking unsafe-libyaml v0.2.11
+    Checking serde_yaml v0.9.34+deprecated
+    Checking ucf-sae-port v0.1.0 (/workspace/UCF/core/crates/ucf-sae-port)
+    Checking ucf-ssm-port v0.1.0 (/workspace/UCF/core/crates/ucf-ssm-port)
+    Checking ucf-spike-encoder v0.1.0 (/workspace/UCF/core/crates/ucf-spike-encoder)
+    Checking ucf-ncde-port v0.1.0 (/workspace/UCF/core/crates/ucf-ncde-port)
+    Checking ucf-bluebrain-port v0.1.0 (/workspace/UCF/domains/brain/crates/ucf-bluebrain-port)
+    Checking rsv v0.1.0 (/workspace/UCF/rsv)
+    Checking smallvec v1.15.1
+    Checking scopeguard v1.2.0
+    Checking lock_api v0.4.14
+    Checking parking_lot_core v0.9.12
+    Checking biophys_targeting_l4 v0.1.0 (/workspace/UCF/crates/biophys_targeting_l4)
+    Checking wait-timeout v0.2.1
+    Checking biophys_homeostasis_l4 v0.1.0 (/workspace/UCF/crates/biophys_homeostasis_l4)
+    Checking quick-error v1.2.3
+    Checking bit-vec v0.8.0
+    Checking fnv v1.0.7
+    Checking bit-set v0.8.0
+    Checking rusty-fork v0.3.1
+    Checking parking_lot v0.12.5
+    Checking profiles v0.1.0 (/workspace/UCF/profiles)
+    Checking ucf-brain-mapper v0.1.0 (/workspace/UCF/domains/brain/crates/ucf-brain-mapper)
+    Checking ucf-ai-port v0.1.0 (/workspace/UCF/core/crates/ucf-ai-port)
+    Checking ucf-feature-spiker v0.1.0 (/workspace/UCF/domains/features/crates/ucf-feature-spiker)
+    Checking rand_xorshift v0.4.0
+    Checking rand v0.9.2
+    Checking rand_chacha v0.9.0
+    Checking ucf-ai-host v0.1.0 (/workspace/UCF/domains/ai)
+    Checking ucf-rsa-hooks v0.1.0 (/workspace/UCF/core/crates/ucf-rsa-hooks)
+    Checking wire v0.1.0 (/workspace/UCF/wire)
+    Checking ucf-policy-gateway v0.1.0 (/workspace/UCF/domains/policy-gateway/crates/ucf-policy-gateway)
+    Checking ucf-digital-brain v0.1.0 (/workspace/UCF/domains/digital-brain/crates/ucf-digital-brain)
+    Checking ucf-jepa v0.1.0 (/workspace/UCF/core/crates/ucf-jepa)
+    Checking lazy_static v1.5.0
+    Checking unarray v0.1.4
+    Checking asset_rehydration v0.1.0 (/workspace/UCF/crates/asset_rehydration)
+    Checking proptest v1.8.0
+    Checking errno v0.3.14
+    Checking signal-hook-registry v1.4.8
+    Checking ucf-router v0.1.0 (/workspace/UCF/core/crates/ucf-router)
+    Checking engine v0.1.0 (/workspace/UCF/engine)
+    Checking signal-hook v0.3.18
+    Checking biophys_asset_builder v0.1.0 (/workspace/UCF/crates/biophys_asset_builder)
+    Checking ucf-client v0.1.0 (/workspace/UCF/runtime/ucf-client)
+    Checking mio v0.8.11
+    Checking foldhash v0.1.5
+    Checking allocator-api2 v0.2.21
+    Checking either v1.15.0
+    Checking itertools v0.13.0
+    Checking hashbrown v0.15.5
+    Checking signal-hook-mio v0.2.5
+    Checking castaway v0.2.4
+    Checking static_assertions v1.1.0
+    Checking unicode-width v0.1.14
+    Checking unicode-segmentation v1.12.0
+    Checking compact_str v0.7.1
+    Checking unicode-truncate v1.1.0
+    Checking strum v0.26.3
+    Checking crossterm v0.27.0
+    Checking lru v0.12.5
+    Checking assets v0.1.0 (/workspace/UCF/crates/assets)
+    Checking cassowary v0.3.0
+    Checking pvgs v0.1.0 (/workspace/UCF/crates/pvgs)
+    Checking ratatui v0.27.0
+    Checking ucf-vector-index v0.1.0 (/workspace/UCF/domains/index/crates/ucf-vector-index)
+    Checking rpp-pruning v0.1.0 (/workspace/UCF/vendor/ucf-chip-4-main/vendor/ztate/rpp/pruning)
+    Checking ucf-events v0.1.0 (/workspace/UCF/core/crates/ucf-events)
+    Checking ucf-demo v0.1.0 (/workspace/UCF/core/crates/ucf-demo)
+    Checking ucf-bench v0.1.0 (/workspace/UCF/runtime/ucf-bench)
+    Checking ucf-console v0.1.0 (/workspace/UCF/runtime/ucf-console)
+    Checking biophys_trace v0.1.0 (/workspace/UCF/crates/biophys_trace)
+    Checking storage-firewood v0.1.0 (/workspace/UCF/vendor/ucf-chip-4-main/vendor/ztate/storage-firewood)
+    Checking query v0.1.0 (/workspace/UCF/crates/query)
+    Checking microcircuit_sn_l4 v0.1.0 (/workspace/UCF/crates/microcircuit_sn_l4)
+    Checking microcircuit_amygdala_l4 v0.1.0 (/workspace/UCF/crates/microcircuit_amygdala_l4)
+    Checking microcircuit_hypothalamus_l4 v0.1.0 (/workspace/UCF/crates/microcircuit_hypothalamus_l4)
+    Checking ucf-sdk v1.0.0 (/workspace/UCF/ucf-sdk)
+    Checking replay_executor v0.1.0 (/workspace/UCF/crates/replay_executor)
+    Checking scorecards v0.1.0 (/workspace/UCF/crates/scorecards)
+    Checking ucf-ingestion v0.1.0 (/workspace/UCF/core/crates/ucf-ingestion)
+    Checking ucf-terminal v0.1.0 (/workspace/UCF/adapters/terminal/crates/ucf-terminal)
+    Checking ucf-consolidation v0.1.0 (/workspace/UCF/domains/consolidation/crates/ucf-consolidation)
+    Checking ucf-vector-index-qdrant v0.1.0 (/workspace/UCF/domains/index/crates/ucf-vector-index-qdrant)
+    Checking app v0.1.0 (/workspace/UCF/app)
+    Checking microcircuit_pag_l4 v0.1.0 (/workspace/UCF/crates/microcircuit_pag_l4)
+    Checking microcircuit_insula_l4 v0.1.0 (/workspace/UCF/crates/microcircuit_insula_l4)
+    Checking ucf-ai-backends v0.1.0 (/workspace/UCF/domains/ai-backends)
+    Checking ucf-rig v0.1.0 (/workspace/UCF/adapters/rig/crates/ucf-rig)
+    Checking microcircuit_pag_biophys v0.1.0 (/workspace/UCF/crates/microcircuit_pag_biophys)
+    Checking microcircuit_lc_biophys v0.1.0 (/workspace/UCF/crates/microcircuit_lc_biophys)
+    Checking microcircuit_amygdala_biophys v0.1.0 (/workspace/UCF/crates/microcircuit_amygdala_biophys)
+    Checking microcircuit_pmrf_biophys v0.1.0 (/workspace/UCF/crates/microcircuit_pmrf_biophys)
+    Checking microcircuit_sn_biophys v0.1.0 (/workspace/UCF/crates/microcircuit_sn_biophys)
+    Checking microcircuit_stn_biophys v0.1.0 (/workspace/UCF/crates/microcircuit_stn_biophys)
+    Checking microcircuit_lc_l4 v0.1.0 (/workspace/UCF/crates/microcircuit_lc_l4)
+    Checking microcircuit_cerebellum_pop v0.1.0 (/workspace/UCF/crates/microcircuit_cerebellum_pop)
+    Checking microcircuit_serotonin_attractor v0.1.0 (/workspace/UCF/crates/microcircuit_serotonin_attractor)
+    Checking microcircuit_dopamin_attractor v0.1.0 (/workspace/UCF/crates/microcircuit_dopamin_attractor)
+    Checking microcircuit_sc_attractor v0.1.0 (/workspace/UCF/crates/microcircuit_sc_attractor)
+    Checking microcircuit_stn_hold v0.1.0 (/workspace/UCF/crates/microcircuit_stn_hold)
+    Checking microcircuit_amygdala_pop v0.1.0 (/workspace/UCF/crates/microcircuit_amygdala_pop)
+    Checking microcircuit_sn_attractor v0.1.0 (/workspace/UCF/crates/microcircuit_sn_attractor)
+    Checking microcircuit_pmrf_rhythm v0.1.0 (/workspace/UCF/crates/microcircuit_pmrf_rhythm)
+    Checking microcircuit_pag_attractor v0.1.0 (/workspace/UCF/crates/microcircuit_pag_attractor)
+    Checking ucf-nsr-datalog v0.1.0 (/workspace/UCF/core/crates/ucf-nsr-datalog)
+    Checking ucf-nsr-smt v0.1.0 (/workspace/UCF/core/crates/ucf-nsr-smt)
+    Checking replay_evidence v0.1.0 (/workspace/UCF/crates/replay_evidence)
+    Checking ucf-archive-firewood v0.1.0 (/workspace/UCF/domains/archive/crates/ucf-archive-firewood)
+    Checking ucf-ai-runtime v0.1.0 (/workspace/UCF/ai/crates/ucf-ai-runtime)
+    Checking ucf-ai-sandbox v0.1.0 (/workspace/UCF/domains/ai-sandbox/crates/ucf-ai-sandbox)
+    Checking hpa v0.1.0 (/workspace/UCF/hpa)
+    Checking ucf-backends-gpu v0.1.0 (/workspace/UCF/runtime/ucf-backends-gpu)
+    Checking ucf-ode-port v0.1.0 (/workspace/UCF/core/crates/ucf-ode-port)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4m 53s
+exit_status: 0
+PASS: cargo clippy --workspace --all-targets -- -D warnings
