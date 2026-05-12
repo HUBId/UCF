@@ -690,6 +690,105 @@ use std::sync::{mpsc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReportFreshnessMetadata {
+    #[serde(default)]
+    pub report_version: String,
+    #[serde(default)]
+    pub generated_at_utc: String,
+    #[serde(default)]
+    pub command: String,
+    #[serde(default)]
+    pub git_head_full: String,
+    #[serde(default)]
+    pub git_head_short: String,
+    #[serde(default)]
+    pub git_branch: String,
+    #[serde(default)]
+    pub git_dirty: bool,
+    #[serde(default)]
+    pub workspace_root: String,
+    #[serde(default)]
+    pub repo_root: String,
+}
+
+impl Default for ReportFreshnessMetadata {
+    fn default() -> Self {
+        Self {
+            report_version: "1".to_string(),
+            generated_at_utc: "unknown".to_string(),
+            command: "unknown".to_string(),
+            git_head_full: "unknown".to_string(),
+            git_head_short: "unknown".to_string(),
+            git_branch: "unknown".to_string(),
+            git_dirty: true,
+            workspace_root: "unknown".to_string(),
+            repo_root: "unknown".to_string(),
+        }
+    }
+}
+
+pub(crate) fn current_command_line() -> String {
+    let args = std::env::args().collect::<Vec<_>>();
+    if args.is_empty() {
+        "unknown".to_string()
+    } else {
+        args.join(" ")
+    }
+}
+
+pub(crate) fn report_freshness_metadata(
+    command: String,
+    repo_root: &Path,
+) -> ReportFreshnessMetadata {
+    let repo_root = repo_root
+        .canonicalize()
+        .unwrap_or_else(|_| repo_root.to_path_buf());
+    let git_output = |args: &[&str]| -> Option<String> {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&repo_root)
+            .output()
+            .ok()?;
+        if output.status.success() {
+            let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if text.is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        } else {
+            None
+        }
+    };
+    let git_head_full = git_output(&["rev-parse", "HEAD"]).unwrap_or_else(|| "unknown".to_string());
+    let git_head_short =
+        git_output(&["rev-parse", "--short", "HEAD"]).unwrap_or_else(|| "unknown".to_string());
+    let git_branch =
+        git_output(&["branch", "--show-current"]).unwrap_or_else(|| "unknown".to_string());
+    let git_dirty = git_output(&["status", "--short"])
+        .map(|status| !status.is_empty())
+        .unwrap_or(true);
+    let generated_at_utc = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| format!("{}Z", duration.as_secs()))
+        .unwrap_or_else(|_| "unknown".to_string());
+    let workspace_root = git_output(&["rev-parse", "--show-toplevel"])
+        .unwrap_or_else(|| repo_root.display().to_string());
+
+    ReportFreshnessMetadata {
+        report_version: "1".to_string(),
+        generated_at_utc,
+        command,
+        git_head_full,
+        git_head_short,
+        git_branch,
+        git_dirty,
+        workspace_root,
+        repo_root: repo_root.display().to_string(),
+    }
+}
+
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
@@ -2000,7 +2099,10 @@ pub struct CheckResult {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct ReadinessGateReport {
+    #[serde(flatten, default)]
+    pub metadata: ReportFreshnessMetadata,
     pub code_version_tag: String,
+    pub profile: String,
     pub fixtures_digest_prefix: Option<String>,
     pub backend_pack_digest_prefix: Option<String>,
     pub timestamp: Option<String>,
@@ -2160,7 +2262,9 @@ pub struct V5GateReportV1 {
 impl Default for ReadinessGateReport {
     fn default() -> Self {
         Self {
+            metadata: ReportFreshnessMetadata::default(),
             code_version_tag: String::new(),
+            profile: String::new(),
             fixtures_digest_prefix: None,
             backend_pack_digest_prefix: None,
             timestamp: None,
@@ -2336,7 +2440,12 @@ pub fn readiness_gate(
         GateStatus::Pass
     };
     let report = ReadinessGateReport {
+        metadata: report_freshness_metadata(
+            current_command_line(),
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."),
+        ),
         code_version_tag: bounded_string(build_tag()?.git_commit, GATE_STR_CAP),
+        profile: profile.to_string(),
         fixtures_digest_prefix: Some(prefix_hex(&artifacts_b.run_metadata.fixtures_digest, 12)),
         backend_pack_digest_prefix: Some(prefix_hex(
             &artifacts_b.run_metadata.backend_pack_meta_digest,
@@ -10123,7 +10232,9 @@ active_hash = "abc"
     #[test]
     fn readiness_report_json_is_stable() {
         let report = ReadinessGateReport {
+            metadata: ReportFreshnessMetadata::default(),
             code_version_tag: "abc".to_string(),
+            profile: "test".to_string(),
             fixtures_digest_prefix: Some("123456".to_string()),
             backend_pack_digest_prefix: Some("abcdef".to_string()),
             timestamp: None,

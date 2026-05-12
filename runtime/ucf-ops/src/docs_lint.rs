@@ -8,8 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    check_artifact_schema_snapshots, generate_remediation_codes_doc, generate_spec_snapshot,
-    policy_validate, ArtifactSchemaArgs, DriftKind, OpsError, SpecSnapshotArgs,
+    check_artifact_schema_snapshots, current_command_line, generate_remediation_codes_doc,
+    generate_spec_snapshot, policy_validate, report_freshness_metadata, ArtifactSchemaArgs,
+    DriftKind, OpsError, ReportFreshnessMetadata, SpecSnapshotArgs,
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -50,7 +51,10 @@ pub struct DocsLintCheck {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocsLintReport {
+    #[serde(flatten, default)]
+    pub metadata: ReportFreshnessMetadata,
     pub ok: bool,
+    pub status: DocsLintStatus,
     pub mode: DocsLintMode,
     pub checks: Vec<DocsLintCheck>,
 }
@@ -91,7 +95,13 @@ pub fn docs_lint(args: &DocsLintArgs) -> Result<DocsLintReport, OpsError> {
     ];
     let ok = checks.iter().all(|c| c.status != DocsLintStatus::Fail);
     Ok(DocsLintReport {
+        metadata: report_freshness_metadata(current_command_line(), &args.repo_root),
         ok,
+        status: if ok {
+            DocsLintStatus::Pass
+        } else {
+            DocsLintStatus::Fail
+        },
         mode: args.mode,
         checks,
     })
