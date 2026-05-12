@@ -11,6 +11,7 @@ Kanonische Status-/Discoverability-Maps:
 - `docs/blue_brain_canonical_region_inventory_map_v1.md` (canonical six-region inventory/role map; supporting reference only)
 - `docs/blue_brain_canonical_inter_region_relation_map_v1.md` (canonical bounded inter-region relation closure map; supporting reference only)
 - `docs/blue_brain_canonical_model_boundary_map_v1.md` (canonical system-wide model-boundary map; supporting current reference only)
+- `docs/blue_brain_canonical_matrices_final_freeze_v1.md` (final canonical regions/relations/model-modes matrix freeze; supporting current reference only)
 - `docs/blue_brain_guard_semantic_drift_map_v1.md` (guard/semantic drift-control map; supporting reference only)
 - `docs/blue_brain_maintenance_verification_findings_map_v1.md` (test/check/evidence verification findings; supporting reference only)
 - `docs/blue_brain_discoverability_findings_map_v1.md` (maintenance findings evidence for index/reference clarity; supporting reference only)

@@ -7295,6 +7295,33 @@ pub const BLUE_BRAIN_NON_CANONICAL_SHADOW_SURFACES: [&str; 7] = [
     "adjacent Brain/DigitalBrain/Neuromod/SNN/FEP shadow surfaces",
 ];
 
+/// Final frozen Blue-Brain region matrix for the Blue-Brain completion line.
+///
+/// This is an alias of the canonical inventory map, kept as a named final
+/// matrix so docs and code can reference the same six-region closure without
+/// creating a competing classification source.
+pub const CANONICAL_BLUE_BRAIN_FINAL_REGION_MATRIX: [BlueBrainCanonicalRegionInventoryEntry; 6] =
+    CANONICAL_BLUE_BRAIN_REGION_INVENTORY_MAP;
+
+/// Final frozen Blue-Brain relation matrix for the Blue-Brain completion line.
+///
+/// This matrix mirrors the canonical inter-region relation map exactly: three
+/// implemented direct bounded advisory relations, four mediated relations, two
+/// deferred relations, one blocked relation, and five architecture-lane-only
+/// relations. It adds no relation implementation.
+pub const CANONICAL_BLUE_BRAIN_FINAL_RELATION_MATRIX:
+    [BlueBrainCanonicalInterRegionRelationMapEntry; 15] =
+    CANONICAL_BLUE_BRAIN_CANONICAL_INTER_REGION_RELATION_MAP;
+
+/// Final frozen Blue-Brain model matrix for the Blue-Brain completion line.
+///
+/// This matrix mirrors the canonical model-boundary map exactly. It preserves
+/// abstract region/relation semantics, exactly two bounded Kuramoto-like
+/// relation-local deepenings, HH simulation/diagnostic-only paths, later-HH
+/// deferred paths, and non-canonical/internal-only paths.
+pub const CANONICAL_BLUE_BRAIN_FINAL_MODEL_MATRIX: [BlueBrainCanonicalModelBoundaryMapEntry; 27] =
+    CANONICAL_BLUE_BRAIN_MODEL_BOUNDARY_MAP;
+
 pub fn blue_brain_region_inventory_entry(
     region: BlueBrainAnatomicalRegionClass,
 ) -> Option<&'static BlueBrainCanonicalRegionInventoryEntry> {
@@ -18625,5 +18652,67 @@ mod tests {
         assert!(doc.contains("no global HH platform"));
         assert!(doc.contains("no direct HH implementation"));
         assert!(doc.contains("Maintenance is sufficient now"));
+    }
+
+    #[test]
+    fn final_blue_brain_matrices_alias_canonical_maps_without_new_scope() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_FINAL_REGION_MATRIX,
+            CANONICAL_BLUE_BRAIN_REGION_INVENTORY_MAP
+        );
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_FINAL_RELATION_MATRIX,
+            CANONICAL_BLUE_BRAIN_CANONICAL_INTER_REGION_RELATION_MAP
+        );
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_FINAL_MODEL_MATRIX,
+            CANONICAL_BLUE_BRAIN_MODEL_BOUNDARY_MAP
+        );
+
+        assert_eq!(CANONICAL_BLUE_BRAIN_FINAL_REGION_MATRIX.len(), 6);
+        assert_eq!(CANONICAL_BLUE_BRAIN_FINAL_RELATION_MATRIX.len(), 15);
+        assert_eq!(CANONICAL_BLUE_BRAIN_FINAL_MODEL_MATRIX.len(), 27);
+
+        let region_count = CANONICAL_BLUE_BRAIN_FINAL_MODEL_MATRIX
+            .iter()
+            .filter(|entry| {
+                entry.surface_kind == BlueBrainCanonicalModelBoundarySurfaceKind::RegionSurface
+                    && entry.model_mode
+                        == BlueBrainCanonicalModelBoundaryMode::AbstractFunctionalCurrentMode
+            })
+            .count();
+        assert_eq!(region_count, 6);
+
+        let kuramoto_deepenings = CANONICAL_BLUE_BRAIN_FINAL_MODEL_MATRIX
+            .iter()
+            .filter(|entry| {
+                entry.surface_kind
+                    == BlueBrainCanonicalModelBoundarySurfaceKind::SelectiveModelDeepeningSurface
+                    && entry.model_mode
+                        == BlueBrainCanonicalModelBoundaryMode::BoundedKuramotoLikeCurrentMode
+                    && entry.selective_model_deepening_active
+            })
+            .count();
+        assert_eq!(kuramoto_deepenings, 2);
+
+        assert!(!CANONICAL_BLUE_BRAIN_FINAL_MODEL_MATRIX
+            .iter()
+            .any(|entry| entry.hh_productive_mode));
+    }
+
+    #[test]
+    fn final_blue_brain_matrices_doc_matches_code_counts_and_boundaries() {
+        let doc = include_str!("../../../docs/blue_brain_canonical_matrices_final_freeze_v1.md");
+        assert!(doc.contains("Finale kanonische Regionenmatrix"));
+        assert!(doc.contains("Finale kanonische Relationsmatrix"));
+        assert!(doc.contains("Finale kanonische Modellmatrix"));
+        assert!(doc.contains("Exactly six canonical active regions"));
+        assert!(doc.contains("exactly three implemented"));
+        assert!(doc.contains("exactly four mediated"));
+        assert!(doc.contains("exactly two bounded Kuramoto-like"));
+        assert!(doc.contains("no productive HH mode"));
+        assert!(doc.contains("architecture-lane-only is not implementation"));
+        assert!(doc.contains("no new region"));
+        assert!(doc.contains("no new model deepening"));
     }
 }
