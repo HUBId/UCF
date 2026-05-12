@@ -4004,6 +4004,156 @@ pub const CANONICAL_BLUE_BRAIN_HH_READINESS_CLOSURE_MAP: [BlueBrainHhReadinessCl
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHhPreparationClosureClass {
+    NotImplemented,
+    SimulationOnlyDiagnosticOnlyOnly,
+    LaterExplicitRescopeOnly,
+    NotProductive,
+}
+
+pub const CANONICAL_BLUE_BRAIN_HH_PREPARATION_CLOSURE_CLASS_MAP:
+    [BlueBrainHhPreparationClosureClass; 4] = [
+    BlueBrainHhPreparationClosureClass::NotImplemented,
+    BlueBrainHhPreparationClosureClass::SimulationOnlyDiagnosticOnlyOnly,
+    BlueBrainHhPreparationClosureClass::LaterExplicitRescopeOnly,
+    BlueBrainHhPreparationClosureClass::NotProductive,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlueBrainHhPreparationClosureDecision {
+    KeepSingleCandidateAsLaterNarrowBacklogRescope,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlueBrainHhPreparationClosureEntry {
+    pub closure_id: &'static str,
+    pub closure_class: BlueBrainHhPreparationClosureClass,
+    pub relation: Option<BlueBrainInterRegionArchitecturePair>,
+    pub scope_source: &'static str,
+    pub prerequisite_source: &'static str,
+    pub guard_source: &'static str,
+    pub closure_statement: &'static str,
+    pub backlog_decision: BlueBrainHhPreparationClosureDecision,
+    pub current_hh_implemented: bool,
+    pub current_productive_hh_allowed: bool,
+    pub simulation_only_diagnostic_only: bool,
+    pub later_explicit_rescope_required: bool,
+    pub backlog_candidate_retained: bool,
+    pub no_direct_action_trigger: bool,
+    pub no_direct_execution_trigger: bool,
+    pub no_direct_retry_trigger: bool,
+    pub no_direct_memory_commit: bool,
+    pub no_direct_compute_invocation: bool,
+    pub no_safety_override: bool,
+    pub opens_runtime_selection_reference_execution_authority: bool,
+    pub opens_contract_state: bool,
+    pub opens_compute_core_work: bool,
+    pub opens_global_hh_platform: bool,
+    pub opens_additional_hh_candidates: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+const fn blue_brain_hh_preparation_closure_entry(
+    closure_id: &'static str,
+    closure_class: BlueBrainHhPreparationClosureClass,
+    relation: Option<BlueBrainInterRegionArchitecturePair>,
+    scope_source: &'static str,
+    prerequisite_source: &'static str,
+    guard_source: &'static str,
+    closure_statement: &'static str,
+    simulation_only_diagnostic_only: bool,
+    later_explicit_rescope_required: bool,
+    backlog_candidate_retained: bool,
+) -> BlueBrainHhPreparationClosureEntry {
+    BlueBrainHhPreparationClosureEntry {
+        closure_id,
+        closure_class,
+        relation,
+        scope_source,
+        prerequisite_source,
+        guard_source,
+        closure_statement,
+        backlog_decision:
+            BlueBrainHhPreparationClosureDecision::KeepSingleCandidateAsLaterNarrowBacklogRescope,
+        current_hh_implemented: false,
+        current_productive_hh_allowed: false,
+        simulation_only_diagnostic_only,
+        later_explicit_rescope_required,
+        backlog_candidate_retained,
+        no_direct_action_trigger: true,
+        no_direct_execution_trigger: true,
+        no_direct_retry_trigger: true,
+        no_direct_memory_commit: true,
+        no_direct_compute_invocation: true,
+        no_safety_override: true,
+        opens_runtime_selection_reference_execution_authority: false,
+        opens_contract_state: false,
+        opens_compute_core_work: false,
+        opens_global_hh_platform: false,
+        opens_additional_hh_candidates: false,
+    }
+}
+
+/// Canonical HH-preparation closure map.
+///
+/// This map consolidates the final HH candidate scope, prerequisite gaps and
+/// guard/contract barriers into one closure line. The only decision recorded is
+/// to keep `Basal Ganglia ↔ Cerebellum` as a later narrow backlog re-scope. HH
+/// remains unimplemented, non-productive, simulation-only/diagnostic-only and
+/// blocked unless a separate future re-scope supplies missing contracts,
+/// fixtures, deterministic encodings, budgets and authority proofs.
+pub const CANONICAL_BLUE_BRAIN_HH_PREPARATION_CLOSURE_MAP: [BlueBrainHhPreparationClosureEntry; 4] = [
+    blue_brain_hh_preparation_closure_entry(
+        "hh_preparation_not_implemented_closure",
+        BlueBrainHhPreparationClosureClass::NotImplemented,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum),
+        "candidate scope is relation-level only and not-yet-implemented",
+        "relation implementation, HH input/output contracts, fixtures, goldens, fixed encoding, performance budget and consumer mapping are missing",
+        "no-direct and authority guards stay closed at HH level",
+        "HH preparation closes without an implementation, runtime path, compute invocation or productive mode",
+        true,
+        true,
+        true,
+    ),
+    blue_brain_hh_preparation_closure_entry(
+        "hh_preparation_simulation_diagnostic_only_closure",
+        BlueBrainHhPreparationClosureClass::SimulationOnlyDiagnosticOnlyOnly,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum),
+        "scope allows only conceivable later simulation-only/diagnostic-only mode for the single relation",
+        "prerequisite contracts for future inputs and outputs must be deterministic fixture evidence only unless a separate authority change is approved",
+        "guard boundary keeps diagnostic output as evidence only and not operative authority",
+        "any retained backlog item is diagnostic evidence only and cannot become Contract state, selection authority, execution authority, retry authority, memory authority or compute authority",
+        true,
+        true,
+        true,
+    ),
+    blue_brain_hh_preparation_closure_entry(
+        "hh_preparation_later_explicit_rescope_only_closure",
+        BlueBrainHhPreparationClosureClass::LaterExplicitRescopeOnly,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum),
+        "scope, prerequisites and guards agree on exactly one later candidate",
+        "prerequisite re-scope must provide exact inputs, outputs, fixtures, contracts, deterministic encodings, budgets and tests",
+        "guard boundary makes scope drift fail closed and cannot open regions, a global platform, extra candidates or compute-core work",
+        "the candidate may remain only as a later narrow backlog re-scope and not as an active implementation lane",
+        true,
+        true,
+        true,
+    ),
+    blue_brain_hh_preparation_closure_entry(
+        "hh_preparation_not_productive_closure",
+        BlueBrainHhPreparationClosureClass::NotProductive,
+        Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum),
+        "scope excludes productive HH for the candidate",
+        "missing prerequisite contracts block productive interpretation",
+        "guard boundary keeps Contract, Runtime, Selection, Reference and Execution authority closed",
+        "HH is not productive now, does not promote any model mode and does not change current abstract or bounded Kuramoto-like behavior",
+        true,
+        true,
+        true,
+    ),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueBrainHhCandidateScopeClass {
     FinalSingleRelationCandidate,
     ScopeInvariant,
@@ -18191,6 +18341,81 @@ mod tests {
             assert!(!entry.opens_other_hh_candidates);
             assert!(!entry.opens_compute_core_work);
         }
+    }
+
+    #[test]
+    fn canonical_hh_preparation_closure_map_consolidates_scope_prerequisites_and_guards() {
+        assert_eq!(
+            CANONICAL_BLUE_BRAIN_HH_PREPARATION_CLOSURE_CLASS_MAP.len(),
+            4
+        );
+        assert_eq!(CANONICAL_BLUE_BRAIN_HH_PREPARATION_CLOSURE_MAP.len(), 4);
+
+        for class in CANONICAL_BLUE_BRAIN_HH_PREPARATION_CLOSURE_CLASS_MAP {
+            assert!(CANONICAL_BLUE_BRAIN_HH_PREPARATION_CLOSURE_MAP
+                .iter()
+                .any(|entry| entry.closure_class == class));
+        }
+
+        for entry in CANONICAL_BLUE_BRAIN_HH_PREPARATION_CLOSURE_MAP {
+            assert_eq!(
+                entry.relation,
+                Some(BlueBrainInterRegionArchitecturePair::BasalGangliaCerebellum)
+            );
+            assert_eq!(
+                entry.backlog_decision,
+                BlueBrainHhPreparationClosureDecision::KeepSingleCandidateAsLaterNarrowBacklogRescope
+            );
+            assert!(entry.scope_source.contains("scope"));
+            assert!(
+                entry.prerequisite_source.contains("contract")
+                    || entry.prerequisite_source.contains("prerequisite")
+            );
+            assert!(
+                entry.guard_source.contains("guard") || entry.guard_source.contains("authority")
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_hh_preparation_closure_keeps_all_classes_closed() {
+        for entry in CANONICAL_BLUE_BRAIN_HH_PREPARATION_CLOSURE_MAP {
+            assert!(!entry.current_hh_implemented);
+            assert!(!entry.current_productive_hh_allowed);
+            assert!(entry.simulation_only_diagnostic_only);
+            assert!(entry.later_explicit_rescope_required);
+            assert!(entry.backlog_candidate_retained);
+            assert!(entry.no_direct_action_trigger);
+            assert!(entry.no_direct_execution_trigger);
+            assert!(entry.no_direct_retry_trigger);
+            assert!(entry.no_direct_memory_commit);
+            assert!(entry.no_direct_compute_invocation);
+            assert!(entry.no_safety_override);
+            assert!(!entry.opens_runtime_selection_reference_execution_authority);
+            assert!(!entry.opens_contract_state);
+            assert!(!entry.opens_compute_core_work);
+            assert!(!entry.opens_global_hh_platform);
+            assert!(!entry.opens_additional_hh_candidates);
+        }
+    }
+
+    #[test]
+    fn canonical_hh_preparation_closure_doc_matches_code_boundaries() {
+        let doc = include_str!("../../../docs/blue_brain_hh_preparation_closure_map_v1.md");
+        assert!(doc.contains("HH-preparation closure map"));
+        assert!(doc.contains("not implemented"));
+        assert!(doc.contains("simulation-only/diagnostic-only only"));
+        assert!(doc.contains("later explicit re-scope only"));
+        assert!(doc.contains("not productive"));
+        assert!(doc.contains("Basal Ganglia ↔ Cerebellum"));
+        assert!(doc.contains("HH-Kandidat bleibt als späterer enger Re-Scope im Backlog"));
+        assert!(doc.contains("no direct action trigger"));
+        assert!(doc.contains("no direct execution trigger"));
+        assert!(doc.contains("no direct retry trigger"));
+        assert!(doc.contains("no direct memory commit"));
+        assert!(doc.contains("no direct compute invocation"));
+        assert!(doc.contains("no safety override"));
+        assert!(doc.contains("HH remains deferred"));
     }
 
     #[test]

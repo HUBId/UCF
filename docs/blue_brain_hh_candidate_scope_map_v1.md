@@ -83,3 +83,7 @@ Prompt 3 hardens this scope line in `docs/blue_brain_hh_guard_boundary_map_v1.md
 ## 8) Closure note
 
 The HH candidate scope line is now final for preparation purposes: exactly one relation candidate is named, the scope is deliberately small, HH is separated from Kuramoto-like and abstract current modes, non-goals are explicit, and any later work must begin from this bounded simulation-only/diagnostic-only scope basis.
+
+## 9) HH-preparation closure companion
+
+Prompt 4 is consolidated in `docs/blue_brain_hh_preparation_closure_map_v1.md` and `CANONICAL_BLUE_BRAIN_HH_PREPARATION_CLOSURE_MAP`: HH-Preparation is closed, the single `Basal Ganglia ↔ Cerebellum` candidate may remain only as a later narrow backlog re-scope, and HH remains deferred, not implemented, simulation-only/diagnostic-only only and not productive.

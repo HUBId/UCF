@@ -22,6 +22,7 @@ Kanonische Status-/Discoverability-Maps:
 - `docs/blue_brain_first_hh_candidate_map_v1.md` (first later-HH candidate selection map; supporting current reference only, not HH implementation)
 - `docs/blue_brain_hh_prerequisite_map_v1.md` (HH prerequisite/detail/guard map for the single candidate; supporting current reference only, not HH implementation)
 - `docs/blue_brain_hh_readiness_closure_map_v1.md` (final HH-readiness closure map; supporting current reference only, not HH implementation)
+- `docs/blue_brain_hh_preparation_closure_map_v1.md` (HH-preparation closure map with the final narrow-backlog decision; supporting current reference only, not HH implementation)
 - `docs/blue_brain_hh_candidate_scope_map_v1.md` (final HH-candidate scope line for the single relation; supporting current reference only, not HH implementation)
 - `docs/blue_brain_hh_guard_boundary_map_v1.md` (HH guard-boundary map pinning no-direct, contract-state, diagnostic-output and authority barriers; supporting current reference only, not HH implementation)
 
