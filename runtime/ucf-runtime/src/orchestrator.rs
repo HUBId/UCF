@@ -146,6 +146,10 @@ impl AiComputeBackend for NotImplementedBackend {
         self.name
     }
 
+    fn identity(&self) -> ucf_compute::BackendIdentity {
+        ucf_compute::BackendIdentity::deferred(self.name)
+    }
+
     fn compute(
         &self,
         _input: &ucf_compute::ComputeInput,
@@ -6474,6 +6478,10 @@ mod tests {
     impl AiComputeBackend for PanicBackend {
         fn name(&self) -> &'static str {
             "panic_backend"
+        }
+
+        fn identity(&self) -> ucf_compute::BackendIdentity {
+            ucf_compute::BackendIdentity::mock(self.name())
         }
 
         fn compute(

@@ -12,6 +12,7 @@ use crate::capabilities::{
     build_llm_backend, LlmBackendConfig, LlmInference, LlmStubBackend, SaeExtractor,
     WorldModelPredictor,
 };
+use crate::contracts::BackendIdentity;
 use crate::feature_extractor::ToySaeExtractor;
 #[cfg(feature = "lfm-burn")]
 use crate::lfm::BurnLfmKernel;
@@ -167,10 +168,19 @@ impl BackendPackMeta {
         hasher.update(self.code_version.as_str().as_bytes());
         hasher.finalize().into()
     }
+
+    pub fn identity(&self) -> BackendIdentity {
+        BackendPackKind::parse(self.pack_name)
+            .map(BackendPackKind::identity)
+            .unwrap_or_else(|| BackendIdentity::deferred(self.pack_name))
+    }
 }
 
 pub trait BackendPack: Send + Sync {
     fn meta(&self) -> &BackendPackMeta;
+    fn identity(&self) -> BackendIdentity {
+        self.meta().identity()
+    }
     fn model_slot_provenance(&self) -> &[ModelSlotProvenance];
     fn llm(&self) -> &dyn LlmInference;
     fn world(&self) -> &Mutex<Box<dyn WorldModelPredictor + Send + Sync>>;
@@ -343,6 +353,19 @@ impl BackendPackKind {
             Self::WorkerV1 => BackendPackId(6),
             #[cfg(feature = "remote-compute")]
             Self::RemoteV1 => BackendPackId(7),
+        }
+    }
+
+    pub fn identity(self) -> BackendIdentity {
+        match self {
+            Self::StubV0 => BackendIdentity::stub(self.as_str()),
+            Self::ToyV1 | Self::ToyLnnV1 => BackendIdentity::toy(self.as_str()),
+            Self::CandleToyV1 | Self::CandleLiquidV1 | Self::BurnToyV1 => {
+                BackendIdentity::optional_real_compile(self.as_str())
+            }
+            Self::WorkerV1 => BackendIdentity::experimental(self.as_str()),
+            #[cfg(feature = "remote-compute")]
+            Self::RemoteV1 => BackendIdentity::remote_external(self.as_str()),
         }
     }
 }

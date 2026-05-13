@@ -304,6 +304,10 @@ impl AiComputeBackend for EnablementComputeBackend {
         self.primary.name()
     }
 
+    fn identity(&self) -> crate::BackendIdentity {
+        self.primary.identity()
+    }
+
     fn compute(
         &self,
         input: &ComputeInput,
@@ -600,6 +604,10 @@ mod tests {
     impl AiComputeBackend for MockBackend {
         fn name(&self) -> &'static str {
             "mock"
+        }
+
+        fn identity(&self) -> crate::BackendIdentity {
+            crate::BackendIdentity::mock(self.name())
         }
 
         fn compute(

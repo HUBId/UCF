@@ -1,3 +1,4 @@
+use crate::contracts::BackendIdentity;
 use crate::pipeline::{ComputePipelineBackend, FusionConfig, LimitsConfig};
 use crate::{
     AiComputeBackend, BackendPackConfig, BackendPackFactory, BackendPackKind, ComputeBudget,
@@ -54,6 +55,14 @@ impl ComputeBackendKind {
             Self::Candle => "candle",
             Self::Burn => "burn",
             Self::Worker => "worker",
+        }
+    }
+
+    pub fn identity(self) -> BackendIdentity {
+        match self {
+            Self::Stub => BackendIdentity::stub(self.as_env_str()),
+            Self::Candle | Self::Burn => BackendIdentity::optional_real_compile(self.as_env_str()),
+            Self::Worker => BackendIdentity::experimental(self.as_env_str()),
         }
     }
 }

@@ -200,3 +200,29 @@ Prompt 16 should not:
 - Which docs are P0 cleanup beyond `README.md`, `runtime/ucf-compute/src/lib.rs`, and backend docs?
 - Should compatibility adapter features `ai-candle` and `ai-burn` receive explicit stub metadata in their own crate or only through documentation first?
 - What exact local artifact contract is sufficient to upgrade a future lane from optional-real-compile to optional-real-runtime without changing Evidence/Archive authority?
+
+## 9. Prompt 16 Contract Hardening Addendum
+
+This addendum records the small machine-readable contract added after the taxonomy plan. It is contract hardening only: it does not enable real compute, add a new backend implementation, add gateway integration, create policy/output override authority, change evidence/archive authority, or make Minimal Spine v1.x depend on compute.
+
+### Backend identity contract
+
+`runtime/ucf-compute` now exposes `BackendClass` and `BackendIdentity` as metadata/label types. The contract classifies backend lanes as `stub`, `toy`, `mock`, `optional-real-compile`, `optional-real-runtime`, `remote-external`, `experimental`, `deferred`, or `forbidden-for-now`, and carries deterministic/offline/external-service/runtime-inference/production-claim booleans.
+
+Current class mapping is intentionally conservative:
+
+| Path | Class | Runtime inference claim? | Offline? | External service required? | Production claim? |
+|---|---|---:|---:|---:|---:|
+| `CpuStubBackend`, `ComputeBackendKind::Stub`, `stub_v0` pack | `stub` | no | yes | no | no |
+| `toy_v1`, `toy_lnn_v1` packs | `toy` | no | yes | no | no |
+| test/mock identity helpers | `mock` | no | yes | no | no |
+| `ComputeBackendKind::{Candle,Burn}`, `candle_toy_v1`, `candle_liquid_v1`, `burn_toy_v1` | `optional-real-compile` | no | yes | no | no |
+| explicit future local fixture/golden identity helper | `optional-real-runtime` | yes, only when explicitly constructed | yes | no | no |
+| `remote_v1` / remote proxy metadata | `remote-external` | no by default | no | yes | no |
+| `worker_v1` | `experimental` | no | yes | no | no |
+
+The tests assert that stub/toy/mock identities cannot be confused with real-runtime claims, optional-real-compile identities do not claim runtime inference, and remote/external identities are not default-safe.
+
+### Readiness gate note
+
+As observed in Prompt 15, `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json` can hang reproducibly around the 300s timeout in this environment. Prompt 16 does not refactor the gate. Treat any local timeout as an environment/runtime observation for this prompt, not as evidence that compute was activated or changed.
