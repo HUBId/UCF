@@ -48,6 +48,7 @@ Baseline commands used for this index: `pwd`, `git branch --show-current`, `git 
 | `docs/architecture/interfaces.md` | Current authoritative architecture docs | yes | Architecture-facing interface reference; defer to code for exact APIs. | `core/`, `domains/`, `runtime/` | canonical |
 | `docs/module_map.md` | Current authoritative architecture docs | yes | Module-level map for repository navigation. | workspace crates | canonical |
 | `docs/determinism_lock.md` | Current authoritative architecture docs | yes | Determinism constraints are safety invariants for externally visible outputs. | policy logic, reports, replay, goldens | canonical |
+| `docs/minimal_spine_v1_freeze.md` | Current authoritative architecture docs | yes | Freezes the Minimal Spine v1.x integration matrix, authority boundaries, claims, tests, and invalidators. | Minimal Spine v1.x code/tests/docs | canonical |
 | `docs/feature_matrix.md` | Current authoritative architecture docs | yes | Defines supported feature lanes and must be read with tests. | `runtime/ucf-compute`, backend crates, CI lanes | canonical |
 | `docs/blue_brain_authority_chain_status_map.md` | Current authoritative architecture docs | qualified | Current only for Blue-Brain document authority boundaries, not for global UCF capability claims. | Blue-Brain docs and bridge crates | advisory-boundary |
 

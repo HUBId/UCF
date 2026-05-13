@@ -206,6 +206,7 @@ Baseline commands: `pwd`, `git branch --show-current`, `git status --short`, `gi
 
 ## 9. Roadmap Implications
 
+- The Minimal Spine v1.x freeze matrix is `docs/minimal_spine_v1_freeze.md`; use it as the maintenance authority for v1.x component status, claims, authority boundaries, freeze criteria, and invalidators.
 - Prompt 4 Minimal Spine should include: `ucf-types`, `ucf-protocol`, `ucf-bus`, `ucf-evidence`, `ucf-archive` or `ucf-archive-store`, `ucf-router`, `ucf-policy-ecology`, policy pack input, and `ucf-ops` validation.
 - Prompt 4 may include as optional: `ucf-sdk`, `ucf-frames`, `ucf-ess`, `ucf-replay`, `ucf-gateway`, and `ucf-client`.
 - Later integrations: `ucf-runtime` as broad host, real `ucf-compute` backends, `ucf-ai-port` backend families, `ucf-consolidation`, `ucf-geist`, `ucf-neuromod`, Blue-Brain bridge, microcircuits, DBM/HPA, chip/PVGS, adapters, and app.
