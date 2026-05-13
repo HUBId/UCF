@@ -32,6 +32,7 @@ Required companion documents:
 - [`docs/current_state_architecture_index.md`](../current_state_architecture_index.md)
 - [`docs/roadmap/AI_MODEL_PIPELINE_STATUS.md`](AI_MODEL_PIPELINE_STATUS.md)
 - [`docs/canonical_model_pipeline_architecture.md`](../canonical_model_pipeline_architecture.md)
+- [`docs/roadmap/real_compute_lane_inventory.md`](real_compute_lane_inventory.md)
 
 Minimal Spine v1.x remains the claims authority for the frozen v1.0-v1.5 path. Nothing in this roadmap changes that authority.
 
@@ -139,8 +140,8 @@ The selected primary line is A. Real Compute Optional Lane. These guardrails are
 - Root `out/*.json` reports are current only for the HEAD/run whose embedded metadata matches the evaluated HEAD. They should normally remain uncommitted.
 - Update this roadmap selection if new code or tests materially change candidate maturity, if a line becomes required for Minimal Spine, if a gate is weakened or strengthened, or if a new authority document supersedes this selection.
 
-## 9. Next Prompt
+## 9. Prompt 14 Status and Next Prompt
 
-Recommended next prompt title: **Prompt 14 — Real Compute Lane Inventory and Feature Matrix**.
+Prompt 14 is complete as a documentation-only inventory. The inventory is available at [`docs/roadmap/real_compute_lane_inventory.md`](real_compute_lane_inventory.md). It confirms the current compute feature/fixture/backend/CI map before any behavior-changing code work, reduces overclaim risk by making `stub`, `toy`, and optional-real semantics explicit, and preserves the Minimal Spine v1.x freeze.
 
-This should be first because it is analysis-first and safe: it confirms the current compute feature/fixture/backend/CI map before any behavior-changing code work. It also directly reduces overclaim risk by making `stub`, `toy`, and optional `real` semantics explicit while preserving the Minimal Spine v1.x freeze.
+Recommended next prompt title: **Prompt 15 — Stub/Toy/Real Backend Naming and Boundary Cleanup Plan**.
