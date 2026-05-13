@@ -21,6 +21,32 @@ fn sample_control_frame(
     }
 }
 
+fn sample_candidate_set_record() -> v1::spec::CandidateSetRecord {
+    v1::spec::CandidateSetRecord {
+        version: 1,
+        input_digest: vec![1u8; 32],
+        policy_decision_digest: vec![2u8; 32],
+        candidate_count: 1,
+        candidate_digests: vec![vec![3u8; 32]],
+        candidates_digest: vec![4u8; 32],
+        provenance: "minimal-spine-v1-test-fixture".to_string(),
+    }
+}
+
+fn sample_output_record() -> v1::spec::OutputRecord {
+    v1::spec::OutputRecord {
+        version: 1,
+        input_digest: vec![1u8; 32],
+        candidate_set_digest: vec![4u8; 32],
+        selected_candidate_digest: vec![3u8; 32],
+        output_digest: vec![5u8; 32],
+        policy_status: "allow".to_string(),
+        status: "materialized".to_string(),
+        provenance: "minimal-spine-v1-test-fixture".to_string(),
+        evidence_id: Some("evidence-1".to_string()),
+    }
+}
+
 fn sample_record() -> v1::spec::ExperienceRecord {
     v1::spec::ExperienceRecord {
         record_id: "rec-1".to_string(),
@@ -87,4 +113,40 @@ fn canonical_roundtrip_experience_record() {
     let bytes = canonical_bytes(&record);
     let decoded = v1::spec::ExperienceRecord::decode_canonical(&bytes).expect("decode");
     assert_eq!(record, decoded);
+}
+
+#[test]
+fn candidate_set_record_canonical_encoding_is_stable() {
+    let record = sample_candidate_set_record();
+    let first = canonical_bytes(&record);
+    let second = canonical_bytes(&record);
+
+    assert_eq!(first, second);
+    assert!(!first.is_empty());
+}
+
+#[test]
+fn output_record_canonical_encoding_is_stable() {
+    let record = sample_output_record();
+    let first = canonical_bytes(&record);
+    let second = canonical_bytes(&record);
+
+    assert_eq!(first, second);
+    assert!(!first.is_empty());
+}
+
+#[test]
+fn candidate_set_and_output_records_prost_roundtrip() {
+    use prost::Message;
+
+    let candidate_set = sample_candidate_set_record();
+    let candidate_set_bytes = candidate_set.encode_to_vec();
+    let decoded_candidate_set =
+        v1::spec::CandidateSetRecord::decode(candidate_set_bytes.as_slice()).expect("decode");
+    assert_eq!(candidate_set, decoded_candidate_set);
+
+    let output = sample_output_record();
+    let output_bytes = output.encode_to_vec();
+    let decoded_output = v1::spec::OutputRecord::decode(output_bytes.as_slice()).expect("decode");
+    assert_eq!(output, decoded_output);
 }

@@ -4,7 +4,7 @@
 
 Minimal UCF Spine v1 defines the smallest deterministic, auditable, CI-capable UCF through-path:
 
-`ControlFrame / frame input -> deterministic route -> policy gate -> decision/output candidate -> evidence record -> archive append -> deterministic readback/query -> canonical E2E test`.
+`ControlFrame / frame input -> deterministic route -> policy gate -> canonical CandidateSetRecord -> canonical OutputRecord -> evidence record -> archive append -> deterministic readback/query -> canonical E2E test`.
 
 This document is the canonical technical basis for Prompt 5. It is intentionally not a complete UCF whitepaper, production-readiness claim, real-compute claim, Blue-Brain claim, or full cognitive-loop specification.
 
@@ -42,11 +42,12 @@ The required flow is:
 1. deterministic ControlFrame or frame-like input,
 2. normalization into a canonical spine input envelope,
 3. explicit policy gate,
-4. deterministic route/decision candidate,
-5. evidence envelope with stable IDs/digests,
-6. archive append,
-7. deterministic readback/query,
-8. canonical allow and deny/suppress E2E assertions.
+4. canonical deterministic `CandidateSetRecord`,
+5. canonical deterministic `OutputRecord`,
+6. evidence envelope with stable IDs/digests that references canonical record digests,
+7. archive append keyed to the output-record bytes/digest,
+8. deterministic readback/query,
+9. canonical allow and deny/suppress E2E assertions.
 
 ### 2.2 Optional in v1
 
@@ -135,8 +136,10 @@ Optional v1 flow extensions: a single `ucf-bus` in-memory hop, `ucf-sdk` determi
 |---|---:|---|---|---|---|
 | `SpineInputEnvelope` | partial | Existing `ucf-protocol::v1::spec::ControlFrame`, `ucf_protocol::boundary::v1::ControlFrameV1`, or test-local wrapper | `version`, `input id/frame_id/control_id`, `input digest`, `policy id/class`, deterministic test timestamp/cycle/nonce, `provenance/source module` | Digest must come from canonical bytes or `Digest32` helper and be stable across replay. | Prefer existing protocol ControlFrame. A new reusable type is not required unless Prompt 5 proves a gap. |
 | `SpinePolicyDecision` | partial | `ucf-protocol::v1::spec::PolicyDecision`; `ucf-policy-ecology` decision/rules | `version`, `policy id/version`, `decision kind/status`, `action`, `reason/code/rationale`, `confidence/bounds`, constraints/rules hit | Decision digest, if added, must hash canonical decision fields and fixed policy identity. | Allow and deny/suppress must both be represented explicitly. |
-| `SpineOutputCandidate` | no exact required type | Test-local wrapper or existing router output metadata; possible future protocol record | `version`, `route/output id`, `status`, `input digest`, `policy decision ref`, `payload/output commit`, `provenance`, no-real-compute marker | Output ID/digest must be deterministic and must not claim ML inference. | Keep test-local for Prompt 5 unless code already has a clean equivalent in the route path. |
-| `SpineEvidenceEnvelope` | partial | `ucf-protocol::v1::spec::ExperienceRecord` plus `ucf-evidence::EvidenceEnvelope` | `version`, `evidence id/record_id`, deterministic observed/test time, `subject_id`, canonical payload, input ref, policy ref, output ref/status, optional proof/fold refs | Evidence ID should be deterministic; digest should be canonical payload or record digest. Append/readback must preserve it. | Existing `EvidenceEnvelope` lacks a version field; version may be encoded in payload/record subject/schema string for the first test. |
+| `CandidateSetRecord` | yes | `ucf-protocol::v1::spec::CandidateSetRecord` | `version`, `input_digest`, `policy_decision_digest`, `candidate_count`, candidate digests, aggregate digest, provenance | Candidate-set canonical bytes/digest must be deterministic and stable across fresh stores. | Minimal commitment record only; no real compute, execution, or ranking authority. |
+| `OutputRecord` | yes | `ucf-protocol::v1::spec::OutputRecord` | `version`, `input_digest`, `candidate_set_digest`, selected candidate digest, output digest, policy/status, provenance, optional evidence ID | Output-record canonical bytes/digest must be deterministic and stable across fresh stores. | Minimal commitment record only; not a gateway response or real inference claim. |
+| `SpineOutputCandidate` | superseded | Historical/test-helper concept replaced by canonical `CandidateSetRecord`/`OutputRecord` in the E2E path | N/A | Candidate and output semantics are now represented by canonical protocol records. | Local helpers may still build deterministic bytes, but they are no longer semantic record authority. |
+| `SpineEvidenceEnvelope` | partial | `ucf-protocol::v1::spec::ExperienceRecord` plus `ucf-evidence::EvidenceEnvelope` | `version`, `evidence id/record_id`, deterministic observed/test time, `subject_id`, canonical payload, input ref, candidate-set digest, output-record digest, optional proof/fold refs | Evidence ID should be deterministic; digest should be canonical payload or record digest. Append/readback must preserve it and link to the output record. | Existing `EvidenceEnvelope` lacks a version field; version remains encoded in payload/record subject/schema string for v1. |
 | `ArchiveAppendResult` | partial | `ucf-archive::ExperienceAppender`, `ucf-archive-store::ArchiveStore::append` | appended `EvidenceId` and/or archive `key`, `payload_commit`, `root/record commit`, `status`, store length/readback signal | Archive key/root commit must be deterministic for fixed append sequence. | No production DB contract; use in-memory or tempdir local file path. |
 | `SpineReadbackResult` | partial | `ucf-evidence::EvidenceStore::get`, `ucf-archive` list/readback, `ucf-archive-store::get` | `status`, requested `evidence id` or `archive key`, returned record/envelope, digest/key/root comparison | Readback digest/key must equal the append result and original expected value. | Missing readback is a failure, not a warning. |
 
@@ -174,10 +177,10 @@ Implemented semantics and APIs:
 
 - protocol-facing input uses `ucf::v1::spec::ControlFrame`, `PolicyDecision`, `DecisionKind`, and canonical `ControlFrame::decode_canonical` / `canonical_bytes`;
 - the explicit policy gate uses `ucf-policy-ecology::PolicyEcology` with `PolicyRule::DenyReplayIfDecisionClass` through the existing `ReplayGate` trait;
-- the minimal route output candidate is a local deterministic test helper derived from canonical input bytes and policy decision; this is intentionally not a new production `OutputRecord` architecture;
-- evidence append uses `ucf-archive::InMemoryArchive::append_with_proof`, which builds/stores the existing `ucf-evidence::EvidenceEnvelope` surface for an `ExperienceRecord`;
-- archive-store readback/root proof uses `ucf-archive-store::InMemoryArchiveStore`, `ArchiveAppender`, `ArchiveStore::get`, and `ArchiveStore::root_commit`;
-- deny semantics are Option 1: denied input is stopped before route output materialization, evidence append, and archive-store append. The test asserts zero evidence entries, zero archive output records, no archive key/commit/root, and no output candidate.
+- the allow path materializes canonical `ucf::v1::spec::CandidateSetRecord` and `ucf::v1::spec::OutputRecord` records; helper code only constructs deterministic fixture material and is not record authority;
+- evidence append uses `ucf-archive::InMemoryArchive::append_with_proof`, which builds/stores the existing `ucf-evidence::EvidenceEnvelope` surface for an `ExperienceRecord` whose payload references candidate-set and output-record digests;
+- archive-store readback/root proof uses `ucf-archive-store::InMemoryArchiveStore`, `ArchiveAppender`, `ArchiveStore::get`, and `ArchiveStore::root_commit` over an `OutputEvent` linked to canonical `OutputRecord` bytes/digest;
+- deny semantics are Option 1: denied input is stopped before candidate-set/output-record materialization, evidence append, and archive-store append. The test asserts zero evidence entries, zero archive output records, no archive key/commit/root, and no candidate/output record.
 
 Boundary notes: the test does not call real compute, Gateway HTTP, external services, Blue-Brain, HH, microcircuit, vendor-chip, full consolidation, full Geist recursion, or neuromodulation paths.
 
@@ -286,3 +289,30 @@ Versioning rule:
 - v1.1 additions must remain backward-compatible and may add optional gateway read API, bus hop, SDK helper, or ESS read model sections.
 - v2 additions may promote consolidation, Geist/ISM, neuromod envelopes, real compute lanes, authority boundary tests, or runtime-hosted E2E only with explicit tests, gates, and updated module registry entries.
 - Historical docs must not be deleted to simplify scope; they remain audit trail unless reclassified by the current-state index and registry.
+
+## 13. Prompt 6 Evidence/Archive Record Alignment
+
+Prompt 6 promotes the Minimal Spine v1 allow path from a local output-candidate stand-in to
+canonical protocol records:
+
+| Record / Concept | Current status | Spine v1 use | Notes |
+|---|---|---:|---|
+| `CandidateSetRecord` | canonical-current | yes | Defined in `ucf-protocol::v1::spec`; carries deterministic candidate commitments only. |
+| `OutputRecord` | canonical-current | yes | Defined in `ucf-protocol::v1::spec`; carries selected-candidate/output commitments and status only. |
+| `CapabilityIssuanceRecord` | later | no | Current Minimal Spine v1 has no capability issuance architecture or gate requirement for test profile; add only when a policy/governance capability flow requires it. |
+| `ExperienceRecord` | canonical-current | yes | Remains the evidence payload carrier used by `ucf-archive`/`ucf-evidence`. |
+| `EvidenceEnvelope` | canonical-current | yes | Remains owned by `ucf-evidence`; the archive append surface constructs/stores it. |
+| `OutputEvent` archive record | current-equivalent | yes | `ucf-archive-store::RecordKind::OutputEvent` stores/readbacks an archive record whose payload commit is computed from canonical `OutputRecord` bytes and whose boundary commit is the output-record digest. |
+| local output candidate helper | removed as authority | no | Candidate/output semantics are now represented by canonical records; helper code only builds deterministic fixture material. |
+
+Evidence/archive alignment rules for v1:
+
+- allow path must produce a canonical candidate set and output record before evidence/archive append;
+- evidence payload must reference the candidate-set digest and output-record digest;
+- archive-store output event must link to canonical output-record bytes through its payload commit and boundary commit;
+- deterministic replay compares candidate-set bytes/digest and output-record bytes/digest across fresh stores;
+- deny path remains no-mutation for candidate set, output record, evidence, and archive output event.
+
+`CapabilityIssuanceRecord` is intentionally deferred to v1.1/v2 because Minimal Spine v1 does not issue
+or revoke capabilities, and the current test-profile readiness gate treats required-record checks as
+artifacts/explain coverage rather than a demand to synthesize a capability subsystem in this E2E test.
