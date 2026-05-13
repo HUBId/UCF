@@ -3909,12 +3909,16 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 1.0.69",
+ "ucf-archive-store",
  "ucf-core",
  "ucf-ess",
+ "ucf-evidence",
  "ucf-frames",
  "ucf-ops",
  "ucf-policy",
+ "ucf-protocol",
  "ucf-runtime",
+ "ucf-types",
 ]
 
 [[package]]

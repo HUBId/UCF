@@ -316,3 +316,27 @@ Evidence/archive alignment rules for v1:
 `CapabilityIssuanceRecord` is intentionally deferred to v1.1/v2 because Minimal Spine v1 does not issue
 or revoke capabilities, and the current test-profile readiness gate treats required-record checks as
 artifacts/explain coverage rather than a demand to synthesize a capability subsystem in this E2E test.
+
+## 10. Minimal Spine Gateway Read API v1.1
+
+Spine v1.1 adds a deliberately narrow Gateway-adjacent read surface for audited readback of
+Minimal Spine commitments. The surface is implemented as an internal service API, not as new HTTP,
+TCP, submit, append, or compute endpoints.
+
+The Gateway read API v1.1:
+
+- reports `status = "ok"`, `mode = "read_only"`, and `spine_version = "v1.1"` for the read module;
+- reads an existing `EvidenceEnvelope` by `EvidenceId` through the existing evidence store read path;
+- summarizes proof payload metadata and, when the payload is a canonical `ExperienceRecord`, extracts
+  Minimal Spine `candidate_set_record_digest` and `output_record_digest` links from the evidence
+  payload;
+- reads an existing archive `OutputEvent` by archive key through the existing archive-store read path;
+- reports the archive payload commit, boundary commit, root commit, and treats the boundary commit as
+  the canonical `OutputRecord` digest link used by the Minimal Spine fixture;
+- does not append evidence, append archive records, mutate policy, run compute, issue capabilities,
+  replay, consolidate, start background jobs, or contact external services.
+
+This v1.1 read surface is CI-oriented and local-store oriented. It remains separate from real Gateway
+transport security hardening and does not claim production Gateway readiness. It also does not expose
+real compute, Blue-Brain, HH, microcircuit, DBM, vendor-chip, full Geist recursion, consolidation, or
+neuromodulation behavior.
