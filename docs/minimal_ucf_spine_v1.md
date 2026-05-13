@@ -487,3 +487,7 @@ that can mention `CapabilityIssuanceRecord`, but in the current test profile tha
 `SKIP` when records are absent rather than a demand to synthesize a capability subsystem for the
 Minimal Spine E2E. Root `out/gate_report.json` artifacts must be treated as historical unless their
 embedded commit metadata matches the evaluated HEAD.
+
+## 16. Minimal Spine v1.x Freeze Matrix
+
+The canonical v1.x freeze matrix is `docs/minimal_spine_v1_freeze.md`. That document is the authority for v1.x integration claims, authority boundaries, test/gate baseline, allowed claims, forbidden claims, freeze criteria, invalidators, maintenance rules, and post-freeze roadmap sequencing.
