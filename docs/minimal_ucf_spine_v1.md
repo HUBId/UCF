@@ -163,7 +163,25 @@ Rationale: the router is the required route/decision coordinator and already has
 | No external service | Test uses in-memory stores or tempdir local files only. | archive/evidence candidates |
 | Explicit boundary exclusions | Test does not require Blue-Brain, HH, microcircuit, gateway HTTP, production DB, vendor chip dirs, full consolidation, full Geist, or neuromod modulation. | test review/assertions |
 
-### 8.3 Required commands for Prompt 5
+
+### 8.3 Prompt 5 implemented test path
+
+Prompt 5 implements the first canonical Minimal UCF Spine v1 E2E test at:
+
+`core/crates/ucf-router/tests/minimal_spine_e2e.rs`
+
+Implemented semantics and APIs:
+
+- protocol-facing input uses `ucf::v1::spec::ControlFrame`, `PolicyDecision`, `DecisionKind`, and canonical `ControlFrame::decode_canonical` / `canonical_bytes`;
+- the explicit policy gate uses `ucf-policy-ecology::PolicyEcology` with `PolicyRule::DenyReplayIfDecisionClass` through the existing `ReplayGate` trait;
+- the minimal route output candidate is a local deterministic test helper derived from canonical input bytes and policy decision; this is intentionally not a new production `OutputRecord` architecture;
+- evidence append uses `ucf-archive::InMemoryArchive::append_with_proof`, which builds/stores the existing `ucf-evidence::EvidenceEnvelope` surface for an `ExperienceRecord`;
+- archive-store readback/root proof uses `ucf-archive-store::InMemoryArchiveStore`, `ArchiveAppender`, `ArchiveStore::get`, and `ArchiveStore::root_commit`;
+- deny semantics are Option 1: denied input is stopped before route output materialization, evidence append, and archive-store append. The test asserts zero evidence entries, zero archive output records, no archive key/commit/root, and no output candidate.
+
+Boundary notes: the test does not call real compute, Gateway HTTP, external services, Blue-Brain, HH, microcircuit, vendor-chip, full consolidation, full Geist recursion, or neuromodulation paths.
+
+### 8.4 Required commands for Prompt 5
 
 Prompt 5 must run, at minimum:
 
@@ -183,7 +201,7 @@ cargo test -p ucf-ops --all-targets
 
 `out/docs_lint_report.json` should normally remain uncommitted unless a release workflow explicitly requires report artifacts.
 
-### 8.4 Non-goals for Prompt 5
+### 8.5 Non-goals for Prompt 5
 
 - no real ML inference;
 - no production database;
