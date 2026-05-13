@@ -448,3 +448,42 @@ Future v2 path: bounded modulation may feed attention/noise/learning lanes only 
 policy tests, authority-boundary tests, scheduler specifications, and updated readiness gates. Full
 metabolic scheduler, DBM/HPA, replay/consolidation, Geist/ISM, Gateway trigger/write, and real
 compute integrations remain deferred.
+
+## 15. Minimal Spine Capability Boundary v1.5
+
+Spine v1.5 makes an explicit safety decision for capability issuance.
+`CapabilityIssuanceRecord` remains deferred for Minimal Spine v1.x rather than being added to
+`ucf-protocol`, because the spine's correctness criteria are candidate/output/evidence/archive
+readback and the current test-profile readiness gate does not require an active capability event.
+
+The Capability Boundary v1.5 rules are:
+
+- Minimal Spine v1.x does not issue, grant, revoke, refresh, execute, or persist runtime
+  capabilities, credentials, tokens, permissions, or scopes;
+- `ucf-protocol` remains the protocol-facing schema authority if a future canonical
+  `CapabilityIssuanceRecord` is specified, but no schema is added by v1.5;
+- existing ESS/runtime/governance capability records or decisions are broader runtime audit
+  surfaces and are not canonical Minimal Spine protocol records;
+- `ucf-policy-ecology` and policy packs remain the policy-decision authority, but v1.5 does
+  not allow policy mutation, policy-pack rewriting, self-grant, or compute-triggered grants;
+- Gateway remains read-only for Minimal Spine and receives no capability write, issuance,
+  revocation, token, credential, permission, or scope endpoint;
+- Evidence/Archive would be audit-only proof surfaces for any future capability events and
+  would not become permission authority;
+- ESS, Consolidation, Neuromod, and other derived views may only reference future canonical
+  capability records by digest/link and must never issue or revoke capabilities;
+- real compute, Burn/Candle/LLM/LFM/JEPA/SAE/SSM/NSR, Blue-Brain, HH, microcircuit, DBM/HPA,
+  vendor-chip, Replay Scheduler, Geist/ISM, and full Micro -> Meso -> Macro integrations must
+  not trigger capability grants in Minimal Spine v1.x.
+
+A future active capability-issuance subsystem requires a dedicated safety prompt and negative
+tests before any runtime wiring. At minimum it must specify subject, scope, resource, action,
+policy-authorization checks, revocation semantics, expiration semantics if time-bounded grants are
+used, audit evidence, no Gateway write bypass, no self-grant, no policy mutation, no
+compute-triggered grant, and deny-by-default tests for unauthorized issuance.
+
+Readiness context: `runtime/ucf-ops` has historical/broader `required_records` explain coverage
+that can mention `CapabilityIssuanceRecord`, but in the current test profile that check is a
+`SKIP` when records are absent rather than a demand to synthesize a capability subsystem for the
+Minimal Spine E2E. Root `out/gate_report.json` artifacts must be treated as historical unless their
+embedded commit metadata matches the evaluated HEAD.
