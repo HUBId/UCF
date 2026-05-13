@@ -901,6 +901,10 @@ impl AiComputeBackend for ComputePipelineBackend {
         self.pack.meta().pack_name
     }
 
+    fn identity(&self) -> crate::BackendIdentity {
+        self.pack.identity()
+    }
+
     fn compute(
         &self,
         input: &ComputeInput,

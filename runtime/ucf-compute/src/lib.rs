@@ -372,11 +372,11 @@ pub use compute_service::{
 pub use contracts::{
     canonical_runtime_handoff_semantics, runtime_action_core_semantics_consistent,
     runtime_handoff_state_from_action_code, runtime_handoff_state_from_evidence,
-    runtime_handoff_state_from_snapshot_and_diagnostics, CanonicalEvidenceKind,
-    CanonicalEvidenceReasonCode, CanonicalEvidenceStatus, CanonicalSnapshotConsistency,
-    CanonicalTraceSliceKind, CanonicalTraceSliceStatus, CapabilityConstraint,
-    CapabilitySupportLevel, ExpertDiagnosticsAvailability, ExpertMutationBlocker,
-    ExpertMutationBoundary, ExpertMutationResult, ExpertWorkflowClass,
+    runtime_handoff_state_from_snapshot_and_diagnostics, BackendClass, BackendIdentity,
+    CanonicalEvidenceKind, CanonicalEvidenceReasonCode, CanonicalEvidenceStatus,
+    CanonicalSnapshotConsistency, CanonicalTraceSliceKind, CanonicalTraceSliceStatus,
+    CapabilityConstraint, CapabilitySupportLevel, ExpertDiagnosticsAvailability,
+    ExpertMutationBlocker, ExpertMutationBoundary, ExpertMutationResult, ExpertWorkflowClass,
     ExpertWorkflowTransitionState, HandoffReferenceRequirement, RuntimeActionOutcomeCode,
     RuntimeContractSafety, RuntimeContractShape, RuntimeDiagnosticsCore, RuntimeDriftClass,
     RuntimeEntryClass, RuntimeFreshnessClass, RuntimeHandoffKind, RuntimeHandoffReferenceSet,
@@ -919,6 +919,7 @@ pub enum ComputeError {
 
 pub trait AiComputeBackend: Send + Sync {
     fn name(&self) -> &'static str;
+    fn identity(&self) -> BackendIdentity;
     fn compute(
         &self,
         input: &ComputeInput,
@@ -1053,6 +1054,10 @@ pub struct CpuStubBackend;
 impl AiComputeBackend for CpuStubBackend {
     fn name(&self) -> &'static str {
         "stub"
+    }
+
+    fn identity(&self) -> BackendIdentity {
+        BackendIdentity::stub(self.name())
     }
 
     fn compute(

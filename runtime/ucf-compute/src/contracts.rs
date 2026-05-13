@@ -12,6 +12,155 @@ pub const MAX_REASON_CODES: usize = 8;
 pub const MAX_STAGE_ENCODED_BYTES: usize = 64 * 1024;
 pub const NSR_CONTRACT_VERSION_V1: &str = "v1";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BackendClass {
+    Stub,
+    Toy,
+    Mock,
+    OptionalRealCompile,
+    OptionalRealRuntime,
+    RemoteExternal,
+    Experimental,
+    Deferred,
+    ForbiddenForNow,
+}
+
+impl BackendClass {
+    pub const fn runtime_real_claim(self) -> bool {
+        matches!(self, Self::OptionalRealRuntime)
+    }
+
+    pub const fn remote_or_external(self) -> bool {
+        matches!(self, Self::RemoteExternal)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BackendIdentity {
+    pub name: &'static str,
+    pub class: BackendClass,
+    pub deterministic: bool,
+    pub offline: bool,
+    pub external_service_required: bool,
+    pub runtime_inference_supported: bool,
+    pub production_claim: bool,
+}
+
+impl BackendIdentity {
+    pub const fn new(
+        name: &'static str,
+        class: BackendClass,
+        deterministic: bool,
+        offline: bool,
+        external_service_required: bool,
+        runtime_inference_supported: bool,
+        production_claim: bool,
+    ) -> Self {
+        Self {
+            name,
+            class,
+            deterministic,
+            offline,
+            external_service_required,
+            runtime_inference_supported,
+            production_claim,
+        }
+    }
+
+    pub const fn stub(name: &'static str) -> Self {
+        Self::new(name, BackendClass::Stub, true, true, false, false, false)
+    }
+
+    pub const fn toy(name: &'static str) -> Self {
+        Self::new(name, BackendClass::Toy, true, true, false, false, false)
+    }
+
+    pub const fn mock(name: &'static str) -> Self {
+        Self::new(name, BackendClass::Mock, true, true, false, false, false)
+    }
+
+    pub const fn optional_real_compile(name: &'static str) -> Self {
+        Self::new(
+            name,
+            BackendClass::OptionalRealCompile,
+            true,
+            true,
+            false,
+            false,
+            false,
+        )
+    }
+
+    pub const fn optional_real_runtime(name: &'static str) -> Self {
+        Self::new(
+            name,
+            BackendClass::OptionalRealRuntime,
+            true,
+            true,
+            false,
+            true,
+            false,
+        )
+    }
+
+    pub const fn remote_external(name: &'static str) -> Self {
+        Self::new(
+            name,
+            BackendClass::RemoteExternal,
+            false,
+            false,
+            true,
+            false,
+            false,
+        )
+    }
+
+    pub const fn experimental(name: &'static str) -> Self {
+        Self::new(
+            name,
+            BackendClass::Experimental,
+            false,
+            true,
+            false,
+            false,
+            false,
+        )
+    }
+
+    pub const fn deferred(name: &'static str) -> Self {
+        Self::new(
+            name,
+            BackendClass::Deferred,
+            false,
+            true,
+            false,
+            false,
+            false,
+        )
+    }
+
+    pub const fn forbidden_for_now(name: &'static str) -> Self {
+        Self::new(
+            name,
+            BackendClass::ForbiddenForNow,
+            false,
+            true,
+            false,
+            false,
+            false,
+        )
+    }
+
+    pub const fn claims_runtime_real_inference(self) -> bool {
+        self.class.runtime_real_claim() && self.runtime_inference_supported
+    }
+
+    pub const fn default_safe(self) -> bool {
+        self.offline && !self.external_service_required && !self.production_claim
+    }
+}
+
 /// Shared-core action outcome code used by runtime operation/result invariants.
 ///
 /// This is intentionally contract-only and reused across standard/expert/internal
