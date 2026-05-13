@@ -2,6 +2,13 @@
 
 Dieses README ist die **kanonische Einstiegsfläche** für operative Doku-Pfade im aktuellen Repo-Stand.
 
+
+## Current-state architecture truth
+
+- Current-state architecture truth lives in `docs/current_state_architecture_index.md`.
+- Historical audit reports are context-only unless refreshed for the current HEAD.
+- Root reports must be checked for embedded HEAD metadata before they are used as current evidence.
+
 ## 0) Authority chain (historical vs current)
 
 Kanonische Status-/Discoverability-Maps:
