@@ -53,6 +53,35 @@ Captures an observed experience that can be used for audit or learning.
 - `ProofRef proof_ref` (tag 7): Optional reference to an external proof envelope.
 - `Digest commitment` (tag 8, optional): Canonical commitment over the record contents.
 
+## CandidateSetRecord
+
+Minimal deterministic candidate-set commitment record for spine/archive/evidence alignment. It is a
+schema record, not a real-compute claim.
+
+- `uint32 version` (tag 1): Record schema version. Current value is `1`.
+- `bytes input_digest` (tag 2): Digest of the canonical input/control frame.
+- `bytes policy_decision_digest` (tag 3): Digest of the policy decision/status material.
+- `uint32 candidate_count` (tag 4): Number of candidate commitments represented.
+- `repeated bytes candidate_digests` (tag 5): Candidate commitment digests, sorted for canonical encoding.
+- `bytes candidates_digest` (tag 6): Aggregate digest over the candidate set.
+- `string provenance` (tag 7): Deterministic provenance/source marker.
+
+## OutputRecord
+
+Minimal deterministic output commitment record for spine/archive/evidence alignment. It carries
+commitments and status only; it is not a gateway API response, execution grant, or real inference
+claim.
+
+- `uint32 version` (tag 1): Record schema version. Current value is `1`.
+- `bytes input_digest` (tag 2): Digest of the canonical input/control frame.
+- `bytes candidate_set_digest` (tag 3): Digest of the canonical `CandidateSetRecord`.
+- `bytes selected_candidate_digest` (tag 4): Digest of the selected candidate commitment.
+- `bytes output_digest` (tag 5): Digest of the output material commitment.
+- `string policy_status` (tag 6): Policy status used for materialization, such as `allow`.
+- `string status` (tag 7): Output-record status.
+- `string provenance` (tag 8): Deterministic provenance/source marker.
+- `string evidence_id` (tag 9, optional): Optional evidence record identifier if assigned later.
+
 ## Digest
 
 Represents a content digest for integrity checking.

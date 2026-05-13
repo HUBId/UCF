@@ -642,6 +642,46 @@ pub mod v1 {
         }
 
         #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
+        pub struct CandidateSetRecord {
+            #[prost(uint32, tag = "1")]
+            pub version: u32,
+            #[prost(bytes, tag = "2")]
+            pub input_digest: ::prost::alloc::vec::Vec<u8>,
+            #[prost(bytes, tag = "3")]
+            pub policy_decision_digest: ::prost::alloc::vec::Vec<u8>,
+            #[prost(uint32, tag = "4")]
+            pub candidate_count: u32,
+            #[prost(bytes = "vec", repeated, tag = "5")]
+            pub candidate_digests: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+            #[prost(bytes, tag = "6")]
+            pub candidates_digest: ::prost::alloc::vec::Vec<u8>,
+            #[prost(string, tag = "7")]
+            pub provenance: ::prost::alloc::string::String,
+        }
+
+        #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
+        pub struct OutputRecord {
+            #[prost(uint32, tag = "1")]
+            pub version: u32,
+            #[prost(bytes, tag = "2")]
+            pub input_digest: ::prost::alloc::vec::Vec<u8>,
+            #[prost(bytes, tag = "3")]
+            pub candidate_set_digest: ::prost::alloc::vec::Vec<u8>,
+            #[prost(bytes, tag = "4")]
+            pub selected_candidate_digest: ::prost::alloc::vec::Vec<u8>,
+            #[prost(bytes, tag = "5")]
+            pub output_digest: ::prost::alloc::vec::Vec<u8>,
+            #[prost(string, tag = "6")]
+            pub policy_status: ::prost::alloc::string::String,
+            #[prost(string, tag = "7")]
+            pub status: ::prost::alloc::string::String,
+            #[prost(string, tag = "8")]
+            pub provenance: ::prost::alloc::string::String,
+            #[prost(string, optional, tag = "9")]
+            pub evidence_id: Option<::prost::alloc::string::String>,
+        }
+
+        #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
         pub struct Digest {
             #[prost(string, tag = "1")]
             pub algorithm: ::prost::alloc::string::String,
@@ -1034,6 +1074,39 @@ impl CanonicalEncode for v1::spec::ExperienceRecord {
     }
 }
 
+impl CanonicalEncode for v1::spec::CandidateSetRecord {
+    fn encode_canonical(&self, out: &mut Vec<u8>) {
+        let mut enc = CanonicalEncoder::new();
+        enc.write_field(1, encode_u32(self.version));
+        enc.write_field(2, encode_bytes(&self.input_digest));
+        enc.write_field(3, encode_bytes(&self.policy_decision_digest));
+        enc.write_field(4, encode_u32(self.candidate_count));
+        enc.write_field(5, encode_bytes_list_sorted(&self.candidate_digests));
+        enc.write_field(6, encode_bytes(&self.candidates_digest));
+        enc.write_field(7, encode_string(&self.provenance));
+        out.extend_from_slice(&enc.into_bytes());
+    }
+}
+
+impl CanonicalEncode for v1::spec::OutputRecord {
+    fn encode_canonical(&self, out: &mut Vec<u8>) {
+        let mut enc = CanonicalEncoder::new();
+        enc.write_field(1, encode_u32(self.version));
+        enc.write_field(2, encode_bytes(&self.input_digest));
+        enc.write_field(3, encode_bytes(&self.candidate_set_digest));
+        enc.write_field(4, encode_bytes(&self.selected_candidate_digest));
+        enc.write_field(5, encode_bytes(&self.output_digest));
+        enc.write_field(6, encode_string(&self.policy_status));
+        enc.write_field(7, encode_string(&self.status));
+        enc.write_field(8, encode_string(&self.provenance));
+        enc.write_field(
+            9,
+            encode_optional(self.evidence_id.as_ref(), |value| encode_string(value)),
+        );
+        out.extend_from_slice(&enc.into_bytes());
+    }
+}
+
 impl CanonicalEncode for v1::spec::Digest {
     fn encode_canonical(&self, out: &mut Vec<u8>) {
         let mut enc = CanonicalEncoder::new();
@@ -1210,6 +1283,17 @@ fn encode_string_list(values: &[String]) -> Vec<u8> {
     out.extend_from_slice(&(values.len() as u32).to_be_bytes());
     for value in values {
         out.extend_from_slice(&encode_string(value));
+    }
+    out
+}
+
+fn encode_bytes_list_sorted(values: &[Vec<u8>]) -> Vec<u8> {
+    let mut sorted = values.to_vec();
+    sorted.sort();
+    let mut out = Vec::new();
+    out.extend_from_slice(&(sorted.len() as u32).to_be_bytes());
+    for value in sorted {
+        out.extend_from_slice(&encode_bytes(&value));
     }
     out
 }

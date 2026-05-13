@@ -1,7 +1,8 @@
 #![forbid(unsafe_code)]
 
 use ucf::v1::spec::{
-    ActionCode, ControlFrame, DecisionKind, ExperienceRecord, PolicyDecision, ProofEnvelope,
+    ActionCode, CandidateSetRecord, ControlFrame, DecisionKind, ExperienceRecord, OutputRecord,
+    PolicyDecision, ProofEnvelope,
 };
 use ucf::{canonical_bytes, DecodeError};
 use ucf_archive::{build_compact_record, ExperienceAppender, InMemoryArchive};
@@ -21,18 +22,17 @@ enum MinimalSpinePolicyDecision {
     Deny { reason: &'static str },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct MinimalSpineOutputCandidate {
-    id: Digest32,
-    payload: Vec<u8>,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 struct MinimalSpineRunResult {
     input_bytes: Vec<u8>,
     input_digest: Digest32,
     policy_decision: MinimalSpinePolicyDecision,
-    output_candidate: Option<MinimalSpineOutputCandidate>,
+    candidate_set_record: Option<CandidateSetRecord>,
+    candidate_set_bytes: Option<Vec<u8>>,
+    candidate_set_digest: Option<Digest32>,
+    output_record: Option<OutputRecord>,
+    output_record_bytes: Option<Vec<u8>>,
+    output_record_digest: Option<Digest32>,
     evidence_id: Option<EvidenceId>,
     evidence_record: Option<ExperienceRecord>,
     evidence_bytes: Option<Vec<u8>>,
@@ -41,7 +41,7 @@ struct MinimalSpineRunResult {
     archive_payload_commit: Option<Digest32>,
     archive_append_commit: Option<Digest32>,
     archive_root_commit: Option<Digest32>,
-    archive_readback_bytes: Option<Vec<u8>>,
+    archive_readback_output_record_bytes: Option<Vec<u8>>,
     evidence_entries_len: usize,
     archive_output_records_len: usize,
 }
@@ -94,6 +94,14 @@ fn digest_bytes(domain: &[u8], bytes: &[u8]) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
+fn archive_payload_commit(bytes: &[u8]) -> Digest32 {
+    Digest32::new(*blake3::hash(bytes).as_bytes())
+}
+
+fn digest_vec(digest: Digest32) -> Vec<u8> {
+    digest.as_bytes().to_vec()
+}
+
 fn minimal_spine_policy_record(frame: &ControlFrame, input_digest: Digest32) -> ExperienceRecord {
     let payload = format!(
         "minimal_spine=v1;frame_id={};decision_kind={};input_digest={};",
@@ -126,31 +134,89 @@ fn evaluate_minimal_spine_policy(
     }
 }
 
-fn minimal_spine_output_candidate(
+fn minimal_spine_candidate_payload(
     frame: &ControlFrame,
     input_digest: Digest32,
     policy_decision: &MinimalSpinePolicyDecision,
-) -> MinimalSpineOutputCandidate {
-    let payload = format!(
-        "minimal_spine_output=v1;frame_id={};input_digest={};policy={policy_decision:?};",
+) -> Vec<u8> {
+    format!(
+        "minimal_spine_candidate=v1;frame_id={};input_digest={};policy={policy_decision:?};no_real_compute=true;",
         frame.frame_id,
         hex::encode(input_digest.as_bytes())
     )
-    .into_bytes();
-    let id = digest_bytes(b"ucf.minimal_spine.output_candidate.v1", &payload);
-    MinimalSpineOutputCandidate { id, payload }
+    .into_bytes()
+}
+
+fn minimal_spine_candidate_set_record(
+    frame: &ControlFrame,
+    input_digest: Digest32,
+    policy_decision: &MinimalSpinePolicyDecision,
+) -> CandidateSetRecord {
+    let policy_decision_bytes = format!("{policy_decision:?}").into_bytes();
+    let policy_decision_digest = digest_bytes(
+        b"ucf.minimal_spine.policy_decision.v1",
+        &policy_decision_bytes,
+    );
+    let candidate_payload = minimal_spine_candidate_payload(frame, input_digest, policy_decision);
+    let candidate_digest = digest_bytes(b"ucf.minimal_spine.candidate.v1", &candidate_payload);
+    let candidates_digest = digest_bytes(
+        b"ucf.minimal_spine.candidates.v1",
+        candidate_digest.as_bytes(),
+    );
+
+    CandidateSetRecord {
+        version: 1,
+        input_digest: digest_vec(input_digest),
+        policy_decision_digest: digest_vec(policy_decision_digest),
+        candidate_count: 1,
+        candidate_digests: vec![digest_vec(candidate_digest)],
+        candidates_digest: digest_vec(candidates_digest),
+        provenance: "minimal-spine-v1-test-fixture-no-real-compute".to_string(),
+    }
+}
+
+fn minimal_spine_output_record(
+    input_digest: Digest32,
+    candidate_set_digest: Digest32,
+    candidate_set: &CandidateSetRecord,
+) -> OutputRecord {
+    let selected_candidate_digest = candidate_set
+        .candidate_digests
+        .first()
+        .expect("minimal spine allow path has one candidate")
+        .clone();
+    let mut output_material = Vec::new();
+    output_material.extend_from_slice(input_digest.as_bytes());
+    output_material.extend_from_slice(candidate_set_digest.as_bytes());
+    output_material.extend_from_slice(&selected_candidate_digest);
+    output_material.extend_from_slice(b"minimal-spine-output-record-v1");
+    let output_digest = digest_bytes(b"ucf.minimal_spine.output_payload.v1", &output_material);
+
+    OutputRecord {
+        version: 1,
+        input_digest: digest_vec(input_digest),
+        candidate_set_digest: digest_vec(candidate_set_digest),
+        selected_candidate_digest,
+        output_digest: digest_vec(output_digest),
+        policy_status: "allow".to_string(),
+        status: "materialized-test-output".to_string(),
+        provenance: "minimal-spine-v1-test-fixture-no-real-compute".to_string(),
+        evidence_id: None,
+    }
 }
 
 fn minimal_spine_evidence_record(
     frame: &ControlFrame,
     input_digest: Digest32,
-    candidate: &MinimalSpineOutputCandidate,
+    candidate_set_digest: Digest32,
+    output_record_digest: Digest32,
 ) -> ExperienceRecord {
     let payload = format!(
-        "minimal_spine_evidence=v1;status=allow;frame_id={};input_digest={};output_candidate={};",
+        "minimal_spine_evidence=v1;status=allow;frame_id={};input_digest={};candidate_set_record_digest={};output_record_digest={};",
         frame.frame_id,
         hex::encode(input_digest.as_bytes()),
-        hex::encode(candidate.id.as_bytes())
+        hex::encode(candidate_set_digest.as_bytes()),
+        hex::encode(output_record_digest.as_bytes())
     )
     .into_bytes();
     let record_id = format!(
@@ -190,13 +256,18 @@ fn run_minimal_spine(frame: ControlFrame) -> MinimalSpineRunResult {
 
     // Minimal Spine v1 deny semantics for this E2E fixture: deny happens before route output
     // materialization, evidence append, and archive-store append. A denied run therefore has no
-    // output candidate and no hidden archive/evidence mutation.
+    // candidate set, output record, or hidden archive/evidence mutation.
     if matches!(policy_decision, MinimalSpinePolicyDecision::Deny { .. }) {
         return MinimalSpineRunResult {
             input_bytes,
             input_digest,
             policy_decision,
-            output_candidate: None,
+            candidate_set_record: None,
+            candidate_set_bytes: None,
+            candidate_set_digest: None,
+            output_record: None,
+            output_record_bytes: None,
+            output_record_digest: None,
             evidence_id: None,
             evidence_record: None,
             evidence_bytes: None,
@@ -205,7 +276,7 @@ fn run_minimal_spine(frame: ControlFrame) -> MinimalSpineRunResult {
             archive_payload_commit: None,
             archive_append_commit: None,
             archive_root_commit: archive_store.root_commit(),
-            archive_readback_bytes: None,
+            archive_readback_output_record_bytes: None,
             evidence_entries_len: archive.list().len(),
             archive_output_records_len: archive_store
                 .iter_kind(RecordKind::OutputEvent, None)
@@ -213,8 +284,24 @@ fn run_minimal_spine(frame: ControlFrame) -> MinimalSpineRunResult {
         };
     }
 
-    let output_candidate = minimal_spine_output_candidate(&frame, input_digest, &policy_decision);
-    let evidence_record = minimal_spine_evidence_record(&frame, input_digest, &output_candidate);
+    let candidate_set_record =
+        minimal_spine_candidate_set_record(&frame, input_digest, &policy_decision);
+    let candidate_set_bytes = canonical_bytes(&candidate_set_record);
+    let candidate_set_digest = digest_bytes(
+        b"ucf.minimal_spine.candidate_set_record.v1",
+        &candidate_set_bytes,
+    );
+    let output_record =
+        minimal_spine_output_record(input_digest, candidate_set_digest, &candidate_set_record);
+    let output_record_bytes = canonical_bytes(&output_record);
+    let output_record_digest =
+        digest_bytes(b"ucf.minimal_spine.output_record.v1", &output_record_bytes);
+    let evidence_record = minimal_spine_evidence_record(
+        &frame,
+        input_digest,
+        candidate_set_digest,
+        output_record_digest,
+    );
     let evidence_bytes = canonical_bytes(&evidence_record);
     let evidence_digest = digest_bytes(b"ucf.minimal_spine.evidence_record.v1", &evidence_bytes);
     let proof = minimal_spine_proof(&evidence_record);
@@ -224,15 +311,20 @@ fn run_minimal_spine(frame: ControlFrame) -> MinimalSpineRunResult {
         cycle_id: 1,
         tier: 0,
         flags: 0,
-        boundary_commit: input_digest,
+        boundary_commit: output_record_digest,
     };
     let archive_record =
-        archive_appender.build_record(RecordKind::OutputEvent, &evidence_bytes, meta);
+        archive_appender.build_record(RecordKind::OutputEvent, &output_record_bytes, meta);
     let archive_append_commit = archive_store.append(archive_record);
     let archive_readback = archive_store
         .get(archive_record.key)
         .expect("archive-store readback by deterministic key");
     assert_eq!(archive_readback, archive_record);
+    assert_eq!(
+        archive_readback.payload_commit,
+        archive_payload_commit(&output_record_bytes)
+    );
+    assert_eq!(archive_readback.meta.boundary_commit, output_record_digest);
 
     let evidence_entries = archive.list();
     assert_eq!(evidence_entries.len(), 1);
@@ -245,16 +337,21 @@ fn run_minimal_spine(frame: ControlFrame) -> MinimalSpineRunResult {
         input_bytes,
         input_digest,
         policy_decision,
-        output_candidate: Some(output_candidate),
+        candidate_set_record: Some(candidate_set_record),
+        candidate_set_bytes: Some(candidate_set_bytes),
+        candidate_set_digest: Some(candidate_set_digest),
+        output_record: Some(output_record),
+        output_record_bytes: Some(output_record_bytes.clone()),
+        output_record_digest: Some(output_record_digest),
         evidence_id: Some(evidence_id),
         evidence_record: Some(evidence_record),
-        evidence_bytes: Some(evidence_bytes.clone()),
+        evidence_bytes: Some(evidence_bytes),
         evidence_digest: Some(evidence_digest),
         archive_key: Some(archive_record.key),
         archive_payload_commit: Some(archive_record.payload_commit),
         archive_append_commit: Some(archive_append_commit),
         archive_root_commit: archive_store.root_commit(),
-        archive_readback_bytes: Some(evidence_bytes),
+        archive_readback_output_record_bytes: Some(output_record_bytes),
         evidence_entries_len: evidence_entries.len(),
         archive_output_records_len: archive_store
             .iter_kind(RecordKind::OutputEvent, None)
@@ -280,24 +377,65 @@ fn minimal_spine_allow_path_appends_and_reads_back_evidence() {
         }
     );
 
-    let output_candidate = result.output_candidate.expect("allow output candidate");
-    assert!(!output_candidate.payload.is_empty());
-    assert_ne!(output_candidate.id, Digest32::new([0; 32]));
+    let candidate_set_record = result
+        .candidate_set_record
+        .expect("allow candidate set record");
+    let candidate_set_bytes = result
+        .candidate_set_bytes
+        .expect("allow candidate set bytes");
+    let candidate_set_digest = result
+        .candidate_set_digest
+        .expect("allow candidate set digest");
+    assert_eq!(candidate_set_record.version, 1);
+    assert_eq!(candidate_set_record.candidate_count, 1);
+    assert_eq!(candidate_set_record.candidate_digests.len(), 1);
+    assert_eq!(canonical_bytes(&candidate_set_record), candidate_set_bytes);
+    assert_ne!(candidate_set_digest, Digest32::new([0; 32]));
+
+    let output_record = result.output_record.expect("allow output record");
+    let output_record_bytes = result
+        .output_record_bytes
+        .expect("allow output record bytes");
+    let output_record_digest = result
+        .output_record_digest
+        .expect("allow output record digest");
+    assert_eq!(output_record.version, 1);
+    assert_eq!(
+        output_record.candidate_set_digest,
+        digest_vec(candidate_set_digest)
+    );
+    assert_eq!(canonical_bytes(&output_record), output_record_bytes);
+    assert_ne!(output_record_digest, Digest32::new([0; 32]));
 
     let evidence_id = result.evidence_id.expect("allow evidence id");
     let evidence_record = result.evidence_record.expect("allow evidence record");
     let evidence_bytes = result.evidence_bytes.expect("allow evidence bytes");
+    let evidence_payload = String::from_utf8_lossy(&evidence_record.payload);
     assert_eq!(
         evidence_id,
         EvidenceId::new(evidence_record.record_id.clone())
     );
-    assert!(String::from_utf8_lossy(&evidence_record.payload).contains("status=allow"));
+    assert!(evidence_payload.contains("status=allow"));
+    assert!(evidence_payload.contains(&format!(
+        "candidate_set_record_digest={}",
+        hex::encode(candidate_set_digest.as_bytes())
+    )));
+    assert!(evidence_payload.contains(&format!(
+        "output_record_digest={}",
+        hex::encode(output_record_digest.as_bytes())
+    )));
     assert_eq!(canonical_bytes(&evidence_record), evidence_bytes);
-    assert_eq!(Some(evidence_bytes.clone()), result.archive_readback_bytes);
+    assert_eq!(
+        Some(output_record_bytes.clone()),
+        result.archive_readback_output_record_bytes
+    );
+    assert_eq!(
+        result.archive_payload_commit,
+        Some(archive_payload_commit(&output_record_bytes))
+    );
     assert_eq!(result.evidence_entries_len, 1);
     assert_eq!(result.archive_output_records_len, 1);
     assert!(result.archive_key.is_some());
-    assert!(result.archive_payload_commit.is_some());
     assert!(result.archive_append_commit.is_some());
     assert!(result.archive_root_commit.is_some());
 }
@@ -317,7 +455,12 @@ fn minimal_spine_deny_path_is_explicit_and_safe() {
             reason: MINIMAL_SPINE_DENY_REASON,
         }
     );
-    assert!(result.output_candidate.is_none());
+    assert!(result.candidate_set_record.is_none());
+    assert!(result.candidate_set_bytes.is_none());
+    assert!(result.candidate_set_digest.is_none());
+    assert!(result.output_record.is_none());
+    assert!(result.output_record_bytes.is_none());
+    assert!(result.output_record_digest.is_none());
     assert!(result.evidence_id.is_none());
     assert!(result.evidence_record.is_none());
     assert!(result.evidence_bytes.is_none());
@@ -326,7 +469,7 @@ fn minimal_spine_deny_path_is_explicit_and_safe() {
     assert!(result.archive_payload_commit.is_none());
     assert!(result.archive_append_commit.is_none());
     assert!(result.archive_root_commit.is_none());
-    assert!(result.archive_readback_bytes.is_none());
+    assert!(result.archive_readback_output_record_bytes.is_none());
     assert_eq!(result.evidence_entries_len, 0);
     assert_eq!(result.archive_output_records_len, 0);
 }
@@ -340,7 +483,12 @@ fn minimal_spine_allow_path_is_deterministic_across_fresh_runs() {
     assert_eq!(first.input_bytes, second.input_bytes);
     assert_eq!(first.input_digest, second.input_digest);
     assert_eq!(first.policy_decision, second.policy_decision);
-    assert_eq!(first.output_candidate, second.output_candidate);
+    assert_eq!(first.candidate_set_record, second.candidate_set_record);
+    assert_eq!(first.candidate_set_bytes, second.candidate_set_bytes);
+    assert_eq!(first.candidate_set_digest, second.candidate_set_digest);
+    assert_eq!(first.output_record, second.output_record);
+    assert_eq!(first.output_record_bytes, second.output_record_bytes);
+    assert_eq!(first.output_record_digest, second.output_record_digest);
     assert_eq!(first.evidence_id, second.evidence_id);
     assert_eq!(first.evidence_record, second.evidence_record);
     assert_eq!(first.evidence_bytes, second.evidence_bytes);
@@ -349,7 +497,10 @@ fn minimal_spine_allow_path_is_deterministic_across_fresh_runs() {
     assert_eq!(first.archive_payload_commit, second.archive_payload_commit);
     assert_eq!(first.archive_append_commit, second.archive_append_commit);
     assert_eq!(first.archive_root_commit, second.archive_root_commit);
-    assert_eq!(first.archive_readback_bytes, second.archive_readback_bytes);
+    assert_eq!(
+        first.archive_readback_output_record_bytes,
+        second.archive_readback_output_record_bytes
+    );
     assert_eq!(first.evidence_entries_len, 1);
     assert_eq!(second.evidence_entries_len, 1);
     assert_eq!(first.archive_output_records_len, 1);
