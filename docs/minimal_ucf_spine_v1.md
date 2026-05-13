@@ -340,3 +340,35 @@ This v1.1 read surface is CI-oriented and local-store oriented. It remains separ
 transport security hardening and does not claim production Gateway readiness. It also does not expose
 real compute, Blue-Brain, HH, microcircuit, DBM, vendor-chip, full Geist recursion, consolidation, or
 neuromodulation behavior.
+
+## 11. Minimal Spine ESS Read Model v1.2
+
+Spine v1.2 aligns `domains/ucf-ess` as an optional deterministic read model for Minimal Spine
+records. ESS is derived from already-canonical Evidence/Archive/Protocol commitments; it is not a
+second event log and is not required for Minimal Spine correctness.
+
+The ESS read-model boundary is:
+
+- `ucf-protocol` remains the protocol-facing record/schema authority for `CandidateSetRecord` and
+  `OutputRecord`;
+- `ucf-evidence`, `ucf-archive`, and `ucf-archive-store` remain the canonical append/readback proof
+  surfaces for evidence envelopes and archive output events;
+- ESS may project a `MinimalSpineEssProjection` from canonical links only: `EvidenceId`, input digest,
+  canonical `CandidateSetRecord` digest, canonical `OutputRecord` digest, archive output key, policy
+  status, output status, and provenance `minimal_spine_v1`;
+- ESS readback is local/in-memory and deterministic by output-record digest, evidence ID, or archive
+  output key;
+- ESS does not issue, append, or replace canonical Evidence/Archive events and does not redefine
+  `CandidateSetRecord` or `OutputRecord` authority;
+- Gateway receives no write/append API and no ESS mutation integration in v1.2;
+- no compute, replay, consolidation, capability issuance, Blue-Brain, HH, microcircuit, DBM,
+  vendor-chip, Geist recursion, or neuromodulation decision path is introduced.
+
+Implementation status: v1.2 implements the minimal crate-local ESS projection/read-model surface in
+`domains/ucf-ess`. Gateway integration remains a next step because the existing Gateway v1.1 service
+already provides a read-only Evidence/Archive audit surface and adding ESS there is not necessary for
+Minimal Spine correctness.
+
+Next gap after ESS: a deliberately narrow consolidation hook can consume the same canonical
+Evidence/Archive commitments later, but it must be specified without promoting ESS into canonical
+append authority.

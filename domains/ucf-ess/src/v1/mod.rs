@@ -1,11 +1,16 @@
 pub mod errors;
 pub mod governance;
+pub mod minimal_spine;
 pub mod record;
 pub mod retrieval;
 pub mod store;
 
 pub use errors::EssError;
 pub use governance::{apply_retention, DataClass, RetentionPolicyV1, RetentionStats};
+pub use minimal_spine::{
+    MinimalSpineEssProjection, MinimalSpineEssReadModel, MINIMAL_SPINE_ESS_PROJECTION_VERSION,
+    MINIMAL_SPINE_ESS_SOURCE,
+};
 pub use record::{
     compute_content_digest, AuditCheckpointRecord, AuditPayload, BackendPackRecord,
     CandidateSetRecord, CandidateSummaryRecord, CapabilityIssuanceRecord,
