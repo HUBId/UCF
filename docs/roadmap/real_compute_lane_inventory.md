@@ -30,6 +30,7 @@ Required companion documents:
 - [`docs/roadmap/post_freeze_roadmap_selection.md`](post_freeze_roadmap_selection.md)
 - [`docs/minimal_spine_v1_freeze.md`](../minimal_spine_v1_freeze.md)
 - [`docs/module_implementation_depth_registry.md`](../module_implementation_depth_registry.md)
+- [`docs/roadmap/compute_backend_naming_boundary_plan.md`](compute_backend_naming_boundary_plan.md)
 
 ## 2. Compute Module Inventory
 
@@ -189,24 +190,24 @@ Safety answers:
 - No Evidence or Archive authority changes are part of this lane inventory.
 - No Blue-Brain, HH, microcircuit, DBM, Geist, Replay, Gateway, or Capability scope creep is allowed.
 
-## 9. Recommended Prompt 15 Focus
+## 9. Prompt 15 Naming Boundary Status
 
-Recommended next prompt: **UCF Prompt 15 — Stub/Toy/Real Backend Naming and Boundary Cleanup Plan**.
+Prompt 15 is complete. The naming and boundary cleanup plan is available at [`docs/roadmap/compute_backend_naming_boundary_plan.md`](compute_backend_naming_boundary_plan.md).
 
-Prompt 15 should be analysis and documentation only. It should:
+Prompt 15 remains analysis and documentation only. It:
 
-1. Define a naming taxonomy for `stub`, `toy`, `mock`, `prototype`, `optional-real-compile`, `optional-real-runtime`, `remote`, and `production-real`.
-2. Identify ambiguous names and aliases such as `real_compute`, `canonical production`, `BurnToyV1`, `CandleToyV1`, `compute-burn`, `llm-burn`, and `ai-backends` adapter names.
-3. Propose documentation/API cleanup without behavior changes, feature renames, new backends, or runtime activation.
-4. Mark which docs should be softened from production claims to exact lane claims.
-5. Preserve Minimal Spine v1.x independence and all guardrails above.
+1. Defines a naming taxonomy for `stub`, `toy`, `mock`, `optional-real-compile`, `optional-real-runtime`, `remote/external`, `experimental`, `deferred`, and `forbidden-for-now`.
+2. Identifies ambiguous names and aliases such as `real_compute`, `canonical production`, `BurnToyV1`, `CandleToyV1`, `compute-burn`, `llm-burn`, and `ai-backends` adapter names.
+3. Proposes documentation/API cleanup without behavior changes, feature renames, new backends, or runtime activation.
+4. Marks which docs should be softened from production claims to exact lane claims.
+5. Preserves Minimal Spine v1.x independence and all guardrails above.
 
-Suggested prompt series after this inventory:
+Suggested prompt series after this inventory and the Prompt 15 plan:
 
 | Prompt | Focus | Behavior changes? |
 |---|---|---:|
-| 15 | Stub/Toy/Real backend naming and boundary cleanup plan. | no |
-| 16 | Docs-only claim correction for README, feature matrix, model pipeline status, and backend docs. | no |
+| 15 | Stub/Toy/Real backend naming and boundary cleanup plan. | no; complete |
+| 16 | Compute Backend Trait Contract Hardening with explicit backend identity/classification metadata. | labels/metadata only |
 | 17 | Test-name/coverage map and proposed fixture taxonomy. | no |
 | 18 | Compile-gate design for one optional real backend lane. | no implementation by default |
 | 19 | Local model artifact contract and deterministic fixture requirements. | no runtime activation |
