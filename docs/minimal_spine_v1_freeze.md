@@ -28,6 +28,7 @@ The freeze is deliberately narrow: it protects the deterministic candidate/outpu
 
 Canonical companion documents:
 
+- `docs/roadmap/post_freeze_roadmap_selection.md` selects the next post-freeze roadmap line and prompt series while preserving this v1.x freeze.
 - `docs/minimal_ucf_spine_v1.md` defines the Minimal UCF Spine v1 technical specification and v1.1-v1.5 additions.
 - `docs/module_implementation_depth_registry.md` classifies module maturity, overclaim risks, and maintenance triggers.
 - `docs/current_state_architecture_index.md` defines current architecture truth ordering and report freshness rules.
