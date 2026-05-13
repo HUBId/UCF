@@ -408,3 +408,43 @@ sleep replay in broader contexts. Minimal Spine v1.3 does not call that broad ke
 Future v2 path: a full Micro -> Meso -> Macro consolidation pipeline may consume the same canonical
 Evidence/Archive commitments only after a separate spec defines authority boundaries, replay policy,
 macro finalization rules, audit artifacts, and integration tests.
+
+## 14. Minimal Spine Neuromod Envelope Hook v1.4
+
+Spine v1.4 adds a deliberately narrow `ucf-neuromod` hook for deriving deterministic modulation
+metadata from canonical Minimal Spine commitments. The hook is an envelope only: it is not a full
+metabolic layer, not a hormone scheduler, not a policy authority, and not a second canonical event
+log.
+
+The Neuromod Envelope Hook v1.4 boundary is:
+
+- `ucf-protocol` remains the protocol-facing schema authority for `CandidateSetRecord` and
+  `OutputRecord`;
+- `ucf-policy-ecology` and the existing policy decision path remain the only policy authority;
+- `ucf-evidence`, `ucf-archive`, and `ucf-archive-store` remain the canonical append/readback proof
+  surfaces for evidence envelopes and archive output events;
+- `ucf-neuromod` may derive a `MinimalSpineNeuromodEnvelope` from canonical links only:
+  `EvidenceId`, input digest, canonical `CandidateSetRecord` digest, canonical `OutputRecord`
+  digest, archive output key, archive output-event digest, policy status, output status, and a
+  deterministic sequence;
+- the envelope may include bounded integer metadata hints (`salience`, `stability`, `risk`,
+  `noise`, and `learning`) on a deterministic `0..=1000` scale with provenance
+  `minimal_spine_v1`;
+- denied or suppressed policy/output status may produce higher risk/noise metadata, but those hints
+  are audit metadata only and cannot convert deny/suppress into allow/materialized output;
+- the hook does not override `PolicyDecision`, does not override `OutputRecord`, does not mutate
+  policy ecology state, does not append evidence, does not append archive records, and does not
+  replace Evidence/Archive authority;
+- the hook does not start the existing neuromod scheduler, does not implement HPA/DBM integration,
+  does not call real compute, does not trigger replay or consolidation, does not call Geist/ISM, and
+  does not expose Gateway write/trigger APIs.
+
+Implementation status: v1.4 implements the minimal crate-local envelope, link container, bounded
+hint type, deterministic bytes, deterministic digest, link validation, and boundary tests in
+`domains/ucf-neuromod`. The pre-existing `v0` neuromod scheduler remains out of scope for Minimal
+Spine v1.4 and is not invoked by the envelope hook.
+
+Future v2 path: bounded modulation may feed attention/noise/learning lanes only after explicit
+policy tests, authority-boundary tests, scheduler specifications, and updated readiness gates. Full
+metabolic scheduler, DBM/HPA, replay/consolidation, Geist/ISM, Gateway trigger/write, and real
+compute integrations remain deferred.

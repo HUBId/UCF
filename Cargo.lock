@@ -4033,9 +4033,11 @@ dependencies = [
 name = "ucf-neuromod"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "ucf-core",
  "ucf-ess",
  "ucf-frames",
+ "ucf-types",
 ]
 
 [[package]]
