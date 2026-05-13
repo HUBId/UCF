@@ -16,6 +16,10 @@ ucf-runtime = { path = "../ucf-runtime" }
 ucf-policy = { path = "../ucf-policy" }
 ucf-ess = { path = "../../domains/ucf-ess" }
 ucf-ops = { path = "../ucf-ops" }
+ucf-evidence = { path = "../../core/crates/ucf-evidence" }
+ucf-archive-store = { path = "../../domains/archive/crates/ucf-archive-store" }
+ucf-protocol = { package = "ucf-protocol", path = "../../protocol/crates/ucf-protocol" }
+ucf-types = { path = "../../core/crates/ucf-types" }
 
 [build-dependencies]
 prost-build = "0.12"

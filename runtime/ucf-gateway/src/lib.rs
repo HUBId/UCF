@@ -22,6 +22,8 @@ use ucf_ops::{explain_tick, readiness_gate, ExplainTickRequest};
 use ucf_policy::adapter::MockAdapter;
 use ucf_runtime::RuntimeOrchestrator;
 
+pub mod spine_read;
+
 pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/ucf.gateway.v1.rs"));
 }
