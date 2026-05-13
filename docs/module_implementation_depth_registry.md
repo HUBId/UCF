@@ -2,6 +2,8 @@
 
 ## 0. Purpose
 
+Minimal UCF Spine v1 is specified at `docs/minimal_ucf_spine_v1.md`; Prompt 5 must follow that spec.
+
 - This document classifies the implementation depth of the most important UCF modules from the current code, tests, feature lanes, integration surfaces, and operational gates.
 - It is the input document for Minimal Spine planning, roadmap sequencing, and the prompt series after the current-state architecture index.
 - It does not replace source-code inspection, generated spec snapshots, or CI/readiness reports.

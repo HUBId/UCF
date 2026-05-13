@@ -4,7 +4,7 @@
 
 This document defines which architecture information is authoritative for the current repository state. It separates current truth, code-near specs, operational docs, historical audit trail, deferred or experimental work, and advisory-only boundaries. It is not a full whitepaper and does not replace protocol, schema, policy, or generated spec snapshots.
 
-Use this index as the reading order for roadmap prompts. The Module implementation depth registry is now available at `docs/module_implementation_depth_registry.md` and is required reading before Minimal Spine planning. Code and currently passing gates remain the final source of truth.
+Use this index as the reading order for roadmap prompts. The Module implementation depth registry is now available at `docs/module_implementation_depth_registry.md` and is required reading before Minimal Spine planning. Code and currently passing gates remain the final source of truth. Minimal UCF Spine v1 is now specified at `docs/minimal_ucf_spine_v1.md`; Prompt 5 must follow that spec.
 
 ## 1. Repository Baseline
 
