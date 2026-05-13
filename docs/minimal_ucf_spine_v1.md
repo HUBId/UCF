@@ -372,3 +372,39 @@ Minimal Spine correctness.
 Next gap after ESS: a deliberately narrow consolidation hook can consume the same canonical
 Evidence/Archive commitments later, but it must be specified without promoting ESS into canonical
 append authority.
+
+## 12. Minimal Spine Consolidation Hook v1.3
+
+Spine v1.3 adds a deliberately narrow `ucf-consolidation` hook for deriving a deterministic
+micro-milestone candidate from already-canonical Minimal Spine commitments. The hook is a derived
+candidate/projection only; it is not a new canonical event-log authority and it does not execute the
+existing broad consolidation kernel.
+
+The Consolidation Hook v1.3 boundary is:
+
+- `ucf-protocol` remains the protocol-facing schema authority for canonical `CandidateSetRecord` and
+  `OutputRecord` records;
+- `ucf-evidence`, `ucf-archive`, and `ucf-archive-store` remain the canonical append/readback proof
+  surfaces for Evidence envelopes and archive `OutputEvent` records;
+- `ucf-consolidation` may derive a `MinimalSpineMicroMilestoneCandidate` from canonical links only:
+  `EvidenceId`, input digest, canonical `CandidateSetRecord` digest, canonical `OutputRecord` digest,
+  archive output key, archive output-event digest, policy status, output status, deterministic
+  sequence, and provenance `minimal_spine_v1`;
+- the candidate has deterministic bytes and a deterministic digest for local comparison and test
+  assertions;
+- the hook is local/in-memory and does not append evidence, append archive records, mutate policy,
+  write ESS, write Gateway state, or contact external services;
+- the hook does not finalize Macro milestones, does not create Meso milestones, does not start a
+  Replay Scheduler, does not call Geist/ISM, does not perform neuromodulation decisions, and does not
+  claim real compute;
+- Gateway remains read-only for Minimal Spine v1.3 and receives no trigger/write endpoint for this
+  hook.
+
+Implementation status: v1.3 implements the minimal crate-local candidate type and deterministic
+constructor in `domains/consolidation/crates/ucf-consolidation`. This is intentionally smaller than
+the existing consolidation kernel, which can still build Micro/Meso/Macro milestones and schedule
+sleep replay in broader contexts. Minimal Spine v1.3 does not call that broad kernel.
+
+Future v2 path: a full Micro -> Meso -> Macro consolidation pipeline may consume the same canonical
+Evidence/Archive commitments only after a separate spec defines authority boundaries, replay policy,
+macro finalization rules, audit artifacts, and integration tests.

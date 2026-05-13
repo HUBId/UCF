@@ -30,12 +30,126 @@ use ucf_types::v1::spec::{
     ExperienceRecord, MacroMilestone as ProtoMacroMilestone, MesoMilestone as ProtoMesoMilestone,
     MicroMilestone as ProtoMicroMilestone,
 };
-use ucf_types::{Digest32, NodeId};
+use ucf_types::{Digest32, EvidenceId, NodeId};
 use ucf_vector_index::{
     build_macro_finalized_envelope, build_record_appended_envelope, MacroMilestoneFinalized,
     RecordAppended,
 };
 use ucf_workspace::{Workspace, WorkspaceSignal};
+
+/// Minimal deterministic source label for derived Minimal Spine consolidation candidates.
+pub const MINIMAL_SPINE_CONSOLIDATION_SOURCE: &str = "minimal_spine_v1";
+
+/// Version for the Minimal Spine micro-milestone candidate hook.
+pub const MINIMAL_SPINE_MICRO_MILESTONE_CANDIDATE_VERSION: u16 = 1;
+
+/// Derived, local-only candidate that links canonical Minimal Spine commitments.
+///
+/// This type is intentionally not a canonical event-log record. It stores references to
+/// `ucf-protocol` CandidateSetRecord/OutputRecord commitments plus evidence/archive links so the
+/// consolidation crate can compute a deterministic micro-milestone candidate without appending
+/// evidence, appending archive events, scheduling replay, or finalizing meso/macro milestones.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineMicroMilestoneCandidate {
+    pub version: u16,
+    pub sequence: u64,
+    pub evidence_id: EvidenceId,
+    pub input_digest: Digest32,
+    pub candidate_set_record_digest: Digest32,
+    pub output_record_digest: Digest32,
+    pub archive_output_key: Digest32,
+    pub archive_output_event_digest: Digest32,
+    pub policy_status: String,
+    pub output_status: String,
+    pub source: String,
+}
+
+impl MinimalSpineMicroMilestoneCandidate {
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_minimal_spine_links(
+        sequence: u64,
+        evidence_id: EvidenceId,
+        input_digest: Digest32,
+        candidate_set_record_digest: Digest32,
+        output_record_digest: Digest32,
+        archive_output_key: Digest32,
+        archive_output_event_digest: Digest32,
+        policy_status: impl Into<String>,
+        output_status: impl Into<String>,
+    ) -> Self {
+        Self {
+            version: MINIMAL_SPINE_MICRO_MILESTONE_CANDIDATE_VERSION,
+            sequence,
+            evidence_id,
+            input_digest,
+            candidate_set_record_digest,
+            output_record_digest,
+            archive_output_key,
+            archive_output_event_digest,
+            policy_status: policy_status.into(),
+            output_status: output_status.into(),
+            source: MINIMAL_SPINE_CONSOLIDATION_SOURCE.to_string(),
+        }
+    }
+
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u16(&mut out, self.version);
+        push_u64(&mut out, self.sequence);
+        push_str(&mut out, self.evidence_id.as_str());
+        push_digest(&mut out, self.input_digest);
+        push_digest(&mut out, self.candidate_set_record_digest);
+        push_digest(&mut out, self.output_record_digest);
+        push_digest(&mut out, self.archive_output_key);
+        push_digest(&mut out, self.archive_output_event_digest);
+        push_str(&mut out, &self.policy_status);
+        push_str(&mut out, &self.output_status);
+        push_str(&mut out, &self.source);
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        let mut hasher = Hasher::new();
+        hasher.update(b"ucf.consolidation.minimal_spine.micro_candidate.v1");
+        hasher.update(&self.deterministic_bytes());
+        Digest32::new(*hasher.finalize().as_bytes())
+    }
+
+    pub fn validate_links_nonzero(&self) -> bool {
+        !self.evidence_id.as_str().is_empty()
+            && !is_zero_digest(self.input_digest)
+            && !is_zero_digest(self.candidate_set_record_digest)
+            && !is_zero_digest(self.output_record_digest)
+            && !is_zero_digest(self.archive_output_key)
+            && !is_zero_digest(self.archive_output_event_digest)
+    }
+}
+
+fn is_zero_digest(digest: Digest32) -> bool {
+    digest.as_bytes().iter().all(|byte| *byte == 0)
+}
+
+fn push_u16(out: &mut Vec<u8>, value: u16) {
+    out.extend_from_slice(&value.to_be_bytes());
+}
+
+fn push_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_be_bytes());
+}
+
+fn push_u64(out: &mut Vec<u8>, value: u64) {
+    out.extend_from_slice(&value.to_be_bytes());
+}
+
+fn push_str(out: &mut Vec<u8>, value: &str) {
+    let len = u32::try_from(value.len()).expect("minimal spine candidate field length fits u32");
+    push_u32(out, len);
+    out.extend_from_slice(value.as_bytes());
+}
+
+fn push_digest(out: &mut Vec<u8>, value: Digest32) {
+    out.extend_from_slice(value.as_bytes());
+}
 
 #[derive(Clone, Debug)]
 pub struct ConsolidationConfig {
