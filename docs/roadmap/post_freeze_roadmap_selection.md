@@ -151,3 +151,9 @@ Recommended next prompt title: **Prompt 15 — Stub/Toy/Real Backend Naming and 
 The Real Compute Optional Lane closure baseline is available at [`docs/roadmap/real_compute_optional_lane_closure.md`](real_compute_optional_lane_closure.md). For HEAD `319d6d2cc5885b177208394f983aa830a35b3881`, Prompt 24 passed compute targeted tests, optional-real compile/check probes, workspace tests, clippy, docs lint, Minimal Spine regression tests, and the readiness gate under a 300 second timeout guard. This closes the current optional compute lane only for the documented compile-only/non-production scope and does not promote optional-real runtime inference, production compute, Gateway integration, Evidence/Archive authority, OutputRecord authority, or Minimal Spine dependency.
 
 Recommended next prompt: **UCF Prompt 25 — Full Micro→Meso→Macro Consolidation Roadmap and Boundary Audit**. If readiness-gate timeout behavior recurs, use **UCF Prompt 25A — Readiness Gate Timeout Stability Audit** first.
+
+## 11. Prompt 25 Full Consolidation Boundary Audit
+
+Full Micro→Meso→Macro Consolidation is now the next active roadmap line. The planning and boundary audit is available at [`docs/roadmap/full_consolidation_roadmap_boundary_audit.md`](full_consolidation_roadmap_boundary_audit.md). This line starts with schema/authority alignment and pure deterministic builders; it does not alter the Minimal Spine v1.x freeze and does not activate macro finalization, replay scheduling, Geist/ISM writes, neuromod scheduler/DBM/HPA integration, real compute, Gateway writes, capability issuance, Evidence/Archive authority changes, or a second event log.
+
+Recommended next prompt: **UCF Prompt 26 — Consolidation Record Authority and Schema Alignment**.
