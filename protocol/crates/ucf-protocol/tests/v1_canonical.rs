@@ -150,3 +150,74 @@ fn candidate_set_and_output_records_prost_roundtrip() {
     let decoded_output = v1::spec::OutputRecord::decode(output_bytes.as_slice()).expect("decode");
     assert_eq!(output, decoded_output);
 }
+
+fn sample_micro_milestone() -> v1::spec::MicroMilestone {
+    v1::spec::MicroMilestone {
+        milestone_id: "micro-1".to_string(),
+        achieved_at_ms: 1_700_000_000_010,
+        label: "micro fixture".to_string(),
+    }
+}
+
+fn sample_meso_milestone(ids: Vec<&str>) -> v1::spec::MesoMilestone {
+    v1::spec::MesoMilestone {
+        milestone_id: "meso-1".to_string(),
+        achieved_at_ms: 1_700_000_000_020,
+        label: "meso fixture".to_string(),
+        micro_milestone_ids: ids.into_iter().map(String::from).collect(),
+    }
+}
+
+fn sample_macro_milestone(ids: Vec<&str>) -> v1::spec::MacroMilestone {
+    v1::spec::MacroMilestone {
+        milestone_id: "macro-1".to_string(),
+        achieved_at_ms: 1_700_000_000_030,
+        label: "macro fixture".to_string(),
+        meso_milestone_ids: ids.into_iter().map(String::from).collect(),
+    }
+}
+
+#[test]
+fn milestone_records_canonical_encoding_is_stable() {
+    let micro = sample_micro_milestone();
+    let meso = sample_meso_milestone(vec!["micro-b", "micro-a"]);
+    let macro_ms = sample_macro_milestone(vec!["meso-b", "meso-a"]);
+
+    for bytes in [
+        canonical_bytes(&micro),
+        canonical_bytes(&meso),
+        canonical_bytes(&macro_ms),
+    ] {
+        assert_eq!(bytes, bytes.clone());
+        assert!(!bytes.is_empty());
+    }
+
+    assert_eq!(
+        canonical_bytes(&sample_meso_milestone(vec!["micro-b", "micro-a"])),
+        canonical_bytes(&sample_meso_milestone(vec!["micro-a", "micro-b"]))
+    );
+    assert_eq!(
+        canonical_bytes(&sample_macro_milestone(vec!["meso-b", "meso-a"])),
+        canonical_bytes(&sample_macro_milestone(vec!["meso-a", "meso-b"]))
+    );
+}
+
+#[test]
+fn milestone_records_prost_roundtrip() {
+    use prost::Message;
+
+    let micro = sample_micro_milestone();
+    let micro_bytes = micro.encode_to_vec();
+    let decoded_micro = v1::spec::MicroMilestone::decode(micro_bytes.as_slice()).expect("decode");
+    assert_eq!(micro, decoded_micro);
+
+    let meso = sample_meso_milestone(vec!["micro-a", "micro-b"]);
+    let meso_bytes = meso.encode_to_vec();
+    let decoded_meso = v1::spec::MesoMilestone::decode(meso_bytes.as_slice()).expect("decode");
+    assert_eq!(meso, decoded_meso);
+
+    let macro_ms = sample_macro_milestone(vec!["meso-a", "meso-b"]);
+    let macro_bytes = macro_ms.encode_to_vec();
+    let decoded_macro = v1::spec::MacroMilestone::decode(macro_bytes.as_slice()).expect("decode");
+    assert_eq!(macro_ms, decoded_macro);
+}
