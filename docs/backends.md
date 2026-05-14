@@ -1,5 +1,7 @@
 # Backend Packs
 
+
+Status note: backend names are feature/backend-family names. Current docs must distinguish stub fixture, toy golden, optional-real compile-only, remote/external compile-only, optional-real runtime deferred, and production claim forbidden.
 `BackendPack` is the unified compute surface for LLM + world model + SAE + SSM.
 
 ## Pack selection

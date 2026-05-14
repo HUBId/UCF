@@ -1,5 +1,9 @@
 # Serie L: Final Technical Exit Dossier (Prompt 3) v1
 
+
+## Historical status note
+
+This dossier is historical/context-only for any Real Compute exit, completion, or readiness wording. Current claim boundaries are defined by `docs/roadmap/real_compute_lane_inventory.md` and `docs/roadmap/compute_feature_ci_matrix.md`: stub fixture and toy golden are not real inference; optional-real and remote/external lanes are compile-only unless a future local artifact-backed runtime fixture proves otherwise; production claims are forbidden for current lanes.
 Stand: Repo-Zustand am 2026-04-18.
 
 Ziel: kompakte, technisch belastbare Exit-Zusammenfassung für den Real-Compute-Kern ohne zweite Wahrheitsquelle neben der finalen Referenzlinie.

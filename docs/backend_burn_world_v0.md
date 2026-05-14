@@ -1,5 +1,7 @@
 # Backend Burn World V0
 
+
+Status note: this is an optional-real compile/runtime seam for a bounded Burn skeleton, not a production backend or runtime-inference proof without a pinned local artifact-backed fixture and deterministic runtime golden test.
 `backend-burn` adds a feature-gated, CPU-only Burn skeleton for exactly one slot: `world_jepa`.
 
 ## Build / probe

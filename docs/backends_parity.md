@@ -1,5 +1,7 @@
 # Backend Parity (Candle ↔ Burn) v1
 
+
+Status note: parity here is toy/envelope-level validation across feature-gated backend packs. It is not production readiness, not service availability, and not a real runtime-inference claim.
 `ucf-compute` supports CPU-only parity across Candle and Burn backend packs behind feature flags.
 
 ## Enablement

@@ -1,5 +1,10 @@
 # Real Compute Transition Checkpoint
 
+## Historical status note
+
+This checkpoint predates the Prompt 23 compute taxonomy and is historical/context-only for claims that mention onboarding completion, real E2E paths, Burn/Candle readiness, or stack expansion. Current docs must use the guarded terms in `docs/roadmap/real_compute_lane_inventory.md`: stub fixture, toy golden, optional-real compile-only, remote/external compile-only, optional-real runtime deferred, and production claim forbidden. This file does not prove runtime inference, service availability, production readiness, or Minimal Spine dependency on compute.
+
+
 This file defines the repo-based transition point between **Real Compute Onboarding** and **Real Compute Stack** work.
 
 ## Canonical role in docs/status/readiness surfaces

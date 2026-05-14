@@ -123,6 +123,9 @@ See `docs/feature_matrix.md` for details.
 
 
 ## Real Compute Onboarding v0 Quick Start
+
+Current compute lanes are bounded by the docs-only compute matrix: `docs/roadmap/compute_feature_ci_matrix.md` and `docs/roadmap/real_compute_lane_inventory.md`. Stub fixture and toy golden lanes are not real inference; optional-real and remote/external lanes are compile-only unless a future local artifact-backed runtime fixture proves otherwise. Production compute claims are forbidden for current lanes.
+
 - One-command bringup:
   - `cargo run -p ucf-ops -- bringup --scenario fixtures/e2e_scenario_a.json --ticks 32 --out ./out/<run_id>`
 - Readiness gate:
