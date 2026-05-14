@@ -249,7 +249,7 @@ Current toy-lane facts after Prompt 18:
 
 - The toy lane is classified as `BackendClass::Toy` through backend identity metadata and is distinct from `BackendClass::Stub` and `BackendClass::OptionalRealRuntime`.
 - Toy golden output carries explicit provenance: backend name `toy_v1`, fixture/golden id `toy_compute_golden_v1`, toy-not-real true, no-real-inference true, external-service-required false, runtime-inference-supported false, Minimal Spine authority false, and production-claim false.
-- The toy golden lane is deterministic and offline for the golden fixture; tests compare repeated output equality and the pinned digest `e25b0f20a3db80b2facc6cf60441d1e625b4da0097537e9f0e8c075689f5c6d5`.
+- The toy golden lane is deterministic and offline for the golden fixture; tests compare repeated output equality and the pinned digest `0e73835b8059fb173668d8e8afbc8bc10c2e8f684194777399a2630d9ab5b7de`.
 - The toy pack reports `ToyV1` component identifiers and has no required external model slots for the golden fixture; it does not require model paths, network configuration, or external services.
 - Toy may support local toy inference semantics through embedded local fixtures and small deterministic kernels, but this is not production inference and not real model inference.
 - Toy has no Minimal Spine authority, no Gateway write authority, no Evidence/Archive authority change, and no policy/output override authority.

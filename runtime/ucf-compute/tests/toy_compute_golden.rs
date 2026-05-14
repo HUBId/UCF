@@ -181,7 +181,7 @@ fn toy_compute_golden_digest_is_pinned() {
     let golden = run_toy_compute_golden_fixture().expect("toy golden");
     assert_eq!(
         hex::encode(golden.digest),
-        "e25b0f20a3db80b2facc6cf60441d1e625b4da0097537e9f0e8c075689f5c6d5",
+        "0e73835b8059fb173668d8e8afbc8bc10c2e8f684194777399a2630d9ab5b7de",
         "intentional toy golden output changes must review and update this digest"
     );
 }

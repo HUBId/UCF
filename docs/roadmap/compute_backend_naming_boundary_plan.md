@@ -250,7 +250,7 @@ Boundary statements for Prompt 18:
 - The toy lane is a deterministic local golden lane for offline, CI-safe checks when the default local toy code path is used.
 - Toy golden output carries explicit provenance with `BackendClass::Toy`, backend name `toy_v1`, golden/fixture version `toy_compute_golden_v1`, `toy_not_real = true`, `no_real_inference = true`, `external_service_required = false`, `runtime_inference_supported = false`, and `production_claim = false`.
 - The toy lane may exercise local toy inference semantics and embedded toy fixtures, but it is not real model inference, not optional-real-runtime evidence, and not production inference.
-- The toy golden tests compare repeated-output equality plus a pinned digest (`e25b0f20a3db80b2facc6cf60441d1e625b4da0097537e9f0e8c075689f5c6d5`) so intentional output changes require explicit review.
+- The toy golden tests compare repeated-output equality plus a pinned digest (`0e73835b8059fb173668d8e8afbc8bc10c2e8f684194777399a2630d9ab5b7de`) so intentional output changes require explicit review.
 - The toy pack reports `ToyV1` component identifiers, has no required external model slots, and does not require model paths, network configuration, or external services for the golden fixture.
 - Toy has no Minimal Spine v1.x authority, no Gateway write path, no Evidence/Archive authority change, and no policy/output override authority.
 

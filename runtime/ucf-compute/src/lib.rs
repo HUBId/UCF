@@ -1189,7 +1189,8 @@ pub fn run_toy_compute_golden(
 ///
 /// The digest is restricted to stable provenance, request fields, quantized
 /// summary values, component identity, and note cardinality. It intentionally
-/// excludes wall-clock measurements and free-form diagnostic text.
+/// excludes wall-clock measurements, free-form diagnostic text, and
+/// checkout-local fixture/model digests.
 pub fn toy_compute_golden_digest(
     provenance: &ToyComputeGoldenProvenance,
     input: &ComputeInput,
@@ -1221,8 +1222,6 @@ pub fn toy_compute_golden_digest(
     hasher.update(summary.spikes_digest);
     hasher.update(summary.backend_profile.as_bytes());
     hasher.update(summary.backend_pack_id.to_le_bytes());
-    hasher.update(summary.fixtures_digest);
-    hasher.update(summary.model_hashes_digest);
     hasher.update([summary.llm_backend]);
     hasher.update([summary.world_backend]);
     hasher.update([summary.sae_backend]);
