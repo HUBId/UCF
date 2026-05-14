@@ -126,6 +126,7 @@ fn toy_compute_golden_is_offline_no_external_artifacts() {
     assert!(pack.model_slot_provenance().iter().all(|slot| {
         !slot.required_for_pack && slot.resolved_path.is_none() && slot.hash_prefix.is_none()
     }));
+    assert_eq!(golden.summary.model_hashes_digest, [0_u8; 32]);
     assert_eq!(golden.summary.llm_backend, BackendComponentId::ToyV1 as u8);
     assert_eq!(
         golden.summary.world_backend,
@@ -180,7 +181,7 @@ fn toy_compute_golden_digest_is_pinned() {
     let golden = run_toy_compute_golden_fixture().expect("toy golden");
     assert_eq!(
         hex::encode(golden.digest),
-        "fe41668287a09278dc820b2d004df053755cc03d33c15a72fc323c4ec8425dad",
+        "e25b0f20a3db80b2facc6cf60441d1e625b4da0097537e9f0e8c075689f5c6d5",
         "intentional toy golden output changes must review and update this digest"
     );
 }
