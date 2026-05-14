@@ -255,3 +255,40 @@ Boundary statements for Prompt 18:
 - Toy has no Minimal Spine v1.x authority, no Gateway write path, no Evidence/Archive authority change, and no policy/output override authority.
 
 Remaining real-compute work after Prompt 18 is unchanged: optional-real compile gates, artifact-backed local runtime proof, compute-output linkage, feature CI matrix hardening, docs overclaim cleanup, and readiness-gate/prod-profile stability still require separate prompts.
+
+## 14. Prompt 19 Optional-Real Compile Gate Status
+
+Prompt 19 re-checked optional-real backend lanes as compile gates only. The result does not activate real compute, does not create a runtime fixture, and does not change Minimal Spine v1.x dependencies.
+
+### 14.1 Compile-gate findings
+
+| Lane / feature | Current class | Default? | Compile-check status | Runtime inference claim? | Production claim? | Notes |
+|---|---|---:|---|---:|---:|---|
+| `backend-candle` | `OptionalRealCompile` through Candle backend/pack identities | no | PASS: `cargo check -p ucf-compute --features backend-candle` | no | no | Adds optional `candle-core` dependency; compile pass is not runtime inference proof. |
+| `compute-candle` | `OptionalRealCompile` through Candle backend/pack identities | no | PASS: `cargo check -p ucf-compute --features compute-candle` | no | no | Alias-like lane forwarding through `backend-candle`; no fixture runtime claim. |
+| `llm-candle` | optional-real compile candidate | no | PASS: `cargo check -p ucf-compute --features llm-candle` | no | no | Compile-only feature path; no local LLM runtime fixture was added. |
+| `lfm-candle` | optional-real compile candidate | no | PASS: `cargo check -p ucf-compute --features lfm-candle` | no | no | Compile-only feature path; any artifact runtime remains deferred. |
+| `backend-burn` | `OptionalRealCompile` through Burn backend/pack identities | no | PASS: `cargo check -p ucf-compute --features backend-burn` | no | no | Alias over `compute-burn`; compile pass is not runtime inference proof. |
+| `compute-burn` | `OptionalRealCompile` through Burn backend/pack identities | no | PASS: `cargo check -p ucf-compute --features compute-burn` | no | no | No external model artifact is loaded by the compile check. |
+| `llm-burn` | optional-real compile candidate | no | PASS: `cargo check -p ucf-compute --features llm-burn` | no | no | Compile-only feature path; no local LLM runtime fixture was added. |
+| `lfm-burn` | optional-real compile candidate | no | PASS: `cargo check -p ucf-compute --features lfm-burn` | no | no | Compile-only feature path; artifact-backed runtime remains deferred. |
+| `lfm-lnn` | toy/experimental LNN-adjacent lane | no | PASS: `cargo check -p ucf-compute --features lfm-lnn` | no | no | Not a real backend proof and not a production compute claim. |
+| `remote-compute` | `RemoteExternal` when the remote pack is compiled | no | PASS: `cargo check -p ucf-compute --features remote-compute` | no | no | External-service lane; excluded from default/offline CI runtime assumptions. |
+| `burn` on `ucf-ai-port` | compatibility/docs-only feature | no | PASS: `cargo check -p ucf-ai-port --features burn` | no | no | Feature has no real backend identity in `ucf-ai-port`. |
+| `candle` on `ucf-ai-port` | compatibility/docs-only feature | no | PASS: `cargo check -p ucf-ai-port --features candle` | no | no | Feature has no real backend identity in `ucf-ai-port`. |
+| `ai-runtime` on `ucf-ai-port` | optional runtime dependency seam | no | PASS: `cargo check -p ucf-ai-port --features ai-runtime` | no | no | Dependency compile check only; not a backend inference proof. |
+| `ai-burn` on `ucf-ai-backends` | non-canonical adapter seam | no | PASS: `cargo check -p ucf-ai-backends --features ai-burn --all-targets` | no | no | Adapter returns bounded empty output; no production/runtime claim. |
+| `ai-candle` on `ucf-ai-backends` | non-canonical adapter seam | no | PASS: `cargo check -p ucf-ai-backends --features ai-candle --all-targets` | no | no | Adapter returns bounded empty output; no production/runtime claim. |
+
+### 14.2 Boundary rules confirmed
+
+- `OptionalRealCompile` is not `OptionalRealRuntime`.
+- No optional-real compile lane may set `runtime_inference_supported = true` without a local fixture-runtime test and pinned model/artifact evidence.
+- No optional-real compile lane may set `production_claim = true`.
+- Optional-real features are not default features; defaults remain `backend-stub` and `backend-toy` in `runtime/ucf-compute`.
+- Remote/external lanes require explicit opt-in and must keep `external_service_required = true`, `offline = false`, and no production claim.
+- The portable Toy golden digest fix remains a toy-lane determinism fix only; it is unrelated to optional-real runtime inference.
+
+### 14.3 Future CI recommendation
+
+Keep default CI no-real-compute. Add explicit lanes only as compile gates: no-default, stub fixture, toy golden, optional-real compile checks for passing Burn/Candle features, and separate disabled/deferred notes for any future feature that fails locally. Remote/external lanes should stay excluded from default offline CI and should not be promoted to runtime or production proof.
