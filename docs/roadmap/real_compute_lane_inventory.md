@@ -381,3 +381,25 @@ Prompt 21 adds optional `ComputeAuditRecord` metadata in `runtime/ucf-compute` s
 Compute audit records do not prove real runtime inference, do not activate model loading, do not add a real backend, do not create an external-service path, do not make compute required by Minimal Spine, and do not grant policy/output override, permission, or capability semantics. Future Evidence/Archive integration, if ever added, must be explicit, optional, and use existing Evidence/Archive APIs without changing their authority.
 
 Remaining real-compute inventory gaps are now: feature CI matrix hardening, docs overclaim cleanup, readiness-gate/prod-profile stability, and optional-real runtime fixture proof if and when a pinned local model artifact exists.
+
+## 13. Prompt 24 Post-Compute Closure Baseline
+
+Prompt 24 refreshed the post-compute validation baseline for HEAD `319d6d2cc5885b177208394f983aa830a35b3881` and added the closure document at [`docs/roadmap/real_compute_optional_lane_closure.md`](real_compute_optional_lane_closure.md).
+
+Prompt 24 status: **complete for the current optional compile-only/non-production compute scope**.
+
+Validation summary:
+
+| Area | Result | Notes |
+|---|---|---|
+| Compute targeted tests | PASS | Backend identity, stub fixture, toy golden, optional-real compile gate, output link, and audit record tests passed. |
+| Compute feature checks | PASS | Burn/Candle/LFM/LLM/remote feature probes passed as compile/check evidence only. |
+| Workspace tests | PASS | `cargo test --workspace` passed. |
+| Clippy | PASS | `cargo clippy --workspace --all-targets -- -D warnings` passed. |
+| Docs lint | PASS | Strict docs lint passed and generated a HEAD-matching root report. |
+| Minimal Spine regression | PASS | Router, Gateway, ESS, Consolidation, and Neuromod target tests passed. |
+| Readiness gate | PASS with timeout guard | `timeout 300s cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json` completed before the timeout. |
+
+The readiness gate is not hidden as risk-free: the source still performs several bringup/replay/EBM/formal-invariant checks and has sparse progress output. If timeout behavior returns, the next follow-up should be a Gate Stability audit rather than a compute feature prompt.
+
+No new compute features, runtime inference, Gateway integration, Minimal Spine dependency, Evidence/Archive authority change, OutputRecord schema authority change, or production compute claim is introduced by this closure baseline.
