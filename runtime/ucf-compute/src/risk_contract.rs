@@ -23,7 +23,7 @@ impl BackendProfileId {
 
     pub fn from_backend_name(name: &str) -> Self {
         match name {
-            "stub" => Self::StubV1,
+            "stub" | "stub_v0" => Self::StubV1,
             "candle" => Self::CandleV1,
             "burn" => Self::BurnV1,
             _ => Self::UnknownV1,

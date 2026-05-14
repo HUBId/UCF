@@ -217,7 +217,7 @@ pub fn build_service_compute_backend(
     let limits = LimitsConfig::default();
 
     let pack_kind = match cfg.kind {
-        ComputeBackendKind::Stub => BackendPackKind::ToyV1,
+        ComputeBackendKind::Stub => BackendPackKind::StubV0,
         ComputeBackendKind::Candle => BackendPackKind::CandleToyV1,
         ComputeBackendKind::Burn => BackendPackKind::BurnToyV1,
         ComputeBackendKind::Worker => BackendPackKind::WorkerV1,

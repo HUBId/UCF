@@ -201,7 +201,7 @@ Prompt 16 should not:
 - Should compatibility adapter features `ai-candle` and `ai-burn` receive explicit stub metadata in their own crate or only through documentation first?
 - What exact local artifact contract is sufficient to upgrade a future lane from optional-real-compile to optional-real-runtime without changing Evidence/Archive authority?
 
-## 9. Prompt 16 Contract Hardening Addendum
+## 10. Prompt 16 Contract Hardening Addendum
 
 This addendum records the small machine-readable contract added after the taxonomy plan. It is contract hardening only: it does not enable real compute, add a new backend implementation, add gateway integration, create policy/output override authority, change evidence/archive authority, or make Minimal Spine v1.x depend on compute.
 
@@ -226,3 +226,17 @@ The tests assert that stub/toy/mock identities cannot be confused with real-runt
 ### Readiness gate note
 
 As observed in Prompt 15, `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json` can hang reproducibly around the 300s timeout in this environment. Prompt 16 does not refactor the gate. Treat any local timeout as an environment/runtime observation for this prompt, not as evidence that compute was activated or changed.
+
+## 11. Prompt 17 Stub Fixture Hardening Status
+
+Prompt 17 is implemented for the CPU stub lane as a deterministic fixture lane, not as real compute. The implementation keeps `backend-stub` / `compute-stub` naming unchanged and adds a machine-checkable fixture helper plus integration tests at `runtime/ucf-compute/tests/stub_compute_fixture.rs`.
+
+Boundary statements for Prompt 17:
+
+- The stub lane is a deterministic fixture lane used for offline, CI-safe compute checks where the current default configuration supports it.
+- Stub fixture output is not real inference, does not claim optional-real-runtime status, and has `production_claim = false`.
+- Stub fixture provenance reports `BackendClass::Stub`, backend name `stub`, fixture id `stub_compute_fixture_v1`, `no_real_inference = true`, `external_service_required = false`, and `runtime_inference_supported = false`.
+- The stub pack uses `StubV0` component identifiers and a zero external model-hash digest so stable stub fixture output does not depend on external model artifacts.
+- Stub remains offline and deterministic; no external services, gateway writes, evidence/archive authority changes, policy/output override authority, or Minimal Spine v1.x dependency are introduced.
+
+Validation focus for this hardening is the stub-specific fixture lane. Future toy, optional-real-compile, and optional-real-runtime lanes still require their own dedicated golden/compile/runtime proof prompts.

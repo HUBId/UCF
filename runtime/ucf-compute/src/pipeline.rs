@@ -528,8 +528,11 @@ impl ComputePipelineBackend {
     }
 
     pub fn stub() -> Self {
-        let pack = BackendPackFactory::build(BackendPackConfig::default())
-            .expect("default backend pack must build");
+        let pack = BackendPackFactory::build(BackendPackConfig {
+            pack: crate::BackendPackKind::StubV0,
+            seed: 0x5eed_u64,
+        })
+        .expect("stub backend pack must build");
         Self::new(pack, FusionConfig::default(), LimitsConfig::default())
     }
 
@@ -3343,7 +3346,7 @@ mod tests {
     }
 
     #[test]
-    fn stub_pack_contract_mismatch_is_structured_unavailable() {
+    fn stub_pack_contract_is_supported_for_fixture_lane() {
         let pack = BackendPackFactory::build(BackendPackConfig {
             pack: BackendPackKind::StubV0,
             ..BackendPackConfig::default()
@@ -3357,26 +3360,25 @@ mod tests {
                 budget: ComputeBudget::default(),
             })
             .expect("canonical compute");
-        assert_eq!(result.state, CanonicalPipelineState::Unavailable);
-        let failure = result.failure.expect("failure");
-        assert_eq!(failure.kind, CanonicalFailureKind::StageContractMismatch);
-        assert_eq!(failure.stage, Some(CanonicalStageId::World));
-        assert!(result.executed_stages.is_empty());
+        assert_eq!(result.state, CanonicalPipelineState::Degraded);
+        let failure = result.failure.expect("degraded fixture failure");
+        assert_eq!(failure.kind, CanonicalFailureKind::ValidationDegraded);
+        assert_eq!(failure.stage, None);
+        assert_eq!(result.executed_stages, CANONICAL_STAGE_SEQUENCE.to_vec());
         let world = result
             .diagnostics
             .stage_profiles
             .iter()
             .find(|profile| profile.stage == CanonicalStageId::World)
             .expect("world profile");
+        assert_eq!(world.state, CanonicalStageProfileState::Success);
+        assert_eq!(result.diagnostics.hotspots.unavailable_stage_count, 0);
         assert!(matches!(
-            world.state,
-            CanonicalStageProfileState::Unavailable | CanonicalStageProfileState::Failed
-        ));
-        assert!(result.diagnostics.hotspots.unavailable_stage_count >= 1);
-        assert_eq!(
             result.evidence_bundle.status,
-            CanonicalEvidenceStatus::Insufficient
-        );
+            CanonicalEvidenceStatus::Sufficient
+                | CanonicalEvidenceStatus::Caveated
+                | CanonicalEvidenceStatus::Partial
+        ));
     }
 
     #[test]

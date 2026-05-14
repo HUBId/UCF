@@ -226,3 +226,17 @@ Suggested prompt series after this inventory and the Prompt 15 plan:
 - Which feature flags should be renamed later versus documented as legacy aliases?
 - Should `ucf-ai-port` empty `burn`/`candle` features remain as markers or be documented as non-backend toggles?
 - What exact evidence artifact should prove a future production-real model path without changing Evidence/Archive authority?
+
+## 11. Prompt 17 Stub Deterministic Fixture Lane Note
+
+Prompt 17 hardens the CPU stub path as a deterministic fixture lane only. It does not activate real compute and does not change the optional status of any Real Compute lane.
+
+Current stub-lane facts after Prompt 17:
+
+- The stub lane is classified as `BackendClass::Stub` through backend identity metadata.
+- Stub fixture output carries explicit fixture provenance: backend name `stub`, fixture id `stub_compute_fixture_v1`, no-real-inference true, external-service-required false, runtime-inference-supported false, and production-claim false.
+- The stub pack reports `StubV0` component identifiers and uses a zero external model-hash digest for deterministic fixture output, so it does not require external model artifacts.
+- Stub fixture tests compare repeated-output equality, stable digest, provenance metadata, offline/no-external-artifact properties, and no real runtime inference claim in `runtime/ucf-compute/tests/stub_compute_fixture.rs`.
+- This is not a production compute claim, not optional-real-runtime evidence, not Gateway integration, not Evidence/Archive authority, not policy/output override authority, and not a Minimal Spine v1.x dependency.
+
+Remaining real-compute inventory gaps are unchanged: toy golden coverage, optional-real compile gates, artifact-backed local runtime proof, compute-output linkage, feature CI matrix hardening, and overclaim cleanup still require later prompts.
