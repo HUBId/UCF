@@ -331,3 +331,21 @@ A PASS above means compile/check success only. It is not proof of runtime infere
 | Artifact-backed runtime fixture | Deferred until pinned local artifact exists | Required before any `OptionalRealRuntime` claim. |
 
 Docs that mention Burn, Candle, LLM, LFM, remote compute, or AI runtime compatibility must keep the boundary explicit: compile support is not runtime inference support; optional-real-compile is not optional-real-runtime; no production claim exists; no external service is used by default; Minimal Spine v1.x does not depend on compute.
+
+## 15. Prompt 21 Compute Audit Records
+
+Prompt 21 adds optional `ComputeAuditRecord` metadata in `runtime/ucf-compute` so `ComputeOutputLink` can be audited without moving OutputRecord, Evidence, or Archive authority into compute.
+
+| Surface | Status | Boundary |
+|---|---|---|
+| `ComputeAuditRecord` | implemented in `ucf-compute` | Derived audit metadata only; not a protocol `OutputRecord`. |
+| `ComputeAuditStatus::{FixtureStub,GoldenToy,CompileOnly,RuntimeDeferred,Failed}` | implemented in `ucf-compute` | Labels audit status only; not runtime inference proof. |
+| Stub fixture audit constructor | implemented | Metadata-only, no production claim, no real-runtime claim. |
+| Toy golden audit constructor | implemented | Metadata-only, no production claim, no real-runtime claim. |
+| Optional-real compile audit constructor | implemented | Compile-only metadata, no runtime inference claim, no production claim. |
+| Evidence/Archive append helper | not added | Avoids Evidence/Archive authority changes and avoids automatic append semantics. |
+| Minimal Spine dependency | not added | Minimal Spine v1.x stays compute-independent. |
+
+Compute audit records do not prove real runtime inference, do not activate model loading, do not add a real backend, do not create an external-service path, do not make compute required by Minimal Spine, and do not grant policy/output override, permission, or capability semantics. Future Evidence/Archive integration, if ever added, must be explicit, optional, and use existing Evidence/Archive APIs without changing their authority.
+
+Remaining real-compute inventory gaps are now: feature CI matrix hardening, docs overclaim cleanup, readiness-gate/prod-profile stability, and optional-real runtime fixture proof if and when a pinned local model artifact exists.

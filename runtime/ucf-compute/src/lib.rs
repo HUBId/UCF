@@ -43,6 +43,7 @@ use ucf_frames::v1::{ControlFrame, ControlPayload};
 use ucf_types::UQ0_16;
 use world_model::StageQuality;
 
+pub mod audit_record;
 pub mod backend_pack;
 pub mod backends;
 pub mod blue_brain_combined_retrieval;
@@ -92,6 +93,10 @@ pub mod work_meter;
 pub mod worker_backend;
 pub mod world_model;
 pub mod world_vljepa_shadow;
+pub use audit_record::{
+    ComputeAuditRecord, ComputeAuditRecordError, ComputeAuditStatus, COMPUTE_AUDIT_RECORD_SOURCE,
+    COMPUTE_AUDIT_RECORD_VERSION,
+};
 pub use backend_pack::{
     ArtifactFailureCode, BackendComponentId, BackendPack, BackendPackConfig, BackendPackFactory,
     BackendPackId, BackendPackKind, BackendPackMeta, BackendSwapRequest, FixtureId, FixtureManager,
