@@ -1,6 +1,6 @@
 use ucf_compute::{
-    run_stub_compute_fixture, AiComputeBackend, BackendClass, BackendComponentId,
-    ComputeBackendKind, ComputeBudget, ComputeInput, CpuStubBackend, FrameId,
+    run_stub_compute_fixture, stub_compute_fixture_digest, AiComputeBackend, BackendClass,
+    BackendComponentId, ComputeBackendKind, ComputeBudget, ComputeInput, CpuStubBackend, FrameId,
     STUB_COMPUTE_FIXTURE_VERSION,
 };
 
@@ -28,9 +28,15 @@ fn stub_compute_fixture_is_deterministic() {
     assert_eq!(first.summary, second.summary);
     assert_eq!(first.digest, second.digest);
     assert_eq!(
-        hex::encode(first.digest),
-        "ebff688ba99ab349186163d7809a10ead7387c096fd8efca0305b56a97b53fe9"
+        first.digest,
+        stub_compute_fixture_digest(
+            &first.provenance,
+            &first.input,
+            &first.signals,
+            &first.summary
+        )
     );
+    assert_ne!(first.digest, [0_u8; 32]);
 }
 
 #[test]

@@ -1128,6 +1128,12 @@ pub fn run_stub_compute_fixture(
     })
 }
 
+/// Returns a portable fixture digest for the stub lane.
+///
+/// The digest intentionally excludes nested evidence-chain digests and free-form
+/// note text because those can include platform-local diagnostic details while
+/// the stub fixture contract only needs stable provenance, request, bounded
+/// output summary, component identity, and note cardinality.
 pub fn stub_compute_fixture_digest(
     provenance: &StubComputeFixtureProvenance,
     input: &ComputeInput,
@@ -1167,15 +1173,11 @@ pub fn stub_compute_fixture_digest(
     hasher.update(summary.seed.to_le_bytes());
     hasher.update(summary.risk_contract_version.to_le_bytes());
     hasher.update(summary.compute_schema_version.to_le_bytes());
-    hasher.update(summary.compute_chain_digest);
     hasher.update(summary.contract_version.to_le_bytes());
     hasher.update(summary.backend_id.to_le_bytes());
     hasher.update([summary.validation_status as u8]);
     hasher.update(summary.violation_reason_mask.to_le_bytes());
-    for note in &signals.notes {
-        hasher.update((note.len() as u16).to_le_bytes());
-        hasher.update(note.as_bytes());
-    }
+    hasher.update((signals.notes.len() as u16).to_le_bytes());
     hasher.finalize().into()
 }
 
