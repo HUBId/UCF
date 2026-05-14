@@ -14,6 +14,7 @@ pub const NSR_CONTRACT_VERSION_V1: &str = "v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[repr(u8)]
 pub enum BackendClass {
     Stub,
     Toy,
@@ -831,10 +832,7 @@ impl ContractRegistry for StageContractRegistry {
         if version != StageContractVersion::V1 {
             return false;
         }
-        !matches!(
-            (stage, backend_id),
-            (_, BackendComponentId::Disabled) | (StageKind::World, BackendComponentId::StubV0)
-        )
+        !matches!((stage, backend_id), (_, BackendComponentId::Disabled))
     }
 }
 

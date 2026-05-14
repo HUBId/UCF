@@ -1069,6 +1069,118 @@ impl AiComputeBackend for CpuStubBackend {
     }
 }
 
+pub const STUB_COMPUTE_FIXTURE_VERSION: &str = "stub_compute_fixture_v1";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct StubComputeFixtureProvenance {
+    pub backend_class: BackendClass,
+    pub backend_name: &'static str,
+    pub fixture_id: &'static str,
+    pub no_real_inference: bool,
+    pub external_service_required: bool,
+    pub production_claim: bool,
+    pub runtime_inference_supported: bool,
+    pub deterministic: bool,
+    pub offline: bool,
+}
+
+impl StubComputeFixtureProvenance {
+    pub fn from_identity(identity: BackendIdentity) -> Self {
+        Self {
+            backend_class: identity.class,
+            backend_name: identity.name,
+            fixture_id: STUB_COMPUTE_FIXTURE_VERSION,
+            no_real_inference: !identity.claims_runtime_real_inference(),
+            external_service_required: identity.external_service_required,
+            production_claim: identity.production_claim,
+            runtime_inference_supported: identity.runtime_inference_supported,
+            deterministic: identity.deterministic,
+            offline: identity.offline,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StubComputeFixtureOutput {
+    pub provenance: StubComputeFixtureProvenance,
+    pub input: ComputeInput,
+    pub signals: ComputeSignals,
+    pub summary: ComputeSignalsSummary,
+    pub digest: [u8; 32],
+}
+
+pub fn run_stub_compute_fixture(
+    input: &ComputeInput,
+    budget: ComputeBudget,
+) -> Result<StubComputeFixtureOutput, ComputeError> {
+    let backend = CpuStubBackend;
+    let identity = backend.identity();
+    let provenance = StubComputeFixtureProvenance::from_identity(identity);
+    let signals = backend.compute(input, budget)?;
+    let summary = signals.summary(identity.name);
+    let digest = stub_compute_fixture_digest(&provenance, input, &signals, &summary);
+    Ok(StubComputeFixtureOutput {
+        provenance,
+        input: input.clone(),
+        signals,
+        summary,
+        digest,
+    })
+}
+
+/// Returns a portable fixture digest for the stub lane.
+///
+/// The digest intentionally excludes nested evidence-chain digests and free-form
+/// note text because those can include platform-local diagnostic details while
+/// the stub fixture contract only needs stable provenance, request, bounded
+/// output summary, component identity, and note cardinality.
+pub fn stub_compute_fixture_digest(
+    provenance: &StubComputeFixtureProvenance,
+    input: &ComputeInput,
+    signals: &ComputeSignals,
+    summary: &ComputeSignalsSummary,
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(provenance.backend_name.as_bytes());
+    hasher.update([provenance.backend_class as u8]);
+    hasher.update(provenance.fixture_id.as_bytes());
+    hasher.update([provenance.no_real_inference as u8]);
+    hasher.update([provenance.external_service_required as u8]);
+    hasher.update([provenance.production_claim as u8]);
+    hasher.update([provenance.runtime_inference_supported as u8]);
+    hasher.update([provenance.deterministic as u8]);
+    hasher.update([provenance.offline as u8]);
+    hasher.update(input.frame_id.0.to_le_bytes());
+    hasher.update(input.t.to_le_bytes());
+    hasher.update(input.context_digest);
+    hasher.update(summary.backend.as_bytes());
+    hasher.update(summary.surprise_q.to_le_bytes());
+    hasher.update(summary.pressure_q.to_le_bytes());
+    hasher.update(summary.risk_q.to_le_bytes());
+    hasher.update(summary.confidence_q.to_le_bytes());
+    hasher.update(summary.spike_count.to_le_bytes());
+    hasher.update(summary.spikes_digest);
+    hasher.update(summary.backend_profile.as_bytes());
+    hasher.update(summary.backend_pack_id.to_le_bytes());
+    hasher.update(summary.fixtures_digest);
+    hasher.update(summary.model_hashes_digest);
+    hasher.update([summary.llm_backend]);
+    hasher.update([summary.world_backend]);
+    hasher.update([summary.sae_backend]);
+    hasher.update([summary.ssm_backend]);
+    hasher.update([summary.lfm_backend]);
+    hasher.update(summary.budget_profile_id.to_le_bytes());
+    hasher.update(summary.seed.to_le_bytes());
+    hasher.update(summary.risk_contract_version.to_le_bytes());
+    hasher.update(summary.compute_schema_version.to_le_bytes());
+    hasher.update(summary.contract_version.to_le_bytes());
+    hasher.update(summary.backend_id.to_le_bytes());
+    hasher.update([summary.validation_status as u8]);
+    hasher.update(summary.violation_reason_mask.to_le_bytes());
+    hasher.update((signals.notes.len() as u16).to_le_bytes());
+    hasher.finalize().into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

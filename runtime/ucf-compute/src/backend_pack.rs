@@ -456,7 +456,11 @@ impl BackendPackFactory {
                 ),
             });
         }
-        let model_hashes_digest = model_store.model_hashes_digest();
+        let model_hashes_digest = if cfg.pack == BackendPackKind::StubV0 {
+            [0_u8; 32]
+        } else {
+            model_store.model_hashes_digest()
+        };
         let (llm_component, world_component, sae_component, ssm_component) = match cfg.pack {
             BackendPackKind::StubV0 => (
                 BackendComponentId::StubV0,
@@ -586,7 +590,11 @@ impl BackendPackFactory {
             build_llm_backend(llm_cfg).unwrap_or_else(|_| Arc::new(LlmStubBackend));
         let (lfm_component, lfm_kernel): (BackendComponentId, Box<dyn LfmKernel + Send + Sync>) =
             match cfg.pack {
-                BackendPackKind::StubV0 | BackendPackKind::ToyV1 => {
+                BackendPackKind::StubV0 => (
+                    BackendComponentId::StubV0,
+                    Box::new(ToyLfmKernel::default()),
+                ),
+                BackendPackKind::ToyV1 => {
                     (BackendComponentId::ToyV1, Box::new(ToyLfmKernel::default()))
                 }
                 BackendPackKind::CandleToyV1 | BackendPackKind::CandleLiquidV1 => {
