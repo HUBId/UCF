@@ -240,3 +240,18 @@ Boundary statements for Prompt 17:
 - Stub remains offline and deterministic; no external services, gateway writes, evidence/archive authority changes, policy/output override authority, or Minimal Spine v1.x dependency are introduced.
 
 Validation focus for this hardening is the stub-specific fixture lane. Future toy, optional-real-compile, and optional-real-runtime lanes still require their own dedicated golden/compile/runtime proof prompts.
+
+## 12. Prompt 18 Toy Golden Lane Status
+
+Prompt 18 is implemented for the default local toy pack as a deterministic golden lane, not as real compute. The implementation keeps existing feature names unchanged and adds the golden contract tests at `runtime/ucf-compute/tests/toy_compute_golden.rs`.
+
+Boundary statements for Prompt 18:
+
+- The toy lane is a deterministic local golden lane for offline, CI-safe checks when the default local toy code path is used.
+- Toy golden output carries explicit provenance with `BackendClass::Toy`, backend name `toy_v1`, golden/fixture version `toy_compute_golden_v1`, `toy_not_real = true`, `no_real_inference = true`, `external_service_required = false`, `runtime_inference_supported = false`, and `production_claim = false`.
+- The toy lane may exercise local toy inference semantics and embedded toy fixtures, but it is not real model inference, not optional-real-runtime evidence, and not production inference.
+- The toy golden tests compare repeated-output equality plus a pinned digest (`fe41668287a09278dc820b2d004df053755cc03d33c15a72fc323c4ec8425dad`) so intentional output changes require explicit review.
+- The toy pack reports `ToyV1` component identifiers, has no required external model slots, and does not require model paths, network configuration, or external services for the golden fixture.
+- Toy has no Minimal Spine v1.x authority, no Gateway write path, no Evidence/Archive authority change, and no policy/output override authority.
+
+Remaining real-compute work after Prompt 18 is unchanged: optional-real compile gates, artifact-backed local runtime proof, compute-output linkage, feature CI matrix hardening, docs overclaim cleanup, and readiness-gate/prod-profile stability still require separate prompts.
