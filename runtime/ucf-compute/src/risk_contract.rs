@@ -6,6 +6,7 @@ use crate::backend_pack::{BackendComponentId, BackendPackId};
 #[repr(u8)]
 pub enum BackendProfileId {
     StubV1 = 1,
+    ToyV1 = 4,
     CandleV1 = 2,
     BurnV1 = 3,
     UnknownV1 = 255,
@@ -15,6 +16,7 @@ impl BackendProfileId {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::StubV1 => "stub:v1",
+            Self::ToyV1 => "toy:v1",
             Self::CandleV1 => "candle:v1",
             Self::BurnV1 => "burn:v1",
             Self::UnknownV1 => "unknown:v1",
@@ -24,6 +26,7 @@ impl BackendProfileId {
     pub fn from_backend_name(name: &str) -> Self {
         match name {
             "stub" | "stub_v0" => Self::StubV1,
+            "toy" | "toy_v1" | "toy_lnn_v1" => Self::ToyV1,
             "candle" => Self::CandleV1,
             "burn" => Self::BurnV1,
             _ => Self::UnknownV1,

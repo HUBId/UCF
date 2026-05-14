@@ -1069,6 +1069,176 @@ impl AiComputeBackend for CpuStubBackend {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ToyComputeBackend;
+
+impl AiComputeBackend for ToyComputeBackend {
+    fn name(&self) -> &'static str {
+        "toy_v1"
+    }
+
+    fn identity(&self) -> BackendIdentity {
+        BackendIdentity::toy(self.name())
+    }
+
+    fn compute(
+        &self,
+        input: &ComputeInput,
+        budget: ComputeBudget,
+    ) -> Result<ComputeSignals, ComputeError> {
+        let pack = BackendPackFactory::build(BackendPackConfig {
+            pack: BackendPackKind::ToyV1,
+            seed: budget.seed,
+        })?;
+        crate::pipeline::ComputePipelineBackend::new(
+            pack,
+            crate::pipeline::FusionConfig::default(),
+            crate::pipeline::LimitsConfig::default(),
+        )
+        .compute(input, budget)
+    }
+}
+
+pub const TOY_COMPUTE_GOLDEN_VERSION: &str = "toy_compute_golden_v1";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ToyComputeGoldenProvenance {
+    pub backend_class: BackendClass,
+    pub backend_name: &'static str,
+    pub fixture_id: &'static str,
+    pub golden_version: &'static str,
+    pub toy_not_real: bool,
+    pub no_real_inference: bool,
+    pub external_service_required: bool,
+    pub production_claim: bool,
+    pub runtime_inference_supported: bool,
+    pub deterministic: bool,
+    pub offline: bool,
+    pub minimal_spine_authority: bool,
+}
+
+impl ToyComputeGoldenProvenance {
+    pub fn from_identity(identity: BackendIdentity) -> Self {
+        Self {
+            backend_class: identity.class,
+            backend_name: identity.name,
+            fixture_id: TOY_COMPUTE_GOLDEN_VERSION,
+            golden_version: TOY_COMPUTE_GOLDEN_VERSION,
+            toy_not_real: identity.class == BackendClass::Toy,
+            no_real_inference: !identity.claims_runtime_real_inference(),
+            external_service_required: identity.external_service_required,
+            production_claim: identity.production_claim,
+            runtime_inference_supported: identity.runtime_inference_supported,
+            deterministic: identity.deterministic,
+            offline: identity.offline,
+            minimal_spine_authority: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToyComputeGoldenOutput {
+    pub provenance: ToyComputeGoldenProvenance,
+    pub input: ComputeInput,
+    pub signals: ComputeSignals,
+    pub summary: ComputeSignalsSummary,
+    pub digest: [u8; 32],
+}
+
+pub fn toy_compute_golden_input() -> ComputeInput {
+    ComputeInput {
+        frame_id: FrameId(18),
+        t: 18,
+        context_digest: [0x18; 32],
+    }
+}
+
+pub fn toy_compute_golden_budget() -> ComputeBudget {
+    ComputeBudget {
+        max_micros: 50_000,
+        hard_timeout_micros: 500_000,
+        seed: 0x70_u64,
+        ..ComputeBudget::default()
+    }
+}
+
+pub fn run_toy_compute_golden_fixture() -> Result<ToyComputeGoldenOutput, ComputeError> {
+    run_toy_compute_golden(&toy_compute_golden_input(), toy_compute_golden_budget())
+}
+
+pub fn run_toy_compute_golden(
+    input: &ComputeInput,
+    budget: ComputeBudget,
+) -> Result<ToyComputeGoldenOutput, ComputeError> {
+    let backend = ToyComputeBackend;
+    let identity = backend.identity();
+    let provenance = ToyComputeGoldenProvenance::from_identity(identity);
+    let signals = backend.compute(input, budget)?;
+    let summary = signals.summary(identity.name);
+    let digest = toy_compute_golden_digest(&provenance, input, &signals, &summary);
+    Ok(ToyComputeGoldenOutput {
+        provenance,
+        input: input.clone(),
+        signals,
+        summary,
+        digest,
+    })
+}
+
+/// Returns a portable golden digest for the local deterministic toy lane.
+///
+/// The digest is restricted to stable provenance, request fields, quantized
+/// summary values, component identity, and note cardinality. It intentionally
+/// excludes wall-clock measurements, free-form diagnostic text, and
+/// checkout-local fixture/model digests.
+pub fn toy_compute_golden_digest(
+    provenance: &ToyComputeGoldenProvenance,
+    input: &ComputeInput,
+    signals: &ComputeSignals,
+    summary: &ComputeSignalsSummary,
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(provenance.backend_name.as_bytes());
+    hasher.update([provenance.backend_class as u8]);
+    hasher.update(provenance.fixture_id.as_bytes());
+    hasher.update(provenance.golden_version.as_bytes());
+    hasher.update([provenance.toy_not_real as u8]);
+    hasher.update([provenance.no_real_inference as u8]);
+    hasher.update([provenance.external_service_required as u8]);
+    hasher.update([provenance.production_claim as u8]);
+    hasher.update([provenance.runtime_inference_supported as u8]);
+    hasher.update([provenance.deterministic as u8]);
+    hasher.update([provenance.offline as u8]);
+    hasher.update([provenance.minimal_spine_authority as u8]);
+    hasher.update(input.frame_id.0.to_le_bytes());
+    hasher.update(input.t.to_le_bytes());
+    hasher.update(input.context_digest);
+    hasher.update(summary.backend.as_bytes());
+    hasher.update(summary.surprise_q.to_le_bytes());
+    hasher.update(summary.pressure_q.to_le_bytes());
+    hasher.update(summary.risk_q.to_le_bytes());
+    hasher.update(summary.confidence_q.to_le_bytes());
+    hasher.update(summary.spike_count.to_le_bytes());
+    hasher.update(summary.spikes_digest);
+    hasher.update(summary.backend_profile.as_bytes());
+    hasher.update(summary.backend_pack_id.to_le_bytes());
+    hasher.update([summary.llm_backend]);
+    hasher.update([summary.world_backend]);
+    hasher.update([summary.sae_backend]);
+    hasher.update([summary.ssm_backend]);
+    hasher.update([summary.lfm_backend]);
+    hasher.update(summary.budget_profile_id.to_le_bytes());
+    hasher.update(summary.seed.to_le_bytes());
+    hasher.update(summary.risk_contract_version.to_le_bytes());
+    hasher.update(summary.compute_schema_version.to_le_bytes());
+    hasher.update(summary.contract_version.to_le_bytes());
+    hasher.update(summary.backend_id.to_le_bytes());
+    hasher.update([summary.validation_status as u8]);
+    hasher.update(summary.violation_reason_mask.to_le_bytes());
+    hasher.update((signals.notes.len() as u16).to_le_bytes());
+    hasher.finalize().into()
+}
+
 pub const STUB_COMPUTE_FIXTURE_VERSION: &str = "stub_compute_fixture_v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

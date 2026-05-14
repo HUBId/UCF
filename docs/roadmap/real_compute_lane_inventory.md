@@ -240,3 +240,18 @@ Current stub-lane facts after Prompt 17:
 - This is not a production compute claim, not optional-real-runtime evidence, not Gateway integration, not Evidence/Archive authority, not policy/output override authority, and not a Minimal Spine v1.x dependency.
 
 Remaining real-compute inventory gaps are unchanged: toy golden coverage, optional-real compile gates, artifact-backed local runtime proof, compute-output linkage, feature CI matrix hardening, and overclaim cleanup still require later prompts.
+
+## 12. Prompt 18 Toy Deterministic Golden Lane Note
+
+Prompt 18 hardens the default `toy_v1` pack as a deterministic local golden lane only. It does not activate real compute, does not add a real backend, and does not change the optional status of any Real Compute lane.
+
+Current toy-lane facts after Prompt 18:
+
+- The toy lane is classified as `BackendClass::Toy` through backend identity metadata and is distinct from `BackendClass::Stub` and `BackendClass::OptionalRealRuntime`.
+- Toy golden output carries explicit provenance: backend name `toy_v1`, fixture/golden id `toy_compute_golden_v1`, toy-not-real true, no-real-inference true, external-service-required false, runtime-inference-supported false, Minimal Spine authority false, and production-claim false.
+- The toy golden lane is deterministic and offline for the golden fixture; tests compare repeated output equality and the pinned digest `0e73835b8059fb173668d8e8afbc8bc10c2e8f684194777399a2630d9ab5b7de`.
+- The toy pack reports `ToyV1` component identifiers and has no required external model slots for the golden fixture; it does not require model paths, network configuration, or external services.
+- Toy may support local toy inference semantics through embedded local fixtures and small deterministic kernels, but this is not production inference and not real model inference.
+- Toy has no Minimal Spine authority, no Gateway write authority, no Evidence/Archive authority change, and no policy/output override authority.
+
+Remaining real-compute inventory gaps are now: optional-real compile gates, artifact-backed local runtime proof, compute-output linkage, compute evidence/audit records, feature CI matrix hardening, docs overclaim cleanup, and readiness-gate/prod-profile stability.

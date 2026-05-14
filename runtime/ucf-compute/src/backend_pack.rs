@@ -456,11 +456,12 @@ impl BackendPackFactory {
                 ),
             });
         }
-        let model_hashes_digest = if cfg.pack == BackendPackKind::StubV0 {
-            [0_u8; 32]
-        } else {
-            model_store.model_hashes_digest()
-        };
+        let model_hashes_digest =
+            if matches!(cfg.pack, BackendPackKind::StubV0 | BackendPackKind::ToyV1) {
+                [0_u8; 32]
+            } else {
+                model_store.model_hashes_digest()
+            };
         let (llm_component, world_component, sae_component, ssm_component) = match cfg.pack {
             BackendPackKind::StubV0 => (
                 BackendComponentId::StubV0,
