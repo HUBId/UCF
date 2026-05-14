@@ -27,8 +27,13 @@ Baseline commands used: `pwd`, `git branch --show-current`, `git status --short`
 Required companion documents:
 
 - [`docs/roadmap/real_compute_lane_inventory.md`](real_compute_lane_inventory.md)
+- [`docs/roadmap/compute_feature_ci_matrix.md`](compute_feature_ci_matrix.md)
 - [`docs/roadmap/post_freeze_roadmap_selection.md`](post_freeze_roadmap_selection.md)
 - [`docs/minimal_spine_v1_freeze.md`](../minimal_spine_v1_freeze.md)
+
+## 1.1 Prompt 22 CI Matrix
+
+Prompt 22 adds the docs-only [UCF Compute Feature CI Matrix](compute_feature_ci_matrix.md). Use that matrix when mapping backend names to CI/check lanes: default/stub/toy lanes remain no-real, optional-real lanes remain compile-only unless separately fixture-proven, and remote/external remains non-default.
 
 ## 2. Existing Naming Inventory
 
