@@ -27,11 +27,11 @@ This file reports repo-truth status and blockers, but does not redefine runtime 
 
 ### Compute surface status (canonical vs legacy/internal)
 
-- **Canonical production compute path**: `runtime/ucf-compute` via Burn onboarding lane
-  (`build_onboarding_reference_backend` / `build_canonical_production_backend`).
+- **Canonical compute package path (not a production claim)**: `runtime/ucf-compute` via the bounded Burn onboarding lane
+  (`build_onboarding_reference_backend` / `build_canonical_production_backend` names are historical/API names, not current production-readiness evidence).
 - **Canonical reference-map authority**: `runtime/ucf-compute/src/reference_map.rs`
-  (`CANONICAL_COMPUTE_REFERENCE_MAP`) classifies production, expert, diagnostics/evidence,
-  and internal/legacy lanes as one code-pinned map.
+  (`CANONICAL_COMPUTE_REFERENCE_MAP`) classifies historical/API lane names, expert, diagnostics/evidence,
+  and internal/legacy lanes as one code-pinned map; those names must be read through the Prompt 23 overclaim guard.
 - **Compatibility/dev lanes**: `build_backend(kind=stub|candle)` and `domains/ai*` adapter crates.
 - **Internal-only lane**: `build_backend(kind=worker)` for process-isolated worker execution wiring.
 - **Removed legacy entry aliases**: `cpu_stub`, `candle_dummy`, `burn_dummy`, `worker_v1` are no longer accepted backend names.
@@ -42,6 +42,10 @@ Across production, expert/runtime-control, diagnostics/evidence, and internal/le
 invariant remains fixed: canonical request/job/run contracts and canonical result/failure semantics
 stay authoritative and are not redefined by compatibility or diagnostic lanes.
 
+### Prompt 23 overclaim guard
+
+This status file is retained as a current/planning status surface, but the compute claim boundary is now the Prompt 23 taxonomy: stub fixture, toy golden, optional-real compile-only, remote/external compile-only, optional-real runtime deferred, and production claim forbidden. Names such as Burn, Candle, LFM, and LLM identify feature/backend families; they do not by themselves prove runtime inference or production readiness. Compile gates prove compilation only. Minimal Spine v1.x remains independent of compute.
+
 ## Inventory and gap matrix (repo-truth only)
 
 | Area | real implementiert | scaffolded / placeholder | dokumentiert, aber nicht implementiert |
@@ -49,7 +53,7 @@ stay authoritative and are not redefined by compatibility or diagnostic lanes.
 | `core/crates/ucf-jepa` | Deterministic `WorldModel` trait + `JepaCore` tick/state/prediction/surprise commit flow; `MockWorldModel` exists. | None in this crate. | None identified in this crate. |
 | `core/crates/ucf-nsr` | `NsrCore`, rule/fact/trace plumbing, backend config types, policy ecology exports, mock reasoner. | Optional `nsr_datalog`/`nsr_smt` backends are feature-gated (not default runtime path). | None asserted here. |
 | `core/crates/ucf-ssm` | Deterministic fixed-point-style selective scan state/input/output flow with bounded params and commits. | None in this crate. | None asserted here. |
-| `runtime/ucf-compute` | Full runtime pipeline surface: world model, SAE extractor, SSM, LFM, orchestration, model store (allowlist/hash/max_bytes/pinning), capability wiring, stage contracts. Candle/Burn compute paths exist in runtime crate. Minimal bounded compute service layer is now wired on top with lifecycle, admission, scheduler, worker-path binding, accounting summary, and service-level observability. | Several paths are intentionally bounded/degraded fixtures and controlled stubs (e.g., burn v0 skeleton behavior and fixture-driven kernels). | Full production-grade compute stack (persistent queueing, fleet orchestration, external monitoring/billing/governance layers) remains downstream. |
+| `runtime/ucf-compute` | Runtime pipeline surface: world model, SAE extractor, SSM, LFM, orchestration, model store (allowlist/hash/max_bytes/pinning), capability wiring, stage contracts. Candle/Burn feature paths exist in the runtime crate, but current claims remain stub fixture, toy golden, or optional-real compile-only unless a local artifact-backed runtime fixture proves otherwise. Minimal bounded compute service layer is wired on top with lifecycle, admission, scheduler, worker-path binding, accounting summary, and service-level observability. | Several paths are intentionally bounded/degraded fixtures and controlled stubs (e.g., burn v0 skeleton behavior and fixture-driven kernels). | Production-grade compute stack and production compute claims remain downstream and forbidden for current lanes. |
 | `domains/ai-host-abi` | Host ABI structs, bounded output contract, commit functions, `AiBackend` trait, `MockBackend`. | Real tensor-model backend logic is not in this crate. | None beyond ABI-level docs. |
 | `domains/ai` | Host runtime wrapper (`AiHostRuntime`) around ABI backend trait; tests for mock coherence behavior. | Depends on mock/adapter behavior for actual inference. | None beyond wrapper scope. |
 | `domains/ai-backends` | Feature-gated module seams for `ai-candle` / `ai-burn`. | Candle/Burn adapters currently TODO placeholders returning empty bounded outputs. | Backend roadmap requests tensor I/O + hooks that are not yet implemented in this crate. |
@@ -59,9 +63,9 @@ stay authoritative and are not redefined by compatibility or diagnostic lanes.
 
 ## Canonical Burn runtime status (repo-truth, v1 narrow path)
 
-- **Primary runtime path**: `UCF_COMPUTE_BACKEND=burn` resolves to `BackendPackKind::BurnToyV1` inside `runtime/ucf-compute`, not to `domains/ai-backends`.
-- **Honest minimal E2E path (real today)**: `World -> SAE -> SSM` runs with Burn components and verified model slots (`world_jepa`, `sae`, `ssm`).
-- **LFM in Burn lane**: Burn pack now requires a verified `lfm` slot and routes LFM through a dedicated Burn runtime kernel (`burn_lfm_liquid_scalar_v1`) in the canonical pipeline path.
+- **Burn family package path (bounded, not production-ready)**: `UCF_COMPUTE_BACKEND=burn` resolves to `BackendPackKind::BurnToyV1` inside `runtime/ucf-compute`, not to `domains/ai-backends`.
+- **Current bounded E2E evidence**: `World -> SAE -> SSM` is covered as a bounded package path with Burn-named components and verified slots where available; this is not a production runtime-inference claim.
+- **LFM in Burn lane**: Burn pack slot validation and the `burn_lfm_liquid_scalar_v1` path are bounded feature behavior; treat as optional-real runtime deferred unless a pinned local artifact-backed fixture and deterministic runtime golden test prove the lane.
 - **Failure semantics**:
   - artifact missing/verification/incompatible are classified as typed canonical failures before execution;
   - stage backend disabled and stage execution errors are distinguished and returned as structured canonical failures;

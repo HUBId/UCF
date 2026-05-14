@@ -1,5 +1,7 @@
 # Backend Candle World V0 (canonical runtime seam)
 
+
+Status note: this Candle world document describes a bounded feature seam. It must not be read as a production-ready or general runtime-inference claim without a pinned local artifact-backed fixture and deterministic runtime golden test.
 Status: active in `runtime/ucf-compute` as a canonical world-stage adapter.
 
 ## Runtime binding

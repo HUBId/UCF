@@ -37,6 +37,33 @@ Required companion documents:
 
 Prompt 22 adds the docs-only [UCF Compute Feature CI Matrix](compute_feature_ci_matrix.md). The matrix defines default no-real, backend identity, stub fixture, toy golden, optional-real compile-only, remote/external compile-only, compute link/audit, and docs/gates command lanes without activating real compute or changing runtime authority.
 
+
+## 1.2 Real Compute Overclaim Guard
+
+This guard is the canonical wording boundary for current and planning compute docs:
+
+- **Stub fixture** is deterministic fixture behavior only; it is not real inference.
+- **Toy golden** is deterministic local golden behavior only; it is not real inference.
+- **Optional-real compile-only** PASS means the feature lane compiles; it is not runtime inference, artifact availability, or production readiness evidence.
+- **Burn/Candle/LFM/LLM compile gates** do not imply production readiness.
+- **Remote/external compile-only** gates do not imply service availability, credentials, network access, or an enabled runtime path.
+- **Optional-real runtime deferred** remains the status until a pinned local artifact-backed fixture exists and a deterministic runtime golden test passes.
+- **Production claim forbidden** applies to all current compute lanes unless a future production-readiness prompt explicitly proves otherwise.
+- **Minimal Spine v1.x** remains independent of compute and must not depend on stub, toy, optional-real, or remote lanes.
+- **ComputeOutputLink** and **ComputeAuditRecord** are derived metadata only; they do not create OutputRecord, Evidence, Archive, policy, or gateway authority.
+
+### Search/guard checklist before claiming real runtime inference
+
+Before future Compute docs can claim **real runtime inference**, all of the following must be true:
+
+- `BackendClass::OptionalRealRuntime` exists for the lane.
+- A pinned local model artifact or fixture exists.
+- A deterministic runtime golden test passes.
+- No external service is required by default.
+- `production_claim` remains `false` unless a future production readiness prompt explicitly proves otherwise.
+- Docs state exact feature flags and commands.
+- Minimal Spine remains independent.
+
 ## 2. Compute Module Inventory
 
 | Module/path | Purpose | Current maturity | Backend/lane relevance | Tests | Risk |
@@ -121,7 +148,7 @@ Clear classification statements:
 - The only CI-default-safe compute behavior is stub/toy, because it is deterministic and offline.
 - No lane should be called production Real Compute without a verified local model artifact path, deterministic fixture/golden coverage, and an enabled gate proving that exact path.
 - `stub_v0`, `toy_v1`, `toy_lnn_v1`, `worker_v1`, and `domains/ai-backends` adapters must be called stub, toy, internal, or compatibility lanes, not real.
-- `candle_toy_v1` and `burn_toy_v1` are optional compile/runtime prototypes; they can be compile-checked and fixture-tested, but realness depends on verified model slots.
+- `candle_toy_v1` and `burn_toy_v1` are optional-real compile-only/prototype lanes; they can be compile-checked and fixture-tested, but runtime inference remains deferred until pinned local artifact-backed golden tests exist.
 - `remote_v1` needs environment activation, policy allowlist approval, and external service semantics; it must never be default or hidden-activated.
 
 ## 5. Test and Fixture Inventory
@@ -144,7 +171,7 @@ Clear classification statements:
 | Claim | Source doc | Code/test evidence | Status | Risk | Recommended correction |
 |---|---|---|---|---|---|
 | `runtime/ucf-compute` is the canonical runtime model pipeline. | `docs/roadmap/AI_MODEL_PIPELINE_STATUS.md` | Code exports canonical compute surfaces and backend builders. | partially implemented | medium | Keep, but qualify that canonical path includes stub/toy/prototype lanes and not production readiness by default. |
-| Canonical production compute path is Burn onboarding. | `docs/roadmap/AI_MODEL_PIPELINE_STATUS.md` and compute crate docs | `CANONICAL_ONBOARDING_PACK` is `BurnToyV1`; Burn feature lanes are optional/non-default. | partially implemented / overclaim-prone | high | Rename or annotate as optional Burn onboarding prototype until real artifacts and blocking tests exist. |
+| Historical/API wording says canonical production compute path is Burn onboarding. | `docs/roadmap/AI_MODEL_PIPELINE_STATUS.md` and compute crate docs | `CANONICAL_ONBOARDING_PACK` is `BurnToyV1`; Burn feature lanes are optional/non-default and currently classified as optional-real compile-only unless fixture-backed runtime evidence exists. | overclaim-prone historical/API wording | high | Guard as bounded Burn family package path; production claim forbidden for current lanes. |
 | README feature matrix is production. | `README.md` | Default lane is toy; optional lanes are non-blocking in CI. | contradicted by lane maturity | high | Prompt 15 should clarify production wording without changing behavior. |
 | `candle-cpu` supported lane. | `README.md`, `docs/feature_matrix.md`, CI | Non-blocking CI lane with Candle features. | implemented as optional compile/test lane | medium | Call it optional Candle CPU compile/fixture lane, not production real compute. |
 | `burn-cpu` supported lane. | `README.md`, `docs/feature_matrix.md`, CI | Non-blocking CI lane with Burn features; Burn LLM not implemented; Burn engine dependency absent. | partially implemented / compile-only in places | high | Call it optional Burn CPU prototype/compile lane until real model path is proven. |
