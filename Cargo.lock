@@ -3694,6 +3694,7 @@ dependencies = [
  "ucf-core",
  "ucf-frames",
  "ucf-nsr",
+ "ucf-protocol",
  "ucf-types",
 ]
 
