@@ -31,6 +31,11 @@ Required companion documents:
 - [`docs/minimal_spine_v1_freeze.md`](../minimal_spine_v1_freeze.md)
 - [`docs/module_implementation_depth_registry.md`](../module_implementation_depth_registry.md)
 - [`docs/roadmap/compute_backend_naming_boundary_plan.md`](compute_backend_naming_boundary_plan.md)
+- [`docs/roadmap/compute_feature_ci_matrix.md`](compute_feature_ci_matrix.md)
+
+## 1.1 Prompt 22 CI Matrix
+
+Prompt 22 adds the docs-only [UCF Compute Feature CI Matrix](compute_feature_ci_matrix.md). The matrix defines default no-real, backend identity, stub fixture, toy golden, optional-real compile-only, remote/external compile-only, compute link/audit, and docs/gates command lanes without activating real compute or changing runtime authority.
 
 ## 2. Compute Module Inventory
 
