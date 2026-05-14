@@ -255,3 +255,79 @@ Current toy-lane facts after Prompt 18:
 - Toy has no Minimal Spine authority, no Gateway write authority, no Evidence/Archive authority change, and no policy/output override authority.
 
 Remaining real-compute inventory gaps are now: optional-real compile gates, artifact-backed local runtime proof, compute-output linkage, compute evidence/audit records, feature CI matrix hardening, docs overclaim cleanup, and readiness-gate/prod-profile stability.
+
+## Prompt 19 Optional-Real Compile Gate Results
+
+Prompt 19 inventories optional-real lanes as compile/check gates only. It intentionally does not activate real compute, does not load models, does not add external services, does not integrate a gateway path, and does not make Minimal Spine v1.x depend on compute.
+
+### Feature inventory
+
+| Feature / lane | Path(s) | Current purpose | Current `BackendClass` | Default? | Build dependency | Artifact/model dependency | Current tests | Gap |
+|---|---|---|---|---:|---|---|---|---|
+| `backend-candle` | `runtime/ucf-compute/Cargo.toml`, `runtime/ucf-compute/src/backends.rs`, `runtime/ucf-compute/src/backend_pack.rs` | Candle optional compile/backend seam | `OptionalRealCompile` for Candle backend/pack identities | no | `candle-core` | Runtime artifacts deferred; no local runtime fixture asserted | `backend_identity_contract`, `optional_real_compile_gate` | Needs artifact-backed fixture before any runtime claim. |
+| `compute-candle` | `runtime/ucf-compute/Cargo.toml`, `.github/workflows/ci.yml` | Alias-like Candle compute lane enabling `backend-candle` | `OptionalRealCompile` through Candle identities | no | `candle-core` | Runtime artifacts deferred | compile probe | CI should treat as compile-only. |
+| `llm-candle` | `runtime/ucf-compute/Cargo.toml`, `runtime/ucf-compute/src/capabilities/candle_llm_backend.rs` | Candle LLM compile candidate | No separate machine-readable identity; optional-real compile candidate by feature class | no | `candle-core` | Tiny/local fixture references exist in code paths, but no runtime inference claim is made here | compile probe | Add explicit identity only when a concrete wrapper exposes it. |
+| `lfm-candle` | `runtime/ucf-compute/Cargo.toml`, `runtime/ucf-compute/src/lfm.rs` | Candle LFM compile candidate | No separate machine-readable identity; optional-real compile candidate by feature class | no | `candle-core` | Model/artifact runtime deferred | compile probe | Add explicit identity only when a concrete wrapper exposes it. |
+| `backend-burn` | `runtime/ucf-compute/Cargo.toml`, `runtime/ucf-compute/src/backends.rs`, `runtime/ucf-compute/src/backend_pack.rs` | Burn optional compile/backend seam; aliases `compute-burn` | `OptionalRealCompile` for Burn backend/pack identities | no | none beyond workspace deps | Runtime artifacts deferred; no local runtime fixture asserted | `backend_identity_contract`, `optional_real_compile_gate` | Needs artifact-backed fixture before any runtime claim. |
+| `compute-burn` | `runtime/ucf-compute/Cargo.toml`, `.github/workflows/ci.yml` | Burn compute compile lane | `OptionalRealCompile` through Burn identities | no | none beyond workspace deps | Runtime artifacts deferred | compile probe | CI should treat as compile-only. |
+| `llm-burn` | `runtime/ucf-compute/Cargo.toml`, `runtime/ucf-compute/src/capabilities/burn_llm_backend.rs` | Burn LLM compile candidate | No separate machine-readable identity; optional-real compile candidate by feature class | no | none beyond workspace deps | Model/artifact runtime deferred | compile probe | Add explicit identity only when a concrete wrapper exposes it. |
+| `lfm-burn` | `runtime/ucf-compute/Cargo.toml`, `runtime/ucf-compute/src/lfm.rs` | Burn LFM compile candidate | No separate machine-readable identity; optional-real compile candidate by feature class | no | none beyond workspace deps | Model/artifact runtime deferred | compile probe | Add explicit identity only when a concrete wrapper exposes it. |
+| `lfm-lnn` | `runtime/ucf-compute/Cargo.toml`, `BackendPackKind::ToyLnnV1` | LNN-adjacent/toy compile lane | `Toy` for `ToyLnnV1` pack identity | no | none beyond workspace deps | none | compile probe | Not a real backend proof. |
+| `remote-compute` | `runtime/ucf-compute/Cargo.toml`, `runtime/ucf-compute/src/remote_compute.rs`, `BackendPackKind::RemoteV1` | Remote/external compile lane | `RemoteExternal` when compiled | no | none beyond workspace deps | External service required for runtime use | `optional_real_compile_gate` under feature | Keep excluded from default/offline CI runtime paths. |
+| `burn` | `core/crates/ucf-ai-port/Cargo.toml` | Compatibility feature flag | none in this crate | no | none beyond workspace deps | none | compile probe | Docs-only/compatibility unless a concrete identity is added later. |
+| `candle` | `core/crates/ucf-ai-port/Cargo.toml` | Compatibility feature flag | none in this crate | no | none beyond workspace deps | none | compile probe | Docs-only/compatibility unless a concrete identity is added later. |
+| `ai-runtime` | `core/crates/ucf-ai-port/Cargo.toml` | Optional dependency seam to `ucf-ai-runtime` | none in this crate | no | `ucf-ai-runtime` path dependency | none | compile probe | Compile proof only; not inference proof. |
+| `ai-burn` | `domains/ai-backends/Cargo.toml`, `domains/ai-backends/src/burn_backend.rs` | Non-canonical adapter module | none; adapter seam only | no | none beyond host ABI | none; returns bounded empty output | compile probe | Add identity only if this adapter becomes an explicit backend inventory item. |
+| `ai-candle` | `domains/ai-backends/Cargo.toml`, `domains/ai-backends/src/candle_backend.rs` | Non-canonical adapter module | none; adapter seam only | no | none beyond host ABI | none; returns bounded empty output | compile probe | Add identity only if this adapter becomes an explicit backend inventory item. |
+
+### Compile gate probe results
+
+| Command | Result | Meaning | Follow-up |
+|---|---|---|---|
+| `cargo check -p ucf-compute --no-default-features` | PASS | `ucf-compute` compiles without default stub/toy features. | Keep as default safety probe. |
+| `cargo check -p ucf-compute --features backend-stub` | PASS | Stub lane compiles. | Continue fixture tests. |
+| `cargo check -p ucf-compute --features backend-toy` | PASS | Toy lane compiles. | Continue golden tests. |
+| `cargo check -p ucf-compute --features backend-burn` | PASS | Burn backend alias compiles. | Treat as compile-only optional-real gate. |
+| `cargo check -p ucf-compute --features backend-candle` | PASS | Candle backend compiles with `candle-core`. | Treat as compile-only optional-real gate. |
+| `cargo check -p ucf-compute --features compute-burn` | PASS | Burn compute feature compiles. | Treat as compile-only optional-real gate. |
+| `cargo check -p ucf-compute --features compute-candle` | PASS | Candle compute feature compiles. | Treat as compile-only optional-real gate. |
+| `cargo check -p ucf-compute --features llm-burn` | PASS | Burn LLM feature compiles. | No runtime claim until fixture/artifact test exists. |
+| `cargo check -p ucf-compute --features llm-candle` | PASS | Candle LLM feature compiles. | No runtime claim until fixture/artifact test exists. |
+| `cargo check -p ucf-compute --features lfm-burn` | PASS | Burn LFM feature compiles. | No runtime claim until fixture/artifact test exists. |
+| `cargo check -p ucf-compute --features lfm-candle` | PASS | Candle LFM feature compiles. | No runtime claim until fixture/artifact test exists. |
+| `cargo check -p ucf-compute --features lfm-lnn` | PASS | LNN-adjacent feature compiles. | Keep non-real/toy wording. |
+| `cargo check -p ucf-compute --features remote-compute` | PASS | Remote lane compiles. | Keep explicit external-service classification. |
+| `cargo check -p ucf-ai-port --features burn` | PASS | Compatibility flag compiles. | No backend identity or runtime claim. |
+| `cargo check -p ucf-ai-port --features candle` | PASS | Compatibility flag compiles. | No backend identity or runtime claim. |
+| `cargo check -p ucf-ai-port --features ai-runtime` | PASS | Optional runtime dependency seam compiles. | Not a backend inference proof. |
+| `cargo check -p ucf-ai-backends --all-targets` | PASS | Non-canonical adapter crate compiles by default. | Keep default no-real. |
+| `cargo check -p ucf-ai-backends --features ai-burn --all-targets` | PASS | Burn adapter module compiles. | Adapter still makes no production/runtime claim. |
+| `cargo check -p ucf-ai-backends --features ai-candle --all-targets` | PASS | Candle adapter module compiles. | Adapter still makes no production/runtime claim. |
+
+A PASS above means compile/check success only. It is not proof of runtime inference, model loading, production readiness, or external service availability.
+
+### Identity findings
+
+| Lane | `BackendClass` | Runtime inference supported | Production claim | Notes |
+|---|---|---:|---:|---|
+| `ComputeBackendKind::Candle` | `OptionalRealCompile` | false | false | Machine-readable compile identity exists. |
+| `ComputeBackendKind::Burn` | `OptionalRealCompile` | false | false | Machine-readable compile identity exists. |
+| `BackendPackKind::CandleToyV1` | `OptionalRealCompile` | false | false | Name remains risky; docs must not imply real runtime. |
+| `BackendPackKind::CandleLiquidV1` | `OptionalRealCompile` | false | false | Compile identity only. |
+| `BackendPackKind::BurnToyV1` | `OptionalRealCompile` | false | false | Compile identity only despite Burn naming. |
+| `BackendPackKind::RemoteV1` | `RemoteExternal` | false | false | Only present with `remote-compute`; external service required and offline false. |
+| `llm-*` / `lfm-*` feature-specific wrappers | none separate | false by absence | false by absence | Existing feature paths compile; add identities only when concrete wrappers expose them. |
+
+### CI recommendation
+
+| Lane | Recommended CI treatment | Reason |
+|---|---|---|
+| Default no-real-compute | Required blocking lane | Ensures no optional-real feature is default. |
+| Stub fixture | Required blocking lane | Deterministic fixture safety. |
+| Toy golden | Required blocking lane | Portable local golden safety; unrelated to real inference. |
+| Burn/Candle optional-real compile | Explicit feature-matrix compile lane | Catches compile regressions without runtime claims. |
+| LLM/LFM optional feature probes | Explicit compile-only lane if cost stays acceptable | Feature-specific coverage without model/artifact claims. |
+| Remote/external | Excluded from default; optional separate compile lane only | Requires external-service semantics for runtime use. |
+| Artifact-backed runtime fixture | Deferred until pinned local artifact exists | Required before any `OptionalRealRuntime` claim. |
+
+Docs that mention Burn, Candle, LLM, LFM, remote compute, or AI runtime compatibility must keep the boundary explicit: compile support is not runtime inference support; optional-real-compile is not optional-real-runtime; no production claim exists; no external service is used by default; Minimal Spine v1.x does not depend on compute.
