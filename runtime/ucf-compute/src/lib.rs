@@ -72,6 +72,7 @@ pub mod ipc;
 pub mod job_history;
 pub mod lfm;
 pub mod model_store;
+pub mod output_link;
 pub mod pipeline;
 pub mod reference_map;
 #[cfg(feature = "remote-compute")]
@@ -396,6 +397,9 @@ pub use model_store::{
     ModelStore, PromotionBlockerCode, PromotionDecisionState, PromotionEvaluationDisposition,
     PromotionTechnicalSignals, RollbackOutcome, ShadowPathOutcome, SlotActivationAssessment,
     SlotPromotionDecision, SlotRollbackAssessment, SlotWarmupState, SlotWarmupStatus,
+};
+pub use output_link::{
+    ComputeOutputLink, COMPUTE_OUTPUT_LINK_PROVENANCE, COMPUTE_OUTPUT_LINK_VERSION,
 };
 pub use pipeline::{
     BackendExecutionLane, CanonicalAdmissionDecision, CanonicalBackendRoute, CanonicalFailureKind,

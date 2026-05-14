@@ -43,5 +43,6 @@ ucf-nsr = { path = "../../core/crates/ucf-nsr" }
 
 [dev-dependencies]
 serde_json = "1"
+ucf-protocol = { package = "ucf-protocol", path = "../../protocol/crates/ucf-protocol" }
 proptest = "1"
 tempfile = "3"
