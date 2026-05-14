@@ -292,3 +292,19 @@ Prompt 19 re-checked optional-real backend lanes as compile gates only. The resu
 ### 14.3 Future CI recommendation
 
 Keep default CI no-real-compute. Add explicit lanes only as compile gates: no-default, stub fixture, toy golden, optional-real compile checks for passing Burn/Candle features, and separate disabled/deferred notes for any future feature that fails locally. Remote/external lanes should stay excluded from default offline CI and should not be promoted to runtime or production proof.
+
+## 16. Prompt 21 Compute Audit Records Status
+
+Prompt 21 is implemented as optional, compute-owned audit metadata for `ComputeOutputLink`. The new `ComputeAuditRecord` surface is intentionally narrow: it records bounded references to an `OutputRecord` digest, a `ComputeOutputLink` digest, a compute-result digest, backend class/name, and an audit status.
+
+Boundary statements for Prompt 21:
+
+- `ComputeAuditRecord` is a `ucf-compute` derived metadata record only.
+- `ComputeAuditRecord` is not a protocol `OutputRecord` and does not define or change `OutputRecord` schema authority.
+- `ComputeAuditRecord` is not `EvidenceEnvelope` authority, archive authority, or a new canonical Evidence/Archive source.
+- `ComputeAuditRecord` is not a permission record, capability record, policy/output override, or proof of real runtime inference.
+- Current constructors for stub fixture, toy golden, and optional-real compile links set runtime-inference, production, evidence-authority, output-authority, and Minimal-Spine-required flags to `false`.
+- No append helper was added in Prompt 21; audit records are not automatically appended to Evidence or Archive surfaces.
+- Minimal Spine v1.x remains compute-independent; no Gateway, Real Compute activation, external service, Blue-Brain, HH, microcircuit, DBM, Geist, Replay, or Capability integration was added.
+
+Prompt 22 should focus on the compute feature CI matrix while preserving the same naming and authority boundaries.
