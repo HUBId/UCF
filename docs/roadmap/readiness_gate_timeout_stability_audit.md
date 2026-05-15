@@ -72,6 +72,26 @@ Observed result: exit 2 with status `FAIL`. This is expected diagnostic evidence
 | `REVIEW_PACKET_SPINE_DRIFT` | `operator_review_packet_readiness_spine_check.json` emitted `reviewability_reduction_digest_prefix = MISSING` and a review packet digest that the canonical spine included. | Review packet surface is stale/incomplete relative to the canonical reduction input. | high | Update review-packet construction in follow-up to carry the canonical reduction digest. |
 | `WORKFLOW_SPINE_DRIFT` | `operator_workflow_chain_readiness_spine_check.json` emitted `workflow_stage = WORKFLOW_BLOCKED` and `reviewability_reduction_digest_prefix = MISSING`; remediation requested `run_operator_workflow_chain`. | Workflow chain blocks because upstream operator surfaces are not reduction-aligned. | high | Close signoff/review-packet drift first, then rerun workflow chain and readiness-spine-check. |
 
+
+## 3.1 Prompt 35C Drift Closure Update
+
+Prompt 35C closed the readiness-spine drift categories without weakening the checker. The current canonical reviewability reduction digest prefix for the evaluated HEAD is `6746d727b0f76066`. The stale/mismatched surfaces were the operator signoff, operator review packet, and operator workflow chain reduction-digest fields produced during `readiness-spine-check`.
+
+Fix summary:
+
+- `readiness-spine-check` now materializes its freshly derived backend evidence snapshot, active-review snapshot, operator report, signoff, and review packet into the evaluated workdir `out/` surface before deriving downstream operator surfaces.
+- Operator report, signoff, and review-packet discovery now reads from the command workdir `out/` instead of an unrelated process-root `./out` surface.
+- Operator signoff keeps strict gate blocking semantics, but derives the reviewability reduction digest from the non-strict canonical reviewability context used by the readiness spine so strict evidence absence cannot create a digest-only drift.
+- Operator review packet embeds the canonical reduction digest from the signoff surface when present; workflow then inherits the same digest from review-packet/signoff inputs.
+
+Validation status after Prompt 35C:
+
+| Command | Result | Notes |
+|---|---|---|
+| `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json` | PASS | No drift categories; fresh report was generated for the current evaluated HEAD and intentionally not committed. |
+
+The cold-cache readiness-gate timeout risk remains separate from spine drift. Prompt 35C does not claim that local cold-cache gate timing is resolved; it only closes the reduction/signoff/review-packet/workflow alignment failure.
+
 ## 4. Timeout Reproduction
 
 | Command | Result | Duration | Output observed | Artifact produced? |

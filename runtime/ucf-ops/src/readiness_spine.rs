@@ -7,12 +7,13 @@ use serde::{Deserialize, Serialize};
 use crate::{
     derive_canonical_governance_entry, derive_slot_reviewability_truths,
     load_applied_supported_set_context_v1, models_active_review_snapshot, models_evidence_snapshot,
-    operator_review_packet, operator_signoff, operator_workflow_chain, prefix_hex,
+    operator_report, operator_review_packet, operator_signoff, operator_workflow_chain, prefix_hex,
     reduce_reviewability, require_canonical_governance_entry, resolve_strict_evidence,
     validate_governance_primary_surfaces_with_applied_scope, AppliedSupportedSetContextV1,
-    CanonicalGovernanceEntryV1, OperatorReviewPacketArgs, OperatorReviewPacketV1,
-    OperatorSignoffArgs, OperatorSignoffDecisionV1, OperatorWorkflowArgs, OperatorWorkflowChainV1,
-    OpsError, ReviewabilityReductionV1, SlotReviewabilityTruthV1, StrictEvidenceContextV1,
+    CanonicalGovernanceEntryV1, OperatorReportArgs, OperatorReviewPacketArgs,
+    OperatorReviewPacketV1, OperatorSignoffArgs, OperatorSignoffDecisionV1, OperatorWorkflowArgs,
+    OperatorWorkflowChainV1, OpsError, ReviewabilityReductionV1, SlotReviewabilityTruthV1,
+    StrictEvidenceContextV1,
 };
 
 pub const CANONICAL_READINESS_SPINE_REQUIRED: &str = "CANONICAL_READINESS_SPINE_REQUIRED";
@@ -445,6 +446,24 @@ pub fn readiness_spine_check(
     );
     let truths = derive_slot_reviewability_truths(&applied_scope, &backend, &active, &strict)?;
     let reduction = reduce_reviewability(&applied_scope, &truths)?;
+    let out_root = workdir.join("out");
+    fs::create_dir_all(&out_root)?;
+    fs::write(
+        out_root.join("backend_evidence_snapshot.json"),
+        serde_json::to_vec_pretty(&backend)?,
+    )?;
+    fs::write(
+        out_root.join("active_review_snapshot.json"),
+        serde_json::to_vec_pretty(&active)?,
+    )?;
+    let _operator_report = operator_report(
+        workdir,
+        &OperatorReportArgs {
+            run_id: None,
+            latest: false,
+        },
+        &out_root.join("operator_report.json"),
+    )?;
     let surfaces =
         validate_governance_primary_surfaces_with_applied_scope(&backend, &active, &applied_scope)?;
     let entry = derive_canonical_governance_entry(&applied_scope, &surfaces)?;
@@ -459,6 +478,10 @@ pub fn readiness_spine_check(
         },
         &workdir.join("out/operator_signoff_readiness_spine_check.json"),
     )?;
+    fs::write(
+        out_root.join("operator_signoff.json"),
+        serde_json::to_vec_pretty(&signoff)?,
+    )?;
     let packet = operator_review_packet(
         workdir,
         &OperatorReviewPacketArgs {
@@ -466,6 +489,10 @@ pub fn readiness_spine_check(
             latest: false,
         },
         &workdir.join("out/operator_review_packet_readiness_spine_check.json"),
+    )?;
+    fs::write(
+        out_root.join("operator_review_packet.json"),
+        serde_json::to_vec_pretty(&packet)?,
     )?;
     let workflow = operator_workflow_chain(
         workdir,
