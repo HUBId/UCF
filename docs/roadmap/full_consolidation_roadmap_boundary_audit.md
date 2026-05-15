@@ -249,3 +249,25 @@ Prompt 31 is complete. The roadmap now has a pure deterministic MacroMilestone c
 | Protocol schema | Unchanged; the Macro provenance gap is documented as wrapper metadata. |
 
 Recommended next prompt: **UCF Prompt 32 — MacroMilestone Finalization Boundary Without Geist/ISM**.
+
+## 16. Prompt 32 Completion Note
+
+Prompt 32 is complete. The roadmap now has a narrow local MacroMilestone finalization boundary for consolidation-level completeness only.
+
+| Boundary | Prompt 32 result |
+|---|---|
+| Implementation decision | Option B — add `MinimalSpineMacroConsolidationFinalization` as a local boundary record. |
+| Consolidation finalization only | `consolidation_finalized == true` means the macro candidate passed local structural completeness checks for consolidation. |
+| Candidate validation | The boundary rejects candidates that are already finalized, identity anchors, zero-digest candidates, or candidates whose stored candidate digest does not match their deterministic digest. |
+| Candidate mutation | The source `MinimalSpineMacroMilestoneCandidate` is borrowed and not mutated. |
+| Identity finalization | Not implemented; `identity_anchor == false`. |
+| Geist/ISM | Not integrated; no `GeistKernel::ingest_macro`, no ISM write, and `geist_ingested == false`. |
+| Replay/Sleep | Not integrated; no Replay Scheduler, no replay completion proof, no Sleep cycle coupling, and `replay_completed == false`. |
+| Evidence/Archive authority | Not changed; the boundary record does not append and `evidence_archive_appended == false`. |
+| Gateway / capabilities / real compute | Not activated; `gateway_visible == false`, no capability issuance, and no real-compute activation. |
+| Broad macro-finalized APIs | `ArchiveMilestoneSink::emit_macro` and `MacroMilestoneFinalized` publication remain out of scope because they append/publish and can update sleep-derived record tracking. |
+| Minimal Spine v1.x | Unchanged. |
+| Protocol schema | Unchanged; finalization boundary metadata remains in the consolidation wrapper. |
+| Test path | `domains/consolidation/crates/ucf-consolidation/tests/minimal_spine_macro_finalization_boundary.rs` |
+
+Recommended next prompt: **UCF Prompt 33 — Consolidation Pipeline E2E Determinism**.
