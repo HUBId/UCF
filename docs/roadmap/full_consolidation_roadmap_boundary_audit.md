@@ -212,3 +212,19 @@ Prompt 29 is complete. The roadmap now has a pure deterministic MesoMilestone ag
 | Protocol schema | Unchanged; the Meso provenance gap is documented as wrapper metadata. |
 
 Recommended next prompt: **UCF Prompt 30 — MesoMilestone Archive/Readback Tests**.
+
+## 14. Prompt 30 Completion Note
+
+Prompt 30 is complete. The meso line now has an explicit Evidence/Archive append/readback contract without changing Evidence/Archive authority or Minimal Spine v1.x.
+
+| Boundary | Prompt 30 result |
+|---|---|
+| Explicit append only | `append_minimal_spine_meso_milestone` is the only new meso append surface. |
+| Pure builder preserved | The Prompt 29 meso builders remain store-free and append-free. |
+| Provenance | `MinimalSpineMesoMilestoneAppendPayload` preserves meso and micro provenance outside the protocol `MesoMilestone` schema. |
+| Evidence/Archive authority | Readback remains through `ucf-evidence::EvidenceStore::get` and `ucf-archive-store::ArchiveStore::get`; consolidation does not become a second event log. |
+| Archive kind | Uses extension `RecordKind::Other(30)` for Minimal Spine meso append records because no canonical meso archive kind exists. |
+| `ArchiveMilestoneSink` | Avoided; it remains too broad for this narrow contract because it can publish index events, update sleep-state derived-record tracking, and expose macro finalization paths. |
+| Replay/Sleep/Geist/ISM/Macro | Not activated, integrated, emitted, aggregated, or finalized. |
+
+Recommended next prompt: **UCF Prompt 31 — MacroMilestone Candidate Builder**.
