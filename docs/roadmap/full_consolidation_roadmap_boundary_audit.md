@@ -57,6 +57,7 @@ Companion links:
 - [`docs/module_implementation_depth_registry.md`](../module_implementation_depth_registry.md)
 - [`docs/current_state_architecture_index.md`](../current_state_architecture_index.md)
 - [`docs/roadmap/consolidation_record_authority_schema_alignment.md`](consolidation_record_authority_schema_alignment.md)
+- [`docs/roadmap/full_consolidation_closure.md`](full_consolidation_closure.md)
 
 ## 2. Consolidation Code Inventory
 
@@ -335,3 +336,12 @@ Before future docs can claim production consolidation:
 - Append/readback contracts for Micro/Meso/Macro complete.
 - Replay/Geist boundaries clear.
 - Docs lint/readiness fresh.
+
+
+## 19. Prompt 35 Consolidation Readiness Refresh
+
+Prompt 35 is partially complete as a validation baseline and closure-risk record. The bounded consolidation implementation tests, related Replay and Geist packages, workspace tests, docs lint, formatting, and clippy passed. The readiness gate did not produce a fresh passing report: both guarded 300 second runs timed out, including the `UCF_OFFLINE=1` attempt.
+
+The current closure baseline is documented in [`docs/roadmap/full_consolidation_closure.md`](full_consolidation_closure.md). Because the readiness gate timeout remains reproducible in this environment, the bounded Consolidation line should not be overclaimed as fully validation-closed until a gate-stability follow-up completes.
+
+Recommended next prompt: **UCF Prompt 35A — Readiness Gate Timeout Stability Audit**.
