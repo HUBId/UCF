@@ -5103,8 +5103,16 @@ mod tests {
 
     #[test]
     fn worker_launch_failure_is_reported_as_structured_execution_error() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let previous = std::env::var("UCF_WORKER_BIN").ok();
-        std::env::set_var("UCF_WORKER_BIN", "definitely-missing-ucf-worker-binary");
+        let missing_worker_bin = std::env::temp_dir().join(format!(
+            "definitely-missing-ucf-worker-binary-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&missing_worker_bin);
+        std::env::set_var("UCF_WORKER_BIN", &missing_worker_bin);
         let mut service =
             InMemoryComputeService::new_worker(42, 1).expect("worker backend should construct");
         let job_id = service
