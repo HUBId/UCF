@@ -10,6 +10,10 @@ Supported, CI-enforced lanes:
 
 See `docs/feature_matrix.md` for details.
 
+## Consolidation claim boundary
+
+Current consolidation claims are bounded: Micro/Meso explicit append/readback, Macro candidate, and a local consolidation-level finalization boundary are covered by the consolidation roadmap/E2E tests; Replay/Sleep/Geist/ISM, identity anchoring, Gateway writes, capabilities, real compute, and production consolidation readiness remain deferred. See `docs/roadmap/full_consolidation_roadmap_boundary_audit.md` and `docs/roadmap/consolidation_record_authority_schema_alignment.md`.
+
 ## Post-rc1 hardening commands
 - Determinism scan: `cargo run -p ucf-ops -- determinism scan`
 - Hidden path audit scan: `cargo run -p ucf-ops -- audit scan`
