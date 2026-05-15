@@ -334,3 +334,26 @@ Prompt 32 is implemented as a local, deterministic, consolidation-level finaliza
 | Prompt | Status | Implemented surface | Boundary result | Recommended next prompt |
 |---:|---|---|---|---|
 | 32 | complete | `MinimalSpineMacroConsolidationFinalization` local boundary record and deterministic boundary tests | Consolidation-level macro finalization only; no identity anchor, no Geist/ISM ingestion, no Replay completion, no Evidence/Archive append, no Gateway write, no broad macro-finalized publish path | Prompt 33 — Consolidation Pipeline E2E Determinism |
+
+## 17. Prompt 33 Consolidation Pipeline E2E Determinism Status
+
+Prompt 33 is implemented as an integration-test-only deterministic Micro→Meso→Macro→local-finalization test path. It does not introduce a new pipeline runtime, scheduler, sink, event-log authority, or protocol schema.
+
+| Boundary | Prompt 33 result |
+|---|---|
+| Test path | `domains/consolidation/crates/ucf-consolidation/tests/minimal_spine_consolidation_pipeline_e2e.rs` |
+| E2E sequence | Micro candidates → micro build outputs → explicit micro append/readback payloads → meso build output → explicit meso append/readback payload → macro candidate → local consolidation finalization boundary. |
+| Determinism | Two runs with identical inputs and fresh `InMemoryEvidenceStore`, `InMemoryArchiveStore`, and `ArchiveAppender` instances compare equal micro build digests, micro payload/readback digests, meso build digest, meso payload/readback digest, macro candidate digest, and finalization digest. |
+| Provenance continuity | Micro payload and milestone digests are asserted in meso output/payload; meso payload, build-output, milestone, and aggregation digests are asserted in the macro candidate; the macro candidate digest is asserted in the finalization boundary. |
+| Explicit append/readback | Append/readback remains explicit for Micro and Meso only through `append_minimal_spine_micro_milestone` and `append_minimal_spine_meso_milestone`. |
+| Builder purity | Micro, Meso, Macro candidate, and finalization builders remain append-free; builder-only tests assert empty Evidence/Archive stores. |
+| Replay/Sleep/Geist/ISM | Still excluded; no scheduler, sleep-cycle integration, Geist ingestion, or ISM write is activated. |
+| Gateway/capability/real compute | Still excluded; no Gateway write API, capability issuance, or real-compute activation is added. |
+| Identity | No identity finalization and no identity anchor; macro candidate keeps `identity_anchor == false` and the local boundary keeps `identity_anchor == false`. |
+| Evidence/Archive authority | Existing Evidence/Archive append/readback APIs remain the only append authority for Micro/Meso records. |
+| `ArchiveMilestoneSink` / macro finalized event | Not used; no `MacroMilestoneFinalized` event is produced. |
+| Minimal Spine v1.x | Unchanged. |
+| Protocol schema | Unchanged. |
+| Duplicate/invalid handling | Duplicate Micro payloads are rejected before Meso aggregation; duplicate Meso payloads are rejected before Macro candidate aggregation; invalid zero-link Micro candidates are rejected by the Micro builder path. |
+
+Recommended next prompt: **UCF Prompt 34 — Consolidation Docs Overclaim Guard**.

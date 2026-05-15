@@ -271,3 +271,19 @@ Prompt 32 is complete. The roadmap now has a narrow local MacroMilestone finaliz
 | Test path | `domains/consolidation/crates/ucf-consolidation/tests/minimal_spine_macro_finalization_boundary.rs` |
 
 Recommended next prompt: **UCF Prompt 33 — Consolidation Pipeline E2E Determinism**.
+
+## 17. Prompt 33 Completion Note
+
+Prompt 33 is complete. The consolidation roadmap now has an E2E determinism test for the current explicit Minimal Spine consolidation sequence without broadening runtime authority or finalization semantics.
+
+| Boundary | Prompt 33 result |
+|---|---|
+| E2E determinism | `minimal_spine_consolidation_pipeline_e2e.rs` runs the same Micro→Meso→Macro→local-finalization sequence twice with fresh stores and compares all relevant digests/readback digests. |
+| Provenance continuity | Micro append payload provenance is asserted in Meso output/payload; Meso append payload and aggregation provenance is asserted in Macro candidate; Macro candidate digest is asserted in the local finalization boundary. |
+| Explicit append only | Micro and Meso append/readback happen only through explicit append helpers; builders are separately asserted append-free. |
+| Finalization boundary | The final step remains `MinimalSpineMacroConsolidationFinalization`, with `consolidation_finalized == true` and identity, replay, Geist/ISM, Evidence/Archive append, and Gateway flags false. |
+| Evidence/Archive authority | Existing Evidence/Archive stores remain the append/readback authority; consolidation does not introduce a second event log. |
+| Exclusions preserved | No Replay Scheduler, Sleep cycle integration, Geist/ISM integration, Gateway write API, capability issuance, real compute activation, identity finalization, identity anchor, `ArchiveMilestoneSink`, or `MacroMilestoneFinalized` event is added. |
+| Minimal Spine / protocol | Minimal Spine v1.x and protocol schemas remain unchanged. |
+
+Recommended next prompt: **UCF Prompt 34 — Consolidation Docs Overclaim Guard**.
