@@ -9,6 +9,7 @@ prost = "0.12"
 ucf-protocol = { path = "../../../../protocol/crates/ucf-protocol" }
 ucf-archive = { path = "../../../../domains/archive/crates/ucf-archive" }
 ucf-archive-store = { workspace = true }
+ucf-evidence = { path = "../../../../core/crates/ucf-evidence" }
 ucf-bus = { path = "../../../../core/crates/ucf-bus" }
 ucf-commit = { path = "../../../../core/crates/ucf-commit" }
 ucf-consistency-engine = { path = "../../../../core/crates/ucf-consistency-engine" }
