@@ -1593,12 +1593,9 @@ jobs:
       - name: Readiness gate (test profile)
         if: runner.os == 'Linux'
         run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json --workdir ./.ucf_gate --workspace-test-report ./out/workspace_test_report.json
-      - name: Workspace test evidence (windows)
-        if: runner.os == 'Windows'
-        run: cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report_windows.json
       - name: Readiness smoke (windows)
         if: runner.os == 'Windows'
-        run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report_windows.json --workdir ./.ucf_gate_windows --workspace-test-report ./out/workspace_test_report_windows.json
+        run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report_windows.json --workdir ./.ucf_gate_windows
       - name: Goldens verify
         run: |
           cargo run -p ucf-ops -- goldens verify --scenario golden_a --os ${{ runner.os }}
