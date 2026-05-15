@@ -39,6 +39,7 @@ fn nightly_summary_is_deterministic_and_actionable() {
             timestamp: None,
             status: GateStatus::Pass,
             checks: Vec::new(),
+            phase_timings: Vec::new(),
             weights_lifecycle: None,
             world_vljepa_evidence: None,
             sae_real: None,

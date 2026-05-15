@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::sync::{Mutex, OnceLock};
 
@@ -5,8 +6,9 @@ use tempfile::tempdir;
 use ucf_ops::{
     attest_bundle, attest_run, attest_verify, bringup, diagnostics, export_bugreport,
     load_signoff_checklist, models_promote, models_stage, one_command_bringup, out_manifest,
-    parse_slot, readiness_gate, release_signoff_validate, replay_audit, replay_bugreport, v0_gate,
-    verify_bugreport, world_shadow_report, ExportArgs, GateStatus, SpecSnapshotArgs,
+    parse_slot, readiness_gate, release_signoff_validate, replay_audit, replay_bugreport,
+    run_gate_check_phase, v0_gate, verify_bugreport, world_shadow_report, CheckResult, ExportArgs,
+    GateStatus, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -115,6 +117,23 @@ fn one_command_bringup_writes_release_artifacts() {
 }
 
 #[test]
+fn gate_check_phase_timing_records_failure_status() {
+    let mut timings = Vec::new();
+    let check = run_gate_check_phase(&mut timings, "unit failure phase", || CheckResult {
+        name: "unit_failure".to_string(),
+        status: GateStatus::Fail,
+        evidence: BTreeMap::new(),
+        failure_reason: Some("intentional failure".to_string()),
+        remediation_hint: Some("preserve failure status".to_string()),
+    });
+
+    assert_eq!(check.status, GateStatus::Fail);
+    assert_eq!(timings.len(), 1);
+    assert_eq!(timings[0].name, "unit failure phase");
+    assert_eq!(timings[0].status, GateStatus::Fail);
+}
+
+#[test]
 fn readiness_gate_writes_report() {
     let _guard = gate_test_lock().lock().expect("lock");
     std::env::set_var("UCF_SKIP_GATE_WORKSPACE_TESTS", "1");
@@ -125,6 +144,11 @@ fn readiness_gate_writes_report() {
 
     assert!(out.exists());
     assert!(!report.checks.is_empty());
+    assert!(!report.phase_timings.is_empty());
+    assert!(report
+        .phase_timings
+        .iter()
+        .any(|timing| timing.name == "internal workspace test/offline cargo check"));
     assert!(matches!(report.status, GateStatus::Pass | GateStatus::Fail));
 }
 
