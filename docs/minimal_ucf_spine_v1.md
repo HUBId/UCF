@@ -400,14 +400,19 @@ The Consolidation Hook v1.3 boundary is:
 - Gateway remains read-only for Minimal Spine v1.3 and receives no trigger/write endpoint for this
   hook.
 
-Implementation status: v1.3 implements the minimal crate-local candidate type and deterministic
+Implementation status for the frozen v1.3 hook: v1.3 implements the minimal crate-local candidate type and deterministic
 constructor in `domains/consolidation/crates/ucf-consolidation`. This is intentionally smaller than
 the existing consolidation kernel, which can still build Micro/Meso/Macro milestones and schedule
 sleep replay in broader contexts. Minimal Spine v1.3 does not call that broad kernel.
 
-Future v2 path: a full Micro -> Meso -> Macro consolidation pipeline may consume the same canonical
-Evidence/Archive commitments only after a separate spec defines authority boundaries, replay policy,
-macro finalization rules, audit artifacts, and integration tests.
+Post-v1.x consolidation status note: later consolidation work is tracked in
+`docs/roadmap/full_consolidation_roadmap_boundary_audit.md` and
+`docs/roadmap/consolidation_record_authority_schema_alignment.md`. That line currently covers a
+bounded deterministic Micro -> Meso -> Macro E2E test with Micro/Meso explicit append/readback, a
+Macro candidate, and a local consolidation-level finalization boundary. It still does not establish
+Replay/Sleep/Geist/ISM integration, identity finalization, identity anchors, Gateway-visible
+consolidation, capability relevance, real compute activation, production readiness, or a second
+event log. Minimal Spine v1.x remains unchanged.
 
 ## 14. Minimal Spine Neuromod Envelope Hook v1.4
 

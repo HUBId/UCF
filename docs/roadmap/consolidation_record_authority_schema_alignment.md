@@ -7,6 +7,7 @@
 - Not a pipeline implementation.
 - Not Replay/Geist/ISM readiness.
 - Does not change Minimal Spine v1.x, Evidence/Archive authority, or any historical document.
+- Current claim boundaries are guarded by [`docs/roadmap/full_consolidation_roadmap_boundary_audit.md`](full_consolidation_roadmap_boundary_audit.md#01-consolidation-overclaim-guard): Micro/Meso explicit append/readback, Macro candidate, and local consolidation-level finalization only.
 
 ## 1. Baseline
 
@@ -150,7 +151,7 @@ UCF Prompt 27 — Deterministic MicroMilestone Builder from Minimal Spine Links 
 6. Perform no archive append and write no Evidence/Archive records.
 7. Trigger no replay and create no replay tokens/events.
 8. Write no Geist/ISM anchors and perform no identity finalization.
-9. Perform no macro finalization and publish no macro-finalized events.
+9. Perform no broad macro finalization and publish no macro-finalized events; any current completion language is local consolidation-level only.
 10. Depend on no real compute, Gateway write API, capability issuance, or sleep-cycle coordinator.
 11. Include tests for determinism, canonical bytes/digest stability, candidate-to-record provenance, and negative boundary assertions for archive/replay/geist/macro side effects.
 12. If existing `MicroMilestone` fields are insufficient, stop at a documented schema decision rather than overloading fields silently.
@@ -162,7 +163,7 @@ UCF Prompt 27 — Deterministic MicroMilestone Builder from Minimal Spine Links 
 - How should candidate-to-record provenance be represented without overloading `label`?
 - Where should the builder live: `ucf-consolidation`, `ucf-protocol`, or a small bridging module?
 - How do we avoid `ArchiveMilestoneSink` side effects in a pure builder while still preparing for a later append/readback contract?
-- What does Macro finalized mean without Geist/ISM?
+- What future runtime event vocabulary, if any, should differ from the current local consolidation-level finalization boundary without Geist/ISM?
 - Should `protocol/crates/ucf-protocol/spec/messages_v1.md` commitment-field text be reconciled with the Rust `spec` structs and `spec/v1.md` before Prompt 27 or as part of a later schema prompt?
 
 ## 11. Prompt 27 Deterministic MicroMilestone Builder Status
@@ -287,13 +288,13 @@ The current protocol `MacroMilestone` surface carries milestone id, achieved-at 
 
 ### Prompt 31 boundary statement
 
-The MacroMilestone candidate builder is not finalization. It does not append Evidence or Archive records, does not use `ArchiveMilestoneSink`, does not publish `MacroMilestoneFinalized`, does not mark an identity anchor, does not trigger Replay/Sleep/Geist/ISM, does not issue capabilities, and does not change Minimal Spine v1.x authority. Future Prompt 32 should define the macro finalization boundary without Geist/ISM.
+The MacroMilestone candidate builder is not finalization. It does not append Evidence or Archive records, does not use `ArchiveMilestoneSink`, does not publish `MacroMilestoneFinalized`, does not mark an identity anchor, does not trigger Replay/Sleep/Geist/ISM, does not issue capabilities, and does not change Minimal Spine v1.x authority. Prompt 32 later defined only a local consolidation-level finalization boundary without Geist/ISM.
 
 | Prompt | Status | Implemented surface | Boundary result | Recommended next prompt |
 |---:|---|---|---|---|
 | 31 | complete | `MinimalSpineMacroMilestoneCandidate` plus pure builders from meso payloads/build outputs | Macro candidate only, deterministic, provenance-preserving, append-free, replay/sleep/geist/ISM-free, no identity anchor, no Minimal Spine v1.x changes | Prompt 32 — MacroMilestone Finalization Boundary Without Geist/ISM |
 
-## 16. Prompt 32 MacroMilestone Finalization Boundary Status
+## 16. Prompt 32 Local Consolidation Finalization Boundary Status
 
 Prompt 32 is implemented as a local, deterministic, consolidation-level finalization boundary record. It deliberately does not use the existing broad `ArchiveMilestoneSink::emit_macro` / `MacroMilestoneFinalized` publication path.
 
@@ -333,7 +334,7 @@ Prompt 32 is implemented as a local, deterministic, consolidation-level finaliza
 
 | Prompt | Status | Implemented surface | Boundary result | Recommended next prompt |
 |---:|---|---|---|---|
-| 32 | complete | `MinimalSpineMacroConsolidationFinalization` local boundary record and deterministic boundary tests | Consolidation-level macro finalization only; no identity anchor, no Geist/ISM ingestion, no Replay completion, no Evidence/Archive append, no Gateway write, no broad macro-finalized publish path | Prompt 33 — Consolidation Pipeline E2E Determinism |
+| 32 | complete | `MinimalSpineMacroConsolidationFinalization` local boundary record and deterministic boundary tests | Local consolidation-level finalization only; no identity anchor, no Geist/ISM ingestion, no Replay completion, no Evidence/Archive append, no Gateway write, no broad macro-finalized publish path | Prompt 33 — Consolidation Pipeline E2E Determinism |
 
 ## 17. Prompt 33 Consolidation Pipeline E2E Determinism Status
 

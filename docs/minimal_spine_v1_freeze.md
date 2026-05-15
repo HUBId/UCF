@@ -126,6 +126,7 @@ The v1.x freeze explicitly forbids these claims unless a future explicit prompt,
 - No full metabolic layer claim.
 - No DBM/HPA integration claim.
 - No full consolidation claim.
+- Post-freeze consolidation work is tracked separately in `docs/roadmap/full_consolidation_roadmap_boundary_audit.md`; it currently proves only bounded Micro/Meso explicit append/readback, Macro candidate, and local consolidation-level finalization, with no Replay/Sleep/Geist/ISM/identity/Gateway/capability production claim.
 - No Macro/Replay claim.
 - No Geist/ISM claim.
 - No Gateway production/security claim.

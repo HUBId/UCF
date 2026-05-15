@@ -7,6 +7,30 @@
 - This is not full Replay, Geist, ISM, neuromod scheduler, DBM, HPA, real-compute, capability-issuance, or production readiness.
 - Minimal Spine v1.x remains frozen; this document plans the next line without changing Minimal Spine v1.x semantics.
 
+
+## 0.1 Consolidation Overclaim Guard
+
+Current consolidation claims are limited to the bounded deterministic path exercised by `domains/consolidation/crates/ucf-consolidation/tests/minimal_spine_consolidation_pipeline_e2e.rs` and its component boundary tests. The current state is:
+
+| Guard | Meaning |
+|---|---|
+| Micro builder and append/readback are implemented. | `MinimalSpineMicroMilestoneCandidate`, the micro builder output, and explicit micro append/readback contracts exist for the Minimal Spine consolidation path. |
+| Meso builder and append/readback are implemented. | Deterministic meso aggregation and explicit meso append/readback contracts exist for the same bounded path. |
+| Macro candidate is implemented. | Macro output is a deterministic candidate wrapper, not an identity anchor and not a broad runtime event. |
+| Local consolidation-level finalization boundary is implemented. | `MinimalSpineMacroConsolidationFinalization` records local structural completeness for consolidation only. |
+| This is not Geist/ISM integration. | No Geist ingestion, ISM write, self-state authority, recursion authority, or identity-anchor semantics are introduced. |
+| This is not identity finalization. | A macro candidate or local consolidation boundary must not be described as identity finalized, a character anchor, a Macro identity anchor, or a long-term identity anchor. |
+| This is not replay completion. | No Replay Scheduler, deterministic replay-token scheduler line, replay-completion proof, or replay-mediated write path is introduced. |
+| This is not sleep cycle readiness. | No Sleep Cycle Coordinator, sleep-cycle integration, or sleep-state authority is introduced by the bounded consolidation tests. |
+| This is not Gateway-visible consolidation. | No Gateway write API, trigger endpoint, or externally visible consolidation authority is added. |
+| This is not production consolidation readiness. | The bounded tests do not establish prod-profile readiness, protocol/provenance closure, broad runtime scheduling, or operational rollout. |
+| Evidence/Archive remain append/readback authority. | Consolidation builds deterministic payloads and delegates explicit Micro/Meso append/readback to existing Evidence/Archive surfaces. |
+| `ArchiveMilestoneSink` / `MacroMilestoneFinalized` remain out of bounded E2E. | The broad sink and macro-finalized publication path are not used and must not be treated as canonical for the tested path. |
+
+Allowed shorthand for the current state: **bounded deterministic Micro→Meso→Macro E2E test with Micro/Meso explicit append/readback, Macro candidate, and local consolidation-level finalization boundary**.
+
+Forbidden shorthand for the current state: full memory readiness, full replay readiness, sleep-cycle readiness, Geist/ISM integration, identity finalization, identity anchor, `MacroMilestoneFinalized` runtime event, production consolidation pipeline, second event log, Gateway-visible consolidation, capability-relevant consolidation, or real-compute activation.
+
 ## 1. Baseline
 
 | Field | Value |
@@ -119,13 +143,13 @@ Boundary conclusions:
 | Meso | Deterministically aggregate approved/archived micro milestones into meso candidates/records. | Ordered or sorted micro milestone IDs/commits, source batch metadata, evidence/archive references from micro layer. | Meso candidate first; later protocol `MesoMilestone` plus explicit archive/readback proof. | No sleep cycle activation, no policy override, no nondeterministic grouping. |
 | Macro | Deterministically build macro milestone candidates from meso milestones with clearly bounded finalization language. | Meso milestone IDs/commits, aggregation policy, archive/evidence provenance, explicit candidate/finalized state semantics. | Macro candidate first; later protocol `MacroMilestone` append only after boundary tests. | No Geist/ISM identity finalization, no capability issuance, no replay scheduler, no real-compute activation. |
 
-Full Micro→Meso→Macro Consolidation later means deterministic creation/aggregation/candidate behavior, explicit Evidence/Archive append behavior, stable digests, and no implicit Replay/Geist/ISM/identity claims.
+Future full Micro→Meso→Macro consolidation remains a roadmap label. The current implemented boundary means deterministic Micro/Meso builders, Micro/Meso explicit append/readback, Macro candidate construction, local consolidation-level finalization, stable digests, and no implicit Replay/Sleep/Geist/ISM/identity/Gateway/capability claims.
 
 ## 7. Risk / Boundary Matrix
 
 | Risk | Severity | Evidence | Guardrail |
 |---|---|---|---|
-| Macro finalization overclaim | critical | Existing sink can publish macro-finalized envelopes during `emit_macro`. | Prompt 26 must define macro candidate/finalized vocabulary; no macro-finalized event expansion before dedicated boundary tests. |
+| Macro finalization overclaim | critical | Existing sink can publish macro-finalized envelopes during `emit_macro`. | Use consolidation-level finalization wording only for the current boundary; no macro-finalized event expansion without a dedicated future prompt. |
 | Replay accidental activation | critical | `run_sleep_replay` appends replay token/applied archive records when invoked. | Keep replay APIs untouched; tests for full consolidation must assert no replay records unless explicit replay prompt. |
 | Geist/ISM identity overclaim | critical | Geist exists as partial/research surface and archive store has `IsmAnchor`. | Macro milestones are not identity or ISM finality; no Geist/ISM writes in consolidation prompts. |
 | Evidence/Archive authority confusion | high | `ArchiveMilestoneSink` appends derived records through archive/evidence APIs. | Treat Evidence/Archive as authority and consolidation as caller/deriver only; append must be explicit and audited. |
@@ -146,7 +170,7 @@ Full Micro→Meso→Macro Consolidation later means deterministic creation/aggre
 | 29 | Deterministic MesoMilestone Aggregation | Add pure meso aggregation from archived/approved micro milestones. | Pure aggregation, ordering policy, golden digest tests. | Same inputs produce same meso candidate/record. | No macro, replay, sleep, or Geist. |
 | 30 | MesoMilestone Archive/Readback Tests | Add explicit meso append/readback proof tests. | Meso-only archive contract. | Meso archive payload and proof read back deterministically. | No macro-finalized events. |
 | 31 | MacroMilestone Candidate Builder | Add pure macro candidate builder from meso milestones. | Candidate-only macro construction and golden tests. | Macro candidate stable and clearly non-identity. | No finalization, no Geist/ISM, no replay. |
-| 32 | MacroMilestone Finalization Boundary Without Geist/ISM | Define bounded macro emission/finalization semantics. | Boundary docs/tests; possibly no-op or disabled sink checks. | Macro finalization cannot imply identity/ISM or capability authority. | No Geist/ISM write, no identity finalization claim. |
+| 32 | MacroMilestone Finalization Boundary Without Geist/ISM | Define a bounded local consolidation-level finalization boundary. | Boundary docs/tests; no broad sink activation. | Consolidation-level finalization cannot imply identity/ISM, replay completion, Gateway visibility, or capability authority. | No Geist/ISM write, no identity finalization claim. |
 | 33 | Consolidation Pipeline E2E Determinism | Add pure or explicitly appended end-to-end determinism tests. | Micro→meso→macro deterministic flow under controlled fixtures. | Repeated runs match digests and readback. | Replay scheduler remains absent; no compute activation. |
 | 34 | Consolidation Docs Overclaim Guard | Update current docs to guard historical claims. | Docs-only. | Current-state index and registry point to validated capabilities and deferred surfaces. | Do not delete historical docs. |
 | 35 | Consolidation Readiness Refresh | Re-run workspace, targeted tests, docs lint, readiness gate, and clippy for the consolidation line. | Validation/report discipline. | Fresh validation summary; no committed `out/*.json` unless required. | No new features. |
@@ -156,7 +180,7 @@ Full Micro→Meso→Macro Consolidation later means deterministic creation/aggre
 - Are protocol milestone records sufficient for source/evidence/archive linkage, or are wrapper/companion records required?
 - Where should micro/meso/macro builders live: `ucf-consolidation`, a code-near protocol helper, or a narrower submodule?
 - Should `ArchiveMilestoneSink` be reused directly, wrapped behind an explicit contract, or split into pure builder plus append sink?
-- What is candidate vs finalized semantics for each layer, especially macro?
+- What future protocol vocabulary should distinguish candidate, append/readback, local consolidation-level finalization, and any later runtime finalization event?
 - What gets archived and when: candidate, protocol milestone, derived `ExperienceRecord`, proof envelope, archive-store record, or all of these?
 - What remains out of scope until Replay/Geist prompts: replay scheduler, sleep cycles, Geist/ISM writes, identity finalization, neuromod scheduler, capability issuance, and Gateway write APIs?
 
@@ -287,3 +311,27 @@ Prompt 33 is complete. The consolidation roadmap now has an E2E determinism test
 | Minimal Spine / protocol | Minimal Spine v1.x and protocol schemas remain unchanged. |
 
 Recommended next prompt: **UCF Prompt 34 — Consolidation Docs Overclaim Guard**.
+
+## 18. Future Claim Checklist
+
+Before future docs can claim Replay readiness:
+
+- Replay Scheduler prompt implemented.
+- Deterministic replay tokens tested.
+- Replay does not write Geist/ISM unless explicitly scoped.
+- Evidence/Archive provenance preserved.
+
+Before future docs can claim Geist/ISM integration:
+
+- Dedicated Geist/ISM prompt implemented.
+- Identity-anchor semantics defined.
+- No hidden macro-to-identity promotion.
+- Negative tests prove no self-model drift or authority bypass.
+
+Before future docs can claim production consolidation:
+
+- Prod-profile readiness pass.
+- Protocol/provenance schema settled.
+- Append/readback contracts for Micro/Meso/Macro complete.
+- Replay/Geist boundaries clear.
+- Docs lint/readiness fresh.
