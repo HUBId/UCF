@@ -29,6 +29,7 @@
 Baseline links:
 
 - [`docs/roadmap/full_consolidation_roadmap_boundary_audit.md`](full_consolidation_roadmap_boundary_audit.md)
+- [`docs/roadmap/readiness_gate_timeout_stability_audit.md`](readiness_gate_timeout_stability_audit.md)
 - [`docs/roadmap/consolidation_record_authority_schema_alignment.md`](consolidation_record_authority_schema_alignment.md)
 - [`docs/minimal_spine_v1_freeze.md`](../minimal_spine_v1_freeze.md)
 
@@ -87,7 +88,7 @@ Baseline links:
 
 ## 6. Readiness Gate Status
 
-The readiness gate is timeout-risky for this baseline.
+The readiness gate is timeout-risky for this baseline. The follow-up audit is recorded in [`docs/roadmap/readiness_gate_timeout_stability_audit.md`](readiness_gate_timeout_stability_audit.md) and keeps this closure gate-stability-pending.
 
 | Attempt | Command | Result | Notes |
 |---|---|---|---|
