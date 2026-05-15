@@ -157,3 +157,10 @@ Recommended next prompt: **UCF Prompt 25 — Full Micro→Meso→Macro Consolida
 Full Micro→Meso→Macro Consolidation is now the next active roadmap line. The planning and boundary audit is available at [`docs/roadmap/full_consolidation_roadmap_boundary_audit.md`](full_consolidation_roadmap_boundary_audit.md). This line starts with schema/authority alignment and pure deterministic builders; it does not alter the Minimal Spine v1.x freeze and does not activate macro finalization, replay scheduling, Geist/ISM writes, neuromod scheduler/DBM/HPA integration, real compute, Gateway writes, capability issuance, Evidence/Archive authority changes, or a second event log.
 
 Recommended next prompt: **UCF Prompt 26 — Consolidation Record Authority and Schema Alignment**.
+
+
+## 12. Full Consolidation Closure Baseline
+
+The bounded Micro→Meso→Macro consolidation closure baseline is available at [`docs/roadmap/full_consolidation_closure.md`](full_consolidation_closure.md). It records passing targeted consolidation, Replay, Geist, workspace, docs, formatting, and clippy checks, but it also records a reproducible 300 second readiness-gate timeout. Treat the bounded consolidation line as implementation-complete but gate-stability-pending; do not claim production consolidation, Replay/Sleep readiness, Geist/ISM integration, identity finalization, Gateway-visible consolidation, or a second event log.
+
+Recommended next prompt: **UCF Prompt 35A — Readiness Gate Timeout Stability Audit**.
