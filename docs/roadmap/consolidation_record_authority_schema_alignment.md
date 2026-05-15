@@ -237,3 +237,24 @@ Prompt 29 is implemented as a pure, deterministic, append-free MesoMilestone agg
 The current protocol `MesoMilestone` surface carries milestone id, achieved-at timestamp, label, and micro milestone ids. It does not fully carry Minimal Spine micro provenance by itself: micro append payload digests, protocol micro milestone digests, aggregation digest, and source metadata remain outside the protocol meso record. Prompt 29 therefore uses the clearly named `MinimalSpineMesoMilestoneBuildOutput` wrapper rather than overloading the protocol `MesoMilestone` fields or changing protocol schema.
 
 The Prompt 29 aggregator is Meso-only and append-free. It does not call `append_minimal_spine_micro_milestone`, `ArchiveMilestoneSink`, Evidence/Archive stores, Replay, Sleep, Geist, ISM, Macro builders, Gateway write APIs, capability issuance, or real-compute surfaces.
+
+## 14. Prompt 30 Completion Note
+
+Prompt 30 is complete. The roadmap now has a narrow Evidence/Archive append/readback contract for Minimal Spine MesoMilestone build outputs.
+
+| Boundary | Prompt 30 result |
+|---|---|
+| Explicit append only | Append occurs only through `append_minimal_spine_meso_milestone`; the pure Minimal Spine meso builder does not append. |
+| Builder purity | `build_meso_milestone_from_minimal_spine_micro_payloads` and `build_meso_milestone_from_minimal_spine_micro_build_outputs` remain deterministic and append-free. |
+| Provenance | Full meso aggregation provenance remains in `MinimalSpineMesoMilestoneAppendPayload`: meso build-output digest, protocol meso milestone digest, aggregation digest, micro payload digests, micro milestone digests, micro count, and source marker. Protocol `MesoMilestone` is unchanged and still does not carry all provenance by itself. |
+| Evidence/Archive authority | Existing `ucf-evidence::EvidenceStore` and `ucf-archive-store::ArchiveStore` APIs remain the append/readback authority. |
+| Archive kind | `ucf-archive-store::RecordKind::Other(30)` is used as the Minimal Spine meso append extension kind because archive-store has no canonical `MesoMilestone` variant. |
+| `ArchiveMilestoneSink` | Not used for Prompt 30 because it is broader than this meso-only contract and can couple to index publication, sleep-state derived-record tracking, and macro emission/finalization paths. |
+| Replay/Sleep/Geist/ISM | Not integrated or triggered. |
+| Macro | Not built, aggregated, emitted, or finalized. |
+| Minimal Spine v1.x | Unchanged. |
+| Protocol schema | Unchanged; the schema/provenance gap is documented as append-payload provenance. |
+| Second event log | Not introduced; consolidation constructs deterministic payloads and delegates append/readback to Evidence/Archive stores. |
+| Test path | `domains/consolidation/crates/ucf-consolidation/tests/minimal_spine_meso_append.rs` |
+
+Recommended next prompt: **UCF Prompt 31 — MacroMilestone Candidate Builder**.

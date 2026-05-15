@@ -262,6 +262,101 @@ impl MinimalSpineMesoMilestoneBuildOutput {
     }
 }
 
+/// Version for the explicit Minimal Spine meso-milestone append contract payload.
+pub const MINIMAL_SPINE_MESO_MILESTONE_APPEND_PAYLOAD_VERSION: u32 = 1;
+
+/// Explicit contract marker carried in the meso evidence/archive append payload.
+pub const MINIMAL_SPINE_MESO_MILESTONE_APPEND_CONTRACT: &str = "meso_milestone_v1";
+
+/// Extension kind used for Minimal Spine meso-milestone append proof records in archive-store.
+///
+/// `RecordKind` currently has no canonical MesoMilestone variant, so Prompt 30 uses the existing
+/// `Other` extension surface rather than changing archive-store schema or claiming a broader
+/// canonical milestone kind.
+pub const MINIMAL_SPINE_MESO_MILESTONE_ARCHIVE_KIND: RecordKind = RecordKind::Other(30);
+
+/// Deterministic payload appended for a Minimal Spine meso-milestone build output.
+///
+/// The protocol `MesoMilestone` carries protocol micro milestone ids, but it does not carry the
+/// full Minimal Spine aggregation provenance. This payload preserves meso and micro provenance at
+/// the explicit Evidence/Archive boundary without changing protocol schemas or making
+/// consolidation a second event-log authority.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineMesoMilestoneAppendPayload {
+    pub version: u32,
+    pub append_contract: String,
+    pub build_output_digest: Digest32,
+    pub meso_milestone_digest: Digest32,
+    pub aggregation_digest: Digest32,
+    pub micro_count: u32,
+    pub micro_payload_digests: Vec<Digest32>,
+    pub micro_milestone_digests: Vec<Digest32>,
+    pub source: String,
+}
+
+impl MinimalSpineMesoMilestoneAppendPayload {
+    pub fn from_build_output(
+        build_output: &MinimalSpineMesoMilestoneBuildOutput,
+    ) -> Result<Self, ConsolidationError> {
+        let payload = Self {
+            version: MINIMAL_SPINE_MESO_MILESTONE_APPEND_PAYLOAD_VERSION,
+            append_contract: MINIMAL_SPINE_MESO_MILESTONE_APPEND_CONTRACT.to_string(),
+            build_output_digest: build_output.digest(),
+            meso_milestone_digest: build_output.meso_milestone_digest,
+            aggregation_digest: build_output.aggregation_digest,
+            micro_count: build_output.micro_count,
+            micro_payload_digests: build_output.micro_payload_digests.clone(),
+            micro_milestone_digests: build_output.micro_milestone_digests.clone(),
+            source: build_output.source.clone(),
+        };
+        if !payload.validate_links_nonzero() {
+            return Err(ConsolidationError::InvalidMinimalSpineMesoMilestoneAppendPayloadLinks);
+        }
+        Ok(payload)
+    }
+
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32(&mut out, self.version);
+        push_str(&mut out, &self.append_contract);
+        push_digest(&mut out, self.build_output_digest);
+        push_digest(&mut out, self.meso_milestone_digest);
+        push_digest(&mut out, self.aggregation_digest);
+        push_u32(&mut out, self.micro_count);
+        push_digest_vec(&mut out, &self.micro_payload_digests);
+        push_digest_vec(&mut out, &self.micro_milestone_digests);
+        push_str(&mut out, &self.source);
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_domain(
+            b"ucf.consolidation.minimal_spine.meso_append_payload.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+
+    pub fn validate_links_nonzero(&self) -> bool {
+        self.version == MINIMAL_SPINE_MESO_MILESTONE_APPEND_PAYLOAD_VERSION
+            && self.append_contract == MINIMAL_SPINE_MESO_MILESTONE_APPEND_CONTRACT
+            && !is_zero_digest(self.build_output_digest)
+            && !is_zero_digest(self.meso_milestone_digest)
+            && !is_zero_digest(self.aggregation_digest)
+            && self.micro_count > 0
+            && self.micro_payload_digests.len() == self.micro_count as usize
+            && self.micro_milestone_digests.len() == self.micro_count as usize
+            && self
+                .micro_payload_digests
+                .iter()
+                .all(|digest| !is_zero_digest(*digest))
+            && self
+                .micro_milestone_digests
+                .iter()
+                .all(|digest| !is_zero_digest(*digest))
+            && !self.source.is_empty()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MinimalSpineMesoAggregationInput {
     payload_digest: Digest32,
@@ -430,6 +525,21 @@ pub struct MinimalSpineMicroMilestoneAppendResult {
     pub readback_digest: Digest32,
 }
 
+/// Result of the explicit Minimal Spine meso-milestone append/readback contract.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineMesoMilestoneAppendResult {
+    pub payload_digest: Digest32,
+    pub build_output_digest: Digest32,
+    pub meso_milestone_digest: Digest32,
+    pub aggregation_digest: Digest32,
+    pub micro_payload_digests: Vec<Digest32>,
+    pub micro_milestone_digests: Vec<Digest32>,
+    pub appended_evidence_id: EvidenceId,
+    pub archive_key: Digest32,
+    pub archive_record_digest: Digest32,
+    pub readback_digest: Digest32,
+}
+
 pub fn append_minimal_spine_micro_milestone<E, S>(
     build_output: &MinimalSpineMicroMilestoneBuildOutput,
     evidence_store: &E,
@@ -507,6 +617,86 @@ where
     })
 }
 
+pub fn append_minimal_spine_meso_milestone<E, S>(
+    build_output: &MinimalSpineMesoMilestoneBuildOutput,
+    evidence_store: &E,
+    archive_store: &S,
+    archive_appender: &mut ArchiveAppender,
+) -> Result<MinimalSpineMesoMilestoneAppendResult, ConsolidationError>
+where
+    E: EvidenceStore,
+    S: ArchiveStore,
+{
+    let payload = MinimalSpineMesoMilestoneAppendPayload::from_build_output(build_output)?;
+    let payload_bytes = payload.deterministic_bytes();
+    let payload_digest = payload.digest();
+    let appended_evidence_id = EvidenceId::new(format!(
+        "minimal-spine-meso-append-{}",
+        hex_encode(payload_digest.as_bytes())
+    ));
+    let proof = ProofEnvelope {
+        envelope_id: format!(
+            "{}:{}",
+            MINIMAL_SPINE_MESO_MILESTONE_APPEND_CONTRACT,
+            hex_encode(payload_digest.as_bytes())
+        ),
+        payload: payload_bytes,
+        payload_digest: Some(ProtoDigest {
+            algorithm: "blake3".to_string(),
+            value: payload_digest.as_bytes().to_vec(),
+            algo_id: None,
+            domain: None,
+            value_32: Some(payload_digest.as_bytes().to_vec()),
+        }),
+        vrf_tags: Vec::new(),
+        signature_ids: Vec::new(),
+    };
+    let evidence_envelope = EvidenceEnvelope {
+        evidence_id: appended_evidence_id.clone(),
+        proof: Some(proof),
+        fold_proof: None,
+        logical_time: LogicalTime::new(build_output.meso_milestone.achieved_at_ms),
+        wall_time: WallTime::new(build_output.meso_milestone.achieved_at_ms),
+    };
+
+    evidence_store.append(evidence_envelope);
+
+    let archive_record = archive_appender.build_record_with_commit(
+        MINIMAL_SPINE_MESO_MILESTONE_ARCHIVE_KIND,
+        payload_digest,
+        RecordMeta {
+            cycle_id: build_output.meso_milestone.achieved_at_ms,
+            tier: 2,
+            flags: 0,
+            boundary_commit: build_output.meso_milestone_digest,
+        },
+    );
+    let archive_record_digest = archive_store.append(archive_record);
+    let readback = evidence_store
+        .get(appended_evidence_id.clone())
+        .ok_or(ConsolidationError::MinimalSpineMesoMilestoneAppendReadbackMissing)?;
+    let readback_digest = digest_evidence_envelope(&readback);
+    let archive_readback = archive_store
+        .get(archive_record.key)
+        .ok_or(ConsolidationError::MinimalSpineMesoMilestoneAppendReadbackMissing)?;
+    if archive_readback != archive_record {
+        return Err(ConsolidationError::MinimalSpineMesoMilestoneAppendReadbackMismatch);
+    }
+
+    Ok(MinimalSpineMesoMilestoneAppendResult {
+        payload_digest,
+        build_output_digest: payload.build_output_digest,
+        meso_milestone_digest: payload.meso_milestone_digest,
+        aggregation_digest: payload.aggregation_digest,
+        micro_payload_digests: payload.micro_payload_digests,
+        micro_milestone_digests: payload.micro_milestone_digests,
+        appended_evidence_id,
+        archive_key: archive_record.key,
+        archive_record_digest,
+        readback_digest,
+    })
+}
+
 fn digest_evidence_envelope(envelope: &EvidenceEnvelope) -> Digest32 {
     let mut out = Vec::new();
     push_str(&mut out, envelope.evidence_id.as_str());
@@ -557,11 +747,14 @@ fn digest_evidence_envelope(envelope: &EvidenceEnvelope) -> Digest32 {
 pub enum ConsolidationError {
     InvalidMinimalSpineMicroMilestoneCandidateLinks,
     InvalidMinimalSpineMicroMilestoneAppendPayloadLinks,
+    InvalidMinimalSpineMesoMilestoneAppendPayloadLinks,
     MinimalSpineMesoMilestoneEmptyInput,
     InvalidMinimalSpineMesoMilestoneInputLinks,
     DuplicateMinimalSpineMesoMilestoneInput,
     MinimalSpineMicroMilestoneAppendReadbackMissing,
     MinimalSpineMicroMilestoneAppendReadbackMismatch,
+    MinimalSpineMesoMilestoneAppendReadbackMissing,
+    MinimalSpineMesoMilestoneAppendReadbackMismatch,
 }
 
 impl fmt::Display for ConsolidationError {
@@ -577,6 +770,12 @@ impl fmt::Display for ConsolidationError {
                 write!(
                     f,
                     "minimal spine micro milestone append payload links must be non-empty/non-zero"
+                )
+            }
+            Self::InvalidMinimalSpineMesoMilestoneAppendPayloadLinks => {
+                write!(
+                    f,
+                    "minimal spine meso milestone append payload links must be non-empty/non-zero"
                 )
             }
             Self::MinimalSpineMesoMilestoneEmptyInput => {
@@ -602,6 +801,12 @@ impl fmt::Display for ConsolidationError {
             }
             Self::MinimalSpineMicroMilestoneAppendReadbackMismatch => {
                 write!(f, "minimal spine micro milestone append readback mismatch")
+            }
+            Self::MinimalSpineMesoMilestoneAppendReadbackMissing => {
+                write!(f, "minimal spine meso milestone append readback is missing")
+            }
+            Self::MinimalSpineMesoMilestoneAppendReadbackMismatch => {
+                write!(f, "minimal spine meso milestone append readback mismatch")
             }
         }
     }
