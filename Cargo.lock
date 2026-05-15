@@ -3739,6 +3739,7 @@ dependencies = [
  "ucf-influence",
  "ucf-policy-ecology",
  "ucf-predictive-coding",
+ "ucf-protocol",
  "ucf-sleep-coordinator",
  "ucf-structural-store",
  "ucf-tcf-port",

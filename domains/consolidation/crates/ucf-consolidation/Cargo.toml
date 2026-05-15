@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 blake3 = "1"
 prost = "0.12"
+ucf-protocol = { path = "../../../../protocol/crates/ucf-protocol" }
 ucf-archive = { path = "../../../../domains/archive/crates/ucf-archive" }
 ucf-archive-store = { workspace = true }
 ucf-bus = { path = "../../../../core/crates/ucf-bus" }
