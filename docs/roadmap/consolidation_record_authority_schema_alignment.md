@@ -292,3 +292,45 @@ The MacroMilestone candidate builder is not finalization. It does not append Evi
 | Prompt | Status | Implemented surface | Boundary result | Recommended next prompt |
 |---:|---|---|---|---|
 | 31 | complete | `MinimalSpineMacroMilestoneCandidate` plus pure builders from meso payloads/build outputs | Macro candidate only, deterministic, provenance-preserving, append-free, replay/sleep/geist/ISM-free, no identity anchor, no Minimal Spine v1.x changes | Prompt 32 — MacroMilestone Finalization Boundary Without Geist/ISM |
+
+## 16. Prompt 32 MacroMilestone Finalization Boundary Status
+
+Prompt 32 is implemented as a local, deterministic, consolidation-level finalization boundary record. It deliberately does not use the existing broad `ArchiveMilestoneSink::emit_macro` / `MacroMilestoneFinalized` publication path.
+
+| Item | Status |
+|---|---|
+| Chosen option | Option B — local finalization boundary record |
+| Boundary API | `MinimalSpineMacroConsolidationFinalization::from_candidate(&MinimalSpineMacroMilestoneCandidate) -> Result<MinimalSpineMacroConsolidationFinalization, ConsolidationError>` |
+| Boundary meaning | A deterministic local decision that a Macro candidate is structurally complete for the consolidation pipeline. |
+| Deterministic bytes/digest | `MinimalSpineMacroConsolidationFinalization::deterministic_bytes` and `MinimalSpineMacroConsolidationFinalization::digest` |
+| Required input state | Candidate must be unfinalized, non-identity, non-empty, and must carry valid non-zero candidate/milestone/aggregation digests. |
+| Candidate mutation | none |
+| Protocol schema changes | none |
+| Evidence/Archive append | none |
+| `ArchiveMilestoneSink` / broad macro-finalized publication | not used |
+| `MacroMilestoneFinalized` event | not published |
+| Replay/Sleep/Geist/ISM | not integrated, called, ingested, or triggered |
+| Identity anchor | not created; `identity_anchor == false` |
+| Gateway visibility | not enabled; `gateway_visible == false` |
+| Capability issuance / real compute | none |
+| Minimal Spine v1.x changes | none |
+| Test path | `domains/consolidation/crates/ucf-consolidation/tests/minimal_spine_macro_finalization_boundary.rs` |
+
+### Prompt 32 finalization semantics
+
+| Term | Allowed meaning now | Explicitly not allowed |
+|---|---|---|
+| Macro candidate | Deterministic, append-free aggregation wrapper around a protocol-compatible MacroMilestone plus Minimal Spine meso provenance. | Finalized event, identity anchor, Replay completion proof, Geist/ISM input, Gateway-visible record, or Evidence/Archive append by itself. |
+| Macro consolidation finalization | Local, deterministic completeness boundary for the consolidation pipeline; represented by `MinimalSpineMacroConsolidationFinalization` with `consolidation_finalized == true`. | Identity finalization, ISM anchor, Geist ingestion, Replay completion, Evidence/Archive authority update, Gateway write, capability issuance, real-compute activation, or `MacroMilestoneFinalized` publication. |
+| Identity anchor | Out of scope. | Must not be inferred from a macro candidate, protocol MacroMilestone, or consolidation finalization boundary record. |
+| Geist/ISM ingestion | Out of scope. | No call to `GeistKernel::ingest_macro`, no ISM write, no identity-finalization claim. |
+| Replay completion | Out of scope. | No Replay Scheduler integration, replay token, replay completion proof, or sleep-cycle coupling. |
+| Evidence/Archive authority | Separate explicit append/readback contract only. | The boundary record does not append, change archive/evidence authority, or introduce a second event log. |
+
+### Prompt 32 boundary statement
+
+`MinimalSpineMacroConsolidationFinalization` is consolidation-level only. It records `consolidation_finalized == true` while explicitly keeping `identity_anchor`, `geist_ingested`, `replay_completed`, `evidence_archive_appended`, and `gateway_visible` false. Existing broader APIs that append, publish index events, or update sleep state remain out of scope until a future audit explicitly narrows them.
+
+| Prompt | Status | Implemented surface | Boundary result | Recommended next prompt |
+|---:|---|---|---|---|
+| 32 | complete | `MinimalSpineMacroConsolidationFinalization` local boundary record and deterministic boundary tests | Consolidation-level macro finalization only; no identity anchor, no Geist/ISM ingestion, no Replay completion, no Evidence/Archive append, no Gateway write, no broad macro-finalized publish path | Prompt 33 — Consolidation Pipeline E2E Determinism |

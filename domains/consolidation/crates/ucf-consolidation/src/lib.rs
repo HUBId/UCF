@@ -576,6 +576,89 @@ impl MinimalSpineMacroMilestoneCandidate {
     }
 }
 
+/// Version for the local Minimal Spine macro consolidation finalization boundary.
+pub const MINIMAL_SPINE_MACRO_CONSOLIDATION_FINALIZATION_VERSION: u32 = 1;
+
+/// Local-only source marker for consolidation-level macro finalization.
+pub const MINIMAL_SPINE_MACRO_CONSOLIDATION_FINALIZATION_SOURCE: &str =
+    "minimal_spine_v1_macro_consolidation_finalization";
+
+/// Side-effect-free boundary record for consolidation-level macro finalization.
+///
+/// This record only states that a [`MinimalSpineMacroMilestoneCandidate`] passed the local
+/// consolidation completeness boundary. It is not a protocol `MacroMilestoneFinalized` event, not
+/// an identity anchor, not Geist/ISM ingestion, not replay completion, not Gateway-visible, and not
+/// an Evidence/Archive append contract.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineMacroConsolidationFinalization {
+    pub version: u32,
+    pub macro_candidate_digest: Digest32,
+    pub macro_milestone_digest: Digest32,
+    pub meso_count: u32,
+    pub source: &'static str,
+    pub consolidation_finalized: bool,
+    pub identity_anchor: bool,
+    pub geist_ingested: bool,
+    pub replay_completed: bool,
+    pub evidence_archive_appended: bool,
+    pub gateway_visible: bool,
+}
+
+impl MinimalSpineMacroConsolidationFinalization {
+    pub fn from_candidate(
+        candidate: &MinimalSpineMacroMilestoneCandidate,
+    ) -> Result<Self, ConsolidationError> {
+        if candidate.finalized || candidate.identity_anchor {
+            return Err(ConsolidationError::InvalidMinimalSpineMacroFinalizationBoundaryCandidate);
+        }
+        if is_zero_digest(candidate.macro_candidate_digest)
+            || is_zero_digest(candidate.macro_milestone_digest)
+            || is_zero_digest(candidate.macro_aggregation_digest)
+            || candidate.meso_count == 0
+            || candidate.macro_candidate_digest != candidate.digest()
+        {
+            return Err(ConsolidationError::InvalidMinimalSpineMacroFinalizationBoundaryCandidate);
+        }
+
+        Ok(Self {
+            version: MINIMAL_SPINE_MACRO_CONSOLIDATION_FINALIZATION_VERSION,
+            macro_candidate_digest: candidate.macro_candidate_digest,
+            macro_milestone_digest: candidate.macro_milestone_digest,
+            meso_count: candidate.meso_count,
+            source: MINIMAL_SPINE_MACRO_CONSOLIDATION_FINALIZATION_SOURCE,
+            consolidation_finalized: true,
+            identity_anchor: false,
+            geist_ingested: false,
+            replay_completed: false,
+            evidence_archive_appended: false,
+            gateway_visible: false,
+        })
+    }
+
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32(&mut out, self.version);
+        push_digest(&mut out, self.macro_candidate_digest);
+        push_digest(&mut out, self.macro_milestone_digest);
+        push_u32(&mut out, self.meso_count);
+        push_str(&mut out, self.source);
+        out.push(u8::from(self.consolidation_finalized));
+        out.push(u8::from(self.identity_anchor));
+        out.push(u8::from(self.geist_ingested));
+        out.push(u8::from(self.replay_completed));
+        out.push(u8::from(self.evidence_archive_appended));
+        out.push(u8::from(self.gateway_visible));
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_domain(
+            b"ucf.consolidation.minimal_spine.macro_consolidation_finalization.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MinimalSpineMacroAggregationInput {
     payload_digest: Digest32,
@@ -1003,6 +1086,7 @@ pub enum ConsolidationError {
     MinimalSpineMacroMilestoneEmptyInput,
     InvalidMinimalSpineMacroMilestoneInputLinks,
     DuplicateMinimalSpineMacroMilestoneInput,
+    InvalidMinimalSpineMacroFinalizationBoundaryCandidate,
     MinimalSpineMicroMilestoneAppendReadbackMissing,
     MinimalSpineMicroMilestoneAppendReadbackMismatch,
     MinimalSpineMesoMilestoneAppendReadbackMissing,
@@ -1058,6 +1142,12 @@ impl fmt::Display for ConsolidationError {
                 write!(
                     f,
                     "minimal spine macro milestone inputs must not contain duplicate meso payload or milestone digests"
+                )
+            }
+            Self::InvalidMinimalSpineMacroFinalizationBoundaryCandidate => {
+                write!(
+                    f,
+                    "minimal spine macro finalization boundary requires an unfinalized non-identity candidate with valid digests"
                 )
             }
             Self::MinimalSpineMicroMilestoneAppendReadbackMissing => {
