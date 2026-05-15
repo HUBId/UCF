@@ -83,20 +83,21 @@ Baseline links:
 | Geist package | PASS | `cargo test -p ucf-geist --all-targets` passed. |
 | Workspace tests | PASS | `cargo test --workspace` passed. |
 | Clippy | PASS | `cargo clippy --workspace --all-targets -- -D warnings` passed. |
-| Readiness gate | TIMEOUT risk | Original Prompt 35 baseline had cold/local 300 second timeouts; Prompt 35C keeps this as gate-timing risk unless a guarded run passes in the current environment. |
+| Readiness gate | SPLIT-EVIDENCE policy available; fresh pass still required | Prompt 35D adds explicit `workspace-test-check` prerequisite evidence and lets readiness-gate validate that fresh report instead of rerunning the workspace test internally. This does not weaken PASS criteria: missing, stale, wrong-command, dirty-state-mismatched, or non-PASS workspace evidence fails the gate. |
 | Readiness diagnostic | PASS | Prompt 35C `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json` passed after reduction/signoff/review-packet/workflow digest alignment. |
 
 ## 6. Readiness Gate Status
 
-The readiness gate remains tracked as timeout-risky for cold/local cache conditions, but the readiness-spine drift branch is closed by Prompt 35C. The follow-up audit is recorded in [`docs/roadmap/readiness_gate_timeout_stability_audit.md`](readiness_gate_timeout_stability_audit.md).
+The readiness gate remains strict, and the readiness-spine drift branch is closed by Prompt 35C. Prompt 35D adds an explicit split-evidence policy for the workspace-test bottleneck: `workspace-test-check` can be run as a mandatory prerequisite artifact, and `readiness-gate --workspace-test-report <path>` accepts it only when it is fresh for the current HEAD and dirty state. The follow-up audit is recorded in [`docs/roadmap/readiness_gate_timeout_stability_audit.md`](readiness_gate_timeout_stability_audit.md).
 
 | Attempt | Command | Result | Notes |
 |---|---|---|---|
 | 1 | `timeout 300s cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json` | TIMEOUT | Timed out after Cargo launched the gate; no fresh gate report was written. |
 | 2 | `UCF_OFFLINE=1 timeout 300s cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json` | TIMEOUT | Offline mode did not remove the timeout. |
 | Diagnostic | `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json` | PASS | Prompt 35C closed `ReductionMismatch`, `SignoffSpineDrift`, `ReviewPacketSpineDrift`, and `WorkflowSpineDrift` by aligning operator surfaces to the canonical reduction digest. |
+| Split prerequisite | `cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json` then `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json --workspace-test-report ./out/workspace_test_report.json` | Policy added | Prompt 35D preserves mandatory workspace-test evidence while avoiding duplicate embedded workspace-test execution when fresh matching evidence is supplied. |
 
-Static inventory shows the readiness gate runs seven bringup scenarios, two replay audits, an internal `cargo test --workspace --offline` check unless skipped by environment, EBM/adversarial checks, formal invariants, and optional readiness probes. The timeout therefore remains a Gate Stability risk rather than a consolidation-layer blocker.
+Static inventory shows the readiness gate runs seven bringup scenarios, two replay audits, an internal `cargo test --workspace --offline` check unless explicit split evidence, CI, or diagnostic environment behavior applies, EBM/adversarial checks, formal invariants, and optional readiness probes. The workspace-test bottleneck is now a prerequisite-evidence policy concern rather than permission to weaken gate criteria.
 
 ## 7. Remaining Gaps
 
@@ -105,14 +106,14 @@ Static inventory shows the readiness gate runs seven bringup scenarios, two repl
 - Macro append/readback contract may still be needed as a separate bounded prompt if the roadmap chooses to append macro records explicitly.
 - Protocol schema/provenance evolution remains later work.
 - Prod-profile readiness remains later work.
-- Gate timing remains tracked separately for cold/local cache conditions; readiness-spine drift is closed by Prompt 35C.
+- Gate timing remains tracked separately for cold/local cache conditions; readiness-spine drift is closed by Prompt 35C, and Prompt 35D provides strict split workspace-test evidence semantics.
 
 ## 8. Recommended Next Roadmap
 
-Prompt 35C closes the gate-spine drift branch. If the guarded readiness gate is warm-cache passing or only cold-cache-sensitive, the next roadmap prompt can proceed to Replay Scheduler boundary work; otherwise run a timing-instrumentation prompt first.
+Prompt 35C closes the gate-spine drift branch and Prompt 35D closes the workspace-test policy gap by making external workspace-test evidence explicit, fresh, and mandatory in split mode. If validation produces a fresh split-evidence readiness-gate pass, the next roadmap prompt can proceed to Replay Scheduler boundary work. If the gate still times out outside the workspace-test phase, run a focused follow-up on the remaining phase.
 
-**Recommended next prompt when gate timing is acceptable: UCF Prompt 36 — Replay Scheduler Roadmap and Boundary Audit**.
+**Recommended next prompt when split-evidence validation is fresh and passing: UCF Prompt 36 — Replay Scheduler Roadmap and Boundary Audit**.
 
-**Fallback if gate timing remains unacceptable: UCF Prompt 35B — Readiness Gate Progress Logging and Per-Phase Timing**.
+**Fallback if more diagnostics are needed: UCF Prompt 35E — Readiness Gate Workspace Evidence Integration Follow-up**.
 
 After the gate-stability follow-up produces a stable fresh readiness baseline, the next large roadmap block should be either Replay Scheduler Roadmap and Boundary Audit or Prod-profile Readiness, without changing the forbidden claims above.

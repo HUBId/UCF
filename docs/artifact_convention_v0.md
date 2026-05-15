@@ -7,6 +7,7 @@ All sign-off outputs are stored under:
 Expected files:
 - `run_metadata.json`
 - `gate_report.json`
+- `workspace_test_report.json` *(optional split prerequisite for readiness gate workspace-test evidence)*
 - `adversarial_report.json`
 - `bench_report.json`
 - `probe_report.json` *(optional when probe is skipped)*
@@ -23,3 +24,8 @@ Root reports written directly under `./out/` (for example `./out/docs_lint_repor
 Historical Blue-Brain audit baselines under `./out/blue_brain_audit_baseline_*` are retained as audit trail artifacts and comparison evidence, but they are not current HEAD readiness evidence unless their embedded HEAD metadata matches the current repository HEAD.
 
 Every newly generated root report must include report freshness metadata: `report_version`, `generated_at_utc`, `command`, `git_head_full`, `git_head_short`, `git_branch`, `git_dirty`, and `workspace_root` or `repo_root`. Roadmap, release, and readiness decisions must not rely on stale reports whose embedded HEAD differs from the current HEAD or whose dirty-state/command/timestamp metadata is absent.
+
+
+## Workspace-test prerequisite reports
+
+`workspace_test_report.json` is produced by `cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json`. It is valid readiness-gate evidence only when it reports `PASS`, records the mandatory command `cargo test --workspace --offline`, and its embedded `git_head_full` and `git_dirty` match the repository state being evaluated by `readiness-gate --workspace-test-report <path>`. Missing, stale, mismatched, or non-PASS workspace-test evidence must be treated as gate `FAIL`, never as `PASS`.

@@ -24,8 +24,10 @@ jobs:
           diff -u docs/spec_snapshot.md ./out/spec_snapshot_nightly.md
       - name: Goldens verify all
         run: cargo run -p ucf-ops -- goldens verify --all --os linux --report-out ./out/goldens_report.json
+      - name: Workspace test evidence
+        run: cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json
       - name: Readiness gate (toy profile)
-        run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json --workdir ./.ucf_gate_nightly
+        run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json --workdir ./.ucf_gate_nightly --workspace-test-report ./out/workspace_test_report.json
       - name: Adversarial suite
         run: cargo run -p ucf-ops -- adversarial-run --suite v1 --out ./out/adversarial_report.json
       - name: Drift report (best effort)

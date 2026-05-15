@@ -16,11 +16,20 @@
 
 ## Local run
 
+Embedded workspace-test mode remains the strict default:
+
 ```bash
 cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json --workdir ./.ucf_gate
 ```
 
-The command exits with code `0` on `PASS` and `2` on `FAIL`.
+Split prerequisite mode is explicit and still mandatory:
+
+```bash
+cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json
+cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json --workdir ./.ucf_gate --workspace-test-report ./out/workspace_test_report.json
+```
+
+The split report is accepted only when it is `PASS`, records `cargo test --workspace --offline`, and matches the current HEAD and dirty state. Missing, stale, mismatched, wrong-command, or non-PASS evidence fails `build_workspace_tests`; it is not a silent skip and is never treated as `PASS`. The commands exit with code `0` on `PASS` and `2` on `FAIL`.
 
 ## Report schema
 
@@ -32,6 +41,7 @@ The command exits with code `0` on `PASS` and `2` on `FAIL`.
 - `timestamp` (optional)
 - `status` (`PASS` / `FAIL`)
 - `checks[]`
+- `phase_timings[]`
 
 Additional v1.1 section checks (also `CheckResult` objects):
 

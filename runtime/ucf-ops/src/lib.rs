@@ -2124,6 +2124,35 @@ pub struct GatePhaseTiming {
     pub duration_ms: u64,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkspaceTestCommandResult {
+    pub success: bool,
+    pub exit_code: Option<i32>,
+    pub stdout_tail: String,
+    pub stderr_tail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct WorkspaceTestReport {
+    #[serde(flatten, default)]
+    pub metadata: ReportFreshnessMetadata,
+    pub status: GateStatus,
+    pub duration_ms: u64,
+    pub command_result: WorkspaceTestCommandResult,
+}
+
+impl Default for WorkspaceTestReport {
+    fn default() -> Self {
+        Self {
+            metadata: ReportFreshnessMetadata::default(),
+            status: GateStatus::Fail,
+            duration_ms: 0,
+            command_result: WorkspaceTestCommandResult::default(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum V0GateOverallStatus {
@@ -5690,7 +5719,71 @@ fn workspace_fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
+pub fn workspace_test_check(out: &Path) -> Result<WorkspaceTestReport, OpsError> {
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let start = Instant::now();
+    let output = Command::new("cargo")
+        .args(["test", "--workspace", "--offline"])
+        .output();
+    let duration_ms = elapsed_ms(start);
+
+    let (status, command_result) = match output {
+        Ok(out) => {
+            let success = out.status.success();
+            (
+                if success {
+                    GateStatus::Pass
+                } else {
+                    GateStatus::Fail
+                },
+                WorkspaceTestCommandResult {
+                    success,
+                    exit_code: out.status.code(),
+                    stdout_tail: bounded_output_tail(&out.stdout),
+                    stderr_tail: bounded_output_tail(&out.stderr),
+                },
+            )
+        }
+        Err(err) => (
+            GateStatus::Fail,
+            WorkspaceTestCommandResult {
+                success: false,
+                exit_code: None,
+                stdout_tail: String::new(),
+                stderr_tail: bounded_string(err.to_string(), 512),
+            },
+        ),
+    };
+
+    let report = WorkspaceTestReport {
+        metadata: report_freshness_metadata(
+            "cargo test --workspace --offline".to_string(),
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."),
+        ),
+        status,
+        duration_ms,
+        command_result,
+    };
+    write_json(out, &report)?;
+    Ok(report)
+}
+
+fn bounded_output_tail(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    let chars: Vec<char> = text.chars().collect();
+    let len = chars.len();
+    let start = len.saturating_sub(512);
+    chars[start..].iter().collect()
+}
+
 fn check_workspace_tests() -> CheckResult {
+    if let Ok(report_path) = std::env::var("UCF_GATE_WORKSPACE_TEST_REPORT") {
+        return check_workspace_test_report(Path::new(&report_path));
+    }
+
     if std::env::var("CI").ok().as_deref() == Some("true") {
         return check_skip(
             "build_workspace_tests",
@@ -5737,6 +5830,99 @@ fn check_workspace_tests() -> CheckResult {
             "Ensure cargo is available in CI and local environments.",
         ),
     }
+}
+
+fn check_workspace_test_report(path: &Path) -> CheckResult {
+    let current = report_freshness_metadata(
+        "readiness-gate workspace-test evidence validation".to_string(),
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."),
+    );
+    match fs::read_to_string(path) {
+        Ok(text) => match serde_json::from_str::<WorkspaceTestReport>(&text) {
+            Ok(report) => validate_workspace_test_report(path, &report, &current),
+            Err(err) => check_fail(
+                "build_workspace_tests",
+                [(
+                    "workspace_test_report".to_string(),
+                    path.display().to_string(),
+                ), ("error".to_string(), bounded_string(err.to_string(), 64))],
+                "workspace test evidence report is not valid JSON for the expected schema",
+                "Regenerate with `cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json`.",
+            ),
+        },
+        Err(err) => check_fail(
+            "build_workspace_tests",
+            [(
+                "workspace_test_report".to_string(),
+                path.display().to_string(),
+            ), ("error".to_string(), bounded_string(err.to_string(), 64))],
+            "workspace test evidence report is missing or unreadable",
+            "Run `cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json` or unset split-evidence mode.",
+        ),
+    }
+}
+
+fn validate_workspace_test_report(
+    path: &Path,
+    report: &WorkspaceTestReport,
+    current: &ReportFreshnessMetadata,
+) -> CheckResult {
+    let evidence = [
+        (
+            "workspace_test_report".to_string(),
+            path.display().to_string(),
+        ),
+        (
+            "report_git_head".to_string(),
+            report.metadata.git_head_short.clone(),
+        ),
+        (
+            "current_git_head".to_string(),
+            current.git_head_short.clone(),
+        ),
+        (
+            "report_git_dirty".to_string(),
+            report.metadata.git_dirty.to_string(),
+        ),
+        (
+            "current_git_dirty".to_string(),
+            current.git_dirty.to_string(),
+        ),
+        ("command".to_string(), report.metadata.command.clone()),
+        (
+            "generated_at_utc".to_string(),
+            report.metadata.generated_at_utc.clone(),
+        ),
+    ];
+
+    if report.status != GateStatus::Pass || !report.command_result.success {
+        return check_fail(
+            "build_workspace_tests",
+            evidence,
+            "workspace test evidence report did not pass",
+            "Fix the workspace tests and regenerate the workspace-test-check report.",
+        );
+    }
+    if report.metadata.command != "cargo test --workspace --offline" {
+        return check_fail(
+            "build_workspace_tests",
+            evidence,
+            "workspace test evidence command does not match the mandatory workspace test command",
+            "Regenerate the evidence with `cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json`.",
+        );
+    }
+    if report.metadata.git_head_full != current.git_head_full
+        || report.metadata.git_dirty != current.git_dirty
+    {
+        return check_fail(
+            "build_workspace_tests",
+            evidence,
+            "workspace test evidence report is stale for the current repository state",
+            "Regenerate workspace-test-check evidence after the current HEAD and dirty state are final.",
+        );
+    }
+
+    check_pass("build_workspace_tests", evidence)
 }
 
 fn check_offline_profile(profile: &str) -> CheckResult {
@@ -22248,10 +22434,133 @@ C:\agent\file.rs:2"#,
     fn workspace_test_check_skips_in_ci() {
         std::env::set_var("CI", "true");
         std::env::remove_var("UCF_SKIP_GATE_WORKSPACE_TESTS");
+        std::env::remove_var("UCF_GATE_WORKSPACE_TEST_REPORT");
         let check = check_workspace_tests();
         std::env::remove_var("CI");
         assert_eq!(check.name, "build_workspace_tests");
         assert_eq!(check.status, GateStatus::Skip);
+    }
+
+    #[test]
+    fn workspace_test_report_validation_accepts_fresh_pass_evidence() {
+        let current = ReportFreshnessMetadata {
+            report_version: "1".to_string(),
+            generated_at_utc: "123Z".to_string(),
+            command: "readiness-gate workspace-test evidence validation".to_string(),
+            git_head_full: "abc".to_string(),
+            git_head_short: "abc".to_string(),
+            git_branch: "work".to_string(),
+            git_dirty: true,
+            workspace_root: "/repo".to_string(),
+            repo_root: "/repo".to_string(),
+        };
+        let report = WorkspaceTestReport {
+            metadata: ReportFreshnessMetadata {
+                command: "cargo test --workspace --offline".to_string(),
+                generated_at_utc: "122Z".to_string(),
+                ..current.clone()
+            },
+            status: GateStatus::Pass,
+            duration_ms: 42,
+            command_result: WorkspaceTestCommandResult {
+                success: true,
+                exit_code: Some(0),
+                stdout_tail: String::new(),
+                stderr_tail: String::new(),
+            },
+        };
+
+        let check = validate_workspace_test_report(
+            Path::new("out/workspace_test_report.json"),
+            &report,
+            &current,
+        );
+
+        assert_eq!(check.name, "build_workspace_tests");
+        assert_eq!(check.status, GateStatus::Pass);
+        assert_eq!(
+            check.evidence.get("command").map(String::as_str),
+            Some("cargo test --workspace --offline")
+        );
+    }
+
+    #[test]
+    fn workspace_test_report_validation_rejects_stale_head() {
+        let current = ReportFreshnessMetadata {
+            report_version: "1".to_string(),
+            generated_at_utc: "123Z".to_string(),
+            command: "readiness-gate workspace-test evidence validation".to_string(),
+            git_head_full: "current".to_string(),
+            git_head_short: "current".to_string(),
+            git_branch: "work".to_string(),
+            git_dirty: true,
+            workspace_root: "/repo".to_string(),
+            repo_root: "/repo".to_string(),
+        };
+        let report = WorkspaceTestReport {
+            metadata: ReportFreshnessMetadata {
+                command: "cargo test --workspace --offline".to_string(),
+                generated_at_utc: "122Z".to_string(),
+                git_head_full: "stale".to_string(),
+                git_head_short: "stale".to_string(),
+                ..current.clone()
+            },
+            status: GateStatus::Pass,
+            duration_ms: 42,
+            command_result: WorkspaceTestCommandResult {
+                success: true,
+                exit_code: Some(0),
+                stdout_tail: String::new(),
+                stderr_tail: String::new(),
+            },
+        };
+
+        let check = validate_workspace_test_report(
+            Path::new("out/workspace_test_report.json"),
+            &report,
+            &current,
+        );
+
+        assert_eq!(check.status, GateStatus::Fail);
+        assert!(check
+            .failure_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("stale"));
+    }
+
+    #[test]
+    fn workspace_test_report_validation_rejects_missing_report() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let missing = dir.path().join("missing_workspace_test_report.json");
+
+        let check = check_workspace_test_report(&missing);
+
+        assert_eq!(check.name, "build_workspace_tests");
+        assert_eq!(check.status, GateStatus::Fail);
+        assert!(check
+            .failure_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("missing"));
+    }
+
+    #[test]
+    fn workspace_phase_split_env_missing_evidence_is_fail_not_skip_or_pass() {
+        std::env::set_var(
+            "UCF_GATE_WORKSPACE_TEST_REPORT",
+            "out/does-not-exist-workspace-test-report.json",
+        );
+        std::env::set_var("CI", "true");
+        std::env::set_var("UCF_SKIP_GATE_WORKSPACE_TESTS", "1");
+
+        let check = check_workspace_tests();
+
+        std::env::remove_var("UCF_GATE_WORKSPACE_TEST_REPORT");
+        std::env::remove_var("CI");
+        std::env::remove_var("UCF_SKIP_GATE_WORKSPACE_TESTS");
+        assert_eq!(check.name, "build_workspace_tests");
+        assert_eq!(check.status, GateStatus::Fail);
     }
 
     fn sample_explain_report() -> ExplainTickReport {
