@@ -164,3 +164,13 @@ Full Micro→Meso→Macro Consolidation later means deterministic creation/aggre
 
 - Prompt 26 schema alignment is available at [`docs/roadmap/consolidation_record_authority_schema_alignment.md`](consolidation_record_authority_schema_alignment.md).
 - Recommended next prompt: **UCF Prompt 27 — Deterministic MicroMilestone Builder from Minimal Spine Links**.
+
+## 11. Prompt 27 Completion Note
+
+Prompt 27 is complete. The deterministic MicroMilestone builder from Minimal Spine links is implemented in `ucf-consolidation` as a pure wrapper-returning builder, not as an append sink.
+
+| Prompt | Status | Implemented surface | Boundary result | Recommended next prompt |
+|---:|---|---|---|---|
+| 27 | complete | `build_micro_milestone_from_minimal_spine_candidate` and `MinimalSpineMicroMilestoneBuildOutput` | Micro-only, append-free, replay/sleep/geist/ISM-free, no meso/macro aggregation, no Minimal Spine v1.x changes | Prompt 28 — MicroMilestone Evidence/Archive Append Contract |
+
+Prompt 27 chose Option B because the current protocol `MicroMilestone` fields are not a complete provenance container for Minimal Spine links. The wrapper preserves candidate digest, input digest, candidate-set digest, output-record digest, evidence id, archive output key, archive output event digest, protocol micro milestone digest, and source marker while keeping Evidence/Archive append authority deferred to Prompt 28.

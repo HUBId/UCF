@@ -164,3 +164,25 @@ UCF Prompt 27 — Deterministic MicroMilestone Builder from Minimal Spine Links 
 - How do we avoid `ArchiveMilestoneSink` side effects in a pure builder while still preparing for a later append/readback contract?
 - What does Macro finalized mean without Geist/ISM?
 - Should `protocol/crates/ucf-protocol/spec/messages_v1.md` commitment-field text be reconciled with the Rust `spec` structs and `spec/v1.md` before Prompt 27 or as part of a later schema prompt?
+
+## 11. Prompt 27 Deterministic MicroMilestone Builder Status
+
+Prompt 27 is implemented as a pure, append-free builder in `ucf-consolidation`.
+
+| Item | Status |
+|---|---|
+| Chosen option | Option B — builder output wrapper |
+| Builder API | `build_micro_milestone_from_minimal_spine_candidate(&MinimalSpineMicroMilestoneCandidate) -> Result<MinimalSpineMicroMilestoneBuildOutput, ConsolidationError>` |
+| Builder output | `MinimalSpineMicroMilestoneBuildOutput` containing a protocol-compatible `ucf_types::v1::spec::MicroMilestone` plus explicit Minimal Spine provenance digests/IDs |
+| Deterministic bytes/digest | `MinimalSpineMicroMilestoneBuildOutput::deterministic_bytes` and `MinimalSpineMicroMilestoneBuildOutput::digest` |
+| Test path | `domains/consolidation/crates/ucf-consolidation/tests/minimal_spine_micro_builder.rs` |
+| Append behavior | none |
+| Replay/Sleep/Geist/ISM behavior | none |
+| Meso/Macro behavior | none |
+| Minimal Spine v1.x changes | none |
+
+### Schema gap recorded for Prompt 28 / schema follow-up
+
+The current protocol `MicroMilestone` surface carries only milestone id, achieved-at timestamp, and label in code. It does not fully carry Minimal Spine provenance by itself: candidate digest, input digest, `CandidateSetRecord` digest, `OutputRecord` digest, `EvidenceId`, archive output key, and archive output event digest remain outside the protocol micro record. Prompt 27 therefore does not overclaim that the protocol `MicroMilestone` alone is the full Minimal Spine provenance container.
+
+Prompt 28 should decide whether the provenance remains in an append payload/evidence wrapper, becomes a companion record, or requires a minimal protocol schema follow-up. Until that decision, the builder output wrapper is the honest deterministic handoff surface.

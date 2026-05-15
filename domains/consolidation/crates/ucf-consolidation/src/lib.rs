@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
 use std::collections::{HashMap, HashSet};
+use std::error::Error;
+use std::fmt;
 use std::sync::{Arc, Mutex};
 
 use blake3::Hasher;
@@ -64,6 +66,116 @@ pub struct MinimalSpineMicroMilestoneCandidate {
     pub source: String,
 }
 
+/// Version for the deterministic Minimal Spine micro-milestone build wrapper.
+pub const MINIMAL_SPINE_MICRO_MILESTONE_BUILD_OUTPUT_VERSION: u32 = 1;
+
+/// Append-free output of the Minimal Spine micro-milestone builder.
+///
+/// The protocol `MicroMilestone` is included for protocol compatibility, while the wrapper keeps
+/// Minimal Spine provenance that the current protocol micro record cannot fully express by itself.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MinimalSpineMicroMilestoneBuildOutput {
+    pub version: u32,
+    pub candidate_digest: Digest32,
+    pub micro_milestone: ProtoMicroMilestone,
+    pub micro_milestone_digest: Digest32,
+    pub input_digest: Digest32,
+    pub candidate_set_record_digest: Digest32,
+    pub output_record_digest: Digest32,
+    pub evidence_id: EvidenceId,
+    pub archive_output_key: Digest32,
+    pub archive_output_event_digest: Digest32,
+    pub source: String,
+}
+
+impl MinimalSpineMicroMilestoneBuildOutput {
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32(&mut out, self.version);
+        push_digest(&mut out, self.candidate_digest);
+        let micro_bytes = ucf::canonical_bytes(&self.micro_milestone);
+        let micro_len = u32::try_from(micro_bytes.len())
+            .expect("minimal spine micro milestone bytes length fits u32");
+        push_u32(&mut out, micro_len);
+        out.extend_from_slice(&micro_bytes);
+        push_digest(&mut out, self.micro_milestone_digest);
+        push_digest(&mut out, self.input_digest);
+        push_digest(&mut out, self.candidate_set_record_digest);
+        push_digest(&mut out, self.output_record_digest);
+        push_str(&mut out, self.evidence_id.as_str());
+        push_digest(&mut out, self.archive_output_key);
+        push_digest(&mut out, self.archive_output_event_digest);
+        push_str(&mut out, &self.source);
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_domain(
+            b"ucf.consolidation.minimal_spine.micro_builder_output.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ConsolidationError {
+    InvalidMinimalSpineMicroMilestoneCandidateLinks,
+}
+
+impl fmt::Display for ConsolidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidMinimalSpineMicroMilestoneCandidateLinks => {
+                write!(
+                    f,
+                    "minimal spine micro milestone candidate links must be non-empty/non-zero"
+                )
+            }
+        }
+    }
+}
+
+impl Error for ConsolidationError {}
+
+pub fn build_micro_milestone_from_minimal_spine_candidate(
+    candidate: &MinimalSpineMicroMilestoneCandidate,
+) -> Result<MinimalSpineMicroMilestoneBuildOutput, ConsolidationError> {
+    if !candidate.validate_links_nonzero() {
+        return Err(ConsolidationError::InvalidMinimalSpineMicroMilestoneCandidateLinks);
+    }
+
+    let candidate_digest = candidate.digest();
+    let micro_milestone = ProtoMicroMilestone {
+        milestone_id: format!(
+            "minimal-spine-micro-{}",
+            hex_encode(candidate_digest.as_bytes())
+        ),
+        achieved_at_ms: candidate.sequence,
+        label: format!(
+            "minimal-spine-v1 micro candidate {} {}",
+            candidate.policy_status, candidate.output_status
+        ),
+    };
+    let micro_milestone_digest = digest_domain(
+        b"ucf.consolidation.minimal_spine.protocol_micro.v1",
+        &ucf::canonical_bytes(&micro_milestone),
+    );
+
+    Ok(MinimalSpineMicroMilestoneBuildOutput {
+        version: MINIMAL_SPINE_MICRO_MILESTONE_BUILD_OUTPUT_VERSION,
+        candidate_digest,
+        micro_milestone,
+        micro_milestone_digest,
+        input_digest: candidate.input_digest,
+        candidate_set_record_digest: candidate.candidate_set_record_digest,
+        output_record_digest: candidate.output_record_digest,
+        evidence_id: candidate.evidence_id.clone(),
+        archive_output_key: candidate.archive_output_key,
+        archive_output_event_digest: candidate.archive_output_event_digest,
+        source: candidate.source.clone(),
+    })
+}
+
 impl MinimalSpineMicroMilestoneCandidate {
     #[allow(clippy::too_many_arguments)]
     pub fn from_minimal_spine_links(
@@ -109,10 +221,10 @@ impl MinimalSpineMicroMilestoneCandidate {
     }
 
     pub fn digest(&self) -> Digest32 {
-        let mut hasher = Hasher::new();
-        hasher.update(b"ucf.consolidation.minimal_spine.micro_candidate.v1");
-        hasher.update(&self.deterministic_bytes());
-        Digest32::new(*hasher.finalize().as_bytes())
+        digest_domain(
+            b"ucf.consolidation.minimal_spine.micro_candidate.v1",
+            &self.deterministic_bytes(),
+        )
     }
 
     pub fn validate_links_nonzero(&self) -> bool {
@@ -123,6 +235,13 @@ impl MinimalSpineMicroMilestoneCandidate {
             && !is_zero_digest(self.archive_output_key)
             && !is_zero_digest(self.archive_output_event_digest)
     }
+}
+
+fn digest_domain(domain: &[u8], bytes: &[u8]) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(domain);
+    hasher.update(bytes);
+    Digest32::new(*hasher.finalize().as_bytes())
 }
 
 fn is_zero_digest(digest: Digest32) -> bool {
