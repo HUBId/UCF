@@ -32,6 +32,7 @@ Companion links:
 - [`docs/minimal_ucf_spine_v1.md`](../minimal_ucf_spine_v1.md)
 - [`docs/module_implementation_depth_registry.md`](../module_implementation_depth_registry.md)
 - [`docs/current_state_architecture_index.md`](../current_state_architecture_index.md)
+- [`docs/roadmap/consolidation_record_authority_schema_alignment.md`](consolidation_record_authority_schema_alignment.md)
 
 ## 2. Consolidation Code Inventory
 
@@ -159,6 +160,7 @@ Full Micro→Meso→Macro Consolidation later means deterministic creation/aggre
 - What gets archived and when: candidate, protocol milestone, derived `ExperienceRecord`, proof envelope, archive-store record, or all of these?
 - What remains out of scope until Replay/Geist prompts: replay scheduler, sleep cycles, Geist/ISM writes, identity finalization, neuromod scheduler, capability issuance, and Gateway write APIs?
 
-## 10. Recommended Next Prompt
+## 10. Prompt 26 Schema Alignment Status
 
-**UCF Prompt 26 — Consolidation Record Authority and Schema Alignment**.
+- Prompt 26 schema alignment is available at [`docs/roadmap/consolidation_record_authority_schema_alignment.md`](consolidation_record_authority_schema_alignment.md).
+- Recommended next prompt: **UCF Prompt 27 — Deterministic MicroMilestone Builder from Minimal Spine Links**.
