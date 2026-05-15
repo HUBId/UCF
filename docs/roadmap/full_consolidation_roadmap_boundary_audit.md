@@ -228,3 +228,24 @@ Prompt 30 is complete. The meso line now has an explicit Evidence/Archive append
 | Replay/Sleep/Geist/ISM/Macro | Not activated, integrated, emitted, aggregated, or finalized. |
 
 Recommended next prompt: **UCF Prompt 31 — MacroMilestone Candidate Builder**.
+
+## 15. Prompt 31 Completion Note
+
+Prompt 31 is complete. The roadmap now has a pure deterministic MacroMilestone candidate builder from Minimal Spine meso append payloads or meso build outputs.
+
+| Boundary | Prompt 31 result |
+|---|---|
+| Candidate-only macro construction | `build_macro_milestone_candidate_from_minimal_spine_meso_payloads` and `build_macro_milestone_candidate_from_minimal_spine_meso_build_outputs` construct `MinimalSpineMacroMilestoneCandidate` values only. |
+| Protocol compatibility | The wrapper contains a protocol `ucf_types::v1::spec::MacroMilestone`, while preserving provenance that the protocol macro schema cannot carry by itself. |
+| Provenance | The wrapper preserves meso payload digests, meso build-output digests, meso milestone digests, meso aggregation digests, macro aggregation digest, meso count, source marker, and macro candidate digest. |
+| Ordering | Input order is deterministically normalized by meso payload digest, then meso milestone digest, then meso aggregation digest, then meso milestone id. |
+| Duplicate handling | Duplicate meso payload digest or duplicate meso milestone digest is rejected. |
+| Finalization | Not implemented; `finalized == false`, no macro-finalized event, and no publish call. |
+| Identity anchor | Not implemented; `identity_anchor == false`. |
+| Evidence/Archive authority | No Evidence/Archive append/readback behavior is added in Prompt 31. |
+| `ArchiveMilestoneSink` | Not used. |
+| Replay/Sleep/Geist/ISM | Not integrated or triggered. |
+| Minimal Spine v1.x | Unchanged. |
+| Protocol schema | Unchanged; the Macro provenance gap is documented as wrapper metadata. |
+
+Recommended next prompt: **UCF Prompt 32 — MacroMilestone Finalization Boundary Without Geist/ISM**.

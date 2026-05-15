@@ -258,3 +258,37 @@ Prompt 30 is complete. The roadmap now has a narrow Evidence/Archive append/read
 | Test path | `domains/consolidation/crates/ucf-consolidation/tests/minimal_spine_meso_append.rs` |
 
 Recommended next prompt: **UCF Prompt 31 — MacroMilestone Candidate Builder**.
+
+## 15. Prompt 31 MacroMilestone Candidate Builder Status
+
+Prompt 31 is implemented as a pure, deterministic, candidate-only MacroMilestone builder in `ucf-consolidation`.
+
+| Item | Status |
+|---|---|
+| Chosen input option | Option C — support explicit meso append payload values and meso build outputs |
+| Primary builder API | `build_macro_milestone_candidate_from_minimal_spine_meso_payloads(&[MinimalSpineMesoMilestoneAppendPayload]) -> Result<MinimalSpineMacroMilestoneCandidate, ConsolidationError>` |
+| Build-output convenience API | `build_macro_milestone_candidate_from_minimal_spine_meso_build_outputs(&[MinimalSpineMesoMilestoneBuildOutput]) -> Result<MinimalSpineMacroMilestoneCandidate, ConsolidationError>` |
+| Builder output | `MinimalSpineMacroMilestoneCandidate` containing a protocol-compatible `ucf_types::v1::spec::MacroMilestone` plus meso payload digests, meso build-output digests, meso milestone digests, meso aggregation digests, macro aggregation digest, macro candidate digest, count, source marker, and explicit boundary booleans |
+| Candidate-only flags | `finalized == false` and `identity_anchor == false` |
+| Ordering semantics | Inputs are normalized by meso payload digest, then meso milestone digest, then meso aggregation digest, then meso milestone id; reversed input produces the same candidate/digest. |
+| Duplicate semantics | Duplicate meso payload digest or duplicate meso milestone digest is rejected. |
+| Empty input semantics | Empty input is rejected. |
+| Deterministic bytes/digest | `MinimalSpineMacroMilestoneCandidate::deterministic_bytes` and `MinimalSpineMacroMilestoneCandidate::digest` |
+| Test path | `domains/consolidation/crates/ucf-consolidation/tests/minimal_spine_macro_candidate.rs` |
+| Append behavior | none |
+| Replay/Sleep/Geist/ISM behavior | none |
+| Identity-finalization behavior | none |
+| Macro finalization behavior | none |
+| Minimal Spine v1.x changes | none |
+
+### Prompt 31 schema gap
+
+The current protocol `MacroMilestone` surface carries milestone id, achieved-at timestamp, label, and meso milestone ids. It does not fully carry Minimal Spine meso/micro provenance by itself: meso append payload digests, meso build-output digests, protocol meso milestone digests, meso aggregation digests, macro aggregation digest, candidate-only status, and identity-anchor status remain outside the protocol macro record. Prompt 31 therefore uses `MinimalSpineMacroMilestoneCandidate` as the honest wrapper surface and does not change protocol schemas.
+
+### Prompt 31 boundary statement
+
+The MacroMilestone candidate builder is not finalization. It does not append Evidence or Archive records, does not use `ArchiveMilestoneSink`, does not publish `MacroMilestoneFinalized`, does not mark an identity anchor, does not trigger Replay/Sleep/Geist/ISM, does not issue capabilities, and does not change Minimal Spine v1.x authority. Future Prompt 32 should define the macro finalization boundary without Geist/ISM.
+
+| Prompt | Status | Implemented surface | Boundary result | Recommended next prompt |
+|---:|---|---|---|---|
+| 31 | complete | `MinimalSpineMacroMilestoneCandidate` plus pure builders from meso payloads/build outputs | Macro candidate only, deterministic, provenance-preserving, append-free, replay/sleep/geist/ISM-free, no identity anchor, no Minimal Spine v1.x changes | Prompt 32 — MacroMilestone Finalization Boundary Without Geist/ISM |
