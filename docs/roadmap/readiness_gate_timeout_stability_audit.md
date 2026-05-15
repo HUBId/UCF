@@ -145,3 +145,42 @@ Recommended next prompts:
 - Consolidation closure should remain explicitly gate-stability-reviewed until a follow-up decides whether the warm-cache pass is sufficient evidence or whether progress/timing diagnostics are required first.
 - Replay Scheduler Roadmap should wait if the project requires cold/local gate stability before new roadmap work; if accepting the warm-cache gate pass, the remaining blocker is the readiness-spine drift follow-up.
 - Readiness-spine-check drift is a separate high-severity correctness blocker and should not be reported as PASS until categories are closed.
+
+## 9. Prompt 35B Progress Logging and Per-Phase Timing Update
+
+Prompt 35B added readiness-gate observability only. Gate criteria, check order, skip/fail/pass semantics, replay verification semantics, required-record behavior, drift criteria, and spine-check criteria remain unchanged.
+
+Readiness-spine drift remains closed from Prompt 35C: the canonical reviewability reduction digest prefix remains documented as `6746d727b0f76066`, and that drift closure is distinct from readiness-gate timing. Gate timing remains monitored as an operational diagnosability concern, not as a loosened acceptance criterion.
+
+### 9.1 Observability behavior
+
+The readiness gate now emits progress lines to stderr for major phases using this shape:
+
+```text
+[readiness-gate] start: <phase>
+[readiness-gate] done: <phase> status=<PASS|FAIL|SKIP> elapsed_ms=<milliseconds>
+```
+
+The last visible `start:` line identifies the phase active if an external timeout kills the process before report writing. Completed phases are also carried in the gate report `phase_timings` metadata when the report is written successfully. A timeout before report writing is still a timeout/failure for validation purposes; the stderr phase trail is diagnostic evidence only.
+
+### 9.2 Phase coverage
+
+| Phase group | Purpose | Semantics changed? |
+|---|---|---:|
+| gate setup | Layout, output parent, profile/kernel environment setup | no |
+| scenario bringups | Scenario A, A repeat, B, EBM off, EBM shadow, EBM active, EBM active repeat | no |
+| replay verify/recompute | Existing verify-only and recompute-stages replay audits | no |
+| explain and metrics | Existing explain/metrics extraction used by checks | no |
+| internal workspace test/offline cargo check | Existing `cargo test --workspace --offline` check and existing CI/env skip semantics | no |
+| required records / feature pack / stage profile checks | Existing offline profile, required stage profile, backend-disabled pack, schema version, and required-record checks | no |
+| determinism / replay / policy observability checks | Existing determinism, replay-report, policy, emergency, observability, and plug-compatibility checks | no |
+| adversarial / EBM checks | Existing EBM/adversarial wiring, correctness, dominance, determinism, provenance, and fallback checks | no |
+| formal and optional probes | Existing formal invariants and optional weights/world/SAE/SSM/GPU probes | no |
+| report assembly/write | Existing report creation and write path | no |
+
+### 9.3 Interpretation
+
+- If a run times out with the last visible phase `internal workspace test/offline cargo check`, the prior Prompt 35A bottleneck hypothesis is confirmed for that run.
+- If the workspace-test phase completes and a later phase becomes last visible, the timing investigation should move to that later phase without changing gate policy.
+- If the gate report is produced, `phase_timings` should be used to compare warm/cold runs and identify slowest completed phases.
+- No timeout should be marked as PASS solely because earlier phases completed.

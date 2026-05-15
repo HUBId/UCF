@@ -2108,11 +2108,20 @@ pub struct ReadinessGateReport {
     pub timestamp: Option<String>,
     pub status: GateStatus,
     pub checks: Vec<CheckResult>,
+    #[serde(default)]
+    pub phase_timings: Vec<GatePhaseTiming>,
     pub weights_lifecycle: Option<CheckResult>,
     pub world_vljepa_evidence: Option<CheckResult>,
     pub sae_real: Option<CheckResult>,
     pub ssm_opt: Option<CheckResult>,
     pub gpu_lane: Option<CheckResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GatePhaseTiming {
+    pub name: String,
+    pub status: GateStatus,
+    pub duration_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2270,6 +2279,7 @@ impl Default for ReadinessGateReport {
             timestamp: None,
             status: GateStatus::Fail,
             checks: Vec::new(),
+            phase_timings: Vec::new(),
             weights_lifecycle: None,
             world_vljepa_evidence: None,
             sae_real: None,
@@ -2279,21 +2289,124 @@ impl Default for ReadinessGateReport {
     }
 }
 
+fn elapsed_ms(start: Instant) -> u64 {
+    start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
+}
+
+fn gate_status_label(status: GateStatus) -> &'static str {
+    match status {
+        GateStatus::Pass => "PASS",
+        GateStatus::Fail => "FAIL",
+        GateStatus::Skip => "SKIP",
+    }
+}
+
+fn log_gate_phase_done(name: &str, status: GateStatus, duration_ms: u64) {
+    let status = gate_status_label(status);
+    eprintln!("[readiness-gate] done: {name} status={status} elapsed_ms={duration_ms}");
+}
+
+fn push_gate_phase_timing(
+    phase_timings: &mut Vec<GatePhaseTiming>,
+    name: &str,
+    status: GateStatus,
+    duration_ms: u64,
+) {
+    phase_timings.push(GatePhaseTiming {
+        name: name.to_string(),
+        status,
+        duration_ms,
+    });
+}
+
+pub fn run_gate_phase<T, F>(
+    phase_timings: &mut Vec<GatePhaseTiming>,
+    name: &str,
+    phase: F,
+) -> Result<T, OpsError>
+where
+    F: FnOnce() -> Result<T, OpsError>,
+{
+    eprintln!("[readiness-gate] start: {name}");
+    let start = Instant::now();
+    match phase() {
+        Ok(value) => {
+            let duration_ms = elapsed_ms(start);
+            push_gate_phase_timing(phase_timings, name, GateStatus::Pass, duration_ms);
+            log_gate_phase_done(name, GateStatus::Pass, duration_ms);
+            Ok(value)
+        }
+        Err(err) => {
+            let duration_ms = elapsed_ms(start);
+            push_gate_phase_timing(phase_timings, name, GateStatus::Fail, duration_ms);
+            log_gate_phase_done(name, GateStatus::Fail, duration_ms);
+            Err(err)
+        }
+    }
+}
+
+pub fn run_gate_check_phase<F>(
+    phase_timings: &mut Vec<GatePhaseTiming>,
+    name: &str,
+    phase: F,
+) -> CheckResult
+where
+    F: FnOnce() -> CheckResult,
+{
+    eprintln!("[readiness-gate] start: {name}");
+    let start = Instant::now();
+    let check = phase();
+    let duration_ms = elapsed_ms(start);
+    push_gate_phase_timing(phase_timings, name, check.status, duration_ms);
+    log_gate_phase_done(name, check.status, duration_ms);
+    check
+}
+
+fn run_gate_checks_phase<F>(
+    phase_timings: &mut Vec<GatePhaseTiming>,
+    name: &str,
+    phase: F,
+) -> Vec<CheckResult>
+where
+    F: FnOnce() -> Vec<CheckResult>,
+{
+    eprintln!("[readiness-gate] start: {name}");
+    let start = Instant::now();
+    let checks = phase();
+    let status = if checks.iter().any(|check| check.status == GateStatus::Fail) {
+        GateStatus::Fail
+    } else {
+        GateStatus::Pass
+    };
+    let duration_ms = elapsed_ms(start);
+    push_gate_phase_timing(phase_timings, name, status, duration_ms);
+    log_gate_phase_done(name, status, duration_ms);
+    checks
+}
+
 pub fn readiness_gate(
     workdir: &Path,
     profile: &str,
     out: &Path,
 ) -> Result<ReadinessGateReport, OpsError> {
-    ensure_layout(workdir)?;
-    if let Some(parent) = out.parent() {
-        fs::create_dir_all(parent)?;
-    }
+    eprintln!("[readiness-gate] start: gate profile={profile}");
+    let mut phase_timings = Vec::new();
 
-    std::env::set_var("UCF_PROFILE", profile);
-    std::env::set_var("UCF_SSM_KERNEL", "ref");
+    run_gate_phase(&mut phase_timings, "gate setup", || {
+        ensure_layout(workdir)?;
+        if let Some(parent) = out.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        std::env::set_var("UCF_PROFILE", profile);
+        std::env::set_var("UCF_SSM_KERNEL", "ref");
+
+        let base = workdir.join("readiness_gate");
+        fs::create_dir_all(&base)?;
+        Ok(())
+    })?;
 
     let base = workdir.join("readiness_gate");
-    fs::create_dir_all(&base)?;
     let run_a = base.join("scenario_a");
     let run_a2 = base.join("scenario_a_repeat");
     let run_b = base.join("scenario_b");
@@ -2313,116 +2426,182 @@ pub fn readiness_gate(
     let scenario_b = workspace_fixture("e2e_scenario_b.json");
     let scenario_ebm = workspace_fixture("e2e_scenario_ebm_v1.json");
 
-    let artifacts_a = one_command_bringup(&run_a, &scenario_a, 24, &out_a, true)?;
-    let artifacts_a2 = one_command_bringup(&run_a2, &scenario_a, 24, &out_a2, true)?;
-    let artifacts_b = one_command_bringup(&run_b, &scenario_b, 24, &out_b, true)?;
-    let ebm_off = one_command_bringup_with_ebm_mode(
-        &run_ebm_off,
-        &scenario_ebm,
-        24,
-        &out_ebm_off,
-        true,
-        "off",
-    )?;
-    let ebm_shadow = one_command_bringup_with_ebm_mode(
-        &run_ebm_shadow,
-        &scenario_ebm,
-        24,
-        &out_ebm_shadow,
-        true,
-        "shadow",
-    )?;
-    let ebm_active = one_command_bringup_with_ebm_mode(
-        &run_ebm_active,
-        &scenario_ebm,
-        24,
-        &out_ebm_active,
-        true,
-        "active",
-    )?;
-    let ebm_active_repeat = one_command_bringup_with_ebm_mode(
-        &run_ebm_active_repeat,
-        &scenario_ebm,
-        24,
-        &out_ebm_active_repeat,
-        true,
-        "active",
+    let artifacts_a = run_gate_phase(&mut phase_timings, "scenario bringup: A", || {
+        one_command_bringup(&run_a, &scenario_a, 24, &out_a, true)
+    })?;
+    let artifacts_a2 = run_gate_phase(&mut phase_timings, "scenario bringup: A repeat", || {
+        one_command_bringup(&run_a2, &scenario_a, 24, &out_a2, true)
+    })?;
+    let artifacts_b = run_gate_phase(&mut phase_timings, "scenario bringup: B", || {
+        one_command_bringup(&run_b, &scenario_b, 24, &out_b, true)
+    })?;
+    let ebm_off = run_gate_phase(&mut phase_timings, "scenario bringup: EBM off", || {
+        one_command_bringup_with_ebm_mode(
+            &run_ebm_off,
+            &scenario_ebm,
+            24,
+            &out_ebm_off,
+            true,
+            "off",
+        )
+    })?;
+    let ebm_shadow = run_gate_phase(&mut phase_timings, "scenario bringup: EBM shadow", || {
+        one_command_bringup_with_ebm_mode(
+            &run_ebm_shadow,
+            &scenario_ebm,
+            24,
+            &out_ebm_shadow,
+            true,
+            "shadow",
+        )
+    })?;
+    let ebm_active = run_gate_phase(&mut phase_timings, "scenario bringup: EBM active", || {
+        one_command_bringup_with_ebm_mode(
+            &run_ebm_active,
+            &scenario_ebm,
+            24,
+            &out_ebm_active,
+            true,
+            "active",
+        )
+    })?;
+    let ebm_active_repeat = run_gate_phase(
+        &mut phase_timings,
+        "scenario bringup: EBM active repeat",
+        || {
+            one_command_bringup_with_ebm_mode(
+                &run_ebm_active_repeat,
+                &scenario_ebm,
+                24,
+                &out_ebm_active_repeat,
+                true,
+                "active",
+            )
+        },
     )?;
 
     let replay_verify_path = out_b.join("gate_replay_verify.json");
-    replay_audit(
-        &run_b,
-        1,
-        24,
-        ReplayStrictness::VerifyOnly,
-        false,
-        &replay_verify_path,
-    )?;
-    let replay_verify_report: ucf_replay::ReplayReport =
-        serde_json::from_str(&fs::read_to_string(&replay_verify_path)?)?;
+    let replay_verify_report = run_gate_phase(&mut phase_timings, "replay verify", || {
+        replay_audit(
+            &run_b,
+            1,
+            24,
+            ReplayStrictness::VerifyOnly,
+            false,
+            &replay_verify_path,
+        )?;
+        serde_json::from_str(&fs::read_to_string(&replay_verify_path)?).map_err(OpsError::from)
+    })?;
 
     let replay_recompute_path = out_b.join("gate_replay_recompute.json");
-    replay_audit(
-        &run_b,
-        1,
-        24,
-        ReplayStrictness::RecomputeStages,
-        false,
-        &replay_recompute_path,
-    )?;
-    let replay_recompute_report: ucf_replay::ReplayReport =
-        serde_json::from_str(&fs::read_to_string(&replay_recompute_path)?)?;
+    let replay_recompute_report = run_gate_phase(&mut phase_timings, "replay recompute", || {
+        replay_audit(
+            &run_b,
+            1,
+            24,
+            ReplayStrictness::RecomputeStages,
+            false,
+            &replay_recompute_path,
+        )?;
+        serde_json::from_str(&fs::read_to_string(&replay_recompute_path)?).map_err(OpsError::from)
+    })?;
 
-    let explain_last = explain_tick(
-        &run_b,
-        ExplainTickRequest {
-            t: Some(24),
-            decision_id: None,
-            detail_level: 2,
-            digest_prefix_len: 12,
+    let (explain_last, metrics) =
+        run_gate_phase(&mut phase_timings, "explain and metrics", || {
+            let explain_last = explain_tick(
+                &run_b,
+                ExplainTickRequest {
+                    t: Some(24),
+                    decision_id: None,
+                    detail_level: 2,
+                    digest_prefix_len: 12,
+                },
+            )?;
+            let metrics = metrics_summary(&run_b, 24)?;
+            Ok((explain_last, metrics))
+        })?;
+
+    let mut checks = Vec::new();
+    checks.push(run_gate_check_phase(
+        &mut phase_timings,
+        "internal workspace test/offline cargo check",
+        check_workspace_tests,
+    ));
+    checks.extend(run_gate_checks_phase(
+        &mut phase_timings,
+        "required records / feature pack / stage profile checks",
+        || {
+            vec![
+                check_offline_profile(profile),
+                check_required_stage_profile(profile, &artifacts_b.explain),
+                check_backend_disabled_pack(),
+                check_schema_versions(&artifacts_b.run_metadata),
+                check_required_records(&explain_last),
+            ]
         },
-    )?;
-    let metrics = metrics_summary(&run_b, 24)?;
+    ));
+    checks.extend(run_gate_checks_phase(
+        &mut phase_timings,
+        "determinism / replay / policy observability checks",
+        || {
+            vec![
+                check_determinism(&artifacts_a, &artifacts_a2),
+                check_replay_report("replay_verify_only", &replay_verify_report),
+                check_replay_report("replay_recompute", &replay_recompute_report),
+                check_tool_deny_policy(&explain_last),
+                check_emergency_visibility(&explain_last),
+                check_observability(&explain_last, &metrics),
+                check_plug_compatibility(&artifacts_a.run_metadata, &artifacts_b.run_metadata),
+            ]
+        },
+    ));
+    checks.extend(run_gate_checks_phase(
+        &mut phase_timings,
+        "adversarial / EBM checks",
+        || {
+            vec![
+                check_ebm_wiring(&ebm_shadow.explain, &ebm_active.explain),
+                check_ebm_shadow_active_correctness(
+                    &ebm_off.explain,
+                    &ebm_shadow.explain,
+                    &ebm_active.explain,
+                ),
+                check_ebm_safety_dominance(
+                    &ebm_off.explain,
+                    &ebm_active.explain,
+                    &out_ebm_active.join("adversarial_report.json"),
+                ),
+                check_ebm_determinism(&ebm_active.explain, &ebm_active_repeat.explain),
+                check_ebm_constraints_provenance(
+                    &run_ebm_active,
+                    &ebm_active.run_metadata.policy_bundle_hash,
+                ),
+                check_ebm_fallback_degraded_record(&run_ebm_active),
+            ]
+        },
+    ));
+    checks.push(run_gate_phase(
+        &mut phase_timings,
+        "formal invariants check",
+        || formal_invariants::run_formal_invariants_check(profile),
+    )?);
 
-    let mut checks = vec![
-        check_workspace_tests(),
-        check_offline_profile(profile),
-        check_required_stage_profile(profile, &artifacts_b.explain),
-        check_backend_disabled_pack(),
-        check_schema_versions(&artifacts_b.run_metadata),
-        check_required_records(&explain_last),
-        check_determinism(&artifacts_a, &artifacts_a2),
-        check_replay_report("replay_verify_only", &replay_verify_report),
-        check_replay_report("replay_recompute", &replay_recompute_report),
-        check_tool_deny_policy(&explain_last),
-        check_emergency_visibility(&explain_last),
-        check_observability(&explain_last, &metrics),
-        check_plug_compatibility(&artifacts_a.run_metadata, &artifacts_b.run_metadata),
-        check_ebm_wiring(&ebm_shadow.explain, &ebm_active.explain),
-        check_ebm_shadow_active_correctness(
-            &ebm_off.explain,
-            &ebm_shadow.explain,
-            &ebm_active.explain,
-        ),
-        check_ebm_safety_dominance(
-            &ebm_off.explain,
-            &ebm_active.explain,
-            &out_ebm_active.join("adversarial_report.json"),
-        ),
-        check_ebm_determinism(&ebm_active.explain, &ebm_active_repeat.explain),
-        check_ebm_constraints_provenance(
-            &run_ebm_active,
-            &ebm_active.run_metadata.policy_bundle_hash,
-        ),
-        check_ebm_fallback_degraded_record(&run_ebm_active),
-        formal_invariants::run_formal_invariants_check(profile)?,
-    ];
-
-    let weights_lifecycle = check_weights_lifecycle_integrity(workdir)?;
-    let world_vljepa_evidence = check_world_vljepa_shadow_evidence(workdir)?;
-    let sae_real = check_sae_real_readiness(workdir)?;
-    let ssm_opt = check_ssm_opt_drift(workdir)?;
-    let gpu_lane = check_gpu_lane_parity(workdir)?;
+    let weights_lifecycle = run_gate_phase(&mut phase_timings, "weights lifecycle probe", || {
+        check_weights_lifecycle_integrity(workdir)
+    })?;
+    let world_vljepa_evidence =
+        run_gate_phase(&mut phase_timings, "world VLJEPA evidence probe", || {
+            check_world_vljepa_shadow_evidence(workdir)
+        })?;
+    let sae_real = run_gate_phase(&mut phase_timings, "SAE real readiness probe", || {
+        check_sae_real_readiness(workdir)
+    })?;
+    let ssm_opt = run_gate_phase(&mut phase_timings, "SSM opt drift probe", || {
+        check_ssm_opt_drift(workdir)
+    })?;
+    let gpu_lane = run_gate_phase(&mut phase_timings, "GPU lane parity probe", || {
+        check_gpu_lane_parity(workdir)
+    })?;
 
     checks.push(weights_lifecycle.clone());
     checks.push(world_vljepa_evidence.clone());
@@ -2439,28 +2618,47 @@ pub fn readiness_gate(
     } else {
         GateStatus::Pass
     };
-    let report = ReadinessGateReport {
-        metadata: report_freshness_metadata(
-            current_command_line(),
-            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."),
-        ),
-        code_version_tag: bounded_string(build_tag()?.git_commit, GATE_STR_CAP),
-        profile: profile.to_string(),
-        fixtures_digest_prefix: Some(prefix_hex(&artifacts_b.run_metadata.fixtures_digest, 12)),
-        backend_pack_digest_prefix: Some(prefix_hex(
-            &artifacts_b.run_metadata.backend_pack_meta_digest,
-            12,
-        )),
-        timestamp: None,
-        status,
-        checks,
-        weights_lifecycle: Some(weights_lifecycle),
-        world_vljepa_evidence: Some(world_vljepa_evidence),
-        sae_real: Some(sae_real),
-        ssm_opt: Some(ssm_opt),
-        gpu_lane: Some(gpu_lane),
-    };
+    let report = run_gate_phase(&mut phase_timings, "report assembly", || {
+        Ok(ReadinessGateReport {
+            metadata: report_freshness_metadata(
+                current_command_line(),
+                &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."),
+            ),
+            code_version_tag: bounded_string(build_tag()?.git_commit, GATE_STR_CAP),
+            profile: profile.to_string(),
+            fixtures_digest_prefix: Some(prefix_hex(&artifacts_b.run_metadata.fixtures_digest, 12)),
+            backend_pack_digest_prefix: Some(prefix_hex(
+                &artifacts_b.run_metadata.backend_pack_meta_digest,
+                12,
+            )),
+            timestamp: None,
+            status,
+            checks,
+            phase_timings: Vec::new(),
+            weights_lifecycle: Some(weights_lifecycle),
+            world_vljepa_evidence: Some(world_vljepa_evidence),
+            sae_real: Some(sae_real),
+            ssm_opt: Some(ssm_opt),
+            gpu_lane: Some(gpu_lane),
+        })
+    })?;
+    let mut report = report;
+    report.phase_timings = phase_timings;
+    eprintln!("[readiness-gate] start: report write");
+    let report_write_start = Instant::now();
     write_json(out, &report)?;
+    let report_write_duration_ms = elapsed_ms(report_write_start);
+    log_gate_phase_done("report write", GateStatus::Pass, report_write_duration_ms);
+    push_gate_phase_timing(
+        &mut report.phase_timings,
+        "report write",
+        GateStatus::Pass,
+        report_write_duration_ms,
+    );
+    eprintln!(
+        "[readiness-gate] complete: gate status={}",
+        gate_status_label(status)
+    );
     Ok(report)
 }
 
@@ -10246,6 +10444,11 @@ active_hash = "abc"
                     ("a".to_string(), "1".to_string()),
                 ],
             )],
+            phase_timings: vec![GatePhaseTiming {
+                name: "alpha phase".to_string(),
+                status: GateStatus::Pass,
+                duration_ms: 1,
+            }],
             weights_lifecycle: None,
             world_vljepa_evidence: None,
             sae_real: None,
