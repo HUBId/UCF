@@ -141,7 +141,7 @@ pub fn operator_review_packet(
     args: &OperatorReviewPacketArgs,
     out: &Path,
 ) -> Result<OperatorReviewPacketV1, OpsError> {
-    let out_root = PathBuf::from("./out");
+    let out_root = workdir.join("out");
 
     let backend_snapshot = maybe_read_json::<BackendEvidenceSnapshotV1>(&discover_report(
         &out_root,
@@ -405,7 +405,7 @@ fn reduce_review_packet(
         remediation.insert("run_readiness_spine_sweep".to_string());
     }
 
-    let (aggregate_readiness, shadow_ready, reviewability_reduction_digest_prefix) =
+    let (aggregate_readiness, shadow_ready, derived_reduction_digest_prefix) =
         match derive_slot_reviewability_truths_from_active(&applied_scope, &snapshot, &active)
             .and_then(|truths| {
                 let shadow_ready = truths
@@ -428,6 +428,12 @@ fn reduce_review_packet(
                     "MISSING".to_string(),
                 )
             }
+        };
+    let reviewability_reduction_digest_prefix =
+        if signoff.reviewability_reduction_digest_prefix != "MISSING" {
+            signoff.reviewability_reduction_digest_prefix.clone()
+        } else {
+            derived_reduction_digest_prefix
         };
     let stage = reduce_stage(&signoff, &blocking, &aggregate_readiness, shadow_ready);
 
@@ -1510,6 +1516,7 @@ mod tests {
         )
         .expect("packet");
         assert_eq!(p1.review_stage, OperatorReviewStageV1::ReviewActiveReady);
+        assert_eq!(p1.reviewability_reduction_digest_prefix, "reduction1");
         assert_eq!(p1.packet_digest, p2.packet_digest);
         let slot_ids = p1
             .supported_slots

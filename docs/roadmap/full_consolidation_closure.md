@@ -7,7 +7,7 @@
 - It is not Replay, Sleep, Geist, or ISM readiness.
 - It is not identity finalization.
 - Minimal Spine v1.x remains independent and unchanged.
-- Because the readiness gate timed out twice under a 300 second guard, this document records a closure baseline with a required gate-stability follow-up before claiming a fully closed validation line.
+- Because the readiness gate timed out twice under a 300 second guard in the original closure baseline, this document keeps gate-timing risk separate from consolidation claims. Prompt 35C closed the readiness-spine drift line without changing Minimal Spine v1.x or weakening gate criteria.
 
 ## 1. Baseline
 
@@ -83,18 +83,18 @@ Baseline links:
 | Geist package | PASS | `cargo test -p ucf-geist --all-targets` passed. |
 | Workspace tests | PASS | `cargo test --workspace` passed. |
 | Clippy | PASS | `cargo clippy --workspace --all-targets -- -D warnings` passed. |
-| Readiness gate | TIMEOUT | Both 300 second guarded runs timed out before writing a fresh report. |
-| Readiness diagnostic | FAIL | `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json` exited 2 with spine drift categories; this is diagnostic evidence for follow-up, not a consolidation test failure. |
+| Readiness gate | TIMEOUT risk | Original Prompt 35 baseline had cold/local 300 second timeouts; Prompt 35C keeps this as gate-timing risk unless a guarded run passes in the current environment. |
+| Readiness diagnostic | PASS | Prompt 35C `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json` passed after reduction/signoff/review-packet/workflow digest alignment. |
 
 ## 6. Readiness Gate Status
 
-The readiness gate is timeout-risky for this baseline. The follow-up audit is recorded in [`docs/roadmap/readiness_gate_timeout_stability_audit.md`](readiness_gate_timeout_stability_audit.md) and keeps this closure gate-stability-pending.
+The readiness gate remains tracked as timeout-risky for cold/local cache conditions, but the readiness-spine drift branch is closed by Prompt 35C. The follow-up audit is recorded in [`docs/roadmap/readiness_gate_timeout_stability_audit.md`](readiness_gate_timeout_stability_audit.md).
 
 | Attempt | Command | Result | Notes |
 |---|---|---|---|
 | 1 | `timeout 300s cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json` | TIMEOUT | Timed out after Cargo launched the gate; no fresh gate report was written. |
 | 2 | `UCF_OFFLINE=1 timeout 300s cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json` | TIMEOUT | Offline mode did not remove the timeout. |
-| Diagnostic | `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json` | FAIL | Reported `ReductionMismatch`, `SignoffSpineDrift`, `ReviewPacketSpineDrift`, and `WorkflowSpineDrift`. |
+| Diagnostic | `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json` | PASS | Prompt 35C closed `ReductionMismatch`, `SignoffSpineDrift`, `ReviewPacketSpineDrift`, and `WorkflowSpineDrift` by aligning operator surfaces to the canonical reduction digest. |
 
 Static inventory shows the readiness gate runs seven bringup scenarios, two replay audits, an internal `cargo test --workspace --offline` check unless skipped by environment, EBM/adversarial checks, formal invariants, and optional readiness probes. The timeout therefore remains a Gate Stability risk rather than a consolidation-layer blocker.
 
@@ -105,12 +105,14 @@ Static inventory shows the readiness gate runs seven bringup scenarios, two repl
 - Macro append/readback contract may still be needed as a separate bounded prompt if the roadmap chooses to append macro records explicitly.
 - Protocol schema/provenance evolution remains later work.
 - Prod-profile readiness remains later work.
-- Gate stability requires follow-up because Prompt 35 could not produce a fresh passing readiness-gate report under the 300 second guard.
+- Gate timing remains tracked separately for cold/local cache conditions; readiness-spine drift is closed by Prompt 35C.
 
 ## 8. Recommended Next Roadmap
 
-Prompt 35 chooses the gate-stability branch:
+Prompt 35C closes the gate-spine drift branch. If the guarded readiness gate is warm-cache passing or only cold-cache-sensitive, the next roadmap prompt can proceed to Replay Scheduler boundary work; otherwise run a timing-instrumentation prompt first.
 
-**Recommended next prompt: UCF Prompt 35A — Readiness Gate Timeout Stability Audit**.
+**Recommended next prompt when gate timing is acceptable: UCF Prompt 36 — Replay Scheduler Roadmap and Boundary Audit**.
+
+**Fallback if gate timing remains unacceptable: UCF Prompt 35B — Readiness Gate Progress Logging and Per-Phase Timing**.
 
 After the gate-stability follow-up produces a stable fresh readiness baseline, the next large roadmap block should be either Replay Scheduler Roadmap and Boundary Audit or Prod-profile Readiness, without changing the forbidden claims above.

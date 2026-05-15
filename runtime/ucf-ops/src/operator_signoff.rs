@@ -28,6 +28,7 @@ struct SignoffReductionInputs<'a> {
     operator: Option<&'a ConsolidatedOperatorReportV1>,
     gates: GateInputs,
     strict_snapshot: &'a StrictEvidenceSnapshotV1,
+    reviewability_strict_snapshot: &'a StrictEvidenceSnapshotV1,
     active_review_snapshot: Option<&'a AggregatedActiveReviewSnapshotV1>,
     applied_scope: &'a AppliedSupportedSetContextV1,
     policy: &'a SignoffPolicyV1,
@@ -184,7 +185,7 @@ pub fn operator_signoff(
     args: &OperatorSignoffArgs,
     out: &Path,
 ) -> Result<OperatorSignoffDecisionV1, OpsError> {
-    let out_root = PathBuf::from("./out");
+    let out_root = workdir.join("out");
     let snapshot = maybe_read_json::<BackendEvidenceSnapshotV1>(&discover_report(
         &out_root,
         "backend_evidence_snapshot.json",
@@ -217,31 +218,38 @@ pub fn operator_signoff(
     };
 
     let policy = SignoffPolicyV1::from_profile(&args.profile);
-    let strict_snapshot = resolve_strict_evidence(
+    let strict_context = StrictEvidenceContextV1 {
+        run_id: args.run_id.clone(),
+        latest: args.latest,
+        strict_required: policy.block_on_strict_fail,
+        expected_policy_graph_digest_prefix: snapshot
+            .as_ref()
+            .map(|s| s.policy_graph_digest_prefix.clone())
+            .or_else(|| {
+                operator
+                    .as_ref()
+                    .and_then(|o| o.policy_graph_digest_prefix.clone())
+            }),
+        expected_manifest_digest_prefix: snapshot
+            .as_ref()
+            .map(|s| s.manifest_digest_prefix.clone())
+            .or_else(|| {
+                operator
+                    .as_ref()
+                    .and_then(|o| o.manifest_digest_prefix.clone())
+            }),
+        expected_supported_slot_set_digest_prefix: snapshot
+            .as_ref()
+            .map(|s| s.supported_slot_set_digest.clone()),
+    };
+    let strict_snapshot = resolve_strict_evidence(&out_root, &strict_context);
+    let reviewability_strict_snapshot = resolve_strict_evidence(
         &out_root,
         &StrictEvidenceContextV1 {
             run_id: args.run_id.clone(),
-            latest: args.latest,
-            strict_required: policy.block_on_strict_fail,
-            expected_policy_graph_digest_prefix: snapshot
-                .as_ref()
-                .map(|s| s.policy_graph_digest_prefix.clone())
-                .or_else(|| {
-                    operator
-                        .as_ref()
-                        .and_then(|o| o.policy_graph_digest_prefix.clone())
-                }),
-            expected_manifest_digest_prefix: snapshot
-                .as_ref()
-                .map(|s| s.manifest_digest_prefix.clone())
-                .or_else(|| {
-                    operator
-                        .as_ref()
-                        .and_then(|o| o.manifest_digest_prefix.clone())
-                }),
-            expected_supported_slot_set_digest_prefix: snapshot
-                .as_ref()
-                .map(|s| s.supported_slot_set_digest.clone()),
+            latest: true,
+            strict_required: false,
+            ..strict_context
         },
     );
     let mut decision = reduce_signoff(SignoffReductionInputs {
@@ -249,6 +257,7 @@ pub fn operator_signoff(
         operator: operator.as_ref(),
         gates: GateInputs { v0, v1, v2, v3 },
         strict_snapshot: &strict_snapshot,
+        reviewability_strict_snapshot: &reviewability_strict_snapshot,
         active_review_snapshot: active_review_snapshot.as_ref(),
         applied_scope: &applied_scope,
         policy: &policy,
@@ -435,6 +444,7 @@ fn reduce_signoff(
         operator,
         gates: GateInputs { v0, v1, v2, v3 },
         strict_snapshot,
+        reviewability_strict_snapshot,
         applied_scope,
         policy,
     } = inputs;
@@ -538,8 +548,12 @@ fn reduce_signoff(
     if let Some(active) = active_review_snapshot
         .filter(|r| r.supported_slot_set_digest == snapshot.supported_slot_set_digest)
     {
-        let truths =
-            derive_slot_reviewability_truths(applied_scope, snapshot, active, strict_snapshot)?;
+        let truths = derive_slot_reviewability_truths(
+            applied_scope,
+            snapshot,
+            active,
+            reviewability_strict_snapshot,
+        )?;
         let reduction = reduce_reviewability(applied_scope, &truths)?;
         reviewability_reduction_digest_prefix = prefix16(&reduction.reduction_digest);
         if let Ok(surfaces) =
@@ -1413,6 +1427,7 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            reviewability_strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
             active_review_snapshot: Some(&active_review_snapshot(false)),
             applied_scope: &applied_scope(),
             policy: &policy(),
@@ -1428,6 +1443,7 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            reviewability_strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
             active_review_snapshot: Some(&active_review_snapshot(false)),
             applied_scope: &applied_scope(),
             policy: &policy(),
@@ -1448,6 +1464,7 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            reviewability_strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
             active_review_snapshot: Some(&active_review_snapshot(false)),
             applied_scope: &applied_scope(),
             policy: &policy(),
@@ -1469,6 +1486,7 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            reviewability_strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
             active_review_snapshot: Some(&active_review_snapshot(true)),
             applied_scope: &applied_scope(),
             policy: &policy(),
@@ -1479,6 +1497,48 @@ mod tests {
             SignoffDecisionStateV1::ReadyForActiveReview
         );
         assert_eq!(decision.reasons, vec!["SIGNOFF_READY_ACTIVE_REVIEW"]);
+    }
+
+    #[test]
+    fn strict_gate_block_does_not_drift_reviewability_reduction_digest() {
+        let strict_pass = reduce_signoff(SignoffReductionInputs {
+            snapshot: Some(&snapshot(true)),
+            operator: Some(&operator_report()),
+            gates: GateInputs {
+                v0: Some(pass_v0()),
+                v1: Some(pass_v1()),
+                v2: Some(pass_v2()),
+                v3: Some(pass_v3()),
+            },
+            strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            reviewability_strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            active_review_snapshot: Some(&active_review_snapshot(true)),
+            applied_scope: &applied_scope(),
+            policy: &policy(),
+        })
+        .expect("strict pass decision");
+        let strict_fail = reduce_signoff(SignoffReductionInputs {
+            snapshot: Some(&snapshot(true)),
+            operator: Some(&operator_report()),
+            gates: GateInputs {
+                v0: Some(pass_v0()),
+                v1: Some(pass_v1()),
+                v2: Some(pass_v2()),
+                v3: Some(pass_v3()),
+            },
+            strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Fail),
+            reviewability_strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            active_review_snapshot: Some(&active_review_snapshot(true)),
+            applied_scope: &applied_scope(),
+            policy: &policy(),
+        })
+        .expect("strict fail decision");
+        assert_eq!(strict_fail.decision, SignoffDecisionStateV1::NotReady);
+        assert!(strict_fail.reasons.contains(&"STRICT_FAIL".to_string()));
+        assert_eq!(
+            strict_fail.reviewability_reduction_digest_prefix,
+            strict_pass.reviewability_reduction_digest_prefix
+        );
     }
 
     #[test]
@@ -1498,6 +1558,7 @@ mod tests {
                 }),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Fail),
+            reviewability_strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
             active_review_snapshot: None,
             applied_scope: &applied_scope(),
             policy: &policy(),
@@ -1522,6 +1583,7 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            reviewability_strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
             active_review_snapshot: None,
             applied_scope: &applied_scope(),
             policy: &policy(),
@@ -1548,6 +1610,7 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            reviewability_strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
             active_review_snapshot: None,
             applied_scope: &applied_scope(),
             policy: &policy(),
@@ -1571,6 +1634,7 @@ mod tests {
                 v3: None,
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            reviewability_strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
             active_review_snapshot: None,
             applied_scope: &applied_scope(),
             policy: &policy(),

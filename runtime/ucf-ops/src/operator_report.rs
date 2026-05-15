@@ -147,7 +147,7 @@ pub fn operator_report(
     args: &OperatorReportArgs,
     out: &Path,
 ) -> Result<ConsolidatedOperatorReportV1, OpsError> {
-    let out_root = PathBuf::from("./out");
+    let out_root = workdir.join("out");
     let health_value = maybe_read_json_value(&discover_report(&out_root, "health.json", args));
     let eligibility = maybe_read_json::<AggregatedEligibilityReportV1>(&discover_report(
         &out_root,
