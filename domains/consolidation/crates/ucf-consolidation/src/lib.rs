@@ -17,6 +17,7 @@ use ucf_commit::{
     Commitment,
 };
 use ucf_consistency_engine::{ConsistencyReport, DriftBand};
+use ucf_evidence::{EvidenceEnvelope, EvidenceStore};
 use ucf_iit_monitor::IitReport;
 use ucf_influence::{InfluenceNodeId, InfluenceOutputs};
 use ucf_predictive_coding::{SurpriseBand, SurpriseSignal};
@@ -29,10 +30,10 @@ use ucf_types::consolidation::{
     ReplayToken,
 };
 use ucf_types::v1::spec::{
-    ExperienceRecord, MacroMilestone as ProtoMacroMilestone, MesoMilestone as ProtoMesoMilestone,
-    MicroMilestone as ProtoMicroMilestone,
+    Digest as ProtoDigest, ExperienceRecord, MacroMilestone as ProtoMacroMilestone,
+    MesoMilestone as ProtoMesoMilestone, MicroMilestone as ProtoMicroMilestone, ProofEnvelope,
 };
-use ucf_types::{Digest32, EvidenceId, NodeId};
+use ucf_types::{Digest32, EvidenceId, LogicalTime, NodeId, WallTime};
 use ucf_vector_index::{
     build_macro_finalized_envelope, build_record_appended_envelope, MacroMilestoneFinalized,
     RecordAppended,
@@ -117,9 +118,245 @@ impl MinimalSpineMicroMilestoneBuildOutput {
     }
 }
 
+/// Version for the explicit Minimal Spine micro-milestone append contract payload.
+pub const MINIMAL_SPINE_MICRO_MILESTONE_APPEND_PAYLOAD_VERSION: u32 = 1;
+
+/// Explicit contract marker carried in the evidence/archive append payload.
+pub const MINIMAL_SPINE_MICRO_MILESTONE_APPEND_CONTRACT: &str = "micro_milestone_v1";
+
+/// Extension kind used for Minimal Spine micro-milestone append proof records in archive-store.
+///
+/// `RecordKind` currently has no canonical MicroMilestone variant, so Prompt 28 uses the existing
+/// `Other` extension surface rather than changing archive-store schema or claiming a broader
+/// canonical milestone kind.
+pub const MINIMAL_SPINE_MICRO_MILESTONE_ARCHIVE_KIND: RecordKind = RecordKind::Other(28);
+
+/// Deterministic payload appended for a Minimal Spine micro-milestone build output.
+///
+/// The protocol `MicroMilestone` does not carry the complete Minimal Spine provenance. This payload
+/// preserves that provenance at the explicit Evidence/Archive boundary without changing protocol
+/// schemas or making consolidation a second event-log authority.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineMicroMilestoneAppendPayload {
+    pub version: u32,
+    pub append_contract: String,
+    pub build_output_digest: Digest32,
+    pub candidate_digest: Digest32,
+    pub micro_milestone_digest: Digest32,
+    pub input_digest: Digest32,
+    pub candidate_set_record_digest: Digest32,
+    pub output_record_digest: Digest32,
+    pub source_evidence_id: EvidenceId,
+    pub archive_output_key: Digest32,
+    pub archive_output_event_digest: Digest32,
+    pub source: String,
+}
+
+impl MinimalSpineMicroMilestoneAppendPayload {
+    pub fn from_build_output(
+        build_output: &MinimalSpineMicroMilestoneBuildOutput,
+    ) -> Result<Self, ConsolidationError> {
+        let payload = Self {
+            version: MINIMAL_SPINE_MICRO_MILESTONE_APPEND_PAYLOAD_VERSION,
+            append_contract: MINIMAL_SPINE_MICRO_MILESTONE_APPEND_CONTRACT.to_string(),
+            build_output_digest: build_output.digest(),
+            candidate_digest: build_output.candidate_digest,
+            micro_milestone_digest: build_output.micro_milestone_digest,
+            input_digest: build_output.input_digest,
+            candidate_set_record_digest: build_output.candidate_set_record_digest,
+            output_record_digest: build_output.output_record_digest,
+            source_evidence_id: build_output.evidence_id.clone(),
+            archive_output_key: build_output.archive_output_key,
+            archive_output_event_digest: build_output.archive_output_event_digest,
+            source: build_output.source.clone(),
+        };
+        if !payload.validate_links_nonzero() {
+            return Err(ConsolidationError::InvalidMinimalSpineMicroMilestoneAppendPayloadLinks);
+        }
+        Ok(payload)
+    }
+
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32(&mut out, self.version);
+        push_str(&mut out, &self.append_contract);
+        push_digest(&mut out, self.build_output_digest);
+        push_digest(&mut out, self.candidate_digest);
+        push_digest(&mut out, self.micro_milestone_digest);
+        push_digest(&mut out, self.input_digest);
+        push_digest(&mut out, self.candidate_set_record_digest);
+        push_digest(&mut out, self.output_record_digest);
+        push_str(&mut out, self.source_evidence_id.as_str());
+        push_digest(&mut out, self.archive_output_key);
+        push_digest(&mut out, self.archive_output_event_digest);
+        push_str(&mut out, &self.source);
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_domain(
+            b"ucf.consolidation.minimal_spine.micro_append_payload.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+
+    pub fn validate_links_nonzero(&self) -> bool {
+        self.version == MINIMAL_SPINE_MICRO_MILESTONE_APPEND_PAYLOAD_VERSION
+            && self.append_contract == MINIMAL_SPINE_MICRO_MILESTONE_APPEND_CONTRACT
+            && !is_zero_digest(self.build_output_digest)
+            && !is_zero_digest(self.candidate_digest)
+            && !is_zero_digest(self.micro_milestone_digest)
+            && !is_zero_digest(self.input_digest)
+            && !is_zero_digest(self.candidate_set_record_digest)
+            && !is_zero_digest(self.output_record_digest)
+            && !self.source_evidence_id.as_str().is_empty()
+            && !is_zero_digest(self.archive_output_key)
+            && !is_zero_digest(self.archive_output_event_digest)
+            && !self.source.is_empty()
+    }
+}
+
+/// Result of the explicit Minimal Spine micro-milestone append/readback contract.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineMicroMilestoneAppendResult {
+    pub payload_digest: Digest32,
+    pub build_output_digest: Digest32,
+    pub micro_milestone_digest: Digest32,
+    pub appended_evidence_id: EvidenceId,
+    pub archive_key: Digest32,
+    pub archive_record_digest: Digest32,
+    pub readback_digest: Digest32,
+}
+
+pub fn append_minimal_spine_micro_milestone<E, S>(
+    build_output: &MinimalSpineMicroMilestoneBuildOutput,
+    evidence_store: &E,
+    archive_store: &S,
+    archive_appender: &mut ArchiveAppender,
+) -> Result<MinimalSpineMicroMilestoneAppendResult, ConsolidationError>
+where
+    E: EvidenceStore,
+    S: ArchiveStore,
+{
+    let payload = MinimalSpineMicroMilestoneAppendPayload::from_build_output(build_output)?;
+    let payload_bytes = payload.deterministic_bytes();
+    let payload_digest = payload.digest();
+    let appended_evidence_id = EvidenceId::new(format!(
+        "minimal-spine-micro-append-{}",
+        hex_encode(payload_digest.as_bytes())
+    ));
+    let proof = ProofEnvelope {
+        envelope_id: format!(
+            "{}:{}",
+            MINIMAL_SPINE_MICRO_MILESTONE_APPEND_CONTRACT,
+            hex_encode(payload_digest.as_bytes())
+        ),
+        payload: payload_bytes,
+        payload_digest: Some(ProtoDigest {
+            algorithm: "blake3".to_string(),
+            value: payload_digest.as_bytes().to_vec(),
+            algo_id: None,
+            domain: None,
+            value_32: Some(payload_digest.as_bytes().to_vec()),
+        }),
+        vrf_tags: Vec::new(),
+        signature_ids: Vec::new(),
+    };
+    let evidence_envelope = EvidenceEnvelope {
+        evidence_id: appended_evidence_id.clone(),
+        proof: Some(proof),
+        fold_proof: None,
+        logical_time: LogicalTime::new(build_output.micro_milestone.achieved_at_ms),
+        wall_time: WallTime::new(build_output.micro_milestone.achieved_at_ms),
+    };
+
+    evidence_store.append(evidence_envelope);
+
+    let archive_record = archive_appender.build_record_with_commit(
+        MINIMAL_SPINE_MICRO_MILESTONE_ARCHIVE_KIND,
+        payload_digest,
+        RecordMeta {
+            cycle_id: build_output.micro_milestone.achieved_at_ms,
+            tier: 1,
+            flags: 0,
+            boundary_commit: build_output.micro_milestone_digest,
+        },
+    );
+    let archive_record_digest = archive_store.append(archive_record);
+    let readback = evidence_store
+        .get(appended_evidence_id.clone())
+        .ok_or(ConsolidationError::MinimalSpineMicroMilestoneAppendReadbackMissing)?;
+    let readback_digest = digest_evidence_envelope(&readback);
+    let archive_readback = archive_store
+        .get(archive_record.key)
+        .ok_or(ConsolidationError::MinimalSpineMicroMilestoneAppendReadbackMissing)?;
+    if archive_readback != archive_record {
+        return Err(ConsolidationError::MinimalSpineMicroMilestoneAppendReadbackMismatch);
+    }
+
+    Ok(MinimalSpineMicroMilestoneAppendResult {
+        payload_digest,
+        build_output_digest: payload.build_output_digest,
+        micro_milestone_digest: payload.micro_milestone_digest,
+        appended_evidence_id,
+        archive_key: archive_record.key,
+        archive_record_digest,
+        readback_digest,
+    })
+}
+
+fn digest_evidence_envelope(envelope: &EvidenceEnvelope) -> Digest32 {
+    let mut out = Vec::new();
+    push_str(&mut out, envelope.evidence_id.as_str());
+    match &envelope.proof {
+        Some(proof) => {
+            out.push(1);
+            push_str(&mut out, &proof.envelope_id);
+            let payload_len = u32::try_from(proof.payload.len())
+                .expect("minimal spine micro append proof payload length fits u32");
+            push_u32(&mut out, payload_len);
+            out.extend_from_slice(&proof.payload);
+            match &proof.payload_digest {
+                Some(digest) => {
+                    out.push(1);
+                    push_str(&mut out, &digest.algorithm);
+                    let value_len = u32::try_from(digest.value.len())
+                        .expect("minimal spine micro append digest length fits u32");
+                    push_u32(&mut out, value_len);
+                    out.extend_from_slice(&digest.value);
+                    push_optional_u32(&mut out, digest.algo_id);
+                    push_optional_u32(&mut out, digest.domain);
+                    push_optional_bytes(&mut out, digest.value_32.as_deref());
+                }
+                None => out.push(0),
+            }
+            let tag_count = u32::try_from(proof.vrf_tags.len())
+                .expect("minimal spine micro append vrf tag count fits u32");
+            push_u32(&mut out, tag_count);
+            let sig_count = u32::try_from(proof.signature_ids.len())
+                .expect("minimal spine micro append signature id count fits u32");
+            push_u32(&mut out, sig_count);
+            for signature_id in &proof.signature_ids {
+                push_str(&mut out, signature_id);
+            }
+        }
+        None => out.push(0),
+    }
+    out.push(u8::from(envelope.fold_proof.is_some()));
+    push_u64(&mut out, envelope.logical_time.tick);
+    push_u64(&mut out, envelope.wall_time.unix_ms);
+    digest_domain(
+        b"ucf.consolidation.minimal_spine.micro_append_readback.v1",
+        &out,
+    )
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ConsolidationError {
     InvalidMinimalSpineMicroMilestoneCandidateLinks,
+    InvalidMinimalSpineMicroMilestoneAppendPayloadLinks,
+    MinimalSpineMicroMilestoneAppendReadbackMissing,
+    MinimalSpineMicroMilestoneAppendReadbackMismatch,
 }
 
 impl fmt::Display for ConsolidationError {
@@ -130,6 +367,21 @@ impl fmt::Display for ConsolidationError {
                     f,
                     "minimal spine micro milestone candidate links must be non-empty/non-zero"
                 )
+            }
+            Self::InvalidMinimalSpineMicroMilestoneAppendPayloadLinks => {
+                write!(
+                    f,
+                    "minimal spine micro milestone append payload links must be non-empty/non-zero"
+                )
+            }
+            Self::MinimalSpineMicroMilestoneAppendReadbackMissing => {
+                write!(
+                    f,
+                    "minimal spine micro milestone append readback is missing"
+                )
+            }
+            Self::MinimalSpineMicroMilestoneAppendReadbackMismatch => {
+                write!(f, "minimal spine micro milestone append readback mismatch")
             }
         }
     }
@@ -268,6 +520,29 @@ fn push_str(out: &mut Vec<u8>, value: &str) {
 
 fn push_digest(out: &mut Vec<u8>, value: Digest32) {
     out.extend_from_slice(value.as_bytes());
+}
+
+fn push_optional_u32(out: &mut Vec<u8>, value: Option<u32>) {
+    match value {
+        Some(value) => {
+            out.push(1);
+            push_u32(out, value);
+        }
+        None => out.push(0),
+    }
+}
+
+fn push_optional_bytes(out: &mut Vec<u8>, value: Option<&[u8]>) {
+    match value {
+        Some(value) => {
+            out.push(1);
+            let len = u32::try_from(value.len())
+                .expect("minimal spine micro append optional bytes length fits u32");
+            push_u32(out, len);
+            out.extend_from_slice(value);
+        }
+        None => out.push(0),
+    }
 }
 
 #[derive(Clone, Debug)]

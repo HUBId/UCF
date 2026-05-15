@@ -186,3 +186,28 @@ Prompt 27 is implemented as a pure, append-free builder in `ucf-consolidation`.
 The current protocol `MicroMilestone` surface carries only milestone id, achieved-at timestamp, and label in code. It does not fully carry Minimal Spine provenance by itself: candidate digest, input digest, `CandidateSetRecord` digest, `OutputRecord` digest, `EvidenceId`, archive output key, and archive output event digest remain outside the protocol micro record. Prompt 27 therefore does not overclaim that the protocol `MicroMilestone` alone is the full Minimal Spine provenance container.
 
 Prompt 28 should decide whether the provenance remains in an append payload/evidence wrapper, becomes a companion record, or requires a minimal protocol schema follow-up. Until that decision, the builder output wrapper is the honest deterministic handoff surface.
+
+## 12. Prompt 28 Completion Note
+
+Prompt 28 is complete. The Minimal Spine MicroMilestone Evidence/Archive append contract is now explicit and readback-tested.
+
+| Concern | Decision | Reason |
+|---|---|---|
+| Append authority | Existing `ucf-evidence::EvidenceStore` and `ucf-archive-store::ArchiveStore` APIs | Evidence/Archive remain the canonical append/readback surfaces; `ucf-consolidation` only constructs the deterministic payload and invokes those APIs when the explicit helper is called. |
+| Consolidation role | Payload constructor / explicit caller only | The pure builder remains append-free; append behavior lives in `append_minimal_spine_micro_milestone` and is not called by the builder. |
+| `ArchiveMilestoneSink` usage | Avoided for Prompt 28 | `ArchiveMilestoneSink` is broader than this contract because it can publish index events, record sleep-state derived records, and emit meso/macro paths. The Prompt 28 helper uses only narrow Evidence/Archive append/readback APIs. |
+| Payload provenance location | Append payload/wrapper | Protocol `MicroMilestone` still only carries id, timestamp, and label. Minimal Spine provenance is preserved in `MinimalSpineMicroMilestoneAppendPayload`, not in the protocol schema. |
+| Readback authority | Existing Evidence/Archive stores | The helper reads back the appended evidence envelope by id and the archive-store record by key, then returns deterministic digests. |
+| Replay/Geist side effects | Forbidden | The helper has no Replay Scheduler, Sleep Cycle, Geist, ISM, meso, macro, identity-finalization, capability, gateway, or real-compute integration. |
+
+Implemented/tested surface:
+
+- `MinimalSpineMicroMilestoneAppendPayload` preserves `build_output_digest`, `candidate_digest`, `micro_milestone_digest`, `input_digest`, `candidate_set_record_digest`, `output_record_digest`, source `EvidenceId`, `archive_output_key`, `archive_output_event_digest`, and source marker.
+- `MinimalSpineMicroMilestoneAppendResult` returns the payload digest, build-output digest, micro milestone digest, appended evidence id, archive-store key, archive-record digest, and deterministic readback digest.
+- `append_minimal_spine_micro_milestone` is the only new append helper and must be called explicitly.
+- `RecordKind::Other(28)` is used as the narrow archive-store extension kind because archive-store has no canonical MicroMilestone `RecordKind`; no archive-store schema change was made.
+- Tests live in `domains/consolidation/crates/ucf-consolidation/tests/minimal_spine_micro_append.rs`.
+
+| Prompt | Status | Implemented surface | Boundary result | Recommended next prompt |
+|---:|---|---|---|---|
+| 28 | complete | Explicit Minimal Spine MicroMilestone append payload/result/helper plus readback tests | Micro append is opt-in, provenance-preserving, deterministic, Evidence/Archive-authoritative, and no Replay/Sleep/Geist/ISM/Meso/Macro path is activated | Prompt 29 — Deterministic MesoMilestone Aggregation |

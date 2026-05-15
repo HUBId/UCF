@@ -174,3 +174,22 @@ Prompt 27 is complete. The deterministic MicroMilestone builder from Minimal Spi
 | 27 | complete | `build_micro_milestone_from_minimal_spine_candidate` and `MinimalSpineMicroMilestoneBuildOutput` | Micro-only, append-free, replay/sleep/geist/ISM-free, no meso/macro aggregation, no Minimal Spine v1.x changes | Prompt 28 — MicroMilestone Evidence/Archive Append Contract |
 
 Prompt 27 chose Option B because the current protocol `MicroMilestone` fields are not a complete provenance container for Minimal Spine links. The wrapper preserves candidate digest, input digest, candidate-set digest, output-record digest, evidence id, archive output key, archive output event digest, protocol micro milestone digest, and source marker while keeping Evidence/Archive append authority deferred to Prompt 28.
+
+## 12. Prompt 28 Completion Note
+
+Prompt 28 is complete. The roadmap now has a narrow Evidence/Archive append/readback contract for Minimal Spine MicroMilestone builder outputs.
+
+| Boundary | Prompt 28 result |
+|---|---|
+| Explicit append only | Append occurs only through `append_minimal_spine_micro_milestone`; the pure Minimal Spine micro builder does not append. |
+| Builder purity | `build_micro_milestone_from_minimal_spine_candidate` remains deterministic and append-free. |
+| Provenance | Full Minimal Spine provenance remains in `MinimalSpineMicroMilestoneAppendPayload`; protocol `MicroMilestone` is unchanged and still does not carry all provenance by itself. |
+| Evidence/Archive authority | Existing `ucf-evidence::EvidenceStore` and `ucf-archive-store::ArchiveStore` APIs remain the append/readback authority. |
+| `ArchiveMilestoneSink` | Not used for Prompt 28 because it is broader than this micro-only contract and can couple to index publication, sleep-state derived-record tracking, and meso/macro emission paths. |
+| Replay/Sleep/Geist/ISM | Not integrated or triggered. |
+| Meso/Macro | Not built, aggregated, emitted, or finalized. |
+| Minimal Spine v1.x | Unchanged. |
+| Protocol schema | Unchanged; the schema gap is documented as append-payload provenance. |
+| Second event log | Not introduced; consolidation constructs deterministic payloads and delegates append/readback to Evidence/Archive stores. |
+
+Recommended next prompt: **UCF Prompt 29 — Deterministic MesoMilestone Aggregation**.
