@@ -193,3 +193,22 @@ Prompt 28 is complete. The roadmap now has a narrow Evidence/Archive append/read
 | Second event log | Not introduced; consolidation constructs deterministic payloads and delegates append/readback to Evidence/Archive stores. |
 
 Recommended next prompt: **UCF Prompt 29 — Deterministic MesoMilestone Aggregation**.
+
+## 13. Prompt 29 Completion Note
+
+Prompt 29 is complete. The roadmap now has a pure deterministic MesoMilestone aggregation surface from Minimal Spine micro build outputs or explicit micro append payload values.
+
+| Boundary | Prompt 29 result |
+|---|---|
+| Pure aggregation | `build_meso_milestone_from_minimal_spine_micro_payloads` and `build_meso_milestone_from_minimal_spine_micro_build_outputs` construct values only and accept no store/appender/sink arguments. |
+| Builder output wrapper | `MinimalSpineMesoMilestoneBuildOutput` preserves the protocol `MesoMilestone`, micro payload digests, micro milestone digests, aggregation digest, count, and source marker. |
+| Ordering | Input order is deterministically normalized by micro payload digest, then micro milestone digest, then micro milestone id. |
+| Duplicate handling | Duplicate micro payload digest or duplicate micro milestone digest is rejected. |
+| Evidence/Archive authority | No append/readback behavior is added in Prompt 29; Evidence/Archive remains deferred to a meso-specific append/readback prompt. |
+| `ArchiveMilestoneSink` | Not used. |
+| Replay/Sleep/Geist/ISM | Not integrated or triggered. |
+| Macro | Not built, aggregated, emitted, or finalized. |
+| Minimal Spine v1.x | Unchanged. |
+| Protocol schema | Unchanged; the Meso provenance gap is documented as wrapper metadata. |
+
+Recommended next prompt: **UCF Prompt 30 — MesoMilestone Archive/Readback Tests**.

@@ -211,3 +211,29 @@ Implemented/tested surface:
 | Prompt | Status | Implemented surface | Boundary result | Recommended next prompt |
 |---:|---|---|---|---|
 | 28 | complete | Explicit Minimal Spine MicroMilestone append payload/result/helper plus readback tests | Micro append is opt-in, provenance-preserving, deterministic, Evidence/Archive-authoritative, and no Replay/Sleep/Geist/ISM/Meso/Macro path is activated | Prompt 29 — Deterministic MesoMilestone Aggregation |
+
+## 13. Prompt 29 Deterministic MesoMilestone Aggregation Status
+
+Prompt 29 is implemented as a pure, deterministic, append-free MesoMilestone aggregator in `ucf-consolidation`.
+
+| Item | Status |
+|---|---|
+| Chosen input option | Option C — support micro build outputs and explicit micro append payload values |
+| Primary builder API | `build_meso_milestone_from_minimal_spine_micro_payloads(&[MinimalSpineMicroMilestoneAppendPayload]) -> Result<MinimalSpineMesoMilestoneBuildOutput, ConsolidationError>` |
+| Build-output convenience API | `build_meso_milestone_from_minimal_spine_micro_build_outputs(&[MinimalSpineMicroMilestoneBuildOutput]) -> Result<MinimalSpineMesoMilestoneBuildOutput, ConsolidationError>` |
+| Builder output | `MinimalSpineMesoMilestoneBuildOutput` containing a protocol-compatible `ucf_types::v1::spec::MesoMilestone` plus micro payload digests, micro milestone digests, aggregation digest, count, and source marker |
+| Ordering semantics | Inputs are normalized by micro payload digest, then micro milestone digest, then micro milestone id; reversed input produces the same output/digest. |
+| Duplicate semantics | Duplicate micro payload digest or duplicate micro milestone digest is rejected. |
+| Empty input semantics | Empty input is rejected. |
+| Deterministic bytes/digest | `MinimalSpineMesoMilestoneBuildOutput::deterministic_bytes` and `MinimalSpineMesoMilestoneBuildOutput::digest` |
+| Test path | `domains/consolidation/crates/ucf-consolidation/tests/minimal_spine_meso_builder.rs` |
+| Append behavior | none |
+| Replay/Sleep/Geist/ISM behavior | none |
+| Macro behavior | none |
+| Minimal Spine v1.x changes | none |
+
+### Prompt 29 schema gap
+
+The current protocol `MesoMilestone` surface carries milestone id, achieved-at timestamp, label, and micro milestone ids. It does not fully carry Minimal Spine micro provenance by itself: micro append payload digests, protocol micro milestone digests, aggregation digest, and source metadata remain outside the protocol meso record. Prompt 29 therefore uses the clearly named `MinimalSpineMesoMilestoneBuildOutput` wrapper rather than overloading the protocol `MesoMilestone` fields or changing protocol schema.
+
+The Prompt 29 aggregator is Meso-only and append-free. It does not call `append_minimal_spine_micro_milestone`, `ArchiveMilestoneSink`, Evidence/Archive stores, Replay, Sleep, Geist, ISM, Macro builders, Gateway write APIs, capability issuance, or real-compute surfaces.

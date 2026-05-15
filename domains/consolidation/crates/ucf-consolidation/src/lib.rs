@@ -216,6 +216,208 @@ impl MinimalSpineMicroMilestoneAppendPayload {
     }
 }
 
+/// Version for the deterministic Minimal Spine meso-milestone build wrapper.
+pub const MINIMAL_SPINE_MESO_MILESTONE_BUILD_OUTPUT_VERSION: u32 = 1;
+
+/// Append-free output of the Minimal Spine meso-milestone aggregator.
+///
+/// The protocol `MesoMilestone` can reference micro milestone ids, but it cannot carry the full
+/// Minimal Spine micro append/build provenance. This wrapper keeps the protocol milestone plus the
+/// deterministic micro payload and micro milestone digest links used to aggregate it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MinimalSpineMesoMilestoneBuildOutput {
+    pub version: u32,
+    pub meso_milestone: ProtoMesoMilestone,
+    pub meso_milestone_digest: Digest32,
+    pub micro_payload_digests: Vec<Digest32>,
+    pub micro_milestone_digests: Vec<Digest32>,
+    pub aggregation_digest: Digest32,
+    pub micro_count: u32,
+    pub source: String,
+}
+
+impl MinimalSpineMesoMilestoneBuildOutput {
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32(&mut out, self.version);
+        let meso_bytes = ucf::canonical_bytes(&self.meso_milestone);
+        let meso_len = u32::try_from(meso_bytes.len())
+            .expect("minimal spine meso milestone bytes length fits u32");
+        push_u32(&mut out, meso_len);
+        out.extend_from_slice(&meso_bytes);
+        push_digest(&mut out, self.meso_milestone_digest);
+        push_digest_vec(&mut out, &self.micro_payload_digests);
+        push_digest_vec(&mut out, &self.micro_milestone_digests);
+        push_digest(&mut out, self.aggregation_digest);
+        push_u32(&mut out, self.micro_count);
+        push_str(&mut out, &self.source);
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_domain(
+            b"ucf.consolidation.minimal_spine.meso_builder_output.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct MinimalSpineMesoAggregationInput {
+    payload_digest: Digest32,
+    micro_milestone_digest: Digest32,
+    micro_milestone_id: String,
+    achieved_at_ms: u64,
+}
+
+impl MinimalSpineMesoAggregationInput {
+    fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_digest(&mut out, self.payload_digest);
+        push_digest(&mut out, self.micro_milestone_digest);
+        push_str(&mut out, &self.micro_milestone_id);
+        push_u64(&mut out, self.achieved_at_ms);
+        out
+    }
+}
+
+pub fn build_meso_milestone_from_minimal_spine_micro_build_outputs(
+    micro_outputs: &[MinimalSpineMicroMilestoneBuildOutput],
+) -> Result<MinimalSpineMesoMilestoneBuildOutput, ConsolidationError> {
+    let inputs: Result<Vec<_>, _> = micro_outputs
+        .iter()
+        .map(|output| {
+            let payload = MinimalSpineMicroMilestoneAppendPayload::from_build_output(output)?;
+            Ok(MinimalSpineMesoAggregationInput {
+                payload_digest: payload.digest(),
+                micro_milestone_digest: output.micro_milestone_digest,
+                micro_milestone_id: output.micro_milestone.milestone_id.clone(),
+                achieved_at_ms: output.micro_milestone.achieved_at_ms,
+            })
+        })
+        .collect();
+    build_meso_milestone_from_minimal_spine_inputs(&inputs?)
+}
+
+pub fn build_meso_milestone_from_minimal_spine_micro_payloads(
+    micro_payloads: &[MinimalSpineMicroMilestoneAppendPayload],
+) -> Result<MinimalSpineMesoMilestoneBuildOutput, ConsolidationError> {
+    let inputs: Result<Vec<_>, _> = micro_payloads
+        .iter()
+        .map(|payload| {
+            if !payload.validate_links_nonzero() {
+                return Err(ConsolidationError::InvalidMinimalSpineMesoMilestoneInputLinks);
+            }
+            Ok(MinimalSpineMesoAggregationInput {
+                payload_digest: payload.digest(),
+                micro_milestone_digest: payload.micro_milestone_digest,
+                micro_milestone_id: format!(
+                    "minimal-spine-micro-digest-{}",
+                    hex_encode(payload.micro_milestone_digest.as_bytes())
+                ),
+                achieved_at_ms: 0,
+            })
+        })
+        .collect();
+    build_meso_milestone_from_minimal_spine_inputs(&inputs?)
+}
+
+fn build_meso_milestone_from_minimal_spine_inputs(
+    inputs: &[MinimalSpineMesoAggregationInput],
+) -> Result<MinimalSpineMesoMilestoneBuildOutput, ConsolidationError> {
+    if inputs.is_empty() {
+        return Err(ConsolidationError::MinimalSpineMesoMilestoneEmptyInput);
+    }
+
+    let mut normalized = inputs.to_vec();
+    normalized.sort_by(|left, right| {
+        left.payload_digest
+            .as_bytes()
+            .cmp(right.payload_digest.as_bytes())
+            .then_with(|| {
+                left.micro_milestone_digest
+                    .as_bytes()
+                    .cmp(right.micro_milestone_digest.as_bytes())
+            })
+            .then_with(|| left.micro_milestone_id.cmp(&right.micro_milestone_id))
+    });
+
+    let mut seen_payloads = HashSet::new();
+    let mut seen_micros = HashSet::new();
+    for input in &normalized {
+        if is_zero_digest(input.payload_digest)
+            || is_zero_digest(input.micro_milestone_digest)
+            || input.micro_milestone_id.is_empty()
+        {
+            return Err(ConsolidationError::InvalidMinimalSpineMesoMilestoneInputLinks);
+        }
+        if !seen_payloads.insert(input.payload_digest)
+            || !seen_micros.insert(input.micro_milestone_digest)
+        {
+            return Err(ConsolidationError::DuplicateMinimalSpineMesoMilestoneInput);
+        }
+    }
+
+    let micro_payload_digests: Vec<_> = normalized
+        .iter()
+        .map(|input| input.payload_digest)
+        .collect();
+    let micro_milestone_digests: Vec<_> = normalized
+        .iter()
+        .map(|input| input.micro_milestone_digest)
+        .collect();
+    let micro_milestone_ids: Vec<_> = normalized
+        .iter()
+        .map(|input| input.micro_milestone_id.clone())
+        .collect();
+    let achieved_at_ms = normalized
+        .iter()
+        .map(|input| input.achieved_at_ms)
+        .max()
+        .unwrap_or(0);
+
+    let mut aggregation_bytes = Vec::new();
+    let input_count = u32::try_from(normalized.len())
+        .expect("minimal spine meso aggregation input count fits u32");
+    push_u32(&mut aggregation_bytes, input_count);
+    for input in &normalized {
+        let input_bytes = input.deterministic_bytes();
+        let input_len = u32::try_from(input_bytes.len())
+            .expect("minimal spine meso aggregation input bytes length fits u32");
+        push_u32(&mut aggregation_bytes, input_len);
+        aggregation_bytes.extend_from_slice(&input_bytes);
+    }
+    let aggregation_digest = digest_domain(
+        b"ucf.consolidation.minimal_spine.meso_aggregation.v1",
+        &aggregation_bytes,
+    );
+
+    let meso_milestone = ProtoMesoMilestone {
+        milestone_id: format!(
+            "minimal-spine-meso-{}",
+            hex_encode(aggregation_digest.as_bytes())
+        ),
+        achieved_at_ms,
+        label: format!("minimal-spine-v1 meso micro_count={input_count}"),
+        micro_milestone_ids,
+    };
+    let meso_milestone_digest = digest_domain(
+        b"ucf.consolidation.minimal_spine.protocol_meso.v1",
+        &ucf::canonical_bytes(&meso_milestone),
+    );
+
+    Ok(MinimalSpineMesoMilestoneBuildOutput {
+        version: MINIMAL_SPINE_MESO_MILESTONE_BUILD_OUTPUT_VERSION,
+        meso_milestone,
+        meso_milestone_digest,
+        micro_payload_digests,
+        micro_milestone_digests,
+        aggregation_digest,
+        micro_count: input_count,
+        source: MINIMAL_SPINE_CONSOLIDATION_SOURCE.to_string(),
+    })
+}
+
 /// Result of the explicit Minimal Spine micro-milestone append/readback contract.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MinimalSpineMicroMilestoneAppendResult {
@@ -355,6 +557,9 @@ fn digest_evidence_envelope(envelope: &EvidenceEnvelope) -> Digest32 {
 pub enum ConsolidationError {
     InvalidMinimalSpineMicroMilestoneCandidateLinks,
     InvalidMinimalSpineMicroMilestoneAppendPayloadLinks,
+    MinimalSpineMesoMilestoneEmptyInput,
+    InvalidMinimalSpineMesoMilestoneInputLinks,
+    DuplicateMinimalSpineMesoMilestoneInput,
     MinimalSpineMicroMilestoneAppendReadbackMissing,
     MinimalSpineMicroMilestoneAppendReadbackMismatch,
 }
@@ -372,6 +577,21 @@ impl fmt::Display for ConsolidationError {
                 write!(
                     f,
                     "minimal spine micro milestone append payload links must be non-empty/non-zero"
+                )
+            }
+            Self::MinimalSpineMesoMilestoneEmptyInput => {
+                write!(f, "minimal spine meso milestone input must not be empty")
+            }
+            Self::InvalidMinimalSpineMesoMilestoneInputLinks => {
+                write!(
+                    f,
+                    "minimal spine meso milestone input links must be non-empty/non-zero"
+                )
+            }
+            Self::DuplicateMinimalSpineMesoMilestoneInput => {
+                write!(
+                    f,
+                    "minimal spine meso milestone inputs must not contain duplicate micro payload or milestone digests"
                 )
             }
             Self::MinimalSpineMicroMilestoneAppendReadbackMissing => {
@@ -520,6 +740,14 @@ fn push_str(out: &mut Vec<u8>, value: &str) {
 
 fn push_digest(out: &mut Vec<u8>, value: Digest32) {
     out.extend_from_slice(value.as_bytes());
+}
+
+fn push_digest_vec(out: &mut Vec<u8>, digests: &[Digest32]) {
+    let len = u32::try_from(digests.len()).expect("minimal spine digest vector length fits u32");
+    push_u32(out, len);
+    for digest in digests {
+        push_digest(out, *digest);
+    }
 }
 
 fn push_optional_u32(out: &mut Vec<u8>, value: Option<u32>) {
