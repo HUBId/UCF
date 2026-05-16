@@ -162,3 +162,24 @@ Prompt 38 is implemented as a pure deterministic builder in `runtime/ucf-replay`
 - Boundary: the builder is intent/reference only. It does not create `ReplayScheduled`, does not create `ReplayApplied`, does not schedule replay, does not apply replay, does not append Evidence/Archive data, does not call Gateway write APIs, does not trigger Sleep/Geist/ISM, does not create an identity anchor, and does not change Minimal Spine v1.x.
 
 Prompt 39 remains the next scheduler prompt. Prompt 38 intentionally stops before ordering, queue, schedule, apply, audit-append, and runtime replay semantics.
+
+## 12. Prompt 39 Completion Update — Schedule Builder Only
+
+Prompt 39 is complete as a pure deterministic planned-order schedule builder over Prompt 38 replay-token build outputs.
+
+| Prompt | Status | Implemented surface | Boundary retained |
+|---:|---|---|---|
+| 39 | complete | `MinimalSpineReplayScheduleConfig`, `MinimalSpineReplayScheduleBuildOutput`, `MinimalSpineReplayScheduledTokenProvenance`, and `build_replay_schedule_from_minimal_spine_tokens` in `runtime/ucf-replay`; tests in `runtime/ucf-replay/tests/minimal_spine_replay_schedule_builder.rs` | Schedule is planned ordering only: no applied replay, no `ReplayApplied` emission, no Evidence/Archive append, no Sleep Cycle, no Geist/ISM ingestion, no identity anchor/finalization, no Gateway write, no runtime queue/background worker, and no Minimal Spine v1.x change. |
+
+Ordering and cap semantics:
+
+| Concern | Decision | Reason |
+|---|---|---|
+| Input ordering | Normalize by ascending `replay_token_digest` before schedule construction. | Keeps the builder deterministic and ergonomic while making reversed or otherwise shuffled equal token sets produce the same schedule digest. |
+| Duplicates | Reject duplicate `replay_token_digest` values. | A planned schedule must not silently schedule the same replay intent/reference token twice. |
+| Cap/limit | Optional `max_tokens`; absent means no cap. If present, zero is rejected and truncation happens after deterministic sorting. | Cap behavior remains deterministic and records `truncated = true` when it drops otherwise valid sorted tokens. |
+| Empty input | Reject. | An empty planned replay schedule would be ambiguous and carries no useful replay-token provenance. |
+
+Schema-gap note: `ReplayScheduled` is reused as the scheduler-facing record shape for tier/target/budget/redaction/commit, but it still cannot carry Minimal Spine token provenance or ordering metadata. Prompt 39 therefore records that gap explicitly in `MinimalSpineReplayScheduleBuildOutput` with `scheduled_token_provenance`, `replay_token_digests`, `token_build_output_digests`, `schedule_digest`, boundary flags, count, truncation metadata, and a source marker.
+
+Recommended next prompt: **UCF Prompt 40 — Replay Audit Record / Verify-Only Contract**.

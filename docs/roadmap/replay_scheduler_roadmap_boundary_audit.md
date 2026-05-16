@@ -180,3 +180,15 @@ Design decision: the builder uses a small replay-owned digest input struct rathe
 Schema-gap note: `ReplayToken` remains the existing compact token primitive. Full consolidation provenance is preserved by `MinimalSpineReplayTokenBuildOutput`, not by adding scheduler/apply semantics to `ReplayToken`.
 
 Recommended next prompt: **UCF Prompt 39 — Replay Schedule Builder and Ordering Semantics**.
+
+## 11. Prompt 39 Completion Update — Schedule Builder Boundary
+
+Prompt 39 is complete as a schedule-construction-only step.
+
+| Prompt | Status | Implemented surface | Boundary retained | Recommended next prompt |
+|---:|---|---|---|---|
+| 39 | complete | Pure deterministic schedule builder from `MinimalSpineReplayTokenBuildOutput` values; deterministic digest/order; duplicate rejection; optional deterministic cap; schedule-provenance wrapper around `ReplayScheduled`. | Planned ordering only. No `ReplayApplied`, no replay execution, no Sleep Cycle Coordinator, no Geist/ISM ingestion, no identity finalization/anchor, no Gateway write/API, no capability issuance, no real compute activation, no Evidence/Archive append, no second event-log authority, no runtime queue/background worker, and no Minimal Spine v1.x change. | **UCF Prompt 40 — Replay Audit Record / Verify-Only Contract** |
+
+Prompt 39 ordering decision: normalize by ascending replay-token digest. Prompt 39 cap decision: no cap by default; optional positive cap truncates after sorting and sets truncation metadata. Prompt 39 duplicate decision: reject duplicate replay-token digests.
+
+The `ReplayScheduled` schema remains a compact scheduled-record shell and cannot by itself carry Prompt 38 token-builder provenance or explicit schedule ordering metadata. Prompt 39 intentionally uses a replay-local schedule build output wrapper to document and preserve that schema gap without changing shared record schemas.

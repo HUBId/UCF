@@ -3,7 +3,10 @@
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::{collections::HashMap, fmt::Write};
+use std::{
+    collections::{BTreeSet, HashMap},
+    fmt::Write,
+};
 
 use hex::FromHex;
 use serde::{Deserialize, Serialize};
@@ -24,7 +27,7 @@ use ucf_frames::v1::{
     ChannelCode, ComputeSignalsSummary, ControlFrame, CorrelationId, DecisionFrame, Intent,
     IntentId, IntentKind,
 };
-use ucf_types::consolidation::{MilestoneTier, ReplayToken};
+use ucf_types::consolidation::{MilestoneTier, ReplayScheduled, ReplayToken};
 use ucf_types::{quantize_unit, Digest32, CANONICAL_UNIT_QUANT_MAX};
 
 const REPORT_CAP: usize = 1000;
@@ -221,6 +224,8 @@ pub enum DriftReason {
 pub enum ReplayError {
     #[error("invalid minimal spine replay token input: {0}")]
     InvalidMinimalSpineReplayTokenInput(&'static str),
+    #[error("invalid minimal spine replay schedule input: {0}")]
+    InvalidMinimalSpineReplayScheduleInput(&'static str),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("json error: {0}")]
@@ -233,6 +238,265 @@ pub const MINIMAL_SPINE_REPLAY_TOKEN_BUILD_OUTPUT_VERSION: u32 = 1;
 /// Source marker used by replay-token build outputs derived from bounded consolidation artifacts.
 pub const MINIMAL_SPINE_REPLAY_TOKEN_SOURCE: &str =
     "minimal_spine_v1_macro_consolidation_replay_token";
+
+/// Version for the Minimal Spine deterministic replay schedule builder output.
+pub const MINIMAL_SPINE_REPLAY_SCHEDULE_BUILD_OUTPUT_VERSION: u32 = 1;
+
+/// Source marker used by replay schedules derived from Minimal Spine replay token outputs.
+pub const MINIMAL_SPINE_REPLAY_SCHEDULE_SOURCE: &str = "minimal_spine_v1_replay_schedule_builder";
+
+/// Pure schedule-builder configuration.
+///
+/// `max_tokens` is optional. When present, it is applied after deterministic digest ordering and
+/// records truncation metadata without executing or applying replay.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MinimalSpineReplayScheduleConfig {
+    pub max_tokens: Option<usize>,
+    pub source: &'static str,
+}
+
+impl Default for MinimalSpineReplayScheduleConfig {
+    fn default() -> Self {
+        Self {
+            max_tokens: None,
+            source: MINIMAL_SPINE_REPLAY_SCHEDULE_SOURCE,
+        }
+    }
+}
+
+/// Provenance sidecar for a scheduled replay-token record.
+///
+/// `ReplayScheduled` mirrors the legacy scheduler-facing shape but cannot carry the Minimal Spine
+/// token-builder provenance. This sidecar keeps the ordering and provenance explicit without
+/// changing the shared `ReplayScheduled` schema.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MinimalSpineReplayScheduledTokenProvenance {
+    pub order: u32,
+    pub replay_token_digest: Digest32,
+    pub token_build_output_digest: Digest32,
+    pub macro_candidate_digest: Digest32,
+    pub macro_milestone_digest: Digest32,
+    pub meso_aggregation_digest: Digest32,
+    pub macro_finalization_digest: Digest32,
+    pub meso_count: u32,
+    pub source: &'static str,
+}
+
+/// Deterministic schedule build output for Minimal Spine replay tokens.
+///
+/// This is planned ordering only. It is not applied replay, not Sleep Cycle coordination, not
+/// Geist/ISM ingestion, not identity anchoring, and not Evidence/Archive append authority.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineReplayScheduleBuildOutput {
+    pub version: u32,
+    pub scheduled_tokens: Vec<ReplayScheduled>,
+    pub scheduled_token_provenance: Vec<MinimalSpineReplayScheduledTokenProvenance>,
+    pub replay_token_digests: Vec<Digest32>,
+    pub token_build_output_digests: Vec<Digest32>,
+    pub schedule_digest: Digest32,
+    pub token_count: u32,
+    pub truncated: bool,
+    pub source: &'static str,
+    pub applied: bool,
+    pub sleep_cycle: bool,
+    pub geist_ingested: bool,
+    pub identity_anchor: bool,
+    pub evidence_archive_appended: bool,
+}
+
+impl MinimalSpineReplayScheduleBuildOutput {
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32_be(&mut out, self.version);
+        push_u32_be(&mut out, self.token_count);
+        out.push(u8::from(self.truncated));
+        push_str32(&mut out, self.source);
+        out.push(u8::from(self.applied));
+        out.push(u8::from(self.sleep_cycle));
+        out.push(u8::from(self.geist_ingested));
+        out.push(u8::from(self.identity_anchor));
+        out.push(u8::from(self.evidence_archive_appended));
+        push_u32_be(
+            &mut out,
+            u32::try_from(self.scheduled_tokens.len())
+                .expect("minimal spine replay schedule length fits u32"),
+        );
+        for (scheduled, provenance) in self
+            .scheduled_tokens
+            .iter()
+            .zip(self.scheduled_token_provenance.iter())
+        {
+            push_u32_be(&mut out, provenance.order);
+            out.push(scheduled.tier as u8);
+            push_digest32(&mut out, scheduled.target);
+            out.extend_from_slice(&scheduled.budget.to_be_bytes());
+            out.extend_from_slice(&scheduled.redaction.to_be_bytes());
+            push_digest32(&mut out, scheduled.commit);
+            push_digest32(&mut out, provenance.replay_token_digest);
+            push_digest32(&mut out, provenance.token_build_output_digest);
+            push_digest32(&mut out, provenance.macro_candidate_digest);
+            push_digest32(&mut out, provenance.macro_milestone_digest);
+            push_digest32(&mut out, provenance.meso_aggregation_digest);
+            push_digest32(&mut out, provenance.macro_finalization_digest);
+            push_u32_be(&mut out, provenance.meso_count);
+            push_str32(&mut out, provenance.source);
+        }
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_sha256_domain(
+            b"ucf.replay.minimal_spine.schedule_build_output.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+}
+
+/// Build a pure deterministic planned replay schedule from Minimal Spine replay-token outputs.
+///
+/// Inputs are normalized by ascending `replay_token_digest`. Duplicate token digests are rejected.
+/// An optional positive cap truncates after sorting and records `truncated = true`. The builder has
+/// no store/appender arguments and performs no replay application, queue activation, Sleep Cycle
+/// work, Geist/ISM ingestion, identity anchoring, or Evidence/Archive append.
+pub fn build_replay_schedule_from_minimal_spine_tokens(
+    tokens: &[MinimalSpineReplayTokenBuildOutput],
+    config: MinimalSpineReplayScheduleConfig,
+) -> Result<MinimalSpineReplayScheduleBuildOutput, ReplayError> {
+    validate_minimal_spine_replay_schedule_config(config)?;
+    if tokens.is_empty() {
+        return Err(ReplayError::InvalidMinimalSpineReplayScheduleInput(
+            "token list must be non-empty",
+        ));
+    }
+
+    let mut seen = BTreeSet::new();
+    for token in tokens {
+        validate_minimal_spine_replay_schedule_token(token)?;
+        if !seen.insert(*token.replay_token_digest.as_bytes()) {
+            return Err(ReplayError::InvalidMinimalSpineReplayScheduleInput(
+                "duplicate replay token digest",
+            ));
+        }
+    }
+
+    let mut ordered: Vec<MinimalSpineReplayTokenBuildOutput> = tokens.to_vec();
+    ordered.sort_by_key(|token| *token.replay_token_digest.as_bytes());
+
+    let truncated = config
+        .max_tokens
+        .is_some_and(|max_tokens| ordered.len() > max_tokens);
+    if let Some(max_tokens) = config.max_tokens {
+        ordered.truncate(max_tokens);
+    }
+
+    let mut scheduled_tokens = Vec::with_capacity(ordered.len());
+    let mut scheduled_token_provenance = Vec::with_capacity(ordered.len());
+    let mut replay_token_digests = Vec::with_capacity(ordered.len());
+    let mut token_build_output_digests = Vec::with_capacity(ordered.len());
+
+    for (index, token) in ordered.iter().enumerate() {
+        let scheduled = ReplayScheduled {
+            tier: token.replay_token.tier,
+            target: token.replay_token.target,
+            budget: token.replay_token.budget,
+            redaction: token.replay_token.redaction,
+            commit: token.replay_token.commit,
+        };
+        let token_build_output_digest = token.digest();
+        let order = u32::try_from(index).expect("minimal spine replay schedule order fits u32");
+        scheduled_tokens.push(scheduled);
+        scheduled_token_provenance.push(MinimalSpineReplayScheduledTokenProvenance {
+            order,
+            replay_token_digest: token.replay_token_digest,
+            token_build_output_digest,
+            macro_candidate_digest: token.macro_candidate_digest,
+            macro_milestone_digest: token.macro_milestone_digest,
+            meso_aggregation_digest: token.meso_aggregation_digest,
+            macro_finalization_digest: token.macro_finalization_digest,
+            meso_count: token.meso_count,
+            source: token.source,
+        });
+        replay_token_digests.push(token.replay_token_digest);
+        token_build_output_digests.push(token_build_output_digest);
+    }
+
+    let token_count = u32::try_from(scheduled_tokens.len())
+        .expect("minimal spine replay schedule token count fits u32");
+    let mut output = MinimalSpineReplayScheduleBuildOutput {
+        version: MINIMAL_SPINE_REPLAY_SCHEDULE_BUILD_OUTPUT_VERSION,
+        scheduled_tokens,
+        scheduled_token_provenance,
+        replay_token_digests,
+        token_build_output_digests,
+        schedule_digest: Digest32::new([0u8; Digest32::LEN]),
+        token_count,
+        truncated,
+        source: config.source,
+        applied: false,
+        sleep_cycle: false,
+        geist_ingested: false,
+        identity_anchor: false,
+        evidence_archive_appended: false,
+    };
+    output.schedule_digest = output.digest();
+    Ok(output)
+}
+
+fn validate_minimal_spine_replay_schedule_config(
+    config: MinimalSpineReplayScheduleConfig,
+) -> Result<(), ReplayError> {
+    if config.source.is_empty() {
+        return Err(ReplayError::InvalidMinimalSpineReplayScheduleInput(
+            "source must be non-empty",
+        ));
+    }
+    if config.max_tokens == Some(0) {
+        return Err(ReplayError::InvalidMinimalSpineReplayScheduleInput(
+            "max tokens must be non-zero when configured",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_minimal_spine_replay_schedule_token(
+    token: &MinimalSpineReplayTokenBuildOutput,
+) -> Result<(), ReplayError> {
+    if token.version != MINIMAL_SPINE_REPLAY_TOKEN_BUILD_OUTPUT_VERSION {
+        return Err(ReplayError::InvalidMinimalSpineReplayScheduleInput(
+            "token build output version mismatch",
+        ));
+    }
+    if is_zero_digest(token.replay_token_digest) {
+        return Err(ReplayError::InvalidMinimalSpineReplayScheduleInput(
+            "replay token digest must be non-zero",
+        ));
+    }
+    if token.replay_token_digest != token.replay_token.commit {
+        return Err(ReplayError::InvalidMinimalSpineReplayScheduleInput(
+            "replay token digest must match replay token commit",
+        ));
+    }
+    if token.scheduled || token.applied {
+        return Err(ReplayError::InvalidMinimalSpineReplayScheduleInput(
+            "input token must be unscheduled and unapplied",
+        ));
+    }
+    if token.sleep_cycle
+        || token.geist_ingested
+        || token.identity_anchor
+        || token.evidence_archive_appended
+    {
+        return Err(ReplayError::InvalidMinimalSpineReplayScheduleInput(
+            "input token must not carry side-effect boundary flags",
+        ));
+    }
+    if token.source.is_empty() {
+        return Err(ReplayError::InvalidMinimalSpineReplayScheduleInput(
+            "token source must be non-empty",
+        ));
+    }
+    Ok(())
+}
 
 /// Bounded digest-only input for building a deterministic replay intent/reference token.
 ///
