@@ -99,4 +99,6 @@ Because the bounded Replay validation passed, including fresh workspace-test evi
 
 **UCF Prompt 45 — Post-Replay Roadmap Selection: Sleep Integration vs Geist/ISM vs Prod-Profile**.
 
+Prompt 45 selection is now recorded in [`docs/roadmap/post_replay_roadmap_selection.md`](post_replay_roadmap_selection.md), which recommends a docs-only Sleep Integration Roadmap and Boundary Audit as the next primary line.
+
 This recommendation is not approval to implement Sleep, Geist/ISM, production replay, identity finalization, Gateway writes, Evidence/Archive replay append, or runtime scheduler behavior. It is only the next planning selection after bounded Replay closure.
