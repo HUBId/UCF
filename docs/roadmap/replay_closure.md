@@ -101,4 +101,6 @@ Because the bounded Replay validation passed, including fresh workspace-test evi
 
 Prompt 45 selection is now recorded in [`docs/roadmap/post_replay_roadmap_selection.md`](post_replay_roadmap_selection.md), which recommends a docs-only Sleep Integration Roadmap and Boundary Audit as the next primary line.
 
+Prompt 46 is now recorded in [`docs/roadmap/sleep_integration_roadmap_boundary_audit.md`](sleep_integration_roadmap_boundary_audit.md) as the Sleep next-line planning document. It keeps Sleep bounded to roadmap/schema-boundary planning and recommends **UCF Prompt 47 — Sleep Record Authority and Schema Alignment**.
+
 This recommendation is not approval to implement Sleep, Geist/ISM, production replay, identity finalization, Gateway writes, Evidence/Archive replay append, or runtime scheduler behavior. It is only the next planning selection after bounded Replay closure.

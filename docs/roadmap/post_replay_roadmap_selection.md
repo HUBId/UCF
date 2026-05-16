@@ -139,6 +139,8 @@ The selected primary line is Sleep Integration Roadmap and Boundary Audit. The f
 
 ## 9. Next Prompt
 
-Recommended next prompt title: **UCF Prompt 46 — Sleep Integration Roadmap and Boundary Audit**.
+Prompt 46 is now recorded in [`docs/roadmap/sleep_integration_roadmap_boundary_audit.md`](sleep_integration_roadmap_boundary_audit.md). It remains a docs-only boundary audit and does not authorize Sleep implementation, Geist/ISM activation, identity finalization, runtime scheduling, or Evidence/Archive authority changes.
+
+Recommended next prompt title: **UCF Prompt 47 — Sleep Record Authority and Schema Alignment**.
 
 Reason: bounded Replay closure is complete for local deterministic Token->Schedule->Audit->AppliedBoundary validation, but no runtime scheduler, Sleep, Geist/ISM, identity, Evidence/Archive replay append, Gateway write, or production readiness should be claimed. A docs-only Sleep boundary audit is the safest next step because it clarifies how Replay outputs may later inform Sleep planning while keeping Geist/ISM and runtime activation deferred.
