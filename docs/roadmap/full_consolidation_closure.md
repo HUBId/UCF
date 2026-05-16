@@ -8,6 +8,7 @@
 - It is not identity finalization.
 - Minimal Spine v1.x remains independent and unchanged.
 - Because the readiness gate timed out twice under a 300 second guard in the original closure baseline, this document keeps gate-timing risk separate from consolidation claims. Prompt 35C closed the readiness-spine drift line without changing Minimal Spine v1.x or weakening gate criteria.
+- Historical status note: this closure predates the Prompt 38-42 bounded Replay chain. It remains a consolidation closure record only; the later replay chain is documented separately as token intent/reference, schedule planned ordering, verify-only audit, local replay-subsystem boundary, and bounded E2E determinism with no runtime apply, Sleep/Geist/ISM/identity, Evidence/Archive append, or Gateway readiness.
 
 ## 1. Baseline
 

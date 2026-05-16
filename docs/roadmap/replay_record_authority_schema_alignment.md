@@ -7,6 +7,61 @@
 - It does not build replay tokens from consolidation artifacts.
 - It does not implement a schedule builder, applied replay runtime, Sleep Cycle Coordinator, Geist/ISM integration, identity finalization, identity anchor, Gateway write API, capability issuance, real-compute activation, Evidence/Archive authority change, second event-log authority, or Minimal Spine v1.x change.
 - It treats `ReplayApplied` as a boundary term that must not imply Geist ingestion, ISM writes, identity finalization, memory anchoring, or runtime completion.
+- Current bounded replay claims are limited to the tested Token → Schedule → Audit → AppliedBoundary chain described in Sections 12-14 and in `runtime/ucf-replay/tests/minimal_spine_replay_e2e.rs`.
+
+
+## 0.1 Replay Overclaim Guard
+
+The current bounded Replay chain has these allowed claims only:
+
+- `ReplayToken` builder is implemented as deterministic intent/reference output only.
+- `ReplaySchedule` builder is implemented as deterministic planned ordering only.
+- `ReplayAudit` verify-only contract is implemented; PASS means internal schedule consistency, not completion.
+- `ReplayAppliedBoundary` is implemented as a local replay-subsystem boundary marker only.
+- Bounded Replay E2E determinism is implemented for Token → Schedule → Audit → AppliedBoundary.
+
+The current bounded Replay chain explicitly does **not** mean:
+
+- runtime replay execution;
+- a runtime scheduler, worker, background queue, or runtime apply loop;
+- Sleep Cycle readiness or Sleep Cycle Coordinator completion;
+- Geist/ISM integration, Geist ingestion, ISM write/upsert, memory mutation, or memory anchoring;
+- identity finalization or identity anchor creation;
+- Evidence/Archive replay append, Evidence/Archive authority change, or a second event-log authority;
+- Gateway-visible replay, Gateway write/API behavior, capability issuance, real-compute activation, production replay readiness, or Minimal Spine v1.x changes.
+
+Evidence/Archive replay append remains deferred. Sleep, Geist, and ISM remain future integration lines and must not be inferred from Prompt 42 bounded E2E determinism.
+
+## 0.2 Future Claim Checklist
+
+Before future docs can claim runtime Replay Scheduler readiness:
+
+- A runtime scheduler/queue prompt is implemented.
+- Deterministic schedule execution tests exist.
+- No Sleep/Geist/ISM write is present unless explicitly scoped.
+- Evidence/Archive provenance is preserved.
+- Replay readiness refresh passes.
+
+Before future docs can claim Sleep integration:
+
+- A Sleep Cycle Coordinator prompt is implemented.
+- The replay-to-sleep boundary is defined.
+- Sleep completion is documented not to imply identity finalization.
+- Negative tests prove no hidden Geist/ISM writes.
+
+Before future docs can claim Geist/ISM integration:
+
+- A dedicated Geist/ISM prompt is implemented.
+- ReplayApplied-to-Geist semantics are defined.
+- Identity-anchor semantics are defined.
+- Negative tests prove no hidden identity promotion.
+
+Before future docs can claim replay production readiness:
+
+- Prod-profile readiness passes.
+- Runtime scheduler/queue tests pass.
+- Evidence/Archive append contract, if used, is explicit.
+- Docs lint and readiness evidence are fresh.
 
 ## 1. Baseline
 
@@ -84,8 +139,8 @@ Prompt 37 chooses split authority (Option D) for now.
 | Term | Allowed meaning now | Explicitly not allowed |
 |---|---|---|
 | `ReplayToken` | Deterministic replay intent/reference token over bounded digests and bounded metadata. | Replay execution, scheduled queue entry, applied replay, Geist/ISM input, identity anchor, capability issuance, Evidence/Archive append side effect, Gateway/action trigger. |
-| `ReplayScheduled` | Candidate deterministic schedule entry or future plan inclusion record after Prompt 39 defines ordering, duplicate, cap, and digest semantics. | Actual replay completion, Sleep cycle plan, Sleep coordinator operation, hidden append, Gateway/action trigger, runtime apply. |
-| `ReplayApplied` | Boundary placeholder for a replay-subsystem/audit effect only after a future explicit applied-boundary prompt. | Geist ingestion, ISM write/upsert, identity finalization, memory anchor, archived completion, successful runtime execution, consolidation finalization. |
+| `ReplayScheduled` | Compact scheduler-facing record shape used by the Prompt 39 builder for deterministic planned ordering, with additional provenance held in `MinimalSpineReplayScheduleBuildOutput`. | Actual replay completion, runtime queue entry, Sleep cycle plan, Sleep coordinator operation, hidden append, Gateway/action trigger, runtime apply. |
+| `ReplayApplied` | In this roadmap context, the implemented Prompt 41 `MinimalSpineReplayAppliedBoundary` means a local replay-subsystem marker derived from a PASS verify-only audit. | Broad `ReplayApplied` runtime construction, Geist ingestion, ISM write/upsert, identity finalization, memory anchor, archived completion, successful runtime execution, consolidation finalization. |
 | `ReplayPlan` | Audit/verify plan for `runtime/ucf-replay` ranges and strictness. | Scheduler plan, token builder output, queue authority, Sleep plan. |
 | `ReplayReport` | Audit report returned or explicitly written by replay tooling. | Canonical append authority, schedule completion record, Evidence/Archive replacement. |
 | `ReplayResult` | Recompute/audit result containing match/drift/unreplayable details. | Scheduler readiness proof, real-compute activation proof, action execution proof. |
@@ -161,7 +216,7 @@ Prompt 38 is implemented as a pure deterministic builder in `runtime/ucf-replay`
 - Digest behavior: the existing token commitment remains the deterministic `ucf-commit::commit_replay_token` digest. The token target is a deterministic digest of all bounded input links, so a change to macro candidate, macro milestone, meso aggregation, macro finalization, meso count, or source changes the token commitment. The wrapper also exposes its own deterministic digest over token plus provenance.
 - Boundary: the builder is intent/reference only. It does not create `ReplayScheduled`, does not create `ReplayApplied`, does not schedule replay, does not apply replay, does not append Evidence/Archive data, does not call Gateway write APIs, does not trigger Sleep/Geist/ISM, does not create an identity anchor, and does not change Minimal Spine v1.x.
 
-Prompt 39 remains the next scheduler prompt. Prompt 38 intentionally stops before ordering, queue, schedule, apply, audit-append, and runtime replay semantics.
+Prompt 38 intentionally stopped before ordering, queue, schedule, apply, audit-append, and runtime replay semantics. Later Prompt 39-42 updates below add planned ordering, verify-only audit, a local applied boundary marker, and bounded E2E determinism; they still stop before queue, worker, audit-append, and runtime replay semantics.
 
 ## 12. Prompt 39 Completion Update — Schedule Builder Only
 

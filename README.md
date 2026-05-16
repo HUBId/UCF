@@ -14,6 +14,8 @@ See `docs/feature_matrix.md` for details.
 
 Current consolidation claims are bounded: Micro/Meso explicit append/readback, Macro candidate, and a local consolidation-level finalization boundary are covered by the consolidation roadmap/E2E tests; Replay/Sleep/Geist/ISM, identity anchoring, Gateway writes, capabilities, real compute, and production consolidation readiness remain deferred. See `docs/roadmap/full_consolidation_roadmap_boundary_audit.md` and `docs/roadmap/consolidation_record_authority_schema_alignment.md`.
 
+Current replay claims are also bounded: deterministic ReplayToken intent/reference, ReplaySchedule planned ordering, verify-only ReplayAudit, local-only ReplayAppliedBoundary, and bounded Replay E2E determinism are covered by the replay roadmap/tests. There is no runtime replay apply, scheduler/queue/worker, Sleep/Geist/ISM/identity integration, Evidence/Archive replay append, or Gateway-visible replay. See `docs/roadmap/replay_scheduler_roadmap_boundary_audit.md` and `docs/roadmap/replay_record_authority_schema_alignment.md`.
+
 ## Post-rc1 hardening commands
 - Determinism scan: `cargo run -p ucf-ops -- determinism scan`
 - Hidden path audit scan: `cargo run -p ucf-ops -- audit scan`
