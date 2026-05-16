@@ -8,11 +8,14 @@
     "metadata",
     "status"
   ],
-  "optional_fields": [],
+  "optional_fields": [
+    "phase_timings"
+  ],
   "field_types": {
     "command_result": "WorkspaceTestCommandResult",
     "duration_ms": "u64",
     "metadata": "ReportFreshnessMetadata",
+    "phase_timings": "Vec<GatePhaseTiming>",
     "status": "GateStatus"
   },
   "enum_variants": {

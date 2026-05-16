@@ -83,12 +83,12 @@ Baseline links:
 | Geist package | PASS | `cargo test -p ucf-geist --all-targets` passed. |
 | Workspace tests | PASS | `cargo test --workspace` passed. |
 | Clippy | PASS | `cargo clippy --workspace --all-targets -- -D warnings` passed. |
-| Readiness gate | SPLIT-EVIDENCE policy available; fresh pass still required | Prompt 35D adds explicit `workspace-test-check` prerequisite evidence and lets readiness-gate validate that fresh report instead of rerunning the workspace test internally. This does not weaken PASS criteria: missing, stale, wrong-command, dirty-state-mismatched, or non-PASS workspace evidence fails the gate. |
+| Readiness gate | SPLIT-EVIDENCE policy available; fresh pass still required | Prompt 35D adds explicit `workspace-test-check` prerequisite evidence and lets readiness-gate validate that fresh report instead of rerunning the workspace test internally. Prompt 35E makes that evidence path observable with progress and timing diagnostics. This does not weaken PASS criteria: missing, stale, wrong-command, dirty-state-mismatched, or non-PASS workspace evidence fails the gate. |
 | Readiness diagnostic | PASS | Prompt 35C `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json` passed after reduction/signoff/review-packet/workflow digest alignment. |
 
 ## 6. Readiness Gate Status
 
-The readiness gate remains strict, and the readiness-spine drift branch is closed by Prompt 35C. Prompt 35D adds an explicit split-evidence policy for the workspace-test bottleneck: `workspace-test-check` can be run as a mandatory prerequisite artifact, and `readiness-gate --workspace-test-report <path>` accepts it only when it is fresh for the current HEAD and dirty state. The follow-up audit is recorded in [`docs/roadmap/readiness_gate_timeout_stability_audit.md`](readiness_gate_timeout_stability_audit.md).
+The readiness gate remains strict, and the readiness-spine drift branch is closed by Prompt 35C. Prompt 35D adds an explicit split-evidence policy for the workspace-test bottleneck: `workspace-test-check` can be run as a mandatory prerequisite artifact, and `readiness-gate --workspace-test-report <path>` accepts it only when it is fresh for the current HEAD and dirty state. Prompt 35E confirms the evidence command can complete under a 600 second guard in this environment after cache warm-up and adds progress/timing diagnostics, but consolidation closure still requires a fresh matching workspace-test report plus a fresh readiness-gate pass before it is used as replay-readiness evidence. The follow-up audit is recorded in [`docs/roadmap/readiness_gate_timeout_stability_audit.md`](readiness_gate_timeout_stability_audit.md).
 
 | Attempt | Command | Result | Notes |
 |---|---|---|---|

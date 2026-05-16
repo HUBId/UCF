@@ -2140,6 +2140,8 @@ pub struct WorkspaceTestReport {
     pub status: GateStatus,
     pub duration_ms: u64,
     pub command_result: WorkspaceTestCommandResult,
+    #[serde(default)]
+    pub phase_timings: Vec<GatePhaseTiming>,
 }
 
 impl Default for WorkspaceTestReport {
@@ -2149,6 +2151,7 @@ impl Default for WorkspaceTestReport {
             status: GateStatus::Fail,
             duration_ms: 0,
             command_result: WorkspaceTestCommandResult::default(),
+            phase_timings: Vec::new(),
         }
     }
 }
@@ -5719,16 +5722,36 @@ fn workspace_fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
+const WORKSPACE_TEST_CHECK_COMMAND: &str = "cargo test --workspace --offline";
+
 pub fn workspace_test_check(out: &Path) -> Result<WorkspaceTestReport, OpsError> {
+    let total_start = Instant::now();
+    let mut phase_timings = Vec::new();
+
+    eprintln!("[workspace-test-check] start: preflight metadata");
+    let metadata_start = Instant::now();
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
     }
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let metadata = report_freshness_metadata(WORKSPACE_TEST_CHECK_COMMAND.to_string(), &repo_root);
+    let metadata_duration_ms = elapsed_ms(metadata_start);
+    push_gate_phase_timing(
+        &mut phase_timings,
+        "preflight metadata",
+        GateStatus::Pass,
+        metadata_duration_ms,
+    );
+    eprintln!(
+        "[workspace-test-check] done: preflight metadata status=PASS elapsed_ms={metadata_duration_ms}"
+    );
 
-    let start = Instant::now();
+    eprintln!("[workspace-test-check] start: {WORKSPACE_TEST_CHECK_COMMAND}");
+    let command_start = Instant::now();
     let output = Command::new("cargo")
         .args(["test", "--workspace", "--offline"])
         .output();
-    let duration_ms = elapsed_ms(start);
+    let command_duration_ms = elapsed_ms(command_start);
 
     let (status, command_result) = match output {
         Ok(out) => {
@@ -5757,17 +5780,45 @@ pub fn workspace_test_check(out: &Path) -> Result<WorkspaceTestReport, OpsError>
             },
         ),
     };
+    push_gate_phase_timing(
+        &mut phase_timings,
+        WORKSPACE_TEST_CHECK_COMMAND,
+        status,
+        command_duration_ms,
+    );
+    let status_label = gate_status_label(status);
+    eprintln!(
+        "[workspace-test-check] done: {WORKSPACE_TEST_CHECK_COMMAND} status={status_label} elapsed_ms={command_duration_ms}"
+    );
 
-    let report = WorkspaceTestReport {
-        metadata: report_freshness_metadata(
-            "cargo test --workspace --offline".to_string(),
-            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."),
-        ),
+    let report_assembly_start = Instant::now();
+    eprintln!("[workspace-test-check] start: report assembly");
+    let duration_ms = elapsed_ms(total_start);
+    let mut report = WorkspaceTestReport {
+        metadata,
         status,
         duration_ms,
         command_result,
+        phase_timings,
     };
+    let report_assembly_duration_ms = elapsed_ms(report_assembly_start);
+    push_gate_phase_timing(
+        &mut report.phase_timings,
+        "report assembly",
+        GateStatus::Pass,
+        report_assembly_duration_ms,
+    );
+    eprintln!(
+        "[workspace-test-check] done: report assembly status=PASS elapsed_ms={report_assembly_duration_ms}"
+    );
+
+    eprintln!("[workspace-test-check] start: report write");
+    let report_write_start = Instant::now();
     write_json(out, &report)?;
+    let report_write_duration_ms = elapsed_ms(report_write_start);
+    eprintln!(
+        "[workspace-test-check] done: report write status=PASS elapsed_ms={report_write_duration_ms}"
+    );
     Ok(report)
 }
 
@@ -5903,7 +5954,7 @@ fn validate_workspace_test_report(
             "Fix the workspace tests and regenerate the workspace-test-check report.",
         );
     }
-    if report.metadata.command != "cargo test --workspace --offline" {
+    if report.metadata.command != WORKSPACE_TEST_CHECK_COMMAND {
         return check_fail(
             "build_workspace_tests",
             evidence,
@@ -22468,6 +22519,11 @@ C:\agent\file.rs:2"#,
                 stdout_tail: String::new(),
                 stderr_tail: String::new(),
             },
+            phase_timings: vec![GatePhaseTiming {
+                name: WORKSPACE_TEST_CHECK_COMMAND.to_string(),
+                status: GateStatus::Pass,
+                duration_ms: 42,
+            }],
         };
 
         let check = validate_workspace_test_report(
@@ -22480,7 +22536,7 @@ C:\agent\file.rs:2"#,
         assert_eq!(check.status, GateStatus::Pass);
         assert_eq!(
             check.evidence.get("command").map(String::as_str),
-            Some("cargo test --workspace --offline")
+            Some(WORKSPACE_TEST_CHECK_COMMAND)
         );
     }
 
@@ -22513,6 +22569,11 @@ C:\agent\file.rs:2"#,
                 stdout_tail: String::new(),
                 stderr_tail: String::new(),
             },
+            phase_timings: vec![GatePhaseTiming {
+                name: WORKSPACE_TEST_CHECK_COMMAND.to_string(),
+                status: GateStatus::Pass,
+                duration_ms: 42,
+            }],
         };
 
         let check = validate_workspace_test_report(

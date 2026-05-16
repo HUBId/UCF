@@ -31,6 +31,26 @@ cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.js
 
 The split report is accepted only when it is `PASS`, records `cargo test --workspace --offline`, and matches the current HEAD and dirty state. Missing, stale, mismatched, wrong-command, or non-PASS evidence fails `build_workspace_tests`; it is not a silent skip and is never treated as `PASS`. The commands exit with code `0` on `PASS` and `2` on `FAIL`.
 
+
+## Workspace-test runtime diagnostics
+
+`workspace-test-check` intentionally runs the same strict workspace command required by the gate:
+
+```bash
+cargo test --workspace --offline
+```
+
+The command is broad: it compiles and executes the full workspace test graph, including doc-tests. On a cold or partially invalidated target directory it can spend several minutes compiling before test output advances. This is normal Cargo behavior and is not, by itself, a deadlock. Operators should wrap local/CI evidence generation with an explicit outer timeout that is large enough for the 192-package workspace; a 300 second guard can be too small on cold or mixed-profile builds, while a 600 second guard is the current practical minimum observed for this environment.
+
+`workspace-test-check` emits stderr progress for:
+
+- preflight metadata,
+- `cargo test --workspace --offline`,
+- report assembly,
+- report write.
+
+The generated report also records `phase_timings[]` for the metadata, Cargo command, and report assembly phases. If an external timeout kills the process, the last visible `[workspace-test-check] start:` line identifies the active phase. A timeout remains a failed/missing evidence condition and must not be treated as `PASS`.
+
 ## Report schema
 
 `ReadinessGateReport` (JSON):
