@@ -9,6 +9,7 @@ use hex::FromHex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
+use ucf_commit::commit_replay_token;
 use ucf_compute::ComputeSignalsSummary as RecomputedComputeSummary;
 use ucf_compute::{
     build_backend, compute_input_from_control, stable_budget_profile_id, ComputeBackendConfig,
@@ -23,7 +24,8 @@ use ucf_frames::v1::{
     ChannelCode, ComputeSignalsSummary, ControlFrame, CorrelationId, DecisionFrame, Intent,
     IntentId, IntentKind,
 };
-use ucf_types::{quantize_unit, CANONICAL_UNIT_QUANT_MAX};
+use ucf_types::consolidation::{MilestoneTier, ReplayToken};
+use ucf_types::{quantize_unit, Digest32, CANONICAL_UNIT_QUANT_MAX};
 
 const REPORT_CAP: usize = 1000;
 const REPLAY_DIVERGENCE_CAP: usize = 64;
@@ -217,10 +219,202 @@ pub enum DriftReason {
 
 #[derive(Debug, Error)]
 pub enum ReplayError {
+    #[error("invalid minimal spine replay token input: {0}")]
+    InvalidMinimalSpineReplayTokenInput(&'static str),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
+}
+
+/// Version for the Minimal Spine deterministic replay token builder output.
+pub const MINIMAL_SPINE_REPLAY_TOKEN_BUILD_OUTPUT_VERSION: u32 = 1;
+
+/// Source marker used by replay-token build outputs derived from bounded consolidation artifacts.
+pub const MINIMAL_SPINE_REPLAY_TOKEN_SOURCE: &str =
+    "minimal_spine_v1_macro_consolidation_replay_token";
+
+/// Bounded digest-only input for building a deterministic replay intent/reference token.
+///
+/// This input is intentionally copied from consolidation artifacts instead of taking a direct
+/// dependency on the consolidation crate. Callers should populate `macro_finalization_digest` from
+/// the local `MinimalSpineMacroConsolidationFinalization::digest()` value and preserve the meso
+/// aggregation/provenance digest from the macro candidate path. The builder is pure: it does not
+/// schedule, apply, append evidence/archive data, trigger Sleep/Geist/ISM, or create an identity
+/// anchor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MinimalSpineReplayTokenInput {
+    pub macro_candidate_digest: Digest32,
+    pub macro_milestone_digest: Digest32,
+    pub meso_aggregation_digest: Digest32,
+    pub macro_finalization_digest: Digest32,
+    pub meso_count: u32,
+    pub source: &'static str,
+}
+
+/// Deterministic wrapper around the existing `ReplayToken` plus missing consolidation provenance.
+///
+/// The existing `ReplayToken` can carry only tier/target/budget/redaction/commit, so this wrapper
+/// preserves the macro candidate, macro milestone, meso aggregation, and finalization links without
+/// reinterpreting the token as a schedule entry or applied replay result.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MinimalSpineReplayTokenBuildOutput {
+    pub version: u32,
+    pub replay_token: ReplayToken,
+    pub replay_token_digest: Digest32,
+    pub macro_candidate_digest: Digest32,
+    pub macro_milestone_digest: Digest32,
+    pub meso_aggregation_digest: Digest32,
+    pub macro_finalization_digest: Digest32,
+    pub meso_count: u32,
+    pub source: &'static str,
+    pub scheduled: bool,
+    pub applied: bool,
+    pub sleep_cycle: bool,
+    pub geist_ingested: bool,
+    pub identity_anchor: bool,
+    pub evidence_archive_appended: bool,
+}
+
+impl MinimalSpineReplayTokenBuildOutput {
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32_be(&mut out, self.version);
+        out.push(self.replay_token.tier as u8);
+        push_digest32(&mut out, self.replay_token.target);
+        out.extend_from_slice(&self.replay_token.budget.to_be_bytes());
+        out.extend_from_slice(&self.replay_token.redaction.to_be_bytes());
+        push_digest32(&mut out, self.replay_token.commit);
+        push_digest32(&mut out, self.replay_token_digest);
+        push_digest32(&mut out, self.macro_candidate_digest);
+        push_digest32(&mut out, self.macro_milestone_digest);
+        push_digest32(&mut out, self.meso_aggregation_digest);
+        push_digest32(&mut out, self.macro_finalization_digest);
+        push_u32_be(&mut out, self.meso_count);
+        push_str32(&mut out, self.source);
+        out.push(u8::from(self.scheduled));
+        out.push(u8::from(self.applied));
+        out.push(u8::from(self.sleep_cycle));
+        out.push(u8::from(self.geist_ingested));
+        out.push(u8::from(self.identity_anchor));
+        out.push(u8::from(self.evidence_archive_appended));
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_sha256_domain(
+            b"ucf.replay.minimal_spine.token_build_output.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+}
+
+/// Build a pure deterministic replay intent/reference token from bounded consolidation links.
+pub fn build_replay_token_from_minimal_spine_input(
+    input: &MinimalSpineReplayTokenInput,
+) -> Result<MinimalSpineReplayTokenBuildOutput, ReplayError> {
+    validate_minimal_spine_replay_token_input(input)?;
+
+    let token_target = digest_minimal_spine_replay_token_input(input);
+    let mut token = ReplayToken {
+        tier: MilestoneTier::Macro,
+        target: token_target,
+        budget: 0,
+        redaction: 0,
+        commit: Digest32::new([0u8; Digest32::LEN]),
+    };
+    token.commit = commit_replay_token(&token).digest;
+
+    Ok(MinimalSpineReplayTokenBuildOutput {
+        version: MINIMAL_SPINE_REPLAY_TOKEN_BUILD_OUTPUT_VERSION,
+        replay_token: token,
+        replay_token_digest: token.commit,
+        macro_candidate_digest: input.macro_candidate_digest,
+        macro_milestone_digest: input.macro_milestone_digest,
+        meso_aggregation_digest: input.meso_aggregation_digest,
+        macro_finalization_digest: input.macro_finalization_digest,
+        meso_count: input.meso_count,
+        source: input.source,
+        scheduled: false,
+        applied: false,
+        sleep_cycle: false,
+        geist_ingested: false,
+        identity_anchor: false,
+        evidence_archive_appended: false,
+    })
+}
+
+fn digest_minimal_spine_replay_token_input(input: &MinimalSpineReplayTokenInput) -> Digest32 {
+    let mut out = Vec::new();
+    push_digest32(&mut out, input.macro_candidate_digest);
+    push_digest32(&mut out, input.macro_milestone_digest);
+    push_digest32(&mut out, input.meso_aggregation_digest);
+    push_digest32(&mut out, input.macro_finalization_digest);
+    push_u32_be(&mut out, input.meso_count);
+    push_str32(&mut out, input.source);
+    digest_sha256_domain(b"ucf.replay.minimal_spine.token_input.v1", &out)
+}
+
+fn validate_minimal_spine_replay_token_input(
+    input: &MinimalSpineReplayTokenInput,
+) -> Result<(), ReplayError> {
+    if is_zero_digest(input.macro_candidate_digest) {
+        return Err(ReplayError::InvalidMinimalSpineReplayTokenInput(
+            "macro candidate digest must be non-zero",
+        ));
+    }
+    if is_zero_digest(input.macro_milestone_digest) {
+        return Err(ReplayError::InvalidMinimalSpineReplayTokenInput(
+            "macro milestone digest must be non-zero",
+        ));
+    }
+    if is_zero_digest(input.meso_aggregation_digest) {
+        return Err(ReplayError::InvalidMinimalSpineReplayTokenInput(
+            "meso aggregation digest must be non-zero",
+        ));
+    }
+    if is_zero_digest(input.macro_finalization_digest) {
+        return Err(ReplayError::InvalidMinimalSpineReplayTokenInput(
+            "macro finalization digest must be non-zero",
+        ));
+    }
+    if input.meso_count == 0 {
+        return Err(ReplayError::InvalidMinimalSpineReplayTokenInput(
+            "meso count must be non-zero",
+        ));
+    }
+    if input.source.is_empty() {
+        return Err(ReplayError::InvalidMinimalSpineReplayTokenInput(
+            "source must be non-empty",
+        ));
+    }
+    Ok(())
+}
+
+fn is_zero_digest(digest: Digest32) -> bool {
+    digest.as_bytes().iter().all(|byte| *byte == 0)
+}
+
+fn push_digest32(out: &mut Vec<u8>, digest: Digest32) {
+    out.extend_from_slice(digest.as_bytes());
+}
+
+fn push_u32_be(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_be_bytes());
+}
+
+fn push_str32(out: &mut Vec<u8>, value: &str) {
+    let len = u32::try_from(value.len()).expect("minimal spine replay source length fits u32");
+    push_u32_be(out, len);
+    out.extend_from_slice(value.as_bytes());
+}
+
+fn digest_sha256_domain(domain: &[u8], bytes: &[u8]) -> Digest32 {
+    let mut hasher = Sha256::new();
+    hasher.update(domain);
+    hasher.update([0]);
+    hasher.update(bytes);
+    Digest32::new(hasher.finalize().into())
 }
 
 pub fn replay_records(records: &[ExperienceRecord], spec: &ReplaySpec) -> ReplayResult {

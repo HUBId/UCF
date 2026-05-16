@@ -149,3 +149,16 @@ No code hardening is implemented in Prompt 37. The required hardening is deferre
 ## 10. Recommended Next Prompt
 
 Recommended next prompt: **UCF Prompt 38 — Deterministic Replay Token Builder from Consolidation Artifacts**.
+
+## 11. Prompt 38 Implementation Note — Deterministic Replay Token Builder
+
+Prompt 38 is implemented as a pure deterministic builder in `runtime/ucf-replay`:
+
+- API: `MinimalSpineReplayTokenInput`, `MinimalSpineReplayTokenBuildOutput`, and `build_replay_token_from_minimal_spine_input` in `runtime/ucf-replay/src/lib.rs`.
+- Test path: `runtime/ucf-replay/tests/minimal_spine_replay_token_builder.rs`.
+- Input decision: the builder consumes a bounded digest-only input copied from the macro consolidation finalization boundary and macro candidate provenance, rather than depending directly on `ucf-consolidation`. Callers should provide the macro candidate digest, macro milestone digest, meso aggregation/provenance digest, macro finalization digest, meso count, and source marker.
+- Schema gap: the existing `ReplayToken` only carries `tier`, `target`, `budget`, `redaction`, and `commit`. It cannot honestly carry all consolidation provenance fields. `MinimalSpineReplayTokenBuildOutput` wraps the existing `ReplayToken` and preserves the missing macro/meso/finalization provenance plus explicit false side-effect flags.
+- Digest behavior: the existing token commitment remains the deterministic `ucf-commit::commit_replay_token` digest. The token target is a deterministic digest of all bounded input links, so a change to macro candidate, macro milestone, meso aggregation, macro finalization, meso count, or source changes the token commitment. The wrapper also exposes its own deterministic digest over token plus provenance.
+- Boundary: the builder is intent/reference only. It does not create `ReplayScheduled`, does not create `ReplayApplied`, does not schedule replay, does not apply replay, does not append Evidence/Archive data, does not call Gateway write APIs, does not trigger Sleep/Geist/ISM, does not create an identity anchor, and does not change Minimal Spine v1.x.
+
+Prompt 39 remains the next scheduler prompt. Prompt 38 intentionally stops before ordering, queue, schedule, apply, audit-append, and runtime replay semantics.
