@@ -195,3 +195,15 @@ Prompt 40 is complete as an audit-only verification contract over `MinimalSpineR
 Prompt 40 audit decision: add a replay-local wrapper instead of reusing `ReplayReport` or `ReplayResult`. The existing report/result surfaces carry range/recompute/backend/float drift semantics and cannot safely express a narrow schedule-token verify-only contract without overclaiming runtime or recompute behavior.
 
 Schema-gap note: `ReplayScheduled` remains a compact scheduled-record shell, and existing `ReplayPlan`/`ReplayReport`/`ReplayResult` remain audit/recompute surfaces. The Prompt 40 audit wrapper records schedule digest, recomputed schedule digest, token count, token digest order, duplicate-free status, truncation metadata, deterministic audit digest, source marker, PASS/FAIL, and deterministic failure reasons without changing shared record schemas or Evidence/Archive authority.
+
+## 13. Prompt 41 Completion Update — Local ReplayApplied Boundary
+
+Prompt 41 is complete as a local replay-subsystem applied-boundary marker only.
+
+| Prompt | Status | Implemented surface | Tests | Boundary retained | Recommended next prompt |
+|---:|---|---|---|---|---|
+| 41 | complete | `MinimalSpineReplayAppliedBoundary` plus `build_replay_applied_boundary_from_audit` in `runtime/ucf-replay`. The record is derived only from a PASS `MinimalSpineReplayScheduleAudit`, preserves audit digest, schedule digest, and token count, and computes a deterministic local boundary digest. | `runtime/ucf-replay/tests/minimal_spine_replay_applied_boundary.rs` covers deterministic construction from PASS audit, FAIL-audit rejection, provenance preservation, no Geist/ISM/identity, no Sleep completion, no Evidence/Archive append, no Gateway exposure, audit non-mutation, and no broad `ReplayApplied` runtime construction. | Local replay bookkeeping only. No actual replay runtime apply, no Geist ingestion, no ISM write/upsert, no identity finalization/anchor, no memory anchor, no Sleep Cycle Coordinator or sleep completion, no Evidence/Archive append, no Gateway visibility/action, no capability issuance, no real-compute activation, no second event-log authority, no Minimal Spine v1.x behavior change, and no consolidation E2E behavior change. | **UCF Prompt 42 — Replay E2E Determinism** |
+
+Prompt 41 schema-gap note: the shared `ucf_types::consolidation::ReplayApplied` shape remains too broad for this boundary because it only carries tier, target, and effect digest and cannot encode the required PASS-audit provenance or the hard negative boundary flags. Prompt 41 therefore uses the replay-local `MinimalSpineReplayAppliedBoundary` wrapper and does not construct the broad `ReplayApplied` runtime/type value.
+
+Prompt 41 semantics: `ReplayApplied` now means, in this roadmap context, a local replay-subsystem boundary marker acknowledging that a verified schedule has been accepted inside replay bookkeeping. It is not a memory mutation, not Geist ingestion, not an ISM write, not identity finalization, not a memory/identity anchor, not sleep completion, not Evidence/Archive append, not Gateway-visible/actionable state, and not runtime queue execution.
