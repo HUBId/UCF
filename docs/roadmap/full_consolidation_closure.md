@@ -112,7 +112,7 @@ Static inventory shows the readiness gate runs seven bringup scenarios, two repl
 
 Prompt 35C closes the gate-spine drift branch and Prompt 35D closes the workspace-test policy gap by making external workspace-test evidence explicit, fresh, and mandatory in split mode. If validation produces a fresh split-evidence readiness-gate pass, the next roadmap prompt can proceed to Replay Scheduler boundary work. If the gate still times out outside the workspace-test phase, run a focused follow-up on the remaining phase.
 
-**Recommended next prompt when split-evidence validation is fresh and passing: UCF Prompt 36 — Replay Scheduler Roadmap and Boundary Audit**.
+**Recommended next prompt when split-evidence validation is fresh and passing: UCF Prompt 36 — Replay Scheduler Roadmap and Boundary Audit**. The resulting Replay planning audit is [`docs/roadmap/replay_scheduler_roadmap_boundary_audit.md`](replay_scheduler_roadmap_boundary_audit.md), caveated as roadmap/boundary-only and not as Replay, Sleep, Geist/ISM, identity, Gateway, or Evidence/Archive authority readiness.
 
 **Fallback if more diagnostics are needed: UCF Prompt 35E — Readiness Gate Workspace Evidence Integration Follow-up**.
 
