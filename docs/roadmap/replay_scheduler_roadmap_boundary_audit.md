@@ -192,3 +192,13 @@ Prompt 39 is complete as a schedule-construction-only step.
 Prompt 39 ordering decision: normalize by ascending replay-token digest. Prompt 39 cap decision: no cap by default; optional positive cap truncates after sorting and sets truncation metadata. Prompt 39 duplicate decision: reject duplicate replay-token digests.
 
 The `ReplayScheduled` schema remains a compact scheduled-record shell and cannot by itself carry Prompt 38 token-builder provenance or explicit schedule ordering metadata. Prompt 39 intentionally uses a replay-local schedule build output wrapper to document and preserve that schema gap without changing shared record schemas.
+
+## 12. Prompt 40 Completion Update — Verify-Only Schedule Audit
+
+Prompt 40 is complete and keeps the replay scheduler roadmap in audit-only territory.
+
+| Prompt | Status | Implemented surface | Tests | Boundary retained | Recommended next prompt |
+|---:|---|---|---|---|---|
+| 40 | complete | `MinimalSpineReplayScheduleAudit` plus `verify_minimal_spine_replay_schedule` in `runtime/ucf-replay`. | `runtime/ucf-replay/tests/minimal_spine_replay_audit_contract.rs` covers PASS/FAIL, deterministic audit digest, token count/order, duplicate detection, truncation metadata, verify-only non-mutation, no `ReplayApplied`, no Sleep/Geist/identity flags, and no Evidence/Archive append flag. | Audit/report only. No actual replay execution, no runtime scheduler/background queue, no Sleep Cycle Coordinator, no Geist/ISM integration, no identity finalization/anchor, no Gateway write/API, no capability issuance, no real compute activation, no Evidence/Archive append, no second event-log authority, no Minimal Spine v1.x behavior change, and no consolidation E2E behavior change. | **UCF Prompt 41 — ReplayApplied Boundary Without Geist/ISM** |
+
+Prompt 41 should define the `ReplayApplied` boundary without connecting it to Geist/ISM, identity finalization, Evidence/Archive append, runtime queues, or real replay execution unless a later prompt explicitly authorizes those surfaces.

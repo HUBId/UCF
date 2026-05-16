@@ -183,3 +183,15 @@ Ordering and cap semantics:
 Schema-gap note: `ReplayScheduled` is reused as the scheduler-facing record shape for tier/target/budget/redaction/commit, but it still cannot carry Minimal Spine token provenance or ordering metadata. Prompt 39 therefore records that gap explicitly in `MinimalSpineReplayScheduleBuildOutput` with `scheduled_token_provenance`, `replay_token_digests`, `token_build_output_digests`, `schedule_digest`, boundary flags, count, truncation metadata, and a source marker.
 
 Recommended next prompt: **UCF Prompt 40 — Replay Audit Record / Verify-Only Contract**.
+
+## 12. Prompt 40 Completion Update — Verify-Only Schedule Audit Contract
+
+Prompt 40 is complete as an audit-only verification contract over `MinimalSpineReplayScheduleBuildOutput` values.
+
+| Prompt | Status | Implemented surface | Boundary retained | Recommended next prompt |
+|---:|---|---|---|---|
+| 40 | complete | `MinimalSpineReplayScheduleAudit`, `MinimalSpineReplayAuditStatus`, `MinimalSpineReplayAuditFailureReason`, and `verify_minimal_spine_replay_schedule` in `runtime/ucf-replay`; tests in `runtime/ucf-replay/tests/minimal_spine_replay_audit_contract.rs`. | Verify-only report value. Audit PASS means internal schedule consistency only; it is not `ReplayApplied`, not replay completion, not replay execution, not Sleep Cycle coordination, not Geist/ISM ingestion, not identity finalization/anchor, not Gateway write/API, not capability issuance, not real-compute activation, not Evidence/Archive append, not a second event-log authority, and not a Minimal Spine v1.x change. | **UCF Prompt 41 — ReplayApplied Boundary Without Geist/ISM** |
+
+Prompt 40 audit decision: add a replay-local wrapper instead of reusing `ReplayReport` or `ReplayResult`. The existing report/result surfaces carry range/recompute/backend/float drift semantics and cannot safely express a narrow schedule-token verify-only contract without overclaiming runtime or recompute behavior.
+
+Schema-gap note: `ReplayScheduled` remains a compact scheduled-record shell, and existing `ReplayPlan`/`ReplayReport`/`ReplayResult` remain audit/recompute surfaces. The Prompt 40 audit wrapper records schedule digest, recomputed schedule digest, token count, token digest order, duplicate-free status, truncation metadata, deterministic audit digest, source marker, PASS/FAIL, and deterministic failure reasons without changing shared record schemas or Evidence/Archive authority.

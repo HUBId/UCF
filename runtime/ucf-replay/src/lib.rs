@@ -245,6 +245,148 @@ pub const MINIMAL_SPINE_REPLAY_SCHEDULE_BUILD_OUTPUT_VERSION: u32 = 1;
 /// Source marker used by replay schedules derived from Minimal Spine replay token outputs.
 pub const MINIMAL_SPINE_REPLAY_SCHEDULE_SOURCE: &str = "minimal_spine_v1_replay_schedule_builder";
 
+/// Version for the Minimal Spine verify-only replay schedule audit output.
+pub const MINIMAL_SPINE_REPLAY_SCHEDULE_AUDIT_VERSION: u32 = 1;
+
+/// Source marker used by verify-only audits over Minimal Spine replay schedules.
+pub const MINIMAL_SPINE_REPLAY_SCHEDULE_AUDIT_SOURCE: &str =
+    "minimal_spine_v1_replay_schedule_verify_only_audit";
+
+/// PASS/FAIL status for the verify-only Minimal Spine replay schedule audit.
+///
+/// `Pass` means the schedule value is internally consistent. It does not mean replay was applied,
+/// completed, archived, ingested by Geist/ISM, or attached to identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MinimalSpineReplayAuditStatus {
+    Pass,
+    Fail,
+}
+
+impl MinimalSpineReplayAuditStatus {
+    fn code(self) -> u8 {
+        match self {
+            Self::Pass => 1,
+            Self::Fail => 2,
+        }
+    }
+}
+
+/// Deterministic failure reasons emitted by the verify-only schedule audit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum MinimalSpineReplayAuditFailureReason {
+    VersionMismatch,
+    TokenCountMismatch,
+    EmptyTokenOrder,
+    ScheduledTokenCountMismatch,
+    ProvenanceCountMismatch,
+    TokenBuildOutputDigestCountMismatch,
+    DuplicateReplayTokenDigest,
+    ScheduleDigestMismatch,
+    SourceEmpty,
+    AppliedFlagSet,
+    SleepCycleFlagSet,
+    GeistIngestedFlagSet,
+    IdentityAnchorFlagSet,
+    EvidenceArchiveAppendedFlagSet,
+    ProvenanceOrderMismatch,
+    ProvenanceDigestOrderMismatch,
+    ScheduledTokenCommitMismatch,
+}
+
+impl MinimalSpineReplayAuditFailureReason {
+    fn code(self) -> u8 {
+        match self {
+            Self::VersionMismatch => 1,
+            Self::TokenCountMismatch => 2,
+            Self::EmptyTokenOrder => 3,
+            Self::ScheduledTokenCountMismatch => 4,
+            Self::ProvenanceCountMismatch => 5,
+            Self::TokenBuildOutputDigestCountMismatch => 6,
+            Self::DuplicateReplayTokenDigest => 7,
+            Self::ScheduleDigestMismatch => 8,
+            Self::SourceEmpty => 9,
+            Self::AppliedFlagSet => 10,
+            Self::SleepCycleFlagSet => 11,
+            Self::GeistIngestedFlagSet => 12,
+            Self::IdentityAnchorFlagSet => 13,
+            Self::EvidenceArchiveAppendedFlagSet => 14,
+            Self::ProvenanceOrderMismatch => 15,
+            Self::ProvenanceDigestOrderMismatch => 16,
+            Self::ScheduledTokenCommitMismatch => 17,
+        }
+    }
+}
+
+/// Verify-only audit report for a Minimal Spine replay schedule value.
+///
+/// This report is an audit value only. It has no store/appender arguments, does not mutate the
+/// schedule, does not apply replay, and does not create `ReplayApplied` runtime state. All boundary
+/// flags are hard-coded false in the report to prevent overclaiming.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineReplayScheduleAudit {
+    pub version: u32,
+    pub status: MinimalSpineReplayAuditStatus,
+    pub failure_reasons: Vec<MinimalSpineReplayAuditFailureReason>,
+    pub schedule_digest: Digest32,
+    pub recomputed_schedule_digest: Digest32,
+    pub token_count: u32,
+    pub token_digests: Vec<Digest32>,
+    pub duplicate_free: bool,
+    pub truncated: bool,
+    pub audit_digest: Digest32,
+    pub source: &'static str,
+    pub applied: bool,
+    pub replay_completed: bool,
+    pub sleep_cycle: bool,
+    pub geist_ingested: bool,
+    pub identity_anchor: bool,
+    pub evidence_archive_appended: bool,
+}
+
+impl MinimalSpineReplayScheduleAudit {
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32_be(&mut out, self.version);
+        out.push(self.status.code());
+        push_u32_be(
+            &mut out,
+            u32::try_from(self.failure_reasons.len())
+                .expect("minimal spine replay audit failure reason count fits u32"),
+        );
+        for reason in &self.failure_reasons {
+            out.push(reason.code());
+        }
+        push_digest32(&mut out, self.schedule_digest);
+        push_digest32(&mut out, self.recomputed_schedule_digest);
+        push_u32_be(&mut out, self.token_count);
+        push_u32_be(
+            &mut out,
+            u32::try_from(self.token_digests.len())
+                .expect("minimal spine replay audit token count fits u32"),
+        );
+        for digest in &self.token_digests {
+            push_digest32(&mut out, *digest);
+        }
+        out.push(u8::from(self.duplicate_free));
+        out.push(u8::from(self.truncated));
+        push_str32(&mut out, self.source);
+        out.push(u8::from(self.applied));
+        out.push(u8::from(self.replay_completed));
+        out.push(u8::from(self.sleep_cycle));
+        out.push(u8::from(self.geist_ingested));
+        out.push(u8::from(self.identity_anchor));
+        out.push(u8::from(self.evidence_archive_appended));
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_sha256_domain(
+            b"ucf.replay.minimal_spine.schedule_verify_only_audit.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+}
+
 /// Pure schedule-builder configuration.
 ///
 /// `max_tokens` is optional. When present, it is applied after deterministic digest ordering and
@@ -350,6 +492,127 @@ impl MinimalSpineReplayScheduleBuildOutput {
             &self.deterministic_bytes(),
         )
     }
+}
+
+/// Verify a Minimal Spine replay schedule value without applying replay or appending evidence.
+///
+/// The audit is a pure deterministic consistency check over the schedule value. It reports PASS or
+/// FAIL plus stable digests and metadata, but it never mutates the input, takes no store/appender
+/// handles, does not create applied replay state, and keeps all runtime/authority boundary flags
+/// false in the audit output.
+pub fn verify_minimal_spine_replay_schedule(
+    schedule: &MinimalSpineReplayScheduleBuildOutput,
+) -> MinimalSpineReplayScheduleAudit {
+    let recomputed_schedule_digest = schedule.digest();
+    let mut reasons = Vec::new();
+
+    if schedule.version != MINIMAL_SPINE_REPLAY_SCHEDULE_BUILD_OUTPUT_VERSION {
+        reasons.push(MinimalSpineReplayAuditFailureReason::VersionMismatch);
+    }
+    if usize::try_from(schedule.token_count).ok() != Some(schedule.replay_token_digests.len()) {
+        reasons.push(MinimalSpineReplayAuditFailureReason::TokenCountMismatch);
+    }
+    if schedule.replay_token_digests.is_empty() {
+        reasons.push(MinimalSpineReplayAuditFailureReason::EmptyTokenOrder);
+    }
+    if schedule.scheduled_tokens.len() != schedule.replay_token_digests.len() {
+        reasons.push(MinimalSpineReplayAuditFailureReason::ScheduledTokenCountMismatch);
+    }
+    if schedule.scheduled_token_provenance.len() != schedule.replay_token_digests.len() {
+        reasons.push(MinimalSpineReplayAuditFailureReason::ProvenanceCountMismatch);
+    }
+    if schedule.token_build_output_digests.len() != schedule.replay_token_digests.len() {
+        reasons.push(MinimalSpineReplayAuditFailureReason::TokenBuildOutputDigestCountMismatch);
+    }
+
+    let duplicate_free = replay_digest_order_is_duplicate_free(&schedule.replay_token_digests);
+    if !duplicate_free {
+        reasons.push(MinimalSpineReplayAuditFailureReason::DuplicateReplayTokenDigest);
+    }
+    if schedule.schedule_digest != recomputed_schedule_digest {
+        reasons.push(MinimalSpineReplayAuditFailureReason::ScheduleDigestMismatch);
+    }
+    if schedule.source.is_empty() {
+        reasons.push(MinimalSpineReplayAuditFailureReason::SourceEmpty);
+    }
+    if schedule.applied {
+        reasons.push(MinimalSpineReplayAuditFailureReason::AppliedFlagSet);
+    }
+    if schedule.sleep_cycle {
+        reasons.push(MinimalSpineReplayAuditFailureReason::SleepCycleFlagSet);
+    }
+    if schedule.geist_ingested {
+        reasons.push(MinimalSpineReplayAuditFailureReason::GeistIngestedFlagSet);
+    }
+    if schedule.identity_anchor {
+        reasons.push(MinimalSpineReplayAuditFailureReason::IdentityAnchorFlagSet);
+    }
+    if schedule.evidence_archive_appended {
+        reasons.push(MinimalSpineReplayAuditFailureReason::EvidenceArchiveAppendedFlagSet);
+    }
+
+    for (index, provenance) in schedule.scheduled_token_provenance.iter().enumerate() {
+        let expected_order =
+            u32::try_from(index).expect("minimal spine replay audit index fits u32");
+        if provenance.order != expected_order {
+            reasons.push(MinimalSpineReplayAuditFailureReason::ProvenanceOrderMismatch);
+            break;
+        }
+    }
+
+    for (index, replay_token_digest) in schedule.replay_token_digests.iter().enumerate() {
+        if schedule
+            .scheduled_token_provenance
+            .get(index)
+            .is_some_and(|provenance| provenance.replay_token_digest != *replay_token_digest)
+        {
+            reasons.push(MinimalSpineReplayAuditFailureReason::ProvenanceDigestOrderMismatch);
+            break;
+        }
+        if schedule
+            .scheduled_tokens
+            .get(index)
+            .is_some_and(|scheduled| scheduled.commit != *replay_token_digest)
+        {
+            reasons.push(MinimalSpineReplayAuditFailureReason::ScheduledTokenCommitMismatch);
+            break;
+        }
+    }
+
+    reasons.sort_unstable();
+    reasons.dedup();
+    let status = if reasons.is_empty() {
+        MinimalSpineReplayAuditStatus::Pass
+    } else {
+        MinimalSpineReplayAuditStatus::Fail
+    };
+
+    let mut audit = MinimalSpineReplayScheduleAudit {
+        version: MINIMAL_SPINE_REPLAY_SCHEDULE_AUDIT_VERSION,
+        status,
+        failure_reasons: reasons,
+        schedule_digest: schedule.schedule_digest,
+        recomputed_schedule_digest,
+        token_count: schedule.token_count,
+        token_digests: schedule.replay_token_digests.clone(),
+        duplicate_free,
+        truncated: schedule.truncated,
+        audit_digest: Digest32::new([0u8; Digest32::LEN]),
+        source: MINIMAL_SPINE_REPLAY_SCHEDULE_AUDIT_SOURCE,
+        applied: false,
+        replay_completed: false,
+        sleep_cycle: false,
+        geist_ingested: false,
+        identity_anchor: false,
+        evidence_archive_appended: false,
+    };
+    audit.audit_digest = audit.digest();
+    audit
+}
+
+fn replay_digest_order_is_duplicate_free(digests: &[Digest32]) -> bool {
+    let mut seen = BTreeSet::new();
+    digests.iter().all(|digest| seen.insert(*digest.as_bytes()))
 }
 
 /// Build a pure deterministic planned replay schedule from Minimal Spine replay-token outputs.
