@@ -178,3 +178,9 @@ The bounded Replay closure baseline is available at [`docs/roadmap/replay_closur
 Treat the Replay line as bounded-closed only for deterministic local replay bookkeeping and validation. Do not claim runtime replay readiness, runtime scheduler/queue/worker behavior, Sleep readiness, Geist/ISM integration, identity finalization or anchor, Evidence/Archive replay append, Gateway-visible replay, production replay readiness, or a Minimal Spine v1.x change.
 
 Recommended next prompt: **UCF Prompt 45 — Post-Replay Roadmap Selection: Sleep Integration vs Geist/ISM vs Prod-Profile**.
+
+## 15. Prompt 45 Post-Replay Roadmap Selection
+
+The post-Replay roadmap selection is available at [`docs/roadmap/post_replay_roadmap_selection.md`](post_replay_roadmap_selection.md). It supersedes earlier “next-line” planning after bounded Replay closure by selecting **Sleep Integration Roadmap and Boundary Audit** as the next primary docs-only line, with Replay Evidence/Archive append contract as secondary and Prod-profile / Workspace Evidence Stability as a parallel validation line.
+
+This supersession is planning-only. It does not implement Sleep integration, Geist/ISM, identity finalization, runtime Replay Scheduler/queue behavior, Gateway writes, capability issuance, Evidence/Archive replay append, protocol schema changes, or Minimal Spine v1.x changes.
