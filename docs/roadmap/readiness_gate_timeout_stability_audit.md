@@ -203,3 +203,18 @@ Operational interpretation:
 - CI and nightly can run `workspace-test-check` as a reportable prerequisite and pass the report to `readiness-gate`.
 - A gate `PASS` in split mode means the gate checks passed and the workspace-test prerequisite report matched the current HEAD and dirty state.
 - Consolidation closure no longer depends on embedding the full workspace test inside the gate process, but it still depends on fresh workspace-test evidence and a fresh readiness-gate pass for the evaluated repository state.
+
+## 11. Prompt 35E Workspace Evidence Follow-up
+
+Prompt 35E investigated the split workspace-test evidence path without weakening gate criteria. The exact `workspace-test-check` command remains `cargo test --workspace --offline`; it differs from the earlier successful manual command only by `--offline` and by being launched through the `ucf-ops` wrapper. In this environment, `cargo test --workspace --offline` completed under a 600 second guard after cache warm-up, so offline mode was not isolated as the root cause. The dominant cost is workspace breadth and Cargo compile/test/doc-test execution; when invoked via `Command::output`, the wrapper previously captured Cargo stdout/stderr until completion, making normal long Cargo activity appear as no wrapper output.
+
+Measured observations for this follow-up:
+
+| Probe | Result | Interpretation |
+|---|---|---|
+| `cargo test --workspace` | manually terminated after roughly ten minutes during broad workspace compile/test execution | Broad workspace scope can exceed short interactive patience on cold or invalidated caches; no specific deadlock was proven. |
+| `timeout 600s cargo test --workspace --offline` | PASS in about 330 seconds | Offline mode can complete in this environment; 300 seconds is too tight for cold/mixed-profile runs. |
+| `timeout 600s cargo test --workspace --offline --locked` | PASS in about 183 seconds after warm-up | `--locked` was not a bottleneck in the warmed cache. |
+| `cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json` | PASS in about 359 seconds | Wrapper semantics were correct, but the wrapper gave no phase progress while the child Cargo process was captured. |
+
+Prompt 35E therefore chooses progress/timing instrumentation for `workspace-test-check`: stderr start/done lines and report `phase_timings[]` now expose metadata, Cargo command, and report assembly subphases. The command, freshness validation, stale-report failure semantics, and mandatory workspace-test criteria are unchanged. Recommended policy is to run split evidence with an explicit outer timeout of at least 600 seconds in this environment and to treat any timeout as missing/non-PASS evidence. Future policy work may decide whether to split workspace evidence into package groups, but that remains out of scope here.

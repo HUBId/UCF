@@ -29,3 +29,5 @@ Every newly generated root report must include report freshness metadata: `repor
 ## Workspace-test prerequisite reports
 
 `workspace_test_report.json` is produced by `cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json`. It is valid readiness-gate evidence only when it reports `PASS`, records the mandatory command `cargo test --workspace --offline`, and its embedded `git_head_full` and `git_dirty` match the repository state being evaluated by `readiness-gate --workspace-test-report <path>`. Missing, stale, mismatched, or non-PASS workspace-test evidence must be treated as gate `FAIL`, never as `PASS`.
+
+The report includes bounded command-result tails plus `phase_timings[]` for workspace-test-check metadata, Cargo command, and report assembly diagnostics. These timing fields are diagnostic only; they do not weaken freshness, command, dirty-state, or PASS validation.
