@@ -9,6 +9,7 @@
 - It is not Geist/ISM readiness.
 - It is not identity finalization, an identity anchor, Gateway write API work, capability issuance, real-compute activation, Evidence/Archive authority changes, a second event-log authority, or a Minimal Spine v1.x change.
 - It treats historical replay/sleep/geist docs as historical unless linked through the current architecture index or current roadmap documents.
+- Historical status note: this Prompt 36/37 planning audit predates the Prompt 38-42 bounded Replay chain. Current claims must be read through `docs/roadmap/replay_record_authority_schema_alignment.md` Sections 0.1, 0.2, and 12-14: token intent/reference, schedule planned ordering, audit verify-only, local applied boundary only, and no runtime apply/Sleep/Geist/ISM/identity/Evidence/Archive/Gateway readiness.
 
 ## 1. Baseline
 
