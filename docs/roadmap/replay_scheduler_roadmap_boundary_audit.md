@@ -212,3 +212,16 @@ Prompt 41 is complete and keeps ReplayApplied semantics local to replay bookkeep
 | 41 | complete | `MinimalSpineReplayAppliedBoundary` and `build_replay_applied_boundary_from_audit` in `runtime/ucf-replay`, plus deterministic boundary tests in `runtime/ucf-replay/tests/minimal_spine_replay_applied_boundary.rs`. | The boundary can only be derived from a PASS verify-only schedule audit. It rejects FAIL audits and does not call Geist, ISM, Sleep, Evidence, Archive, Gateway, scheduler queue, real compute, or identity code. It does not mutate token, schedule, or audit records and does not construct the broad `ReplayApplied` runtime/type value. | **UCF Prompt 42 — Replay E2E Determinism** |
 
 ReplayApplied remains explicitly not Geist ingestion, not ISM write/upsert, not identity finalization, not a memory/identity anchor, not sleep completion, not Evidence/Archive append, not Gateway visibility/action, and not actual replay runtime apply.
+
+## 14. Prompt 42 Completion Update — Replay E2E Determinism
+
+Prompt 42 is complete and proves the bounded replay path is deterministic end-to-end without
+promoting it to runtime replay execution.
+
+| Prompt | Status | Implemented surface | Tests | Boundary retained | Recommended next prompt |
+|---:|---|---|---|---|---|
+| 42 | complete | Replay-local E2E test over token build outputs, deterministic schedule build output, verify-only schedule audit, and local applied-boundary marker. | `runtime/ucf-replay/tests/minimal_spine_replay_e2e.rs` covers fresh-run digest determinism, token-to-schedule-to-audit-to-boundary provenance continuity, PASS-audit precondition for boundary creation, FAIL-audit rejection, false Sleep/Geist/ISM/identity/Evidence/Gateway flags, duplicate token rejection, zero digest input rejection, tampered schedule audit failure, and absence of Evidence/Archive append or runtime queue markers. | E2E determinism only. No actual replay runtime apply, no runtime scheduler/background queue, no Sleep Cycle Coordinator, no Geist/ISM integration, no identity finalization/anchor, no Gateway write/API, no capability issuance, no real-compute activation, no Evidence/Archive append, no second event-log authority, no Minimal Spine v1.x behavior change, and no consolidation E2E behavior change. | **UCF Prompt 43 — Replay Docs Overclaim Guard** |
+
+Prompt 43 should harden replay documentation against overclaiming: the current E2E proves bounded
+record determinism and provenance continuity, not real replay execution, not archive authority, and
+not Sleep/Geist/ISM/identity/Gateway readiness.

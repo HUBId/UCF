@@ -207,3 +207,23 @@ Prompt 41 is complete as a local replay-subsystem applied-boundary marker only.
 Prompt 41 schema-gap note: the shared `ucf_types::consolidation::ReplayApplied` shape remains too broad for this boundary because it only carries tier, target, and effect digest and cannot encode the required PASS-audit provenance or the hard negative boundary flags. Prompt 41 therefore uses the replay-local `MinimalSpineReplayAppliedBoundary` wrapper and does not construct the broad `ReplayApplied` runtime/type value.
 
 Prompt 41 semantics: `ReplayApplied` now means, in this roadmap context, a local replay-subsystem boundary marker acknowledging that a verified schedule has been accepted inside replay bookkeeping. It is not a memory mutation, not Geist ingestion, not an ISM write, not identity finalization, not a memory/identity anchor, not sleep completion, not Evidence/Archive append, not Gateway-visible/actionable state, and not runtime queue execution.
+
+## 14. Prompt 42 Completion Update — Replay E2E Determinism
+
+Prompt 42 is implemented as a bounded replay-local E2E determinism test over the existing token,
+schedule, verify-only audit, and local applied-boundary surfaces.
+
+| Prompt | Status | Implemented surface | Test path | Boundary retained | Recommended next prompt |
+|---:|---|---|---|---|---|
+| 42 | complete | Deterministic E2E proof for `MinimalSpineReplayTokenInput` → `MinimalSpineReplayTokenBuildOutput` → `MinimalSpineReplayScheduleBuildOutput` → `MinimalSpineReplayScheduleAudit` → `MinimalSpineReplayAppliedBoundary`. | `runtime/ucf-replay/tests/minimal_spine_replay_e2e.rs` | The E2E uses replay-local digest fixtures derived from the bounded consolidation provenance fields and still excludes runtime replay apply, Sleep Cycle Coordinator work, Geist/ISM integration, identity finalization or identity anchoring, Gateway write/API behavior, capability issuance, real-compute activation, Evidence/Archive append, a second event-log authority, Minimal Spine v1.x changes, and consolidation E2E behavior changes. | **UCF Prompt 43 — Replay Docs Overclaim Guard** |
+
+Prompt 42 validates that identical inputs produce identical token, schedule, audit, and applied-boundary
+digests across fresh runs; token provenance flows into schedule provenance; the schedule digest flows
+into the audit; and the audit digest plus schedule digest flow into the local applied boundary.
+The applied boundary is built only after a PASS verify-only audit, and a tampered FAIL audit is
+rejected before any boundary value is produced.
+
+No production helper was moved for the E2E. The test intentionally uses replay-local digest fixtures
+rather than importing consolidation E2E fixtures, because the replay token input API already accepts
+the bounded consolidation finalization/provenance digests and this avoids introducing a broader
+consolidation dependency into the replay crate tests.
