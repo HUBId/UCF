@@ -143,8 +143,10 @@ Sleep Integration v1 should later mean a deterministic, bounded planning/audit l
 - How does Sleep later hand off to Geist/ISM safely? Only through a dedicated later prompt with projection-only semantics, explicit gates, and no implicit ISM upsert or identity anchor.
 - What remains out of scope until Geist prompts? Geist ingestion, ISM writes, SelfState authority, identity anchor/finalization, macro finalization promotion, and replay-stabilization claims.
 
-## 9. Recommended Next Prompt
+## 9. Prompt 47 Completion and Recommended Next Prompt
 
-**UCF Prompt 47 — Sleep Record Authority and Schema Alignment**.
+Prompt 47 is complete in [`docs/roadmap/sleep_record_authority_schema_alignment.md`](sleep_record_authority_schema_alignment.md). It confirms that `SleepPlan`, `SleepCycle`, `SleepApplied`, and `SleepBoundary` are not canonical records yet; keeps the existing sleep coordinator/report surfaces as prototype inventory; defers `ucf-types`/`ucf-protocol` promotion; and preserves the no-runtime, no-Geist/ISM, no-identity, no-Gateway, and no Evidence/Archive append boundaries.
 
-Prompt 47 should remain docs-first unless it explicitly finds a narrow, deterministic, schema-safe record-wrapper action that is required before implementation. It must preserve Minimal Spine v1.x, avoid Evidence/Archive authority changes, avoid Geist/ISM and identity activation, and avoid runtime scheduler/queue/worker behavior.
+Recommended next prompt: **UCF Prompt 48 — Deterministic SleepPlan Candidate from Replay Boundary**.
+
+Prompt 48 should implement only a pure deterministic SleepPlan candidate from bounded Replay metadata if authorized by the Prompt 47 authority document. It must preserve Minimal Spine v1.x, avoid Evidence/Archive authority changes, avoid Geist/ISM and identity activation, and avoid runtime scheduler/queue/worker behavior.
