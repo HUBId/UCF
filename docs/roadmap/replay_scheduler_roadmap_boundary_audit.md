@@ -142,7 +142,7 @@ Record decisions:
 
 | Prompt | Title | Goal | Scope | Acceptance criteria | Boundary guardrails |
 |---:|---|---|---|---|---|
-| 37 | Replay Record Authority and Token Schema Alignment | Decide replay-facing authority for `ReplayToken`, `ReplayScheduled`, `ReplayApplied`, archive kinds, and audit-only records. | Docs/schema audit first; minimal code only if existing records need comments/tests. | Authority table updated; tests/docs lint pass; no scheduler behavior. | No append behavior, no Sleep/Geist/ISM, no identity finalization. |
+| 37 | Replay Record Authority and Token Schema Alignment | Decide replay-facing authority for `ReplayToken`, `ReplayScheduled`, `ReplayApplied`, archive kinds, and audit-only records. | Docs/schema audit first; minimal code only if existing records need comments/tests. | Complete: [`replay_record_authority_schema_alignment.md`](replay_record_authority_schema_alignment.md) chooses split authority, keeps scheduler/apply/append deferred, and defines Prompt 38 acceptance criteria. | No append behavior, no Sleep/Geist/ISM, no identity finalization. |
 | 38 | Deterministic Replay Token Builder from Consolidation Artifacts | Add pure token builder from bounded consolidation artifact digests. | Read-only inputs from micro/meso/macro payloads or digests. | Deterministic unit tests; stable ordering; no store writes. | No macro finalization mutation; no Gateway/action; no real compute activation. |
 | 39 | Replay Schedule Builder and Ordering Semantics | Add deterministic schedule builder over replay tokens. | Sort/cap semantics, duplicate handling, schedule digest. | Golden tests prove stable ordering and caps. | No Sleep Cycle Coordinator and no hidden apply. |
 | 40 | Replay Audit Record / Verify-Only Contract | Define verify-only replay audit object and optional report bridge. | Audit/report only, not authoritative apply. | Audit tests cover missing, drift, and no-append defaults. | Evidence/Archive append remains deferred and explicit. |
@@ -165,4 +165,4 @@ Record decisions:
 
 ## 10. Recommended Next Prompt
 
-Recommended next prompt: **UCF Prompt 37 — Replay Record Authority and Token Schema Alignment**.
+Recommended next prompt: **UCF Prompt 38 — Deterministic Replay Token Builder from Consolidation Artifacts**. Prompt 37 is complete in [`docs/roadmap/replay_record_authority_schema_alignment.md`](replay_record_authority_schema_alignment.md).
