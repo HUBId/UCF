@@ -201,4 +201,14 @@ Prompt 40 is complete and keeps the replay scheduler roadmap in audit-only terri
 |---:|---|---|---|---|---|
 | 40 | complete | `MinimalSpineReplayScheduleAudit` plus `verify_minimal_spine_replay_schedule` in `runtime/ucf-replay`. | `runtime/ucf-replay/tests/minimal_spine_replay_audit_contract.rs` covers PASS/FAIL, deterministic audit digest, token count/order, duplicate detection, truncation metadata, verify-only non-mutation, no `ReplayApplied`, no Sleep/Geist/identity flags, and no Evidence/Archive append flag. | Audit/report only. No actual replay execution, no runtime scheduler/background queue, no Sleep Cycle Coordinator, no Geist/ISM integration, no identity finalization/anchor, no Gateway write/API, no capability issuance, no real compute activation, no Evidence/Archive append, no second event-log authority, no Minimal Spine v1.x behavior change, and no consolidation E2E behavior change. | **UCF Prompt 41 — ReplayApplied Boundary Without Geist/ISM** |
 
-Prompt 41 should define the `ReplayApplied` boundary without connecting it to Geist/ISM, identity finalization, Evidence/Archive append, runtime queues, or real replay execution unless a later prompt explicitly authorizes those surfaces.
+Prompt 41 defined the `ReplayApplied` boundary without connecting it to Geist/ISM, identity finalization, Evidence/Archive append, runtime queues, or real replay execution.
+
+## 13. Prompt 41 Completion Update — ReplayApplied Boundary Without Geist/ISM
+
+Prompt 41 is complete and keeps ReplayApplied semantics local to replay bookkeeping.
+
+| Prompt | Status | Implemented surface | Boundary retained | Recommended next prompt |
+|---:|---|---|---|---|
+| 41 | complete | `MinimalSpineReplayAppliedBoundary` and `build_replay_applied_boundary_from_audit` in `runtime/ucf-replay`, plus deterministic boundary tests in `runtime/ucf-replay/tests/minimal_spine_replay_applied_boundary.rs`. | The boundary can only be derived from a PASS verify-only schedule audit. It rejects FAIL audits and does not call Geist, ISM, Sleep, Evidence, Archive, Gateway, scheduler queue, real compute, or identity code. It does not mutate token, schedule, or audit records and does not construct the broad `ReplayApplied` runtime/type value. | **UCF Prompt 42 — Replay E2E Determinism** |
+
+ReplayApplied remains explicitly not Geist ingestion, not ISM write/upsert, not identity finalization, not a memory/identity anchor, not sleep completion, not Evidence/Archive append, not Gateway visibility/action, and not actual replay runtime apply.

@@ -226,6 +226,8 @@ pub enum ReplayError {
     InvalidMinimalSpineReplayTokenInput(&'static str),
     #[error("invalid minimal spine replay schedule input: {0}")]
     InvalidMinimalSpineReplayScheduleInput(&'static str),
+    #[error("invalid minimal spine replay applied boundary input: {0}")]
+    InvalidMinimalSpineReplayAppliedBoundaryInput(&'static str),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("json error: {0}")]
@@ -251,6 +253,13 @@ pub const MINIMAL_SPINE_REPLAY_SCHEDULE_AUDIT_VERSION: u32 = 1;
 /// Source marker used by verify-only audits over Minimal Spine replay schedules.
 pub const MINIMAL_SPINE_REPLAY_SCHEDULE_AUDIT_SOURCE: &str =
     "minimal_spine_v1_replay_schedule_verify_only_audit";
+
+/// Version for the Minimal Spine local ReplayApplied boundary marker.
+pub const MINIMAL_SPINE_REPLAY_APPLIED_BOUNDARY_VERSION: u32 = 1;
+
+/// Source marker used by local replay-subsystem applied boundary records.
+pub const MINIMAL_SPINE_REPLAY_APPLIED_BOUNDARY_SOURCE: &str =
+    "minimal_spine_v1_replay_applied_local_boundary";
 
 /// PASS/FAIL status for the verify-only Minimal Spine replay schedule audit.
 ///
@@ -385,6 +394,92 @@ impl MinimalSpineReplayScheduleAudit {
             &self.deterministic_bytes(),
         )
     }
+}
+
+/// Local replay-subsystem boundary marker derived from a PASS schedule audit.
+///
+/// This record acknowledges only replay bookkeeping inside `ucf-replay`. It is not the broad
+/// protocol/type-level `ReplayApplied`, does not execute a replay runtime apply, and hard-codes all
+/// Geist/ISM/identity/Sleep/Evidence/Archive/Gateway boundary flags to false.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineReplayAppliedBoundary {
+    pub version: u32,
+    pub audit_digest: Digest32,
+    pub schedule_digest: Digest32,
+    pub token_count: u32,
+    pub applied_boundary_digest: Digest32,
+    pub source: &'static str,
+    pub replay_subsystem_applied: bool,
+    pub geist_ingested: bool,
+    pub ism_written: bool,
+    pub identity_anchor: bool,
+    pub sleep_completed: bool,
+    pub evidence_archive_appended: bool,
+    pub gateway_visible: bool,
+}
+
+impl MinimalSpineReplayAppliedBoundary {
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32_be(&mut out, self.version);
+        push_digest32(&mut out, self.audit_digest);
+        push_digest32(&mut out, self.schedule_digest);
+        push_u32_be(&mut out, self.token_count);
+        push_str32(&mut out, self.source);
+        out.push(u8::from(self.replay_subsystem_applied));
+        out.push(u8::from(self.geist_ingested));
+        out.push(u8::from(self.ism_written));
+        out.push(u8::from(self.identity_anchor));
+        out.push(u8::from(self.sleep_completed));
+        out.push(u8::from(self.evidence_archive_appended));
+        out.push(u8::from(self.gateway_visible));
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_sha256_domain(
+            b"ucf.replay.minimal_spine.applied_local_boundary.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+}
+
+/// Build a local ReplayApplied boundary marker from a PASS verify-only schedule audit.
+///
+/// The output is deterministic replay bookkeeping only. It preserves audit/schedule provenance,
+/// rejects FAIL audits, takes no store/scheduler/runtime/Geist/ISM/Evidence/Archive/Gateway
+/// handles, and does not mutate the audit, schedule, or tokens that produced it.
+pub fn build_replay_applied_boundary_from_audit(
+    audit: &MinimalSpineReplayScheduleAudit,
+) -> Result<MinimalSpineReplayAppliedBoundary, ReplayError> {
+    if audit.status != MinimalSpineReplayAuditStatus::Pass {
+        return Err(ReplayError::InvalidMinimalSpineReplayAppliedBoundaryInput(
+            "audit status must be pass",
+        ));
+    }
+    if audit.audit_digest != audit.digest() {
+        return Err(ReplayError::InvalidMinimalSpineReplayAppliedBoundaryInput(
+            "audit digest mismatch",
+        ));
+    }
+
+    let mut boundary = MinimalSpineReplayAppliedBoundary {
+        version: MINIMAL_SPINE_REPLAY_APPLIED_BOUNDARY_VERSION,
+        audit_digest: audit.audit_digest,
+        schedule_digest: audit.schedule_digest,
+        token_count: audit.token_count,
+        applied_boundary_digest: Digest32::new([0u8; Digest32::LEN]),
+        source: MINIMAL_SPINE_REPLAY_APPLIED_BOUNDARY_SOURCE,
+        replay_subsystem_applied: true,
+        geist_ingested: false,
+        ism_written: false,
+        identity_anchor: false,
+        sleep_completed: false,
+        evidence_archive_appended: false,
+        gateway_visible: false,
+    };
+    boundary.applied_boundary_digest = boundary.digest();
+    Ok(boundary)
 }
 
 /// Pure schedule-builder configuration.
