@@ -170,3 +170,11 @@ Recommended next prompt: **UCF Prompt 35A — Readiness Gate Timeout Stability A
 Replay Scheduler is now the next active planning line after bounded consolidation closure and gate-stability follow-up. The planning and boundary audit is available at [`docs/roadmap/replay_scheduler_roadmap_boundary_audit.md`](replay_scheduler_roadmap_boundary_audit.md). Treat that document as roadmap/boundary guidance only: no Replay Scheduler implementation, Sleep Cycle Coordinator, Geist/ISM integration, identity finalization, Gateway write API, capability issuance, real-compute activation, Evidence/Archive authority change, second event log, Minimal Spine v1.x change, or consolidation E2E behavior change is introduced by Prompt 36.
 
 Recommended next prompt: **UCF Prompt 37 — Replay Record Authority and Token Schema Alignment**.
+
+## 14. Prompt 44 Replay Closure Baseline
+
+The bounded Replay closure baseline is available at [`docs/roadmap/replay_closure.md`](replay_closure.md). Prompt 44 records fresh validation for the bounded Token→Schedule→Audit→AppliedBoundary line: targeted Replay tests, `ucf-geist`, consolidation E2E, workspace tests, clippy, docs lint, readiness-spine-check, workspace-test-check, and readiness-gate with split workspace-test evidence passed in the validation run.
+
+Treat the Replay line as bounded-closed only for deterministic local replay bookkeeping and validation. Do not claim runtime replay readiness, runtime scheduler/queue/worker behavior, Sleep readiness, Geist/ISM integration, identity finalization or anchor, Evidence/Archive replay append, Gateway-visible replay, production replay readiness, or a Minimal Spine v1.x change.
+
+Recommended next prompt: **UCF Prompt 45 — Post-Replay Roadmap Selection: Sleep Integration vs Geist/ISM vs Prod-Profile**.
