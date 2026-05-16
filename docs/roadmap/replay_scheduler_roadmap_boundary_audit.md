@@ -166,3 +166,17 @@ Record decisions:
 ## 10. Recommended Next Prompt
 
 Recommended next prompt: **UCF Prompt 38 — Deterministic Replay Token Builder from Consolidation Artifacts**. Prompt 37 is complete in [`docs/roadmap/replay_record_authority_schema_alignment.md`](replay_record_authority_schema_alignment.md).
+
+## 11. Prompt 38 Completion Update — Token Builder Only
+
+Prompt 38 is complete as a token intent/reference builder only.
+
+| Prompt | Status | Implemented surface | Boundary retained |
+|---:|---|---|---|
+| 38 | complete | `MinimalSpineReplayTokenInput`, `MinimalSpineReplayTokenBuildOutput`, and `build_replay_token_from_minimal_spine_input` in `runtime/ucf-replay`; tests in `runtime/ucf-replay/tests/minimal_spine_replay_token_builder.rs` | No scheduler, no schedule builder, no `ReplayApplied`, no Evidence/Archive append, no Sleep/Geist/ISM, no identity anchor, no Gateway write, no Minimal Spine v1.x change. |
+
+Design decision: the builder uses a small replay-owned digest input struct rather than a direct consolidation-crate dependency. This avoids broad dependency coupling while still preserving bounded consolidation provenance: macro candidate digest, macro milestone digest, meso aggregation/provenance digest, macro finalization digest, meso count, and source marker.
+
+Schema-gap note: `ReplayToken` remains the existing compact token primitive. Full consolidation provenance is preserved by `MinimalSpineReplayTokenBuildOutput`, not by adding scheduler/apply semantics to `ReplayToken`.
+
+Recommended next prompt: **UCF Prompt 39 — Replay Schedule Builder and Ordering Semantics**.

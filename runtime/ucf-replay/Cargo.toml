@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 ucf-compute = { path = "../ucf-compute" }
+ucf-commit = { path = "../../core/crates/ucf-commit" }
 ucf-core = { path = "../../core/ucf-core" }
 ucf-ess = { path = "../../domains/ucf-ess" }
 ucf-frames = { path = "../../domains/ucf-frames" }
