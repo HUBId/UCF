@@ -150,7 +150,7 @@ Record decisions:
 | 41 | Replay Applied Boundary Without Geist/ISM | Clarify and test `ReplayApplied` meaning without Geist/ISM. | Boundary docs and pure applied-effect digest if needed. | Tests prove no Geist/ISM dependencies and no ISM upsert. | Replay applied is not identity finalization or Geist ingestion. |
 | 42 | Replay E2E Determinism | Build bounded deterministic E2E over token, schedule, and audit. | Fixture/golden over bounded consolidation artifacts. | Two fresh runs produce identical digests and reports. | No archive mutation unless a prior prompt explicitly added it. |
 | 43 | Replay Docs Overclaim Guard | Add docs lint/registry guard for replay claims. | Current index, registry, roadmap docs. | Docs lint catches forbidden overclaims or docs explicitly caveat them. | Historical docs remain preserved; no deletion. |
-| 44 | Replay Readiness Refresh | Integrate replay checks into readiness planning without weakening workspace evidence. | Readiness docs/checklist; optional `ucf-ops` verify hook if scoped. | Fresh replay tests and readiness docs pass with existing strict evidence policy. | Replay readiness does not imply Sleep/Geist/ISM, Gateway, or identity readiness. |
+| 44 | Replay Readiness Refresh | Integrate replay checks into readiness planning without weakening workspace evidence. | Readiness docs/checklist; optional `ucf-ops` verify hook if scoped. | Complete: [`replay_closure.md`](replay_closure.md) records fresh Replay, Geist, consolidation, workspace, clippy, docs, readiness-spine, workspace-test evidence, and split-evidence gate validation for the bounded line. | Replay readiness does not imply Sleep/Geist/ISM, Gateway, identity, production replay, runtime scheduler/queue/worker, or Evidence/Archive append readiness. |
 | 45 | Explicit Replay Archive Append Contract | If approved, add explicit append/readback for replay audit/token records via existing Evidence/Archive. | Existing archive/evidence APIs only. | Append/readback tests; no second event log. | No hidden appends; no authority change. |
 | 46 | Replay/Sleep Integration Roadmap Gate | Plan, not implement, the later Sleep Cycle Coordinator bridge. | Boundary audit only. | Sleep integration prerequisites documented. | No sleep implementation in scheduler prompts. |
 
@@ -226,3 +226,15 @@ promoting it to runtime replay execution.
 Prompt 43 should harden replay documentation against overclaiming: the current E2E proves bounded
 record determinism and provenance continuity, not real replay execution, not archive authority, and
 not Sleep/Geist/ISM/identity/Gateway readiness.
+
+## 15. Prompt 43 Completion Update — Replay Docs Overclaim Guard
+
+Prompt 43 is complete as a documentation guardrail update. Current Replay claims remain bounded to token intent/reference, schedule planned ordering, verify-only audit, local applied-boundary bookkeeping, and deterministic bounded E2E coverage. Runtime replay execution, scheduler/queue/worker behavior, Sleep/Geist/ISM/identity integration, Evidence/Archive replay append, Gateway-visible replay, and production replay readiness remain forbidden claims.
+
+## 16. Prompt 44 Closure Update — Readiness Refresh
+
+Prompt 44 is complete for the bounded Replay line. The closure baseline is available at [`docs/roadmap/replay_closure.md`](replay_closure.md). The Prompt 44 run passed targeted Replay tests, `ucf-geist`, consolidation E2E, workspace tests, clippy, docs lint, readiness-spine-check, workspace-test-check within 600 seconds, and readiness-gate with split workspace-test evidence.
+
+This closure does not implement runtime replay execution, runtime scheduler/queue/worker behavior, Sleep Cycle Coordinator behavior, Geist/ISM integration, identity finalization, identity anchor, Gateway write/API, capability issuance, real-compute activation, Evidence/Archive authority changes, a second event-log authority, Evidence/Archive replay append, Minimal Spine v1.x changes, or consolidation E2E behavior changes.
+
+Recommended next prompt: **UCF Prompt 45 — Post-Replay Roadmap Selection: Sleep Integration vs Geist/ISM vs Prod-Profile**.
