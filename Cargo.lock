@@ -4451,6 +4451,7 @@ dependencies = [
  "ucf-openevolve-port",
  "ucf-policy-ecology",
  "ucf-predictive-coding",
+ "ucf-replay",
  "ucf-rsa",
  "ucf-structural-store",
  "ucf-types",
