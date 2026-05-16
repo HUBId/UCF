@@ -62,6 +62,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `primary_semantics_stabilization_sweep_v1.json` (v17 primary-semantics stabilization contract)
 - `primary_semantics_final_consolidation_sweep_v1.json` (v18 primary-semantics final-consolidation contract)
 - `readiness_gate_report_v1.json`
+- `workspace_test_report_v1.json`
 - `readiness_stabilization_sweep_v1.json` (v17 readiness stabilization contract)
 - `readiness_final_consolidation_sweep_v1.json` (v18 readiness final-consolidation contract)
 - `readiness_closure_sweep_v1.json` (v19 readiness closure contract)

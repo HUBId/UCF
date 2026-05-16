@@ -1,0 +1,25 @@
+{
+  "artifact_id": "workspace_test_report_v1",
+  "type_name": "WorkspaceTestReport",
+  "source_file": "runtime/ucf-ops/src/lib.rs",
+  "required_fields": [
+    "command_result",
+    "duration_ms",
+    "metadata",
+    "status"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "command_result": "WorkspaceTestCommandResult",
+    "duration_ms": "u64",
+    "metadata": "ReportFreshnessMetadata",
+    "status": "GateStatus"
+  },
+  "enum_variants": {
+    "GateStatus": [
+      "Fail",
+      "Pass",
+      "Skip"
+    ]
+  }
+}

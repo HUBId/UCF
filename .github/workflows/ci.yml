@@ -339,8 +339,10 @@ jobs:
         run: PROPTEST_CASES=128 cargo test --workspace --all-targets
       - name: Cargo test no-default-features
         run: PROPTEST_CASES=128 cargo test --workspace --all-targets --no-default-features
+      - name: Workspace test evidence
+        run: cargo run -p ucf-ops -- workspace-test-check --out ./out_gate/workspace_test_report.json
       - name: Readiness gate
-        run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out_gate/gate_report.json --workdir ./.ucf_gate
+        run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out_gate/gate_report.json --workdir ./.ucf_gate --workspace-test-report ./out_gate/workspace_test_report.json
       - name: Portability check (linux)
         run: cargo run -p ucf-ops -- portability check --out ./out/portability_linux.json
       - name: Portability report (linux)
@@ -1585,9 +1587,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
+      - name: Workspace test evidence (linux)
+        if: runner.os == 'Linux'
+        run: cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json
       - name: Readiness gate (test profile)
         if: runner.os == 'Linux'
-        run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json --workdir ./.ucf_gate
+        run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json --workdir ./.ucf_gate --workspace-test-report ./out/workspace_test_report.json
       - name: Readiness smoke (windows)
         if: runner.os == 'Windows'
         run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report_windows.json --workdir ./.ucf_gate_windows

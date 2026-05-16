@@ -64,7 +64,7 @@ use ucf_ops::{
     ultimate_terminal_absolute_final_input_continuity_sweep, v0_gate, v10_gate, v11_gate, v12_gate,
     v13_gate, v14_gate, v15_gate, v16_gate, v17_gate, v18_gate, v19_gate, v1_smoke, v20_gate,
     v2_gate, v3_gate, v4_gate, v5_gate, v6_gate, v7_gate, v8_gate, v9_gate, verify_bugreport,
-    world_parity_report, world_shadow_report, write_slice,
+    workspace_test_check, world_parity_report, world_shadow_report, write_slice,
     AbsoluteFinalBundleTerminalSweepStatusV1, AbsoluteFinalGovernanceTerminalSweepStatusV1,
     AbsoluteFinalPrimarySemanticsTerminalSweepStatusV1,
     AbsoluteFinalReadinessTerminalSweepStatusV1, AdversarialRunArgs, AirgapArtifactType,
@@ -2715,7 +2715,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let out = arg_value(&args, "--out")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("./out/gate_report.json"));
+            if let Some(report) = arg_value(&args, "--workspace-test-report") {
+                std::env::set_var("UCF_GATE_WORKSPACE_TEST_REPORT", report);
+            }
             let report = readiness_gate(&workdir, &profile, &out)?;
+            println!("status={:?}", report.status);
+            println!("out={}", out.display());
+            if report.status != GateStatus::Pass {
+                std::process::exit(2);
+            }
+        }
+        "workspace-test-check" => {
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/workspace_test_report.json"));
+            let report = workspace_test_check(&out)?;
             println!("status={:?}", report.status);
             println!("out={}", out.display());
             if report.status != GateStatus::Pass {

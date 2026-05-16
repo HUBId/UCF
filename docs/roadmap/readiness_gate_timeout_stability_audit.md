@@ -184,3 +184,22 @@ The last visible `start:` line identifies the phase active if an external timeou
 - If the workspace-test phase completes and a later phase becomes last visible, the timing investigation should move to that later phase without changing gate policy.
 - If the gate report is produced, `phase_timings` should be used to compare warm/cold runs and identify slowest completed phases.
 - No timeout should be marked as PASS solely because earlier phases completed.
+
+## 10. Prompt 35D Workspace-Test Phase Policy Decision
+
+Prompt 35D chooses **Option B: split workspace-test evidence as an explicit prerequisite artifact while keeping the embedded gate default strict**.
+
+Policy semantics:
+
+- The normal `readiness-gate --profile test` path still runs the mandatory internal `cargo test --workspace --offline` phase unless an explicit split-evidence report path is configured.
+- Split mode is explicit only: `readiness-gate --workspace-test-report <path>` (or `UCF_GATE_WORKSPACE_TEST_REPORT=<path>`) validates a `workspace-test-check` report instead of silently skipping the phase.
+- `workspace-test-check` records report freshness metadata (`generated_at_utc`, command, HEAD, branch, dirty state, workspace/repo root), duration, status, and command result for `cargo test --workspace --offline`.
+- A missing, unreadable, stale, wrong-command, dirty-state-mismatched, or non-PASS workspace-test report is a `FAIL` for `build_workspace_tests`, not `PASS` and not an implicit skip.
+- Existing CI-only and diagnostic skip behavior remains explicit `SKIP`; because `SKIP` is not `FAIL`, it remains suitable only where a dedicated workspace-test lane provides coverage, not as standalone readiness evidence.
+- Timeouts are not marked as pass. External process timeouts can still prevent a fresh gate report; split evidence only removes duplicate embedded workspace-test execution when fresh evidence exists.
+
+Operational interpretation:
+
+- CI and nightly can run `workspace-test-check` as a reportable prerequisite and pass the report to `readiness-gate`.
+- A gate `PASS` in split mode means the gate checks passed and the workspace-test prerequisite report matched the current HEAD and dirty state.
+- Consolidation closure no longer depends on embedding the full workspace test inside the gate process, but it still depends on fresh workspace-test evidence and a fresh readiness-gate pass for the evaluated repository state.
