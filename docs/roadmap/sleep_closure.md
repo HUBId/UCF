@@ -98,4 +98,4 @@ Baseline links:
 
 Prompt 53 supports closing the bounded Sleep line. Prompt 54 is recorded in [`docs/roadmap/post_sleep_roadmap_selection.md`](post_sleep_roadmap_selection.md).
 
-The selected next roadmap line is **UCF Prompt 55 — Geist/ISM Roadmap and Boundary Audit**. This selection remains planning-only and does not authorize Geist/ISM implementation, identity finalization, runtime scheduling, Gateway authority, or Evidence/Archive append behavior.
+The selected next roadmap line was **UCF Prompt 55 — Geist/ISM Roadmap and Boundary Audit**, now recorded at [`docs/roadmap/geist_ism_roadmap_boundary_audit.md`](geist_ism_roadmap_boundary_audit.md). That audit is a next-line planning document only and does not authorize Geist/ISM implementation, Self-State projection, ISM write/upsert, identity finalization, identity anchoring, runtime scheduling, Gateway authority, Policy Ecology mutation, or Evidence/Archive append behavior. Its recommended follow-up is **UCF Prompt 56 — Geist/ISM Record Authority and Schema Alignment**.
