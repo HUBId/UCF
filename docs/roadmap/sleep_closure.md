@@ -96,6 +96,6 @@ Baseline links:
 
 ## 8. Recommended Next Roadmap
 
-Prompt 53 supports closing the bounded Sleep line. The recommended next prompt is:
+Prompt 53 supports closing the bounded Sleep line. Prompt 54 is recorded in [`docs/roadmap/post_sleep_roadmap_selection.md`](post_sleep_roadmap_selection.md).
 
-**UCF Prompt 54 — Post-Sleep Roadmap Selection: Geist/ISM vs Runtime Scheduler vs Prod-Profile**
+The selected next roadmap line is **UCF Prompt 55 — Geist/ISM Roadmap and Boundary Audit**. This selection remains planning-only and does not authorize Geist/ISM implementation, identity finalization, runtime scheduling, Gateway authority, or Evidence/Archive append behavior.
