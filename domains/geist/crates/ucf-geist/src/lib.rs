@@ -141,6 +141,13 @@ pub const MINIMAL_SPINE_GEIST_PROJECTION_CANDIDATE_VERSION: u32 = 1;
 pub const MINIMAL_SPINE_GEIST_PROJECTION_CANDIDATE_SOURCE: &str =
     "minimal_spine_v1_geist_projection_candidate_from_sleep_boundary";
 
+/// Version for verify-only Minimal Spine Geist projection audit values.
+pub const MINIMAL_SPINE_GEIST_PROJECTION_AUDIT_VERSION: u32 = 1;
+
+/// Source marker for local verify-only Geist projection audit reports.
+pub const MINIMAL_SPINE_GEIST_PROJECTION_AUDIT_SOURCE: &str =
+    "minimal_spine_v1_geist_projection_verify_only_audit";
+
 /// Digest/provenance input for a candidate-only Minimal Spine Geist projection.
 ///
 /// This value is bounded Sleep metadata only. It carries no store, appender, Gateway, GeistKernel,
@@ -221,6 +228,158 @@ impl MinimalSpineGeistProjectionCandidate {
     }
 }
 
+/// PASS/FAIL status for a verify-only Minimal Spine Geist projection audit.
+///
+/// `Pass` means the projection candidate is internally consistent and all forbidden side-effect
+/// flags remain false. It does not mean Geist was applied, ISM was written, identity was anchored
+/// or finalized, policy was mutated, Evidence/Archive was appended, or Gateway/runtime authority
+/// was exposed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MinimalSpineGeistProjectionAuditStatus {
+    Pass,
+    Fail,
+}
+
+impl MinimalSpineGeistProjectionAuditStatus {
+    fn code(self) -> u8 {
+        match self {
+            Self::Pass => 1,
+            Self::Fail => 2,
+        }
+    }
+}
+
+/// Deterministic failure reasons emitted by the verify-only Geist projection audit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum MinimalSpineGeistProjectionAuditFailure {
+    VersionMismatch,
+    ProjectionDigestMismatch,
+    ZeroSleepPlanAuditDigest,
+    ZeroSleepPlanCandidateDigest,
+    ZeroSleepAppliedBoundaryDigest,
+    ZeroReplayAuditDigest,
+    ZeroReplayScheduleDigest,
+    InvalidTokenCount,
+    EmptySource,
+    EmptySleepSource,
+    NotCandidateOnly,
+    GeistAppliedFlagSet,
+    IsmWrittenFlagSet,
+    IdentityAnchorFlagSet,
+    IdentityFinalizedFlagSet,
+    PolicyMutatedFlagSet,
+    EvidenceArchiveAppendedFlagSet,
+    GatewayVisibleFlagSet,
+}
+
+impl MinimalSpineGeistProjectionAuditFailure {
+    fn code(self) -> u8 {
+        match self {
+            Self::VersionMismatch => 1,
+            Self::ProjectionDigestMismatch => 2,
+            Self::ZeroSleepPlanAuditDigest => 3,
+            Self::ZeroSleepPlanCandidateDigest => 4,
+            Self::ZeroSleepAppliedBoundaryDigest => 5,
+            Self::ZeroReplayAuditDigest => 6,
+            Self::ZeroReplayScheduleDigest => 7,
+            Self::InvalidTokenCount => 8,
+            Self::EmptySource => 9,
+            Self::EmptySleepSource => 10,
+            Self::NotCandidateOnly => 11,
+            Self::GeistAppliedFlagSet => 12,
+            Self::IsmWrittenFlagSet => 13,
+            Self::IdentityAnchorFlagSet => 14,
+            Self::IdentityFinalizedFlagSet => 15,
+            Self::PolicyMutatedFlagSet => 16,
+            Self::EvidenceArchiveAppendedFlagSet => 17,
+            Self::GatewayVisibleFlagSet => 18,
+        }
+    }
+}
+
+/// Local verify-only audit report for a Minimal Spine Geist projection candidate.
+///
+/// The audit is a pure deterministic consistency check over a candidate value. It takes no
+/// `GeistKernel`, ISM store, policy mutator, appender, Gateway, scheduler, worker, or runtime
+/// handle; it does not mutate the candidate; and all side-effect boundary flags in the report are
+/// hard-coded false to prevent overclaiming.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineGeistProjectionAudit {
+    pub version: u32,
+    pub status: MinimalSpineGeistProjectionAuditStatus,
+    pub failure_reasons: Vec<MinimalSpineGeistProjectionAuditFailure>,
+    pub projection_digest: Digest32,
+    pub recomputed_projection_digest: Digest32,
+    pub sleep_plan_audit_digest: Digest32,
+    pub sleep_plan_candidate_digest: Digest32,
+    pub sleep_applied_boundary_digest: Option<Digest32>,
+    pub replay_audit_digest: Digest32,
+    pub replay_schedule_digest: Digest32,
+    pub token_count: u32,
+    pub audit_digest: Digest32,
+    pub source: &'static str,
+    pub candidate_source: &'static str,
+    pub sleep_source: &'static str,
+    pub candidate_only: bool,
+    pub geist_applied: bool,
+    pub ism_written: bool,
+    pub identity_anchor: bool,
+    pub identity_finalized: bool,
+    pub policy_mutated: bool,
+    pub evidence_archive_appended: bool,
+    pub gateway_visible: bool,
+}
+
+impl MinimalSpineGeistProjectionAudit {
+    /// Deterministic bytes used for the audit digest.
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32_be(&mut out, self.version);
+        out.push(self.status.code());
+        push_u32_be(
+            &mut out,
+            u32::try_from(self.failure_reasons.len())
+                .expect("minimal spine geist projection audit failure reason count fits u32"),
+        );
+        for reason in &self.failure_reasons {
+            out.push(reason.code());
+        }
+        push_digest32(&mut out, self.projection_digest);
+        push_digest32(&mut out, self.recomputed_projection_digest);
+        push_digest32(&mut out, self.sleep_plan_audit_digest);
+        push_digest32(&mut out, self.sleep_plan_candidate_digest);
+        match self.sleep_applied_boundary_digest {
+            Some(digest) => {
+                out.push(1);
+                push_digest32(&mut out, digest);
+            }
+            None => out.push(0),
+        }
+        push_digest32(&mut out, self.replay_audit_digest);
+        push_digest32(&mut out, self.replay_schedule_digest);
+        push_u32_be(&mut out, self.token_count);
+        push_str32(&mut out, self.source);
+        push_str32(&mut out, self.candidate_source);
+        push_str32(&mut out, self.sleep_source);
+        out.push(u8::from(self.candidate_only));
+        out.push(u8::from(self.geist_applied));
+        out.push(u8::from(self.ism_written));
+        out.push(u8::from(self.identity_anchor));
+        out.push(u8::from(self.identity_finalized));
+        out.push(u8::from(self.policy_mutated));
+        out.push(u8::from(self.evidence_archive_appended));
+        out.push(u8::from(self.gateway_visible));
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_blake3_domain(
+            b"ucf.geist.minimal_spine.projection_verify_only_audit.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GeistProjectionError {
     AuditStatusNotPass,
@@ -286,6 +445,112 @@ impl std::fmt::Display for GeistProjectionError {
 }
 
 impl std::error::Error for GeistProjectionError {}
+
+/// Verify a Minimal Spine Geist projection candidate without applying Geist.
+///
+/// The audit is local and deterministic. It recomputes the projection digest, preserves Sleep and
+/// Replay provenance, checks candidate-only and forbidden side-effect flags, takes no
+/// `GeistKernel`/ISM/policy/Gateway/Evidence/Archive handles, and does not mutate the candidate.
+pub fn verify_minimal_spine_geist_projection_candidate(
+    candidate: &MinimalSpineGeistProjectionCandidate,
+) -> MinimalSpineGeistProjectionAudit {
+    let recomputed_projection_digest = candidate.digest();
+    let mut reasons = Vec::new();
+
+    if candidate.version != MINIMAL_SPINE_GEIST_PROJECTION_CANDIDATE_VERSION {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::VersionMismatch);
+    }
+    if candidate.projection_digest != recomputed_projection_digest {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::ProjectionDigestMismatch);
+    }
+    if is_zero_digest(candidate.sleep_plan_audit_digest) {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::ZeroSleepPlanAuditDigest);
+    }
+    if is_zero_digest(candidate.sleep_plan_candidate_digest) {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::ZeroSleepPlanCandidateDigest);
+    }
+    if candidate
+        .sleep_applied_boundary_digest
+        .is_some_and(is_zero_digest)
+    {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::ZeroSleepAppliedBoundaryDigest);
+    }
+    if is_zero_digest(candidate.replay_audit_digest) {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::ZeroReplayAuditDigest);
+    }
+    if is_zero_digest(candidate.replay_schedule_digest) {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::ZeroReplayScheduleDigest);
+    }
+    if candidate.token_count == 0 {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::InvalidTokenCount);
+    }
+    if candidate.source.is_empty() {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::EmptySource);
+    }
+    if candidate.sleep_source.is_empty() {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::EmptySleepSource);
+    }
+    if !candidate.candidate_only {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::NotCandidateOnly);
+    }
+    if candidate.geist_applied {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::GeistAppliedFlagSet);
+    }
+    if candidate.ism_written {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::IsmWrittenFlagSet);
+    }
+    if candidate.identity_anchor {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::IdentityAnchorFlagSet);
+    }
+    if candidate.identity_finalized {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::IdentityFinalizedFlagSet);
+    }
+    if candidate.policy_mutated {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::PolicyMutatedFlagSet);
+    }
+    if candidate.evidence_archive_appended {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::EvidenceArchiveAppendedFlagSet);
+    }
+    if candidate.gateway_visible {
+        reasons.push(MinimalSpineGeistProjectionAuditFailure::GatewayVisibleFlagSet);
+    }
+
+    reasons.sort_unstable();
+    reasons.dedup();
+    let status = if reasons.is_empty() {
+        MinimalSpineGeistProjectionAuditStatus::Pass
+    } else {
+        MinimalSpineGeistProjectionAuditStatus::Fail
+    };
+
+    let mut audit = MinimalSpineGeistProjectionAudit {
+        version: MINIMAL_SPINE_GEIST_PROJECTION_AUDIT_VERSION,
+        status,
+        failure_reasons: reasons,
+        projection_digest: candidate.projection_digest,
+        recomputed_projection_digest,
+        sleep_plan_audit_digest: candidate.sleep_plan_audit_digest,
+        sleep_plan_candidate_digest: candidate.sleep_plan_candidate_digest,
+        sleep_applied_boundary_digest: candidate.sleep_applied_boundary_digest,
+        replay_audit_digest: candidate.replay_audit_digest,
+        replay_schedule_digest: candidate.replay_schedule_digest,
+        token_count: candidate.token_count,
+        audit_digest: Digest32::new([0u8; Digest32::LEN]),
+        source: MINIMAL_SPINE_GEIST_PROJECTION_AUDIT_SOURCE,
+        candidate_source: candidate.source,
+        sleep_source: candidate.sleep_source,
+        candidate_only: candidate.candidate_only,
+        geist_applied: false,
+        ism_written: false,
+        identity_anchor: false,
+        identity_finalized: false,
+        policy_mutated: false,
+        evidence_archive_appended: false,
+        gateway_visible: false,
+    };
+    audit.audit_digest = audit.digest();
+    audit
+}
 
 /// Build a pure candidate-only Geist projection from bounded Sleep digests.
 ///

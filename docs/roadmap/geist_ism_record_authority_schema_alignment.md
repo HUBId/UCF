@@ -5,7 +5,7 @@
 - This document is record-authority and schema-alignment only.
 - It introduces no Geist/ISM implementation.
 - It now records the Prompt 57 implementation of a candidate-only Geist projection wrapper.
-- It does not implement a Geist projection audit.
+- It now records the Prompt 58 implementation of a verify-only Geist projection audit contract.
 - It does not implement an ISM candidate boundary.
 - It does not write, upsert, apply, or persist ISM state.
 - It does not create an IdentityAnchor.
@@ -59,7 +59,7 @@ Baseline links:
 | `GatewayService` and Gateway records | `runtime/ucf-gateway/src/lib.rs` | Gateway config, auth, control frame, readback, and access records. | Runtime Gateway surface. | partial/functional-prototype | High: no Gateway write/action authority belongs to Geist/ISM Prompt 57. |
 | `IdentityAnchor` | docs and boundary-audit references only; no active record authority found for this line | Deferred identity-anchor concept. | Deferred/historical references only. | docs-only/deferred | Critical: no current prompt may create or infer identity anchoring. |
 | `MinimalSpineGeistProjectionInput` / `MinimalSpineGeistProjectionCandidate` | `domains/geist/crates/ucf-geist/src/lib.rs` | Prompt 57 local wrapper carrying Sleep audit digest, Sleep candidate digest, optional SleepApplied boundary digest, Replay provenance, token count, deterministic projection digest, and hard false authority flags. | Candidate-only read model from bounded Sleep metadata. | operational-candidate | Low/medium: intentionally not a `SelfState`; it preserves provenance without claiming runtime Geist, ISM persistence, identity, policy, archive, or Gateway authority. |
-| `GeistProjectionAudit` | not found | Missing verify-only audit name. | Not implemented. | missing | Should remain verify-only; no apply, acceptance, or identity semantics. |
+| `MinimalSpineGeistProjectionAudit` / `verify_minimal_spine_geist_projection_candidate` | `domains/geist/crates/ucf-geist/src/lib.rs` | Prompt 58 verify-only audit name and function. | Implemented local audit-only consistency check. | operational-audit | PASS is not apply, acceptance, ISM persistence, identity anchoring/finalization, append, or Gateway authority. |
 | `ISMCandidateBoundary` | not found | Missing local candidate/read-model boundary name. | Not implemented. | missing | Must not call existing `upsert_anchor` or create persistent ISM. |
 
 Inventory answers:
@@ -80,8 +80,8 @@ Inventory answers:
 | Concern | Decision | Reason |
 |---|---|---|
 | SelfState authority | Prompt 57 uses a new local `ucf-geist` projection candidate wrapper instead of reusing `SelfState`. | Existing `SelfState` is deterministic but not tied to bounded Sleep provenance and can overclaim identity/self persistence. |
-| GeistProjectionCandidate authority | Option B implemented: new local bounded Geist projection candidate in `ucf-geist`. | Keeps candidate records local and avoids premature `ucf-types` or `ucf-protocol` promotion; audit remains a Prompt 58 follow-up. |
-| GeistProjectionAudit authority | Option B later: local verify-only `ucf-geist` audit, not apply. | Existing Geist code has no verify-only audit surface; future audit must not write ISM or Archive. |
+| GeistProjectionCandidate authority | Option B implemented: new local bounded Geist projection candidate in `ucf-geist`. | Keeps candidate records local and avoids premature `ucf-types` or `ucf-protocol` promotion. |
+| GeistProjectionAudit authority | Option B implemented in Prompt 58: new local verify-only audit in `ucf-geist`. | Confirms digest/provenance/candidate-only consistency without converting PASS into GeistApplied, ISM write, identity anchor, identity finalization, policy mutation, append, or Gateway visibility. |
 | ISMCandidateBoundary authority | Option B later: local candidate/read-model boundary in `ucf-geist`, not existing ISM store authority. | Existing `IsmStore` mutates anchors, so it is too broad for the first bounded step. |
 | ISM write/upsert authority | deferred | Current write/upsert APIs exist but are explicitly outside Prompt 56 and Prompt 57 acceptance. |
 | IdentityAnchor authority | deferred | No current identity-anchor record authority is allowed; Sleep or Macro boundaries must not become anchors. |
@@ -154,7 +154,7 @@ Prompt 57 must satisfy all of the following if it implements code:
 
 ## 9. Recommended Next Prompt
 
-**UCF Prompt 58 — Geist Projection Verify-Only Audit Contract**
+**UCF Prompt 59 — ISM Candidate Boundary Without Identity Finalization**
 
 ## Prompt 57 Implementation Note - Candidate-Only Geist Projection
 
@@ -171,3 +171,13 @@ The Prompt 57 API is:
 - `build_geist_projection_candidate_from_sleep_audit`
 
 The candidate hard-codes these boundary markers: `candidate_only = true`, `geist_applied = false`, `ism_written = false`, `identity_anchor = false`, `identity_finalized = false`, `policy_mutated = false`, `evidence_archive_appended = false`, and `gateway_visible = false`. Prompt 57 does **not** call `GeistKernel::ingest_macro`, does **not** accept stores, appenders, Gateways, `GeistKernel`, ISM, policy mutation, scheduler, queue, worker, or runtime handles, and does **not** alter Minimal Spine v1.x, bounded Consolidation, bounded Replay, bounded Sleep, Evidence/Archive authority, or gate criteria.
+
+## Prompt 58 Implementation Note - Verify-Only Geist Projection Audit
+
+Prompt 58 adds `MinimalSpineGeistProjectionAuditStatus`, `MinimalSpineGeistProjectionAuditFailure`, `MinimalSpineGeistProjectionAudit`, and `verify_minimal_spine_geist_projection_candidate` in `domains/geist/crates/ucf-geist/src/lib.rs`, with coverage in `domains/geist/crates/ucf-geist/tests/minimal_spine_geist_projection_audit.rs`.
+
+The audit is **verify-only**: it recomputes the projection digest, preserves the Sleep audit digest, Sleep candidate digest, optional SleepApplied boundary digest, Replay audit digest, Replay schedule digest, token count, candidate source, and Sleep source, and emits a deterministic audit digest over sorted failure reasons and provenance fields. PASS means only that the local projection candidate is internally consistent and all forbidden candidate flags remain false. PASS does **not** mean `GeistApplied`, ISM write/upsert, IdentityAnchor creation, IdentityFinalization, policy mutation, Evidence/Archive append, Gateway visibility, runtime scheduling, real compute activation, or persistent self authority.
+
+Prompt 58 intentionally does not reuse `SelfState`, does not call `GeistKernel::ingest_macro`, does not accept or call `IsmStore`, does not upsert anchors, does not append Evidence/Archive records, does not mutate policy, does not expose Gateway/action authority, and does not alter Minimal Spine v1.x, bounded Consolidation, bounded Replay, bounded Sleep, or gate criteria.
+
+Recommended next prompt: **UCF Prompt 59 — ISM Candidate Boundary Without Identity Finalization**.
