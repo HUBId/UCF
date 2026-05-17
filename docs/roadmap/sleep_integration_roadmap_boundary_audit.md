@@ -30,6 +30,7 @@ Required context links:
 
 - [`docs/roadmap/post_replay_roadmap_selection.md`](post_replay_roadmap_selection.md)
 - [`docs/roadmap/replay_closure.md`](replay_closure.md)
+- [`docs/roadmap/sleep_closure.md`](sleep_closure.md)
 - [`docs/minimal_spine_v1_freeze.md`](../minimal_spine_v1_freeze.md)
 - [`docs/current_state_architecture_index.md`](../current_state_architecture_index.md)
 
@@ -204,4 +205,6 @@ Prompt 51 is complete as `core/crates/ucf-sleep-coordinator/tests/minimal_spine_
 
 Prompt 52 adds this overclaim guard and future-claim checklist so current docs use the bounded terminology consistently. It preserves the local-only meaning of Prompt 51 and keeps Geist/ISM, identity, Evidence/Archive append, Gateway, runtime scheduler/queue/worker, and Minimal Spine v1.x changes out of scope.
 
-Recommended next prompt: **UCF Prompt 53 — Sleep Readiness Refresh**.
+Prompt 53 is complete in [`docs/roadmap/sleep_closure.md`](sleep_closure.md). The bounded Sleep line has a fresh validation baseline: targeted Sleep tests, Replay E2E/package tests, Geist package tests, workspace tests, clippy, docs lint, readiness-spine-check, workspace-test-check evidence, and split-evidence readiness-gate passed. This closes only the bounded Sleep candidate/audit/local-boundary/E2E line; it does not claim Sleep runtime readiness, `SleepCompleted`, Geist/ISM readiness, identity finalization, memory stabilization, Evidence/Archive append, Gateway-visible Sleep, or production Sleep readiness.
+
+Recommended next prompt: **UCF Prompt 54 — Post-Sleep Roadmap Selection: Geist/ISM vs Runtime Scheduler vs Prod-Profile**.
