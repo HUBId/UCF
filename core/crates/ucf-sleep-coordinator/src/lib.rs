@@ -15,6 +15,13 @@ use ucf_rsa::{RsaEngine, SleepCoordinator, SleepReportReady};
 use ucf_structural_store::{StructuralCycleStats, StructuralDeltaProposal};
 use ucf_types::{Digest32, EvidenceId};
 
+/// Version for verify-only Minimal Spine SleepPlan audit values.
+pub const MINIMAL_SPINE_SLEEP_PLAN_AUDIT_VERSION: u32 = 1;
+
+/// Source marker for local verify-only SleepPlan audit reports.
+pub const MINIMAL_SPINE_SLEEP_PLAN_AUDIT_SOURCE: &str =
+    "minimal_spine_v1_sleep_plan_verify_only_audit";
+
 /// Version for deterministic Minimal Spine SleepPlan candidate values.
 pub const MINIMAL_SPINE_SLEEP_PLAN_CANDIDATE_VERSION: u32 = 1;
 
@@ -144,6 +151,246 @@ impl std::fmt::Display for SleepPlanCandidateError {
 }
 
 impl std::error::Error for SleepPlanCandidateError {}
+
+/// PASS/FAIL status for a verify-only Minimal Spine SleepPlan audit.
+///
+/// `Pass` means the candidate is internally consistent and all forbidden side-effect flags remain
+/// false. It does not mean Sleep was applied, completed, archived, exposed, or ingested anywhere.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MinimalSpineSleepPlanAuditStatus {
+    Pass,
+    Fail,
+}
+
+impl MinimalSpineSleepPlanAuditStatus {
+    fn code(self) -> u8 {
+        match self {
+            Self::Pass => 1,
+            Self::Fail => 2,
+        }
+    }
+}
+
+/// Deterministic failure reasons emitted by the verify-only SleepPlan audit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum MinimalSpineSleepPlanAuditFailure {
+    VersionMismatch,
+    CandidateDigestMismatch,
+    ZeroReplayAuditDigest,
+    ZeroReplayScheduleDigest,
+    ZeroReplayAppliedBoundaryDigest,
+    InvalidTokenCount,
+    EmptySource,
+    EmptyReplaySource,
+    NotCandidateOnly,
+    SleepAppliedFlagSet,
+    SleepCompletedFlagSet,
+    GeistIngestedFlagSet,
+    IsmWrittenFlagSet,
+    IdentityAnchorFlagSet,
+    EvidenceArchiveAppendedFlagSet,
+    GatewayVisibleFlagSet,
+}
+
+impl MinimalSpineSleepPlanAuditFailure {
+    fn code(self) -> u8 {
+        match self {
+            Self::VersionMismatch => 1,
+            Self::CandidateDigestMismatch => 2,
+            Self::ZeroReplayAuditDigest => 3,
+            Self::ZeroReplayScheduleDigest => 4,
+            Self::ZeroReplayAppliedBoundaryDigest => 5,
+            Self::InvalidTokenCount => 6,
+            Self::EmptySource => 7,
+            Self::EmptyReplaySource => 8,
+            Self::NotCandidateOnly => 9,
+            Self::SleepAppliedFlagSet => 10,
+            Self::SleepCompletedFlagSet => 11,
+            Self::GeistIngestedFlagSet => 12,
+            Self::IsmWrittenFlagSet => 13,
+            Self::IdentityAnchorFlagSet => 14,
+            Self::EvidenceArchiveAppendedFlagSet => 15,
+            Self::GatewayVisibleFlagSet => 16,
+        }
+    }
+}
+
+/// Local verify-only audit report for a Minimal Spine SleepPlan candidate.
+///
+/// The audit is a pure deterministic consistency check over a candidate value. It takes no runtime,
+/// coordinator, WAL, journal, store, appender, Gateway, Geist, ISM, scheduler, queue, or worker
+/// handle; it does not mutate the candidate; and all side-effect boundary flags in the report are
+/// hard-coded false to prevent overclaiming.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineSleepPlanAudit {
+    pub version: u32,
+    pub status: MinimalSpineSleepPlanAuditStatus,
+    pub failure_reasons: Vec<MinimalSpineSleepPlanAuditFailure>,
+    pub sleep_plan_candidate_digest: Digest32,
+    pub recomputed_sleep_plan_candidate_digest: Digest32,
+    pub replay_audit_digest: Digest32,
+    pub replay_schedule_digest: Digest32,
+    pub replay_applied_boundary_digest: Option<Digest32>,
+    pub token_count: u32,
+    pub audit_digest: Digest32,
+    pub source: &'static str,
+    pub candidate_source: &'static str,
+    pub replay_source: &'static str,
+    pub candidate_only: bool,
+    pub sleep_applied: bool,
+    pub sleep_completed: bool,
+    pub geist_ingested: bool,
+    pub ism_written: bool,
+    pub identity_anchor: bool,
+    pub evidence_archive_appended: bool,
+    pub gateway_visible: bool,
+}
+
+impl MinimalSpineSleepPlanAudit {
+    /// Deterministic bytes used for the audit digest.
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32_be(&mut out, self.version);
+        out.push(self.status.code());
+        push_u32_be(
+            &mut out,
+            u32::try_from(self.failure_reasons.len())
+                .expect("minimal spine sleep plan audit failure reason count fits u32"),
+        );
+        for reason in &self.failure_reasons {
+            out.push(reason.code());
+        }
+        push_digest32(&mut out, self.sleep_plan_candidate_digest);
+        push_digest32(&mut out, self.recomputed_sleep_plan_candidate_digest);
+        push_digest32(&mut out, self.replay_audit_digest);
+        push_digest32(&mut out, self.replay_schedule_digest);
+        match self.replay_applied_boundary_digest {
+            Some(digest) => {
+                out.push(1);
+                push_digest32(&mut out, digest);
+            }
+            None => out.push(0),
+        }
+        push_u32_be(&mut out, self.token_count);
+        push_str32(&mut out, self.source);
+        push_str32(&mut out, self.candidate_source);
+        push_str32(&mut out, self.replay_source);
+        out.push(u8::from(self.candidate_only));
+        out.push(u8::from(self.sleep_applied));
+        out.push(u8::from(self.sleep_completed));
+        out.push(u8::from(self.geist_ingested));
+        out.push(u8::from(self.ism_written));
+        out.push(u8::from(self.identity_anchor));
+        out.push(u8::from(self.evidence_archive_appended));
+        out.push(u8::from(self.gateway_visible));
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_blake3_domain(
+            b"ucf.sleep.minimal_spine.plan_verify_only_audit.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+}
+
+/// Verify a Minimal Spine SleepPlan candidate without applying Sleep or triggering a coordinator.
+///
+/// The returned audit can PASS or FAIL. PASS means only that the candidate metadata is internally
+/// consistent and still candidate-only. It is not SleepApplied, not SleepCompleted, not
+/// Geist/ISM/identity state, and not Evidence/Archive/Gateway publication.
+pub fn verify_minimal_spine_sleep_plan_candidate(
+    candidate: &MinimalSpineSleepPlanCandidate,
+) -> MinimalSpineSleepPlanAudit {
+    let recomputed_sleep_plan_candidate_digest = candidate.digest();
+    let mut reasons = Vec::new();
+
+    if candidate.version != MINIMAL_SPINE_SLEEP_PLAN_CANDIDATE_VERSION {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::VersionMismatch);
+    }
+    if candidate.sleep_plan_digest != recomputed_sleep_plan_candidate_digest {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::CandidateDigestMismatch);
+    }
+    if is_zero_digest(candidate.replay_audit_digest) {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::ZeroReplayAuditDigest);
+    }
+    if is_zero_digest(candidate.replay_schedule_digest) {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::ZeroReplayScheduleDigest);
+    }
+    if candidate
+        .replay_applied_boundary_digest
+        .is_some_and(is_zero_digest)
+    {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::ZeroReplayAppliedBoundaryDigest);
+    }
+    if candidate.token_count == 0 {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::InvalidTokenCount);
+    }
+    if candidate.source.is_empty() {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::EmptySource);
+    }
+    if candidate.replay_source.is_empty() {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::EmptyReplaySource);
+    }
+    if !candidate.candidate_only {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::NotCandidateOnly);
+    }
+    if candidate.sleep_applied {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::SleepAppliedFlagSet);
+    }
+    if candidate.sleep_completed {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::SleepCompletedFlagSet);
+    }
+    if candidate.geist_ingested {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::GeistIngestedFlagSet);
+    }
+    if candidate.ism_written {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::IsmWrittenFlagSet);
+    }
+    if candidate.identity_anchor {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::IdentityAnchorFlagSet);
+    }
+    if candidate.evidence_archive_appended {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::EvidenceArchiveAppendedFlagSet);
+    }
+    if candidate.gateway_visible {
+        reasons.push(MinimalSpineSleepPlanAuditFailure::GatewayVisibleFlagSet);
+    }
+
+    reasons.sort_unstable();
+    reasons.dedup();
+    let status = if reasons.is_empty() {
+        MinimalSpineSleepPlanAuditStatus::Pass
+    } else {
+        MinimalSpineSleepPlanAuditStatus::Fail
+    };
+
+    let mut audit = MinimalSpineSleepPlanAudit {
+        version: MINIMAL_SPINE_SLEEP_PLAN_AUDIT_VERSION,
+        status,
+        failure_reasons: reasons,
+        sleep_plan_candidate_digest: candidate.sleep_plan_digest,
+        recomputed_sleep_plan_candidate_digest,
+        replay_audit_digest: candidate.replay_audit_digest,
+        replay_schedule_digest: candidate.replay_schedule_digest,
+        replay_applied_boundary_digest: candidate.replay_applied_boundary_digest,
+        token_count: candidate.token_count,
+        audit_digest: Digest32::new([0u8; Digest32::LEN]),
+        source: MINIMAL_SPINE_SLEEP_PLAN_AUDIT_SOURCE,
+        candidate_source: candidate.source,
+        replay_source: candidate.replay_source,
+        candidate_only: candidate.candidate_only,
+        sleep_applied: false,
+        sleep_completed: false,
+        geist_ingested: false,
+        ism_written: false,
+        identity_anchor: false,
+        evidence_archive_appended: false,
+        gateway_visible: false,
+    };
+    audit.audit_digest = audit.digest();
+    audit
+}
 
 /// Build a candidate-only SleepPlan from validated replay-boundary digest input.
 ///

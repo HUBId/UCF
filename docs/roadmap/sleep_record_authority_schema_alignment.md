@@ -3,7 +3,7 @@
 ## 0. Purpose
 
 - This document decides Sleep-facing record authority only.
-- It does not implement Sleep behavior, SleepApplied, a Sleep Cycle Coordinator runtime, Replay scheduler/queue/worker behavior, Gateway writes, capability issuance, real-compute activation, Evidence/Archive append, or a second event-log authority. Prompt 48 adds only a deterministic SleepPlan candidate builder from bounded Replay metadata.
+- It does not implement Sleep behavior, SleepApplied, a Sleep Cycle Coordinator runtime, Replay scheduler/queue/worker behavior, Gateway writes, capability issuance, real-compute activation, Evidence/Archive append, or a second event-log authority. Prompt 48 adds only a deterministic SleepPlan candidate builder from bounded Replay metadata; Prompt 49 adds only a local verify-only audit over that candidate.
 - It does not integrate Geist/ISM and does not finalize identity.
 - It preserves the Minimal Spine v1.x freeze and does not change bounded Replay or bounded Consolidation behavior.
 
@@ -37,6 +37,7 @@ Required context links:
 | Record / Type / API | Path | Fields / role summary | Current use | Maturity | Risk |
 |---|---|---|---|---|---|
 | `MinimalSpineSleepPlanCandidate`, `MinimalSpineSleepPlanInput`, `build_sleep_plan_candidate_from_replay_audit`, `build_sleep_plan_candidate_from_replay_boundary` | `core/crates/ucf-sleep-coordinator/src/lib.rs`; `core/crates/ucf-sleep-coordinator/tests/minimal_spine_sleep_plan_candidate.rs` | Prompt 48 local wrapper and pure deterministic builder from PASS `MinimalSpineReplayScheduleAudit` plus optional matching `MinimalSpineReplayAppliedBoundary`, or from validated digest input. Hard flags keep `candidate_only=true` and Sleep/Geist/ISM/identity/Evidence/Archive/Gateway flags false. | Implemented candidate-only; not canonical protocol schema and not runtime authority. | functional-prototype / candidate-only | Safe only as bounded metadata. It must not be used to claim Sleep execution, SleepApplied, coordinator runtime activation, Geist/ISM ingestion, identity finalization, Evidence/Archive append, or Gateway visibility. |
+| `MinimalSpineSleepPlanAudit`, `MinimalSpineSleepPlanAuditStatus`, `MinimalSpineSleepPlanAuditFailure`, `verify_minimal_spine_sleep_plan_candidate` | `core/crates/ucf-sleep-coordinator/src/lib.rs`; `core/crates/ucf-sleep-coordinator/tests/minimal_spine_sleep_plan_audit.rs` | Prompt 49 local verify-only wrapper over `MinimalSpineSleepPlanCandidate`. It recomputes candidate digest consistency, carries Replay audit/schedule/optional boundary digests, token count, source/replay source, PASS/FAIL, deterministic failure reasons, and a stable audit digest. Hard flags keep SleepApplied/SleepCompleted/Geist/ISM/identity/Evidence/Archive/Gateway false. | Implemented audit-only; not canonical protocol schema and not runtime authority. | functional-prototype / verify-only | PASS means candidate consistency only. It must not be used to claim SleepApplied, Sleep completion, coordinator runtime activation, Geist/ISM ingestion, identity finalization, Evidence/Archive append, Gateway visibility, or candidate mutation. |
 | `SleepCycle` | not found as a canonical record | Existing `cycle_id` fields occur in sleep/report/RSA/TCF contexts, but no bounded SleepCycle record exists. | Naming only in local reports and docs. | unknown | The term can be misread as an active runtime scheduler loop. |
 | `SleepApplied` / `SleepAppliedBoundary` | not found | No local Sleep applied boundary or canonical applied record exists. | Missing; future local-only boundary may be designed later. | unknown | The term can overclaim Geist ingestion, ISM write, identity stabilization, or memory anchoring. |
 | `SleepBoundary` | not found | No generic SleepBoundary record exists. | Missing. | unknown | Too broad unless constrained to a precise local boundary. |
@@ -54,13 +55,13 @@ Required context links:
 
 Inventory answers:
 
-- `SleepPlan`: Prompt 48 added a local `MinimalSpineSleepPlanCandidate` wrapper and builder; canonical protocol/shared SleepPlan schema remains deferred.
+- `SleepPlan`: Prompt 48 added a local `MinimalSpineSleepPlanCandidate` wrapper and builder; Prompt 49 added a local `MinimalSpineSleepPlanAudit` verify-only wrapper; canonical protocol/shared SleepPlan schema remains deferred.
 - `SleepCycle`: missing as a canonical record; only names/fields such as `cycle_id` and `sleep_cycle` exist.
 - `SleepApplied`: missing.
 - `SleepBoundary`: missing.
 - `SleepCoordinator`: exists as local functional prototype split between `ucf-sleep-coordinator` and `ucf-rsa`.
 - Trigger/report/WAL state: exists in `ucf-sleep-coordinator`; report append exists in `ucf-rsa`.
-- Canonical digest/canonical encoding for local SleepPlan candidate: implemented in `MinimalSpineSleepPlanCandidate::deterministic_bytes` and `digest`; canonical SleepApplied encoding remains missing.
+- Canonical digest/canonical encoding for local SleepPlan candidate and audit: implemented in `MinimalSpineSleepPlanCandidate::deterministic_bytes`/`digest` and `MinimalSpineSleepPlanAudit::deterministic_bytes`/`digest`; canonical SleepApplied encoding remains missing.
 - Tests: existing local sleep coordinator/RSA tests exist; no bounded Replay-to-Sleep E2E exists.
 - Replay inputs: bounded Replay audit/schedule/token/applied-boundary outputs exist and may be future immutable inputs.
 - Geist/ISM references: exist in `ucf-geist`, including optional sleep-state update and replay stabilization from `ReplayApplied`; out of scope.
@@ -71,7 +72,7 @@ Inventory answers:
 
 | Concern | Decision | Reason |
 |---|---|---|
-| SleepPlan authority | Prompt 48 implements Option B as a local `ucf-sleep-coordinator` candidate wrapper. | SleepPlan starts as a pure deterministic candidate over bounded Replay metadata, not as shared protocol/types schema and not as the existing report-running coordinator. |
+| SleepPlan authority | Prompt 48 implements Option B as a local `ucf-sleep-coordinator` candidate wrapper; Prompt 49 implements Option B for a local verify-only audit wrapper. | SleepPlan starts as a pure deterministic candidate plus audit over bounded Replay metadata, not as shared protocol/types schema and not as the existing report-running coordinator. |
 | SleepCycle authority | No canonical authority yet; if used later, keep it local to Sleep planning as a bounded descriptor. | Current cycle naming is broad and can imply an active runtime loop. |
 | SleepApplied authority | No canonical authority yet; if used later, keep it as local Sleep subsystem bookkeeping only. | Existing `ReplayApplied` and Geist replay stabilization are too broad and must not be reused as SleepApplied. |
 | SleepCoordinator authority | Existing `ucf-sleep-coordinator` remains a functional prototype/inventory source, not post-Replay Sleep v1 authority. | It has trigger/report behavior and can invoke a report path; Prompt 47 is authority alignment only. |
@@ -137,7 +138,6 @@ Prompt 48 satisfies the following before a SleepPlan candidate claim is allowed:
 
 ## 9. Remaining Open Questions
 
-- What does the future verify-only SleepPlan audit status/failure schema look like?
 - What does SleepApplied mean without Geist/ISM beyond local bookkeeping?
 - What gets archived and when, if a later prompt authorizes a Sleep append contract?
 - How does Sleep later hand off to Geist/ISM safely without implicit upsert, anchor creation, or identity claims?
@@ -154,8 +154,14 @@ Prompt 48 implements a local candidate-only surface in `core/crates/ucf-sleep-co
 | `build_sleep_plan_candidate_from_replay_boundary` | `core/crates/ucf-sleep-coordinator/src/lib.rs` | Pure builder from already-extracted replay-boundary digests. | Rejects zero digests, zero token count, and empty source. |
 | Targeted tests | `core/crates/ucf-sleep-coordinator/tests/minimal_spine_sleep_plan_candidate.rs` | Determinism, digest-change, FAIL/invalid rejection, optional boundary matching, provenance preservation, and hard side-effect flags. | No Sleep runtime activation and no Geist/ISM/identity/Evidence/Archive/Gateway effects. |
 
-Schema note: Prompt 48 intentionally uses a local wrapper instead of promoting a canonical protocol/shared SleepPlan schema. The remaining schema gap is a future verify-only SleepPlan audit contract and, later only if authorized, a local SleepApplied boundary.
+Schema note: Prompt 48 intentionally uses a local wrapper instead of promoting a canonical protocol/shared SleepPlan schema. Prompt 49 keeps that pattern for the local audit wrapper; the remaining schema gap is, later only if authorized, a local SleepApplied boundary.
 
-## 11. Recommended Next Prompt
+## 11. Prompt 49 Completion Note
 
-**UCF Prompt 49 — SleepPlan Verify-Only Audit Contract**.
+Prompt 49 is implemented as `MinimalSpineSleepPlanAudit` in `core/crates/ucf-sleep-coordinator`. The API `verify_minimal_spine_sleep_plan_candidate(&MinimalSpineSleepPlanCandidate)` returns a deterministic local audit/report value with PASS/FAIL status, stable failure reasons, candidate digest consistency fields, Replay audit/schedule/optional boundary digests, token count, source markers, and hard false side-effect flags.
+
+The audit is verify-only. A PASS audit means only that the candidate value is internally consistent and still candidate-only; it is not SleepApplied, not SleepCompleted, not Geist/ISM ingestion, not identity anchoring/finalization, not Evidence/Archive append, not Gateway visibility, and not a Sleep Cycle Coordinator runtime trigger. The schema gap remains intentional: this is a local wrapper, not a canonical protocol SleepPlan/SleepApplied schema.
+
+## 12. Recommended Next Prompt
+
+**UCF Prompt 50 — SleepApplied Boundary Without Geist/ISM**.
