@@ -6,6 +6,9 @@ This document is the Prompt 45 selection record. It remains useful for why Sleep
 
 ## 0. Purpose
 
+Prompt 53 closure is now available in [`docs/roadmap/sleep_closure.md`](sleep_closure.md). It closes only the bounded Sleep candidate/audit/local-boundary/E2E line with fresh validation evidence and does not claim Sleep runtime readiness, Geist/ISM readiness, identity finalization, memory stabilization, Evidence/Archive append, Gateway-visible Sleep, or production Sleep readiness.
+
+
 - Select the next line after bounded Replay closure.
 - No implementation is introduced by this document.
 - No Sleep, Geist, ISM, runtime Replay Scheduler, production Replay, Gateway write, capability, Evidence/Archive replay append, or identity readiness claim is made here.
