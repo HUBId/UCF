@@ -153,6 +153,8 @@ Inventory answers:
 
 ## 9. Recommended Next Prompt
 
-Recommended next prompt: **UCF Prompt 56 — Geist/ISM Record Authority and Schema Alignment**.
+Prompt 56 is complete as documentation-only authority/schema alignment. The resulting schema alignment document is [`docs/roadmap/geist_ism_record_authority_schema_alignment.md`](geist_ism_record_authority_schema_alignment.md).
 
-Prompt 56 should remain an authority/schema alignment step. It should not implement Self-State projection, ISM write/upsert, identity anchor, identity finalization, Evidence/Archive append, Gateway write/action authority, runtime coordinator calls, Policy Ecology mutation, or Minimal Spine v1.x changes.
+Recommended next prompt: **UCF Prompt 57 — Self-State Projection Candidate from Sleep Boundary**.
+
+Prompt 57 should implement only a pure deterministic candidate builder from bounded Sleep artifacts if authorized. It must not run the existing Geist kernel, implement ISM write/upsert, create an identity anchor, finalize identity, append to Evidence/Archive, add Gateway write/action authority, mutate Policy Ecology, call runtime coordinator paths, or alter Minimal Spine v1.x.
