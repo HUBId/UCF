@@ -6,6 +6,8 @@ This document is the Prompt 45 selection record. It remains useful for why Sleep
 
 ## 0. Purpose
 
+Post-Sleep update: bounded Sleep closure is now complete, and [`docs/roadmap/post_sleep_roadmap_selection.md`](post_sleep_roadmap_selection.md) supersedes this earlier next-line planning for decisions after Sleep closure.
+
 Prompt 53 closure is now available in [`docs/roadmap/sleep_closure.md`](sleep_closure.md). It closes only the bounded Sleep candidate/audit/local-boundary/E2E line with fresh validation evidence and does not claim Sleep runtime readiness, Geist/ISM readiness, identity finalization, memory stabilization, Evidence/Archive append, Gateway-visible Sleep, or production Sleep readiness.
 
 
