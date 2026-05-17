@@ -16,6 +16,8 @@ Current consolidation claims are bounded: Micro/Meso explicit append/readback, M
 
 Current replay claims are also bounded: deterministic ReplayToken intent/reference, ReplaySchedule planned ordering, verify-only ReplayAudit, local-only ReplayAppliedBoundary, and bounded Replay E2E determinism are covered by the replay roadmap/tests. There is no runtime replay apply, scheduler/queue/worker, Sleep/Geist/ISM/identity integration, Evidence/Archive replay append, or Gateway-visible replay. See `docs/roadmap/replay_scheduler_roadmap_boundary_audit.md` and `docs/roadmap/replay_record_authority_schema_alignment.md`.
 
+Current Sleep claims are bounded to a deterministic `SleepPlanCandidate` builder from bounded Replay metadata, verify-only `SleepPlanAudit`, local-only `SleepAppliedBoundary`, and bounded Sleep E2E determinism. There is no Sleep runtime, Sleep Cycle Coordinator activation, coordinator trigger/report/WAL/journal, SleepCompleted, memory stabilization, Geist/ISM or identity integration, Evidence/Archive sleep append, Gateway-visible Sleep, or production Sleep readiness. See `docs/roadmap/sleep_integration_roadmap_boundary_audit.md` and `docs/roadmap/sleep_record_authority_schema_alignment.md`.
+
 ## Post-rc1 hardening commands
 - Determinism scan: `cargo run -p ucf-ops -- determinism scan`
 - Hidden path audit scan: `cargo run -p ucf-ops -- audit scan`

@@ -3,7 +3,7 @@
 ## 0. Purpose
 
 - This is a roadmap and boundary audit only.
-- No Sleep implementation is introduced here.
+- No new Sleep implementation is introduced here; current implemented scope is bounded to `SleepPlanCandidate`, verify-only `SleepPlanAudit`, local-only `SleepAppliedBoundary`, and deterministic bounded Sleep E2E tests.
 - This is not Geist/ISM readiness.
 - This is not identity finalization.
 - It does not implement a Sleep Cycle Coordinator, Replay runtime scheduler, queue, worker, Gateway write API, capability issuance, real-compute activation, Evidence/Archive authority change, second event-log authority, or Evidence/Archive append.
@@ -40,22 +40,22 @@ Required context links:
 | Sleep coordinator crate/module | `ucf-sleep-coordinator` with `WalSleepCoordinator`, `SleepHeuristics`, `SleepState`, `SleepTrigger`, `SleepReplaySummary`, `SleepStateUpdater`, `SleepPhaseRunner`, `SleepTriggered` | `core/crates/ucf-sleep-coordinator/src/lib.rs` | Maintains local WAL-style sleep trigger state, recent metrics, evidence window, replay summary field, structural stats/proposal fields, deterministic trigger evaluation, and an adapter to `ucf-rsa::SleepCoordinator`; in-source unit tests cover deterministic triggers and policy-gated report append behavior. | functional-prototype | Existing runnable sleep-trigger/report code can be overread as approved post-Replay Sleep integration. It is inventory evidence only for this roadmap. |
 | Sleep report runner | `SleepReportReady`, `SleepCoordinator::run_sleep_phase` | `core/crates/ucf-rsa/src/lib.rs` | If `SleepPhaseGate::allow_sleep()` passes, builds a sleep context/report, appends an experience record through the configured archive appender, optionally commits structural data, publishes `SleepReportReady`, and returns the event. | functional-prototype | It performs an archive append in its existing local crate context; this audit does not authorize new Sleep Evidence/Archive append contracts or a changed authority model. |
 | Temporal sleep/replay gating | `TemporalCoordinator`, `TcfCore`, `TcfPlan.sleep_active`, `TcfPlan.replay_active` | `core/crates/ucf-tcf/src/lib.rs` | Deterministic temporal coordinator calculates bounded sleep/replay active flags and gain caps from fixed-point state and inputs. | partial | Names can imply runtime orchestration. For Sleep v1 planning they are context only, not a runtime scheduler/worker authority. |
-| SleepPlan/SleepCycle/SleepApplied records | No current `SleepPlan`, `SleepCycle`, `SleepApplied`, `SleepAppliedBoundary`, or sleep-specific replay-boundary record found in the audited paths. | Repository-wide search over docs, core, runtime, domains, protocol, and workflows | No schema-aligned SleepPlan candidate, verify-only SleepPlan audit, or local SleepApplied boundary exists yet. | unknown | Prompt 47 must decide authority and schema alignment before any implementation. |
-| Sleep tests | In-source tests for `ucf-sleep-coordinator` and `ucf-rsa`; workspace tests also compile these crates when selected. | `core/crates/ucf-sleep-coordinator/src/lib.rs`; `core/crates/ucf-rsa/src/lib.rs` | Tests cover trigger thresholds, deterministic trigger behavior, default policy denial, allowed sleep report append, and `SleepReportReady` production in local contexts. | partial | No replay-to-sleep E2E determinism test exists; current tests do not prove Sleep Integration v1. |
-| Replay boundary types | `MinimalSpineReplayScheduleAudit`, `MinimalSpineReplayAppliedBoundary`, `MinimalSpineReplayScheduleBuildOutput`, `MinimalSpineReplayTokenBuildOutput` | `runtime/ucf-replay/src/lib.rs`; `runtime/ucf-replay/tests/*` | Replay produces deterministic tokens, planned schedules, verify-only audits, and a local applied-boundary marker from a PASS audit. Audit fails if applied, sleep-cycle, Geist-ingested, identity-anchor, or Evidence/Archive appended flags are set. | functional-prototype | These are safe inputs for future Sleep planning only as immutable metadata; Sleep must not execute replay or mutate replay schedules/tokens. |
+| SleepPlan/SleepCycle/SleepApplied records | Local `MinimalSpineSleepPlanCandidate`, verify-only `MinimalSpineSleepPlanAudit`, and local `MinimalSpineSleepAppliedBoundary` now exist; no canonical `SleepPlan`, `SleepCycle`, `SleepCompleted`, or protocol/shared `SleepAppliedBoundary` schema exists. | `core/crates/ucf-sleep-coordinator/src/lib.rs`; `core/crates/ucf-sleep-coordinator/tests/minimal_spine_sleep_*` | Candidate-only builder, verify-only audit, local-only boundary, and bounded E2E determinism are implemented from bounded Replay metadata. | functional-prototype / local-only | These surfaces must not be used to claim Sleep runtime, Sleep Cycle Coordinator activation, coordinator trigger/report/WAL/journal behavior, SleepCompleted, memory stabilization, Geist/ISM integration, identity finalization/anchor, Evidence/Archive append, Gateway-visible Sleep, or production Sleep. |
+| Sleep tests | In-source tests plus bounded Minimal Spine sleep tests for candidate, audit, applied-boundary, and E2E determinism. | `core/crates/ucf-sleep-coordinator/src/lib.rs`; `core/crates/ucf-sleep-coordinator/tests/minimal_spine_sleep_plan_candidate.rs`; `core/crates/ucf-sleep-coordinator/tests/minimal_spine_sleep_plan_audit.rs`; `core/crates/ucf-sleep-coordinator/tests/minimal_spine_sleep_applied_boundary.rs`; `core/crates/ucf-sleep-coordinator/tests/minimal_spine_sleep_e2e.rs`; `core/crates/ucf-rsa/src/lib.rs` | Tests cover existing prototype trigger/report code plus bounded Replay-derived SleepPlan candidate, verify-only audit, local SleepAppliedBoundary, and deterministic local E2E chaining. | partial / bounded-local | The bounded E2E proves deterministic local chaining only; it does not prove runtime Sleep, coordinator activation, report append authority, Geist/ISM, identity, memory stabilization, Gateway, or production readiness. |
+| Replay boundary types | `MinimalSpineReplayScheduleAudit`, `MinimalSpineReplayAppliedBoundary`, `MinimalSpineReplayScheduleBuildOutput`, `MinimalSpineReplayTokenBuildOutput` | `runtime/ucf-replay/src/lib.rs`; `runtime/ucf-replay/tests/*` | Replay produces deterministic tokens, planned schedules, verify-only audits, and a local applied-boundary marker from a PASS audit. Audit fails if applied, sleep-cycle, Geist-ingested, identity-anchor, or Evidence/Archive appended flags are set. | functional-prototype | These are safe inputs for the current bounded Sleep candidate only as immutable metadata; Sleep must not execute replay or mutate replay schedules/tokens. |
 | Replay E2E determinism | `minimal_spine_replay_e2e` | `runtime/ucf-replay/tests/minimal_spine_replay_e2e.rs` | Exercises deterministic token-to-schedule-to-audit-to-applied-boundary replay path without runtime replay apply, Sleep, Geist/ISM, identity, Gateway, or Evidence/Archive append. | functional-prototype | It proves bounded replay determinism only, not Sleep integration. |
 | Replay-to-Sleep references | `SleepReplaySummary` in sleep coordinator; `sleep_cycle` flag in replay token/schedule/audit boundaries; Post-Replay and Replay closure docs name Sleep as deferred/next planning line. | `core/crates/ucf-sleep-coordinator/src/lib.rs`; `runtime/ucf-replay/src/lib.rs`; `docs/roadmap/post_replay_roadmap_selection.md`; `docs/roadmap/replay_closure.md` | Existing references are summary/flag/planning language, not an implemented replay-to-sleep integration. | docs-only / skeleton | Main risk is promoting ReplayAudit/ReplayAppliedBoundary into hidden Sleep activation. |
 | Geist/ISM references | `GeistKernel`, `SelfState`, `InMemoryIsm`, `ReplayStabilization`, `apply_replay_effects`, `SleepStateHandle` | `domains/geist/crates/ucf-geist/src/lib.rs` | Geist can ingest macro milestones, compute self-state anchors, gate ISM upserts, update optional sleep state with consistency/evidence, and compute replay stabilization from legacy `ReplayApplied` effects. | partial | Critical overclaim risk: Sleep planning must not trigger Geist ingestion, ISM writes, self-state authority, identity anchor, or replay-stabilization claims. |
 | Evidence/Archive references | `ucf_archive::ExperienceAppender`, `ucf_archive_store::{ArchiveAppender, ArchiveStore, RecordKind}`, consolidation append/readback helpers, replay append explicitly deferred. | `core/crates/ucf-rsa/src/lib.rs`; `domains/consolidation/crates/ucf-consolidation/src/lib.rs`; `docs/roadmap/replay_record_authority_schema_alignment.md` | Existing components append local experience/archive records in their own contracts; bounded Replay currently does not append replay records. | partial | Sleep must not become a second Evidence/Archive authority; any Sleep append contract needs a later explicit prompt. |
 | Runtime scheduler references | `ucf-ops workspace-test-check`, readiness gate, CI/nightly workflows, replay scheduler roadmap docs, temporal coordinator names | `runtime/ucf-ops/src/lib.rs`; `.github/workflows/ci.yml`; `.github/workflows/nightly_verify.yml`; `docs/roadmap/replay_scheduler_roadmap_boundary_audit.md`; `core/crates/ucf-tcf/src/lib.rs` | Operational tools run checks and gates; scheduler/queue/worker runtime replay remains deferred. | docs-only / operational | Sleep roadmap must not hide background worker, scheduler, queue, or production runtime activation behind planning language. |
-| Safe APIs for Prompt 47 | Existing replay audit/applied-boundary metadata, existing sleep coordinator/RSA/TCF/Geist APIs as inventory, docs and tests as evidence. | Same audited paths | Safe next step is authority/schema alignment and terminology, not implementation. | docs-only | Prompt 47 should avoid behavior changes unless explicitly authorized. |
+| Safe APIs for Prompt 47 | Existing replay audit/applied-boundary metadata, existing sleep coordinator/RSA/TCF/Geist APIs as inventory, docs and tests as evidence. | Same audited paths | Current safe bounded surfaces are candidate-only builder, verify-only audit, local-only boundary, and E2E determinism; runtime behavior remains deferred. | docs-only | Future prompts must avoid behavior changes unless explicitly authorized. |
 | Too broad/risky APIs for Prompt 47 | `SleepCoordinator::run_sleep_phase` append path, `GeistKernel::ingest_macro`, `GeistKernel::apply_replay_effects`, ISM upserts, runtime scheduler/worker code, Gateway writes, Evidence/Archive append contracts. | `core/crates/ucf-rsa/src/lib.rs`; `domains/geist/crates/ucf-geist/src/lib.rs`; runtime/Gateway/Evidence/Archive paths | These can imply real Sleep application, Geist/ISM integration, identity stabilization, or canonical append authority. | partial / functional-prototype | Keep out of scope until dedicated prompts authorize them. |
 
 Inventory answers:
 
 - A Sleep coordinator crate exists at `core/crates/ucf-sleep-coordinator`, but it is not a post-Replay Sleep Integration v1 implementation.
-- No SleepPlan/SleepCycle/SleepApplied records were found.
-- Sleep-related tests exist in `ucf-sleep-coordinator` and `ucf-rsa`; no replay-to-sleep E2E integration test was found.
+- Local `MinimalSpineSleepPlanCandidate`, verify-only `MinimalSpineSleepPlanAudit`, local `MinimalSpineSleepAppliedBoundary`, and bounded Sleep E2E determinism now exist; canonical `SleepPlan`, `SleepCycle`, `SleepCompleted`, and protocol/shared `SleepApplied` schemas remain absent.
+- Sleep-related tests exist in `ucf-sleep-coordinator` and `ucf-rsa`; the bounded Replay-derived Sleep E2E test proves deterministic local chaining only, not runtime Sleep integration.
 - Replay-to-Sleep references exist as summary fields, flags, and planning language only.
 - Geist/ISM references exist and are intentionally deferred for Sleep v1.
 - Evidence/Archive references exist through local appenders and consolidation contracts, but bounded Replay has no replay append and Sleep v1 must not change authority.
@@ -65,7 +65,7 @@ Inventory answers:
 
 | Boundary | Decision | Reason |
 |---|---|---|
-| Sleep input source | Future Sleep v1 may consume immutable bounded Replay metadata: a PASS `MinimalSpineReplayScheduleAudit`, `MinimalSpineReplayAppliedBoundary`, and the audited schedule/token digests they reference. | These artifacts are deterministic and local, and they avoid runtime replay execution. |
+| Sleep input source | Current bounded Sleep consumes immutable bounded Replay metadata only: a PASS `MinimalSpineReplayScheduleAudit`, optional matching `MinimalSpineReplayAppliedBoundary`, and the audited schedule/token digests they reference. | These artifacts are deterministic and local; they avoid runtime replay execution and do not authorize runtime Sleep. |
 | `ReplayAppliedBoundary` role | Local input marker only; it can prove a replay subsystem boundary was locally marked after a PASS audit, but it is not a Sleep trigger, replay execution proof, memory write, or Geist/ISM signal. | Replay closure defines it as local-only bookkeeping, not runtime apply or downstream authority. |
 | `ReplayAudit` role | Verify-only prerequisite metadata. Sleep may require PASS status and stable audit digest in a future plan builder/audit, but must not change audit semantics. | The audit already rejects applied/sleep/geist/identity/archive flags and is safe as read-only evidence. |
 | `ReplaySchedule` role | Planned ordering reference only. Sleep may read ordering/digest/provenance after audit, but must not mutate tokens, schedules, or planned replay order. | Schedule is a deterministic plan, not execution or Sleep plan authority. |
@@ -127,7 +127,7 @@ Sleep Integration v1 should later mean a deterministic, bounded planning/audit l
 | 49 | SleepPlan Verify-Only Audit Contract | **Complete.** Added a local verify-only SleepPlan audit contract in `ucf-sleep-coordinator`. | PASS/FAIL status, deterministic failure reasons, audit digest, candidate digest consistency, Replay audit/schedule/optional boundary digests, token count, source and replay source checks. | Targeted tests prove PASS for a valid candidate, stable audit digest/bytes, deterministic FAIL reasons for tampering, provenance preservation, and hard false Sleep/Geist/ISM/identity/Evidence/Archive/Gateway flags. | Verify-only; no SleepApplied, no Sleep completion, no coordinator runtime trigger/report/WAL, no report append, no scheduler, no Gateway write. |
 | 50 | SleepApplied Boundary Without Geist/ISM | **Complete.** Added a local SleepApplied boundary marker derived only from a PASS SleepPlan audit. | `MinimalSpineSleepAppliedBoundary`, deterministic boundary digest, SleepPlan audit/candidate provenance, Replay audit/schedule/optional boundary provenance, token count, sources, and hard false downstream flags. | Targeted tests prove deterministic repeated output, FAIL audit rejection, provenance preservation, not SleepCompleted, no coordinator runtime flag, no Geist/ISM/identity/memory/Evidence/Archive/Gateway effects, no audit mutation, and invalid-link rejection. | Local bookkeeping only; not Sleep Cycle completion, not coordinator runtime execution, not Geist/ISM write, not identity finalization/anchor, not memory stabilization, not Evidence/Archive append, not Gateway visibility. |
 | 51 | Sleep E2E Determinism | **Complete.** Added `core/crates/ucf-sleep-coordinator/tests/minimal_spine_sleep_e2e.rs`. | Replay-derived bounded inputs feed SleepPlanCandidate → verify-only SleepPlanAudit → local SleepAppliedBoundary; repeated fresh runs compare stable digests and deterministic bytes. | Tests prove provenance continuity from Replay audit/schedule/optional applied boundary into candidate, candidate digest into audit, audit/candidate digests into boundary, PASS-before-boundary enforcement, FAIL rejection, invalid-input rejection, and hard false side-effect flags. | Bounded local E2E only; no Sleep runtime/coordinator trigger/report/WAL/journal, no runtime queue/worker, no Replay execution, no Geist/ISM, no identity anchor, no memory stabilization, no Evidence/Archive append, no Gateway, no Minimal Spine v1.x change. |
-| 52 | Sleep Docs Overclaim Guard | Update current docs to prevent Sleep overclaims. | Current-state index, module registry, roadmap docs, docs lint rules if needed. | Docs distinguish current, historical, and deferred Sleep claims; docs lint passes. | No behavior change; no historical docs deletion; no gate weakening. |
+| 52 | Sleep Docs Overclaim Guard | **Complete.** Current docs now use bounded Sleep terminology and central guard/checklist wording. | Current-state index, module registry, README, post-Replay selection note, and this roadmap. | Docs distinguish current, historical, and deferred Sleep claims; docs lint passes. | No behavior change; no historical docs deletion; no gate weakening. |
 | 53 | Sleep Readiness Refresh | Refresh validation evidence for bounded Sleep planning/tests. | Formatting, docs lint, readiness spine, workspace-test-check, readiness gate with split workspace evidence, targeted Replay/Sleep/Geist/Consolidation tests. | Reports are fresh for the evaluated HEAD; stale/missing workspace evidence is not treated as pass. | Validation only; no production readiness claim. |
 | 54 | Post-Sleep Roadmap Selection: Geist/ISM vs Runtime Scheduler vs Prod-Profile | Select next line after bounded Sleep boundary is explicit. | Compare Geist/ISM projection, Runtime Replay Scheduler, Replay/Sleep append contracts, prod-profile/workspace evidence, schema evolution. | New selection document with primary/secondary/parallel/deferred decisions. | Geist/ISM remains deferred unless projection-only scope is explicit; no hidden runtime activation. |
 | 55 | Optional Sleep Evidence/Archive Append Contract, If Authorized | If explicitly selected, decide whether/how Sleep records append to canonical Evidence/Archive. | Authority ownership, record kinds, append/readback tests, no second event log. | Contract doc and tests only after explicit authorization; append path preserves canonical authority. | No Gateway write, no identity, no Geist/ISM, no scheduler; no append without explicit prompt. |
@@ -140,7 +140,57 @@ Sleep Integration v1 should later mean a deterministic, bounded planning/audit l
 - How does Sleep later hand off to Geist/ISM safely? Only through a dedicated later prompt with projection-only semantics, explicit gates, and no implicit ISM upsert or identity anchor.
 - What remains out of scope until Geist prompts? Geist ingestion, ISM writes, SelfState authority, identity anchor/finalization, macro finalization promotion, and replay-stabilization claims.
 
-## 9. Prompt 47/48/49/50/51 Completion and Recommended Next Prompt
+## 9. Sleep Overclaim Guard
+
+| Guard | Meaning |
+|---|---|
+| `SleepPlanCandidate` implemented | A deterministic candidate-only builder exists for bounded Replay metadata. |
+| `SleepPlanAudit` implemented | A verify-only audit exists; PASS means candidate consistency only. |
+| `SleepAppliedBoundary` implemented | A local Sleep-subsystem bookkeeping boundary exists after a PASS audit. |
+| Bounded Sleep E2E determinism implemented | The local Replay-derived candidate → audit → boundary chain is deterministic in tests. |
+| Not Sleep runtime | No Sleep runtime apply path is implemented or authorized by this line. |
+| Not Sleep Cycle Coordinator activation | No runtime Sleep Cycle Coordinator is active. |
+| Not coordinator trigger/report/WAL/journal | Prompt 51 does not activate coordinator trigger/report/WAL/journal behavior. |
+| Not `SleepCompleted` | Local boundary bookkeeping is not a completion event. |
+| Not memory stabilization | No memory stabilization, memory anchor, or broad consolidation proof is claimed. |
+| Not Geist/ISM integration | No Geist ingestion, ISM write/upsert, handoff, or projection is implemented. |
+| Not identity finalization | No identity finalization, identity stabilization, or identity anchor is created. |
+| Not Evidence/Archive sleep append | No Sleep append/readback contract or append operation is implemented. |
+| Not Gateway-visible Sleep | No Gateway read/write surface exposes Sleep as an active feature. |
+| Evidence/Archive append deferred | Any Sleep append contract remains a future explicitly authorized prompt. |
+| Geist/ISM handoff deferred | Any Sleep-to-Geist/ISM handoff remains a future explicitly authorized prompt. |
+
+## 10. Future Claim Checklist
+
+Before future docs can claim **Sleep runtime readiness**:
+
+- Sleep runtime/coordinator prompt implemented.
+- Deterministic runtime/coordinator tests pass.
+- No hidden Geist/ISM writes.
+- No hidden Evidence/Archive append.
+- Readiness refresh passes.
+
+Before future docs can claim **SleepCompleted**:
+
+- Explicit Sleep completion semantics defined.
+- Completion does not imply memory stabilization or identity finalization.
+- Negative tests prove no Geist/ISM/identity promotion.
+
+Before future docs can claim **Geist/ISM integration**:
+
+- Dedicated Geist/ISM handoff prompt implemented.
+- SleepApplied-to-Geist projection semantics defined.
+- Identity-anchor semantics defined separately.
+- Negative tests prove no hidden identity promotion.
+
+Before future docs can claim **production Sleep readiness**:
+
+- Prod-profile readiness passes.
+- Runtime coordinator tests pass.
+- Evidence/Archive append contract is explicit if used.
+- Docs lint/readiness evidence is fresh.
+
+## 11. Prompt 47/48/49/50/51 Completion and Recommended Next Prompt
 
 Prompt 47 is complete in [`docs/roadmap/sleep_record_authority_schema_alignment.md`](sleep_record_authority_schema_alignment.md). It confirmed that `SleepPlan`, `SleepCycle`, `SleepApplied`, and `SleepBoundary` were not canonical records yet; kept the existing sleep coordinator/report surfaces as prototype inventory; deferred `ucf-types`/`ucf-protocol` promotion; and preserved the no-runtime, no-Geist/ISM, no-identity, no-Gateway, and no Evidence/Archive append boundaries.
 
@@ -152,6 +202,6 @@ Prompt 50 is complete as a local `MinimalSpineSleepAppliedBoundary` wrapper in `
 
 Prompt 51 is complete as `core/crates/ucf-sleep-coordinator/tests/minimal_spine_sleep_e2e.rs`. It proves deterministic Replay-derived bounded input → `MinimalSpineSleepPlanCandidate` → verify-only `MinimalSpineSleepPlanAudit` → local `MinimalSpineSleepAppliedBoundary` chaining, including repeated digest/byte equality, Replay provenance continuity, PASS-before-boundary enforcement, FAIL/invalid-input rejection, and hard false boundary flags. It remains a local E2E test only: no Sleep runtime, no coordinator trigger/report/WAL/journal activation, no Replay scheduler/queue/worker or Replay execution, no Geist/ISM, no identity anchor/finalization, no memory stabilization, no Evidence/Archive append, no Gateway, and no Minimal Spine v1.x changes.
 
-Recommended next prompt: **UCF Prompt 52 — Sleep Docs Overclaim Guard**.
+Prompt 52 adds this overclaim guard and future-claim checklist so current docs use the bounded terminology consistently. It preserves the local-only meaning of Prompt 51 and keeps Geist/ISM, identity, Evidence/Archive append, Gateway, runtime scheduler/queue/worker, and Minimal Spine v1.x changes out of scope.
 
-Prompt 52 should update current documentation and lint/readiness wording to prevent Sleep overclaims, while preserving the bounded local-only meaning of Prompt 51 and keeping Geist/ISM, identity, Evidence/Archive append, Gateway, runtime scheduler/queue/worker, and Minimal Spine v1.x changes out of scope.
+Recommended next prompt: **UCF Prompt 53 — Sleep Readiness Refresh**.
