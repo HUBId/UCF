@@ -6,7 +6,10 @@ use blake3::Hasher;
 use ucf_archive::ExperienceAppender;
 use ucf_commit::commit_milestone_macro;
 use ucf_policy_ecology::{ConsistencyReport, ConsistencyVerdict, DefaultPolicyEcology, GeistGate};
-use ucf_sleep_coordinator::{SleepStateHandle, SleepStateUpdater};
+use ucf_sleep_coordinator::{
+    MinimalSpineSleepAppliedBoundary, MinimalSpineSleepPlanAudit, MinimalSpineSleepPlanAuditStatus,
+    SleepStateHandle, SleepStateUpdater,
+};
 use ucf_types::consolidation::ReplayApplied;
 use ucf_types::v1::spec::{ExperienceRecord, MacroMilestone};
 use ucf_types::{Digest32, EvidenceId};
@@ -129,6 +132,329 @@ fn commit_self_state(builder: &SelfStateBuilder) -> Digest32 {
     hasher.update(builder.ncde_commit.as_bytes());
     hasher.update(&builder.consistency.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
+}
+
+/// Version for Minimal Spine Geist projection candidates derived from bounded Sleep metadata.
+pub const MINIMAL_SPINE_GEIST_PROJECTION_CANDIDATE_VERSION: u32 = 1;
+
+/// Source marker for candidate-only Geist projection records derived from bounded Sleep metadata.
+pub const MINIMAL_SPINE_GEIST_PROJECTION_CANDIDATE_SOURCE: &str =
+    "minimal_spine_v1_geist_projection_candidate_from_sleep_boundary";
+
+/// Digest/provenance input for a candidate-only Minimal Spine Geist projection.
+///
+/// This value is bounded Sleep metadata only. It carries no store, appender, Gateway, GeistKernel,
+/// ISM, policy mutation, scheduler, queue, worker, or runtime handle and cannot apply Geist.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineGeistProjectionInput {
+    pub sleep_plan_audit_digest: Digest32,
+    pub sleep_plan_candidate_digest: Digest32,
+    pub sleep_applied_boundary_digest: Option<Digest32>,
+    pub replay_audit_digest: Digest32,
+    pub replay_schedule_digest: Digest32,
+    pub token_count: u32,
+    pub source: &'static str,
+}
+
+/// Deterministic, candidate-only Geist projection value derived from bounded Sleep metadata.
+///
+/// This is a local projection candidate only. It is not Geist runtime apply, not ISM write/upsert,
+/// not identity finalization or anchoring, not policy mutation, not Evidence/Archive append, not
+/// Gateway visibility, and not memory stabilization.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineGeistProjectionCandidate {
+    pub version: u32,
+    pub sleep_plan_audit_digest: Digest32,
+    pub sleep_plan_candidate_digest: Digest32,
+    pub sleep_applied_boundary_digest: Option<Digest32>,
+    pub replay_audit_digest: Digest32,
+    pub replay_schedule_digest: Digest32,
+    pub token_count: u32,
+    pub projection_digest: Digest32,
+    pub source: &'static str,
+    pub sleep_source: &'static str,
+    pub candidate_only: bool,
+    pub geist_applied: bool,
+    pub ism_written: bool,
+    pub identity_anchor: bool,
+    pub identity_finalized: bool,
+    pub policy_mutated: bool,
+    pub evidence_archive_appended: bool,
+    pub gateway_visible: bool,
+}
+
+impl MinimalSpineGeistProjectionCandidate {
+    /// Deterministic bytes used for the projection candidate digest.
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32_be(&mut out, self.version);
+        push_digest32(&mut out, self.sleep_plan_audit_digest);
+        push_digest32(&mut out, self.sleep_plan_candidate_digest);
+        match self.sleep_applied_boundary_digest {
+            Some(digest) => {
+                out.push(1);
+                push_digest32(&mut out, digest);
+            }
+            None => out.push(0),
+        }
+        push_digest32(&mut out, self.replay_audit_digest);
+        push_digest32(&mut out, self.replay_schedule_digest);
+        push_u32_be(&mut out, self.token_count);
+        push_str32(&mut out, self.source);
+        push_str32(&mut out, self.sleep_source);
+        out.push(u8::from(self.candidate_only));
+        out.push(u8::from(self.geist_applied));
+        out.push(u8::from(self.ism_written));
+        out.push(u8::from(self.identity_anchor));
+        out.push(u8::from(self.identity_finalized));
+        out.push(u8::from(self.policy_mutated));
+        out.push(u8::from(self.evidence_archive_appended));
+        out.push(u8::from(self.gateway_visible));
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_blake3_domain(
+            b"ucf.geist.minimal_spine.projection_candidate_from_sleep_boundary.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GeistProjectionError {
+    AuditStatusNotPass,
+    AuditDigestMismatch,
+    AuditHasFailureReasons,
+    AuditCandidateDigestMismatch,
+    AuditHasForbiddenBoundaryFlag,
+    BoundaryDigestMismatch,
+    BoundaryAuditDigestMismatch,
+    BoundaryCandidateDigestMismatch,
+    BoundaryReplayAuditDigestMismatch,
+    BoundaryReplayScheduleDigestMismatch,
+    BoundaryTokenCountMismatch,
+    BoundaryHasForbiddenSideEffectFlag,
+    ZeroSleepPlanAuditDigest,
+    ZeroSleepPlanCandidateDigest,
+    ZeroSleepAppliedBoundaryDigest,
+    ZeroReplayAuditDigest,
+    ZeroReplayScheduleDigest,
+    ZeroTokenCount,
+    EmptySource,
+    EmptySleepSource,
+}
+
+impl std::fmt::Display for GeistProjectionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::AuditStatusNotPass => "sleep plan audit status must be pass",
+            Self::AuditDigestMismatch => "sleep plan audit digest mismatch",
+            Self::AuditHasFailureReasons => "pass sleep plan audit must not have failure reasons",
+            Self::AuditCandidateDigestMismatch => "sleep plan audit candidate digest mismatch",
+            Self::AuditHasForbiddenBoundaryFlag => {
+                "sleep plan audit has a forbidden side-effect flag set"
+            }
+            Self::BoundaryDigestMismatch => "sleep applied boundary digest mismatch",
+            Self::BoundaryAuditDigestMismatch => "sleep applied boundary audit digest mismatch",
+            Self::BoundaryCandidateDigestMismatch => {
+                "sleep applied boundary candidate digest mismatch"
+            }
+            Self::BoundaryReplayAuditDigestMismatch => {
+                "sleep applied boundary replay audit digest mismatch"
+            }
+            Self::BoundaryReplayScheduleDigestMismatch => {
+                "sleep applied boundary replay schedule digest mismatch"
+            }
+            Self::BoundaryTokenCountMismatch => "sleep applied boundary token count mismatch",
+            Self::BoundaryHasForbiddenSideEffectFlag => {
+                "sleep applied boundary has a forbidden side-effect flag set"
+            }
+            Self::ZeroSleepPlanAuditDigest => "sleep plan audit digest must be non-zero",
+            Self::ZeroSleepPlanCandidateDigest => "sleep plan candidate digest must be non-zero",
+            Self::ZeroSleepAppliedBoundaryDigest => {
+                "sleep applied boundary digest must be non-zero"
+            }
+            Self::ZeroReplayAuditDigest => "replay audit digest must be non-zero",
+            Self::ZeroReplayScheduleDigest => "replay schedule digest must be non-zero",
+            Self::ZeroTokenCount => "token count must be non-zero",
+            Self::EmptySource => "source must be non-empty",
+            Self::EmptySleepSource => "sleep source must be non-empty",
+        };
+        f.write_str(message)
+    }
+}
+
+impl std::error::Error for GeistProjectionError {}
+
+/// Build a pure candidate-only Geist projection from bounded Sleep digests.
+///
+/// The function is deterministic and takes no store/appender/Gateway/GeistKernel/ISM/policy
+/// mutation/scheduler handles. It does not apply Geist, write or upsert ISM, create identity
+/// anchors, finalize identity, mutate policy, append Evidence/Archive records, expose a Gateway
+/// value, or recurse.
+pub fn build_geist_projection_candidate_from_sleep_input(
+    input: &MinimalSpineGeistProjectionInput,
+) -> Result<MinimalSpineGeistProjectionCandidate, GeistProjectionError> {
+    validate_geist_projection_input(input)?;
+
+    let mut candidate = MinimalSpineGeistProjectionCandidate {
+        version: MINIMAL_SPINE_GEIST_PROJECTION_CANDIDATE_VERSION,
+        sleep_plan_audit_digest: input.sleep_plan_audit_digest,
+        sleep_plan_candidate_digest: input.sleep_plan_candidate_digest,
+        sleep_applied_boundary_digest: input.sleep_applied_boundary_digest,
+        replay_audit_digest: input.replay_audit_digest,
+        replay_schedule_digest: input.replay_schedule_digest,
+        token_count: input.token_count,
+        projection_digest: Digest32::new([0u8; Digest32::LEN]),
+        source: MINIMAL_SPINE_GEIST_PROJECTION_CANDIDATE_SOURCE,
+        sleep_source: input.source,
+        candidate_only: true,
+        geist_applied: false,
+        ism_written: false,
+        identity_anchor: false,
+        identity_finalized: false,
+        policy_mutated: false,
+        evidence_archive_appended: false,
+        gateway_visible: false,
+    };
+    candidate.projection_digest = candidate.digest();
+    Ok(candidate)
+}
+
+/// Build a pure candidate-only Geist projection from a PASS SleepPlan audit and optional local
+/// SleepApplied boundary marker.
+///
+/// The optional boundary is provenance only. If supplied, it must match the audit digest,
+/// candidate digest, replay digests, and token count. This does not activate the existing broad
+/// `GeistKernel::ingest_macro` path and does not write ISM state.
+pub fn build_geist_projection_candidate_from_sleep_audit(
+    audit: &MinimalSpineSleepPlanAudit,
+    sleep_boundary: Option<&MinimalSpineSleepAppliedBoundary>,
+) -> Result<MinimalSpineGeistProjectionCandidate, GeistProjectionError> {
+    validate_sleep_plan_audit_for_geist_projection(audit)?;
+    if let Some(boundary) = sleep_boundary {
+        validate_sleep_applied_boundary_for_geist_projection(audit, boundary)?;
+    }
+
+    let input = MinimalSpineGeistProjectionInput {
+        sleep_plan_audit_digest: audit.audit_digest,
+        sleep_plan_candidate_digest: audit.sleep_plan_candidate_digest,
+        sleep_applied_boundary_digest: sleep_boundary
+            .map(|boundary| boundary.applied_boundary_digest),
+        replay_audit_digest: audit.replay_audit_digest,
+        replay_schedule_digest: audit.replay_schedule_digest,
+        token_count: audit.token_count,
+        source: audit.source,
+    };
+    build_geist_projection_candidate_from_sleep_input(&input)
+}
+
+fn validate_sleep_plan_audit_for_geist_projection(
+    audit: &MinimalSpineSleepPlanAudit,
+) -> Result<(), GeistProjectionError> {
+    if audit.status != MinimalSpineSleepPlanAuditStatus::Pass {
+        return Err(GeistProjectionError::AuditStatusNotPass);
+    }
+    if audit.audit_digest != audit.digest() {
+        return Err(GeistProjectionError::AuditDigestMismatch);
+    }
+    if !audit.failure_reasons.is_empty() {
+        return Err(GeistProjectionError::AuditHasFailureReasons);
+    }
+    if audit.sleep_plan_candidate_digest != audit.recomputed_sleep_plan_candidate_digest {
+        return Err(GeistProjectionError::AuditCandidateDigestMismatch);
+    }
+    if !audit.candidate_only
+        || audit.sleep_applied
+        || audit.sleep_completed
+        || audit.geist_ingested
+        || audit.ism_written
+        || audit.identity_anchor
+        || audit.evidence_archive_appended
+        || audit.gateway_visible
+    {
+        return Err(GeistProjectionError::AuditHasForbiddenBoundaryFlag);
+    }
+
+    let input = MinimalSpineGeistProjectionInput {
+        sleep_plan_audit_digest: audit.audit_digest,
+        sleep_plan_candidate_digest: audit.sleep_plan_candidate_digest,
+        sleep_applied_boundary_digest: None,
+        replay_audit_digest: audit.replay_audit_digest,
+        replay_schedule_digest: audit.replay_schedule_digest,
+        token_count: audit.token_count,
+        source: audit.source,
+    };
+    validate_geist_projection_input(&input)
+}
+
+fn validate_sleep_applied_boundary_for_geist_projection(
+    audit: &MinimalSpineSleepPlanAudit,
+    boundary: &MinimalSpineSleepAppliedBoundary,
+) -> Result<(), GeistProjectionError> {
+    if boundary.applied_boundary_digest != boundary.digest() {
+        return Err(GeistProjectionError::BoundaryDigestMismatch);
+    }
+    if boundary.sleep_plan_audit_digest != audit.audit_digest {
+        return Err(GeistProjectionError::BoundaryAuditDigestMismatch);
+    }
+    if boundary.sleep_plan_candidate_digest != audit.sleep_plan_candidate_digest {
+        return Err(GeistProjectionError::BoundaryCandidateDigestMismatch);
+    }
+    if boundary.replay_audit_digest != audit.replay_audit_digest {
+        return Err(GeistProjectionError::BoundaryReplayAuditDigestMismatch);
+    }
+    if boundary.replay_schedule_digest != audit.replay_schedule_digest {
+        return Err(GeistProjectionError::BoundaryReplayScheduleDigestMismatch);
+    }
+    if boundary.token_count != audit.token_count {
+        return Err(GeistProjectionError::BoundaryTokenCountMismatch);
+    }
+    if boundary.sleep_completed
+        || boundary.coordinator_runtime_triggered
+        || boundary.geist_ingested
+        || boundary.ism_written
+        || boundary.identity_anchor
+        || boundary.memory_stabilized
+        || boundary.evidence_archive_appended
+        || boundary.gateway_visible
+    {
+        return Err(GeistProjectionError::BoundaryHasForbiddenSideEffectFlag);
+    }
+    if is_zero_digest(boundary.applied_boundary_digest) {
+        return Err(GeistProjectionError::ZeroSleepAppliedBoundaryDigest);
+    }
+    Ok(())
+}
+
+fn validate_geist_projection_input(
+    input: &MinimalSpineGeistProjectionInput,
+) -> Result<(), GeistProjectionError> {
+    if is_zero_digest(input.sleep_plan_audit_digest) {
+        return Err(GeistProjectionError::ZeroSleepPlanAuditDigest);
+    }
+    if is_zero_digest(input.sleep_plan_candidate_digest) {
+        return Err(GeistProjectionError::ZeroSleepPlanCandidateDigest);
+    }
+    if let Some(digest) = input.sleep_applied_boundary_digest {
+        if is_zero_digest(digest) {
+            return Err(GeistProjectionError::ZeroSleepAppliedBoundaryDigest);
+        }
+    }
+    if is_zero_digest(input.replay_audit_digest) {
+        return Err(GeistProjectionError::ZeroReplayAuditDigest);
+    }
+    if is_zero_digest(input.replay_schedule_digest) {
+        return Err(GeistProjectionError::ZeroReplayScheduleDigest);
+    }
+    if input.token_count == 0 {
+        return Err(GeistProjectionError::ZeroTokenCount);
+    }
+    if input.source.is_empty() {
+        return Err(GeistProjectionError::EmptySource);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -417,6 +743,33 @@ fn encode_derived_payload(
     enc.write_u8(report.verdict.as_u8());
     enc.write_u32(report.matched_anchors.min(u32::MAX as usize) as u32);
     enc.finish().to_vec()
+}
+
+fn is_zero_digest(digest: Digest32) -> bool {
+    digest.as_bytes().iter().all(|byte| *byte == 0)
+}
+
+fn push_digest32(out: &mut Vec<u8>, digest: Digest32) {
+    out.extend_from_slice(digest.as_bytes());
+}
+
+fn push_u32_be(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_be_bytes());
+}
+
+fn push_str32(out: &mut Vec<u8>, value: &str) {
+    let len =
+        u32::try_from(value.len()).expect("minimal spine geist projection source length fits u32");
+    push_u32_be(out, len);
+    out.extend_from_slice(value.as_bytes());
+}
+
+fn digest_blake3_domain(domain: &[u8], bytes: &[u8]) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(domain);
+    hasher.update(&[0]);
+    hasher.update(bytes);
+    Digest32::new(*hasher.finalize().as_bytes())
 }
 
 fn hash_bytes(bytes: &[u8]) -> Digest32 {
