@@ -1,5 +1,9 @@
 # UCF Post-Replay Roadmap Selection
 
+## Historical status note
+
+This document is the Prompt 45 selection record. It remains useful for why Sleep was selected after bounded Replay closure, but current Sleep claims are now governed by [`docs/roadmap/sleep_integration_roadmap_boundary_audit.md`](sleep_integration_roadmap_boundary_audit.md) and [`docs/roadmap/sleep_record_authority_schema_alignment.md`](sleep_record_authority_schema_alignment.md). As of Prompt 52, allowed Sleep claims are limited to `SleepPlanCandidate` candidate-only, `SleepPlanAudit` verify-only, `SleepAppliedBoundary` local-only, and bounded Sleep E2E determinism; no Sleep runtime, Sleep Cycle Coordinator activation, Geist/ISM integration, identity finalization/anchor, memory stabilization, Evidence/Archive sleep append, Gateway-visible Sleep, or production Sleep readiness is implied here.
+
 ## 0. Purpose
 
 - Select the next line after bounded Replay closure.
