@@ -15,6 +15,13 @@ use ucf_rsa::{RsaEngine, SleepCoordinator, SleepReportReady};
 use ucf_structural_store::{StructuralCycleStats, StructuralDeltaProposal};
 use ucf_types::{Digest32, EvidenceId};
 
+/// Version for local Minimal Spine SleepApplied boundary values.
+pub const MINIMAL_SPINE_SLEEP_APPLIED_BOUNDARY_VERSION: u32 = 1;
+
+/// Source marker for local SleepApplied boundary bookkeeping records.
+pub const MINIMAL_SPINE_SLEEP_APPLIED_BOUNDARY_SOURCE: &str =
+    "minimal_spine_v1_sleep_applied_local_boundary";
+
 /// Version for verify-only Minimal Spine SleepPlan audit values.
 pub const MINIMAL_SPINE_SLEEP_PLAN_AUDIT_VERSION: u32 = 1;
 
@@ -246,6 +253,124 @@ pub struct MinimalSpineSleepPlanAudit {
     pub gateway_visible: bool,
 }
 
+/// Local sleep-subsystem boundary marker derived from a PASS SleepPlan audit.
+///
+/// This record acknowledges only local Sleep bookkeeping inside `ucf-sleep-coordinator`. It is not
+/// Sleep Cycle completion, not coordinator runtime execution, not Geist ingestion, not an ISM
+/// write/upsert, not identity finalization or anchoring, not memory stabilization, not
+/// Evidence/Archive append, and not Gateway visibility.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineSleepAppliedBoundary {
+    pub version: u32,
+    pub sleep_plan_audit_digest: Digest32,
+    pub sleep_plan_candidate_digest: Digest32,
+    pub replay_audit_digest: Digest32,
+    pub replay_schedule_digest: Digest32,
+    pub replay_applied_boundary_digest: Option<Digest32>,
+    pub token_count: u32,
+    pub applied_boundary_digest: Digest32,
+    pub source: &'static str,
+    pub sleep_plan_audit_source: &'static str,
+    pub candidate_source: &'static str,
+    pub replay_source: &'static str,
+    pub sleep_subsystem_applied: bool,
+    pub sleep_completed: bool,
+    pub coordinator_runtime_triggered: bool,
+    pub geist_ingested: bool,
+    pub ism_written: bool,
+    pub identity_anchor: bool,
+    pub memory_stabilized: bool,
+    pub evidence_archive_appended: bool,
+    pub gateway_visible: bool,
+}
+
+impl MinimalSpineSleepAppliedBoundary {
+    /// Deterministic bytes used for the local boundary digest.
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32_be(&mut out, self.version);
+        push_digest32(&mut out, self.sleep_plan_audit_digest);
+        push_digest32(&mut out, self.sleep_plan_candidate_digest);
+        push_digest32(&mut out, self.replay_audit_digest);
+        push_digest32(&mut out, self.replay_schedule_digest);
+        match self.replay_applied_boundary_digest {
+            Some(digest) => {
+                out.push(1);
+                push_digest32(&mut out, digest);
+            }
+            None => out.push(0),
+        }
+        push_u32_be(&mut out, self.token_count);
+        push_str32(&mut out, self.source);
+        push_str32(&mut out, self.sleep_plan_audit_source);
+        push_str32(&mut out, self.candidate_source);
+        push_str32(&mut out, self.replay_source);
+        out.push(u8::from(self.sleep_subsystem_applied));
+        out.push(u8::from(self.sleep_completed));
+        out.push(u8::from(self.coordinator_runtime_triggered));
+        out.push(u8::from(self.geist_ingested));
+        out.push(u8::from(self.ism_written));
+        out.push(u8::from(self.identity_anchor));
+        out.push(u8::from(self.memory_stabilized));
+        out.push(u8::from(self.evidence_archive_appended));
+        out.push(u8::from(self.gateway_visible));
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_blake3_domain(
+            b"ucf.sleep.minimal_spine.applied_local_boundary.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SleepAppliedBoundaryError {
+    AuditStatusNotPass,
+    AuditDigestMismatch,
+    AuditHasFailureReasons,
+    AuditCandidateDigestMismatch,
+    AuditHasForbiddenSideEffectFlag,
+    ZeroSleepPlanAuditDigest,
+    ZeroSleepPlanCandidateDigest,
+    ZeroReplayAuditDigest,
+    ZeroReplayScheduleDigest,
+    ZeroReplayAppliedBoundaryDigest,
+    ZeroTokenCount,
+    EmptySource,
+    EmptyCandidateSource,
+    EmptyReplaySource,
+}
+
+impl std::fmt::Display for SleepAppliedBoundaryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::AuditStatusNotPass => "sleep plan audit status must be pass",
+            Self::AuditDigestMismatch => "sleep plan audit digest mismatch",
+            Self::AuditHasFailureReasons => "pass sleep plan audit must not have failure reasons",
+            Self::AuditCandidateDigestMismatch => "sleep plan audit candidate digest mismatch",
+            Self::AuditHasForbiddenSideEffectFlag => {
+                "sleep plan audit has a forbidden side-effect flag set"
+            }
+            Self::ZeroSleepPlanAuditDigest => "sleep plan audit digest must be non-zero",
+            Self::ZeroSleepPlanCandidateDigest => "sleep plan candidate digest must be non-zero",
+            Self::ZeroReplayAuditDigest => "replay audit digest must be non-zero",
+            Self::ZeroReplayScheduleDigest => "replay schedule digest must be non-zero",
+            Self::ZeroReplayAppliedBoundaryDigest => {
+                "replay applied boundary digest must be non-zero"
+            }
+            Self::ZeroTokenCount => "token count must be non-zero",
+            Self::EmptySource => "sleep plan audit source must be non-empty",
+            Self::EmptyCandidateSource => "sleep plan candidate source must be non-empty",
+            Self::EmptyReplaySource => "replay source must be non-empty",
+        };
+        f.write_str(message)
+    }
+}
+
+impl std::error::Error for SleepAppliedBoundaryError {}
+
 impl MinimalSpineSleepPlanAudit {
     /// Deterministic bytes used for the audit digest.
     pub fn deterministic_bytes(&self) -> Vec<u8> {
@@ -292,6 +417,103 @@ impl MinimalSpineSleepPlanAudit {
             &self.deterministic_bytes(),
         )
     }
+}
+
+/// Build a local SleepApplied boundary marker from a PASS verify-only SleepPlan audit.
+///
+/// The output is deterministic Sleep bookkeeping only. It preserves SleepPlan and Replay
+/// provenance, rejects FAIL audits and malformed PASS audits, takes no coordinator runtime, WAL,
+/// journal, store, scheduler, Gateway, Geist, ISM, Evidence, or Archive handles, and does not
+/// mutate the audit or candidate that produced it.
+pub fn build_sleep_applied_boundary_from_audit(
+    audit: &MinimalSpineSleepPlanAudit,
+) -> Result<MinimalSpineSleepAppliedBoundary, SleepAppliedBoundaryError> {
+    validate_sleep_plan_audit_for_applied_boundary(audit)?;
+
+    let mut boundary = MinimalSpineSleepAppliedBoundary {
+        version: MINIMAL_SPINE_SLEEP_APPLIED_BOUNDARY_VERSION,
+        sleep_plan_audit_digest: audit.audit_digest,
+        sleep_plan_candidate_digest: audit.sleep_plan_candidate_digest,
+        replay_audit_digest: audit.replay_audit_digest,
+        replay_schedule_digest: audit.replay_schedule_digest,
+        replay_applied_boundary_digest: audit.replay_applied_boundary_digest,
+        token_count: audit.token_count,
+        applied_boundary_digest: Digest32::new([0u8; Digest32::LEN]),
+        source: MINIMAL_SPINE_SLEEP_APPLIED_BOUNDARY_SOURCE,
+        sleep_plan_audit_source: audit.source,
+        candidate_source: audit.candidate_source,
+        replay_source: audit.replay_source,
+        sleep_subsystem_applied: true,
+        sleep_completed: false,
+        coordinator_runtime_triggered: false,
+        geist_ingested: false,
+        ism_written: false,
+        identity_anchor: false,
+        memory_stabilized: false,
+        evidence_archive_appended: false,
+        gateway_visible: false,
+    };
+    boundary.applied_boundary_digest = boundary.digest();
+    Ok(boundary)
+}
+
+fn validate_sleep_plan_audit_for_applied_boundary(
+    audit: &MinimalSpineSleepPlanAudit,
+) -> Result<(), SleepAppliedBoundaryError> {
+    if audit.status != MinimalSpineSleepPlanAuditStatus::Pass {
+        return Err(SleepAppliedBoundaryError::AuditStatusNotPass);
+    }
+    if audit.audit_digest != audit.digest() {
+        return Err(SleepAppliedBoundaryError::AuditDigestMismatch);
+    }
+    if !audit.failure_reasons.is_empty() {
+        return Err(SleepAppliedBoundaryError::AuditHasFailureReasons);
+    }
+    if audit.sleep_plan_candidate_digest != audit.recomputed_sleep_plan_candidate_digest {
+        return Err(SleepAppliedBoundaryError::AuditCandidateDigestMismatch);
+    }
+    if !audit.candidate_only
+        || audit.sleep_applied
+        || audit.sleep_completed
+        || audit.geist_ingested
+        || audit.ism_written
+        || audit.identity_anchor
+        || audit.evidence_archive_appended
+        || audit.gateway_visible
+    {
+        return Err(SleepAppliedBoundaryError::AuditHasForbiddenSideEffectFlag);
+    }
+    if is_zero_digest(audit.audit_digest) {
+        return Err(SleepAppliedBoundaryError::ZeroSleepPlanAuditDigest);
+    }
+    if is_zero_digest(audit.sleep_plan_candidate_digest) {
+        return Err(SleepAppliedBoundaryError::ZeroSleepPlanCandidateDigest);
+    }
+    if is_zero_digest(audit.replay_audit_digest) {
+        return Err(SleepAppliedBoundaryError::ZeroReplayAuditDigest);
+    }
+    if is_zero_digest(audit.replay_schedule_digest) {
+        return Err(SleepAppliedBoundaryError::ZeroReplayScheduleDigest);
+    }
+    if audit
+        .replay_applied_boundary_digest
+        .is_some_and(is_zero_digest)
+    {
+        return Err(SleepAppliedBoundaryError::ZeroReplayAppliedBoundaryDigest);
+    }
+    if audit.token_count == 0 {
+        return Err(SleepAppliedBoundaryError::ZeroTokenCount);
+    }
+    if audit.source.is_empty() {
+        return Err(SleepAppliedBoundaryError::EmptySource);
+    }
+    if audit.candidate_source.is_empty() {
+        return Err(SleepAppliedBoundaryError::EmptyCandidateSource);
+    }
+    if audit.replay_source.is_empty() {
+        return Err(SleepAppliedBoundaryError::EmptyReplaySource);
+    }
+    Ok(())
 }
 
 /// Verify a Minimal Spine SleepPlan candidate without applying Sleep or triggering a coordinator.
