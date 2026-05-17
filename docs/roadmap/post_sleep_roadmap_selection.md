@@ -38,6 +38,7 @@ Baseline links:
 - [`docs/minimal_spine_v1_freeze.md`](../minimal_spine_v1_freeze.md)
 - [`docs/current_state_architecture_index.md`](../current_state_architecture_index.md)
 - [`docs/module_implementation_depth_registry.md`](../module_implementation_depth_registry.md)
+- [`docs/roadmap/geist_ism_roadmap_boundary_audit.md`](geist_ism_roadmap_boundary_audit.md)
 
 ## 2. Candidate Inventory
 
@@ -169,6 +170,6 @@ Before each prompt in the selected line:
 
 ## 9. Next Prompt
 
-Recommended next prompt title: **UCF Prompt 55 — Geist/ISM Roadmap and Boundary Audit**.
+Recommended next prompt title: **UCF Prompt 56 — Geist/ISM Record Authority and Schema Alignment**.
 
-Reason: bounded Consolidation, bounded Replay, and bounded Sleep now provide a safer basis for a self-state and ISM-adjacent boundary audit, but the next step must remain docs-only and must not claim Geist/ISM readiness, identity finalization, identity anchoring, runtime activation, Gateway authority, or Evidence/Archive append behavior.
+Prompt 55 is now available as [`docs/roadmap/geist_ism_roadmap_boundary_audit.md`](geist_ism_roadmap_boundary_audit.md). It keeps the selected Geist/ISM line planning-only and recommends Prompt 56 as the first safe follow-up. Prompt 56 must align record authority and schema boundaries before any projection builder, ISM write/upsert, identity anchor, identity finalization, runtime activation, Gateway authority, Policy Ecology mutation, or Evidence/Archive append behavior.
