@@ -3,7 +3,7 @@
 ## 0. Purpose
 
 - This document decides Sleep-facing record authority only.
-- It does not implement Sleep behavior, Sleep Cycle Coordinator runtime, Replay scheduler/queue/worker behavior, Gateway writes, capability issuance, real-compute activation, Evidence/Archive append, or a second event-log authority. Prompt 48 adds only a deterministic SleepPlan candidate builder from bounded Replay metadata; Prompt 49 adds only a local verify-only audit over that candidate; Prompt 50 adds only a local SleepApplied boundary marker derived from a PASS audit.
+- It does not implement Sleep behavior, Sleep Cycle Coordinator runtime, Replay scheduler/queue/worker behavior, Gateway writes, capability issuance, real-compute activation, Evidence/Archive append, or a second event-log authority. Prompt 48 adds only a deterministic SleepPlan candidate builder from bounded Replay metadata; Prompt 49 adds only a local verify-only audit over that candidate; Prompt 50 adds only a local SleepApplied boundary marker derived from a PASS audit; Prompt 51 adds only a deterministic bounded E2E test over those local surfaces.
 - It does not integrate Geist/ISM and does not finalize identity.
 - It preserves the Minimal Spine v1.x freeze and does not change bounded Replay or bounded Consolidation behavior.
 
@@ -163,6 +163,18 @@ Prompt 49 is implemented as `MinimalSpineSleepPlanAudit` in `core/crates/ucf-sle
 
 The audit is verify-only. A PASS audit means only that the candidate value is internally consistent and still candidate-only; it is not SleepApplied, not SleepCompleted, not Geist/ISM ingestion, not identity anchoring/finalization, not Evidence/Archive append, not Gateway visibility, and not a Sleep Cycle Coordinator runtime trigger. The schema gap remains intentional: this is a local wrapper, not a canonical protocol SleepPlan/SleepApplied schema.
 
-## 12. Recommended Next Prompt
+## 12. Prompt 50 Completion Note
 
-**UCF Prompt 50 — SleepApplied Boundary Without Geist/ISM**.
+Prompt 50 is implemented as `MinimalSpineSleepAppliedBoundary` in `core/crates/ucf-sleep-coordinator`. The API `build_sleep_applied_boundary_from_audit(&MinimalSpineSleepPlanAudit)` derives a deterministic local boundary marker only from a PASS verify-only SleepPlan audit, preserves SleepPlan audit/candidate plus Replay audit/schedule/optional boundary provenance, and keeps all forbidden downstream flags false.
+
+The boundary is local bookkeeping only. It is not SleepCompleted, not coordinator runtime execution, not Geist ingestion, not an ISM write/upsert, not identity finalization or anchor creation, not memory stabilization, not Evidence/Archive append, not Gateway visibility, and not a canonical protocol SleepApplied schema.
+
+## 13. Prompt 51 E2E Determinism Completion Note
+
+Prompt 51 is implemented by `core/crates/ucf-sleep-coordinator/tests/minimal_spine_sleep_e2e.rs`. The E2E test builds bounded Replay-derived inputs, then verifies deterministic `MinimalSpineSleepPlanCandidate` → `MinimalSpineSleepPlanAudit` → `MinimalSpineSleepAppliedBoundary` chaining across fresh runs. It proves that Replay audit, Replay schedule, and optional Replay applied-boundary provenance flow into the candidate; that the candidate digest flows into the audit; and that both audit and candidate digests flow into the local applied boundary.
+
+The E2E remains bounded and local. It still excludes runtime Sleep, Sleep Cycle Coordinator activation, coordinator trigger/report/WAL/journal behavior, Geist/ISM, Gateway, Evidence/Archive append, Sleep completion, identity anchoring/finalization, memory stabilization, Replay runtime scheduler/queue/worker implementation, Replay execution, and Minimal Spine v1.x changes.
+
+## 14. Recommended Next Prompt
+
+**UCF Prompt 52 — Sleep Docs Overclaim Guard**.
