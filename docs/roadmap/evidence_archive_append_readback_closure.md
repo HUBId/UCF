@@ -74,3 +74,7 @@
 
 ## 8. Recommended Next Roadmap
 Given workspace evidence caveat in this run, next prompt should be **Workspace Evidence Stability / Prod-profile readiness** before promoting full readiness closure.
+
+
+## 9. Follow-up Planning Link
+- `docs/roadmap/post_archive_roadmap_selection.md`

@@ -163,3 +163,7 @@ Evidence/Archive append contract planning is now available as [`docs/roadmap/evi
 
 
 - Evidence/Archive bounded append/readback closure baseline is available at `docs/roadmap/evidence_archive_append_readback_closure.md` (with workspace-evidence caveat handling).
+
+
+## Supersession Note
+- After bounded Evidence/Archive append/readback closure, `docs/roadmap/post_archive_roadmap_selection.md` supersedes earlier next-line planning in this document.

@@ -243,3 +243,7 @@ Freshness check procedure:
 3. Confirm each root or generated report embeds matching `git_head_full` when the schema supports it.
 4. Treat reports without matching HEAD metadata as historical context only.
 5. Only explicit code-reviewed documentation updates may mark historical docs as current; names such as `final`, `closure`, `completion`, `readiness`, or `sweep` never promote themselves.
+
+
+## Post-Archive Planning
+- Current planning reference: `docs/roadmap/post_archive_roadmap_selection.md`.
