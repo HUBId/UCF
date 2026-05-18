@@ -148,6 +148,13 @@ pub const MINIMAL_SPINE_GEIST_PROJECTION_AUDIT_VERSION: u32 = 1;
 pub const MINIMAL_SPINE_GEIST_PROJECTION_AUDIT_SOURCE: &str =
     "minimal_spine_v1_geist_projection_verify_only_audit";
 
+/// Version for local Minimal Spine ISM candidate boundary values.
+pub const MINIMAL_SPINE_ISM_CANDIDATE_BOUNDARY_VERSION: u32 = 1;
+
+/// Source marker for local candidate/read-model ISM boundary values.
+pub const MINIMAL_SPINE_ISM_CANDIDATE_BOUNDARY_SOURCE: &str =
+    "minimal_spine_v1_ism_candidate_boundary_from_geist_projection_audit";
+
 /// Digest/provenance input for a candidate-only Minimal Spine Geist projection.
 ///
 /// This value is bounded Sleep metadata only. It carries no store, appender, Gateway, GeistKernel,
@@ -378,6 +385,242 @@ impl MinimalSpineGeistProjectionAudit {
             &self.deterministic_bytes(),
         )
     }
+}
+
+/// Deterministic local ISM candidate/read-model boundary derived only from a PASS Geist projection
+/// audit.
+///
+/// This is not a persistent ISM write, not `IsmStore::upsert_anchor`, not an IdentityAnchor, not
+/// identity finalization, not memory stabilization, not policy mutation, not Evidence/Archive append,
+/// and not Gateway/action authority. It carries no store, kernel, appender, policy mutator, or runtime
+/// handle.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineIsmCandidateBoundary {
+    pub version: u32,
+    pub geist_projection_audit_digest: Digest32,
+    pub geist_projection_digest: Digest32,
+    pub sleep_plan_audit_digest: Digest32,
+    pub sleep_plan_candidate_digest: Digest32,
+    pub sleep_applied_boundary_digest: Option<Digest32>,
+    pub replay_audit_digest: Digest32,
+    pub replay_schedule_digest: Digest32,
+    pub token_count: u32,
+    pub ism_candidate_digest: Digest32,
+    pub source: &'static str,
+    pub audit_source: &'static str,
+    pub candidate_source: &'static str,
+    pub sleep_source: &'static str,
+    pub ism_candidate_only: bool,
+    pub ism_written: bool,
+    pub ism_upserted: bool,
+    pub identity_anchor: bool,
+    pub identity_finalized: bool,
+    pub memory_stabilized: bool,
+    pub policy_mutated: bool,
+    pub evidence_archive_appended: bool,
+    pub gateway_visible: bool,
+}
+
+impl MinimalSpineIsmCandidateBoundary {
+    /// Deterministic bytes used for the local ISM candidate boundary digest.
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32_be(&mut out, self.version);
+        push_digest32(&mut out, self.geist_projection_audit_digest);
+        push_digest32(&mut out, self.geist_projection_digest);
+        push_digest32(&mut out, self.sleep_plan_audit_digest);
+        push_digest32(&mut out, self.sleep_plan_candidate_digest);
+        match self.sleep_applied_boundary_digest {
+            Some(digest) => {
+                out.push(1);
+                push_digest32(&mut out, digest);
+            }
+            None => out.push(0),
+        }
+        push_digest32(&mut out, self.replay_audit_digest);
+        push_digest32(&mut out, self.replay_schedule_digest);
+        push_u32_be(&mut out, self.token_count);
+        push_str32(&mut out, self.source);
+        push_str32(&mut out, self.audit_source);
+        push_str32(&mut out, self.candidate_source);
+        push_str32(&mut out, self.sleep_source);
+        out.push(u8::from(self.ism_candidate_only));
+        out.push(u8::from(self.ism_written));
+        out.push(u8::from(self.ism_upserted));
+        out.push(u8::from(self.identity_anchor));
+        out.push(u8::from(self.identity_finalized));
+        out.push(u8::from(self.memory_stabilized));
+        out.push(u8::from(self.policy_mutated));
+        out.push(u8::from(self.evidence_archive_appended));
+        out.push(u8::from(self.gateway_visible));
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_blake3_domain(
+            b"ucf.geist.minimal_spine.ism_candidate_boundary_from_geist_projection_audit.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IsmCandidateBoundaryError {
+    AuditStatusNotPass,
+    AuditDigestMismatch,
+    AuditHasFailureReasons,
+    AuditProjectionDigestMismatch,
+    AuditHasForbiddenBoundaryFlag,
+    ZeroGeistProjectionAuditDigest,
+    ZeroGeistProjectionDigest,
+    ZeroSleepPlanAuditDigest,
+    ZeroSleepPlanCandidateDigest,
+    ZeroSleepAppliedBoundaryDigest,
+    ZeroReplayAuditDigest,
+    ZeroReplayScheduleDigest,
+    ZeroTokenCount,
+    EmptySource,
+    EmptyCandidateSource,
+    EmptySleepSource,
+}
+
+impl std::fmt::Display for IsmCandidateBoundaryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::AuditStatusNotPass => "geist projection audit status must be pass",
+            Self::AuditDigestMismatch => "geist projection audit digest mismatch",
+            Self::AuditHasFailureReasons => {
+                "pass geist projection audit must not have failure reasons"
+            }
+            Self::AuditProjectionDigestMismatch => {
+                "geist projection audit projection digest mismatch"
+            }
+            Self::AuditHasForbiddenBoundaryFlag => {
+                "geist projection audit has a forbidden side-effect flag set"
+            }
+            Self::ZeroGeistProjectionAuditDigest => {
+                "geist projection audit digest must be non-zero"
+            }
+            Self::ZeroGeistProjectionDigest => "geist projection digest must be non-zero",
+            Self::ZeroSleepPlanAuditDigest => "sleep plan audit digest must be non-zero",
+            Self::ZeroSleepPlanCandidateDigest => "sleep plan candidate digest must be non-zero",
+            Self::ZeroSleepAppliedBoundaryDigest => {
+                "sleep applied boundary digest must be non-zero"
+            }
+            Self::ZeroReplayAuditDigest => "replay audit digest must be non-zero",
+            Self::ZeroReplayScheduleDigest => "replay schedule digest must be non-zero",
+            Self::ZeroTokenCount => "token count must be non-zero",
+            Self::EmptySource => "audit source must be non-empty",
+            Self::EmptyCandidateSource => "candidate source must be non-empty",
+            Self::EmptySleepSource => "sleep source must be non-empty",
+        };
+        f.write_str(message)
+    }
+}
+
+impl std::error::Error for IsmCandidateBoundaryError {}
+
+/// Build a deterministic local ISM candidate/read-model boundary from a PASS Geist projection audit.
+///
+/// This function is pure and local: it takes no `IsmStore`, does not call `upsert_anchor`, does not
+/// create an identity anchor, does not finalize identity, does not stabilize memory, does not mutate
+/// policy, does not append Evidence/Archive records, and does not expose Gateway or runtime authority.
+pub fn build_ism_candidate_boundary_from_geist_audit(
+    audit: &MinimalSpineGeistProjectionAudit,
+) -> Result<MinimalSpineIsmCandidateBoundary, IsmCandidateBoundaryError> {
+    validate_geist_projection_audit_for_ism_candidate_boundary(audit)?;
+
+    let mut boundary = MinimalSpineIsmCandidateBoundary {
+        version: MINIMAL_SPINE_ISM_CANDIDATE_BOUNDARY_VERSION,
+        geist_projection_audit_digest: audit.audit_digest,
+        geist_projection_digest: audit.projection_digest,
+        sleep_plan_audit_digest: audit.sleep_plan_audit_digest,
+        sleep_plan_candidate_digest: audit.sleep_plan_candidate_digest,
+        sleep_applied_boundary_digest: audit.sleep_applied_boundary_digest,
+        replay_audit_digest: audit.replay_audit_digest,
+        replay_schedule_digest: audit.replay_schedule_digest,
+        token_count: audit.token_count,
+        ism_candidate_digest: Digest32::new([0u8; 32]),
+        source: MINIMAL_SPINE_ISM_CANDIDATE_BOUNDARY_SOURCE,
+        audit_source: audit.source,
+        candidate_source: audit.candidate_source,
+        sleep_source: audit.sleep_source,
+        ism_candidate_only: true,
+        ism_written: false,
+        ism_upserted: false,
+        identity_anchor: false,
+        identity_finalized: false,
+        memory_stabilized: false,
+        policy_mutated: false,
+        evidence_archive_appended: false,
+        gateway_visible: false,
+    };
+    boundary.ism_candidate_digest = boundary.digest();
+    Ok(boundary)
+}
+
+fn validate_geist_projection_audit_for_ism_candidate_boundary(
+    audit: &MinimalSpineGeistProjectionAudit,
+) -> Result<(), IsmCandidateBoundaryError> {
+    if audit.status != MinimalSpineGeistProjectionAuditStatus::Pass {
+        return Err(IsmCandidateBoundaryError::AuditStatusNotPass);
+    }
+    if audit.audit_digest != audit.digest() {
+        return Err(IsmCandidateBoundaryError::AuditDigestMismatch);
+    }
+    if !audit.failure_reasons.is_empty() {
+        return Err(IsmCandidateBoundaryError::AuditHasFailureReasons);
+    }
+    if audit.projection_digest != audit.recomputed_projection_digest {
+        return Err(IsmCandidateBoundaryError::AuditProjectionDigestMismatch);
+    }
+    if !audit.candidate_only
+        || audit.geist_applied
+        || audit.ism_written
+        || audit.identity_anchor
+        || audit.identity_finalized
+        || audit.policy_mutated
+        || audit.evidence_archive_appended
+        || audit.gateway_visible
+    {
+        return Err(IsmCandidateBoundaryError::AuditHasForbiddenBoundaryFlag);
+    }
+    if is_zero_digest(audit.audit_digest) {
+        return Err(IsmCandidateBoundaryError::ZeroGeistProjectionAuditDigest);
+    }
+    if is_zero_digest(audit.projection_digest) {
+        return Err(IsmCandidateBoundaryError::ZeroGeistProjectionDigest);
+    }
+    if is_zero_digest(audit.sleep_plan_audit_digest) {
+        return Err(IsmCandidateBoundaryError::ZeroSleepPlanAuditDigest);
+    }
+    if is_zero_digest(audit.sleep_plan_candidate_digest) {
+        return Err(IsmCandidateBoundaryError::ZeroSleepPlanCandidateDigest);
+    }
+    if let Some(digest) = audit.sleep_applied_boundary_digest {
+        if is_zero_digest(digest) {
+            return Err(IsmCandidateBoundaryError::ZeroSleepAppliedBoundaryDigest);
+        }
+    }
+    if is_zero_digest(audit.replay_audit_digest) {
+        return Err(IsmCandidateBoundaryError::ZeroReplayAuditDigest);
+    }
+    if is_zero_digest(audit.replay_schedule_digest) {
+        return Err(IsmCandidateBoundaryError::ZeroReplayScheduleDigest);
+    }
+    if audit.token_count == 0 {
+        return Err(IsmCandidateBoundaryError::ZeroTokenCount);
+    }
+    if audit.source.is_empty() {
+        return Err(IsmCandidateBoundaryError::EmptySource);
+    }
+    if audit.candidate_source.is_empty() {
+        return Err(IsmCandidateBoundaryError::EmptyCandidateSource);
+    }
+    if audit.sleep_source.is_empty() {
+        return Err(IsmCandidateBoundaryError::EmptySleepSource);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

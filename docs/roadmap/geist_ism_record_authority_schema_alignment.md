@@ -6,7 +6,8 @@
 - It introduces no Geist/ISM implementation.
 - It now records the Prompt 57 implementation of a candidate-only Geist projection wrapper.
 - It now records the Prompt 58 implementation of a verify-only Geist projection audit contract.
-- It does not implement an ISM candidate boundary.
+- It now records the Prompt 59 implementation of a local ISM candidate/read-model boundary.
+- The Prompt 59 boundary is derived only from PASS `MinimalSpineGeistProjectionAudit` values.
 - It does not write, upsert, apply, or persist ISM state.
 - It does not create an IdentityAnchor.
 - It does not finalize identity.
@@ -60,7 +61,7 @@ Baseline links:
 | `IdentityAnchor` | docs and boundary-audit references only; no active record authority found for this line | Deferred identity-anchor concept. | Deferred/historical references only. | docs-only/deferred | Critical: no current prompt may create or infer identity anchoring. |
 | `MinimalSpineGeistProjectionInput` / `MinimalSpineGeistProjectionCandidate` | `domains/geist/crates/ucf-geist/src/lib.rs` | Prompt 57 local wrapper carrying Sleep audit digest, Sleep candidate digest, optional SleepApplied boundary digest, Replay provenance, token count, deterministic projection digest, and hard false authority flags. | Candidate-only read model from bounded Sleep metadata. | operational-candidate | Low/medium: intentionally not a `SelfState`; it preserves provenance without claiming runtime Geist, ISM persistence, identity, policy, archive, or Gateway authority. |
 | `MinimalSpineGeistProjectionAudit` / `verify_minimal_spine_geist_projection_candidate` | `domains/geist/crates/ucf-geist/src/lib.rs` | Prompt 58 verify-only audit name and function. | Implemented local audit-only consistency check. | operational-audit | PASS is not apply, acceptance, ISM persistence, identity anchoring/finalization, append, or Gateway authority. |
-| `ISMCandidateBoundary` | not found | Missing local candidate/read-model boundary name. | Not implemented. | missing | Must not call existing `upsert_anchor` or create persistent ISM. |
+| `MinimalSpineIsmCandidateBoundary` / `build_ism_candidate_boundary_from_geist_audit` | `domains/geist/crates/ucf-geist/src/lib.rs` | Prompt 59 local candidate/read-model boundary name and builder. | Implemented local deterministic boundary derived only from PASS `MinimalSpineGeistProjectionAudit`. | operational-candidate-boundary | Must remain local: no persistent ISM write, no `IsmStore::upsert_anchor`, no IdentityAnchor, no IdentityFinalization, no memory stabilization, no policy mutation, no Evidence/Archive append, no Gateway/action authority. |
 
 Inventory answers:
 
@@ -82,6 +83,7 @@ Inventory answers:
 | SelfState authority | Prompt 57 uses a new local `ucf-geist` projection candidate wrapper instead of reusing `SelfState`. | Existing `SelfState` is deterministic but not tied to bounded Sleep provenance and can overclaim identity/self persistence. |
 | GeistProjectionCandidate authority | Option B implemented: new local bounded Geist projection candidate in `ucf-geist`. | Keeps candidate records local and avoids premature `ucf-types` or `ucf-protocol` promotion. |
 | GeistProjectionAudit authority | Option B implemented in Prompt 58: new local verify-only audit in `ucf-geist`. | Confirms digest/provenance/candidate-only consistency without converting PASS into GeistApplied, ISM write, identity anchor, identity finalization, policy mutation, append, or Gateway visibility. |
+| ISM candidate boundary authority | Option B implemented in Prompt 59: new local `MinimalSpineIsmCandidateBoundary` wrapper in `ucf-geist`. | Narrows the schema gap without reusing broad `IsmStore`/anchor APIs. The boundary is deterministic and read-model-only; it is not a persisted ISM record, upsert, IdentityAnchor, IdentityFinalization, or stabilization authority. |
 | ISMCandidateBoundary authority | Option B later: local candidate/read-model boundary in `ucf-geist`, not existing ISM store authority. | Existing `IsmStore` mutates anchors, so it is too broad for the first bounded step. |
 | ISM write/upsert authority | deferred | Current write/upsert APIs exist but are explicitly outside Prompt 56 and Prompt 57 acceptance. |
 | IdentityAnchor authority | deferred | No current identity-anchor record authority is allowed; Sleep or Macro boundaries must not become anchors. |
@@ -154,7 +156,7 @@ Prompt 57 must satisfy all of the following if it implements code:
 
 ## 9. Recommended Next Prompt
 
-**UCF Prompt 59 — ISM Candidate Boundary Without Identity Finalization**
+**UCF Prompt 60 — Geist/ISM E2E Determinism**
 
 ## Prompt 57 Implementation Note - Candidate-Only Geist Projection
 
@@ -180,4 +182,19 @@ The audit is **verify-only**: it recomputes the projection digest, preserves the
 
 Prompt 58 intentionally does not reuse `SelfState`, does not call `GeistKernel::ingest_macro`, does not accept or call `IsmStore`, does not upsert anchors, does not append Evidence/Archive records, does not mutate policy, does not expose Gateway/action authority, and does not alter Minimal Spine v1.x, bounded Consolidation, bounded Replay, bounded Sleep, or gate criteria.
 
-Recommended next prompt: **UCF Prompt 59 — ISM Candidate Boundary Without Identity Finalization**.
+Recommended next prompt: **UCF Prompt 60 — Geist/ISM E2E Determinism**.
+
+
+## Prompt 59 Implementation Note - ISM Candidate Boundary Without Identity Finalization
+
+Prompt 59 adds `MinimalSpineIsmCandidateBoundary`, `IsmCandidateBoundaryError`, `MINIMAL_SPINE_ISM_CANDIDATE_BOUNDARY_VERSION`, `MINIMAL_SPINE_ISM_CANDIDATE_BOUNDARY_SOURCE`, and `build_ism_candidate_boundary_from_geist_audit` in `domains/geist/crates/ucf-geist/src/lib.rs`, with coverage in `domains/geist/crates/ucf-geist/tests/minimal_spine_ism_candidate_boundary.rs`.
+
+The boundary can be built only from a PASS `MinimalSpineGeistProjectionAudit` whose audit digest matches its deterministic bytes, whose projection digest matches the recomputed projection digest, whose failure list is empty, whose required Geist/Sleep/Replay digests and token count are non-zero, and whose source markers are non-empty. FAIL audits and invalid audit links are rejected.
+
+The boundary preserves Geist projection audit digest, Geist projection digest, Sleep audit digest, Sleep candidate digest, optional SleepApplied boundary digest, Replay audit digest, Replay schedule digest, token count, audit source, candidate source, and sleep source. Its own digest is deterministic over those fields plus hard boundary flags.
+
+Hard Prompt 59 flags are: `ism_candidate_only = true`, `ism_written = false`, `ism_upserted = false`, `identity_anchor = false`, `identity_finalized = false`, `memory_stabilized = false`, `policy_mutated = false`, `evidence_archive_appended = false`, and `gateway_visible = false`.
+
+Prompt 59 intentionally uses a local wrapper because existing ISM/anchor surfaces are too broad for this authority line. The schema gap remains: no canonical persistent ISM record schema or identity anchor schema is defined here. The local wrapper must not be promoted to persistent ISM, `IsmStore::upsert_anchor`, IdentityAnchor, IdentityFinalization, memory stabilization, policy mutation, Evidence/Archive append, Gateway/action authority, or Geist runtime activation without a later explicit prompt.
+
+Recommended next prompt: **UCF Prompt 60 — Geist/ISM E2E Determinism**.
