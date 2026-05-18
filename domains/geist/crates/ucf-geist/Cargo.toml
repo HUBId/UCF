@@ -6,7 +6,9 @@ edition = "2021"
 [dependencies]
 blake3 = "1"
 ucf-archive = { path = "../../../../domains/archive/crates/ucf-archive" }
+ucf-archive-store = { path = "../../../../domains/archive/crates/ucf-archive-store" }
 ucf-commit = { path = "../../../../core/crates/ucf-commit" }
+ucf-evidence = { path = "../../../../core/crates/ucf-evidence" }
 ucf-policy-ecology = { path = "../../../../core/crates/ucf-policy-ecology" }
 ucf-recursion-controller = { path = "../../../../core/crates/ucf-recursion-controller" }
 ucf-sleep-coordinator = { path = "../../../../core/crates/ucf-sleep-coordinator" }

@@ -221,3 +221,22 @@ Prompt 66 is now implemented as a bounded Sleep audit/provenance append/readback
 Prompt 66 does not implement Sleep runtime apply, SleepCompleted, coordinator trigger/report/WAL/journal behavior, Replay runtime execution, Geist/ISM ingestion or writes, `IsmStore::upsert_anchor`, identity anchors/finalization, Gateway-visible Sleep semantics, capability issuance, real compute activation, Evidence/Archive authority changes, a second event log, or Minimal Spine v1.x changes.
 
 Recommended next prompt: **UCF Prompt 67 — Geist/ISM Evidence/Archive Append Contract**.
+
+## 12. Prompt 67 Completion Note — Geist/ISM Evidence/Archive Append Contract
+
+Prompt 67 is now implemented as a bounded Geist/ISM audit/provenance append/readback contract.
+
+| Concern | Decision | Reason |
+|---|---|---|
+| Contract shape | One combined `MinimalSpineGeistIsmAppendPayload` | Preserves the bounded Geist projection candidate, verify-only Geist projection audit, local ISM candidate boundary, and upstream Sleep/Replay provenance in one deterministic payload. |
+| Explicit helper | `append_minimal_spine_geist_ism_record` | Geist/ISM candidate, audit, and boundary builders remain append-free; append happens only through the helper that takes `EvidenceStore`, `ArchiveStore`, and `ArchiveAppender` handles. |
+| Archive record kind | `RecordKind::Other(67)` | Avoids collision with Replay `Other(65)`, Sleep `Other(66)`, Micro `Other(28)`, Meso `Other(30)`, and avoids reusing `IsmAnchor` or broad runtime-facing archive kinds. |
+| Evidence payload format | `EvidenceEnvelope` with `ProofEnvelope.payload = MinimalSpineGeistIsmAppendPayload::deterministic_bytes()` | Reuses existing Evidence authority and proof payload shape without adding a new protocol schema. |
+| Archive metadata | `payload_commit = payload.digest()`, `boundary_commit = ISM candidate boundary digest`, `cycle_id = 0`, `tier = 3`, `flags = 0` | Keeps metadata deterministic and readback-verifiable; flags intentionally carry no side-effect semantics. |
+| Preserved provenance | Geist projection candidate digest, Geist projection audit digest, ISM candidate boundary digest, Sleep audit digest, Sleep candidate digest, optional Sleep applied-boundary digest, Replay audit digest, Replay schedule digest, token count, and source markers | Captures bounded Geist/ISM/Sleep/Replay provenance without claiming Geist runtime execution or persistent ISM authority. |
+| Boundary semantics | Audit/provenance persistence only | The payload hard-codes Geist runtime, ISM write/upsert, identity anchor/finalization, memory stabilization, policy mutation, and Gateway flags to false. |
+| Tests | `domains/geist/crates/ucf-geist/tests/minimal_spine_geist_ism_append.rs` | Proves explicit append, deterministic payload/readback, provenance preservation, rejected mismatches, append-free builders, no forbidden side effects, and no second event log. |
+
+Prompt 67 does not implement Geist runtime apply, `GeistKernel::ingest_macro`, ISM write/upsert, `IsmStore::upsert_anchor`, `IdentityAnchor`, identity finalization, memory stabilization, policy mutation, Gateway-visible Geist/ISM semantics, capability issuance, real compute activation, Evidence/Archive authority changes, a second event log, or Minimal Spine v1.x changes.
+
+Recommended next prompt: **UCF Prompt 68 — Cross-Layer Evidence/Archive Readback E2E**.

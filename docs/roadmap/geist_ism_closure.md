@@ -123,3 +123,9 @@ Post-Geist next-line planning is available as [`docs/roadmap/post_geist_roadmap_
 ## Evidence/Archive Append Roadmap Note
 
 The next Evidence/Archive planning line is documented in [`docs/roadmap/evidence_archive_append_contracts_roadmap_boundary_audit.md`](evidence_archive_append_contracts_roadmap_boundary_audit.md). This link is a next-line caveat only: bounded Geist/ISM remains candidate-only and verify-only here, with no Geist runtime activation, no ISM write/upsert, no `IsmStore::upsert_anchor` use, no IdentityAnchor, no IdentityFinalization, no Gateway authority, no Evidence/Archive append implementation in this closure, and no Minimal Spine v1.x change.
+
+## 10. Post-Closure Append/Readback Addendum
+
+A later bounded append/readback contract now exists for Geist/ISM audit/provenance persistence. The contract is implemented as `MinimalSpineGeistIsmAppendPayload` plus the explicit `append_minimal_spine_geist_ism_record` helper and is covered by `domains/geist/crates/ucf-geist/tests/minimal_spine_geist_ism_append.rs`.
+
+This addendum does not change the original bounded Geist/ISM closure claims: `GeistProjectionCandidate` remains candidate-only, `GeistProjectionAudit` remains verify-only, and `ISMCandidateBoundary` remains a local read-model/candidate boundary. The append contract persists provenance through the existing Evidence/Archive APIs only; it does not apply Geist, call `GeistKernel::ingest_macro`, write/upsert ISM, call `IsmStore::upsert_anchor`, create an `IdentityAnchor`, finalize identity, stabilize memory, mutate policy, expose Gateway semantics, create a second event log, or alter Minimal Spine v1.x.
