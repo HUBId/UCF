@@ -4448,8 +4448,11 @@ name = "ucf-sleep-coordinator"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "hex",
  "ucf-archive",
+ "ucf-archive-store",
  "ucf-bus",
+ "ucf-evidence",
  "ucf-openevolve-port",
  "ucf-policy-ecology",
  "ucf-predictive-coding",

@@ -99,3 +99,9 @@ Baseline links:
 Prompt 53 supports closing the bounded Sleep line. Prompt 54 is recorded in [`docs/roadmap/post_sleep_roadmap_selection.md`](post_sleep_roadmap_selection.md).
 
 The selected next roadmap line was **UCF Prompt 55 — Geist/ISM Roadmap and Boundary Audit**, now recorded at [`docs/roadmap/geist_ism_roadmap_boundary_audit.md`](geist_ism_roadmap_boundary_audit.md). That audit is a next-line planning document only and does not authorize Geist/ISM implementation, Self-State projection, ISM write/upsert, identity finalization, identity anchoring, runtime scheduling, Gateway authority, Policy Ecology mutation, or Evidence/Archive append behavior. Its recommended follow-up is **UCF Prompt 56 — Geist/ISM Record Authority and Schema Alignment**.
+
+## 9. Post-Closure Append/Readback Addendum
+
+A later bounded append/readback contract now exists for Sleep audit/provenance persistence. The contract is implemented as `MinimalSpineSleepAppendPayload` plus the explicit `append_minimal_spine_sleep_record` helper and is covered by `core/crates/ucf-sleep-coordinator/tests/minimal_spine_sleep_append.rs`.
+
+This addendum does not change the original bounded Sleep closure claims: `MinimalSpineSleepPlanCandidate` remains candidate-only, `MinimalSpineSleepPlanAudit` remains verify-only, and `MinimalSpineSleepAppliedBoundary` remains local Sleep-subsystem bookkeeping. The append contract persists provenance through the existing Evidence/Archive APIs only; it does not execute Sleep runtime behavior, mark `SleepCompleted`, activate coordinator trigger/report/WAL/journal behavior, activate Replay runtime execution, ingest into Geist/ISM, write or upsert ISM state, write an identity anchor, expose Gateway semantics, create a second event log, or alter Minimal Spine v1.x.
