@@ -18,6 +18,8 @@ Current replay claims are also bounded: deterministic ReplayToken intent/referen
 
 Current Sleep claims are bounded to a deterministic `SleepPlanCandidate` builder from bounded Replay metadata, verify-only `SleepPlanAudit`, local-only `SleepAppliedBoundary`, and bounded Sleep E2E determinism. There is no Sleep runtime, Sleep Cycle Coordinator activation, coordinator trigger/report/WAL/journal, SleepCompleted, memory stabilization, Geist/ISM or identity integration, Evidence/Archive sleep append, Gateway-visible Sleep, or production Sleep readiness. See `docs/roadmap/sleep_integration_roadmap_boundary_audit.md` and `docs/roadmap/sleep_record_authority_schema_alignment.md`.
 
+Current Geist/ISM claims are bounded to `GeistProjectionCandidate` candidate-only, `GeistProjectionAudit` verify-only, `ISMCandidateBoundary` local read-model/candidate-only, and bounded Geist/ISM E2E determinism from Sleep-derived input. There is no Geist runtime, `GeistApplied`, ISM write/upsert, `IdentityAnchor`, `IdentityFinalization`, memory stabilization, Policy mutation, Evidence/Archive append, Gateway/action authority, or production Geist/ISM readiness. See `docs/roadmap/geist_ism_roadmap_boundary_audit.md` and `docs/roadmap/geist_ism_record_authority_schema_alignment.md`.
+
 ## Post-rc1 hardening commands
 - Determinism scan: `cargo run -p ucf-ops -- determinism scan`
 - Hidden path audit scan: `cargo run -p ucf-ops -- audit scan`

@@ -155,9 +155,9 @@ Inventory answers:
 
 Prompt 56 is complete as documentation-only authority/schema alignment. The resulting schema alignment document is [`docs/roadmap/geist_ism_record_authority_schema_alignment.md`](geist_ism_record_authority_schema_alignment.md).
 
-Recommended next prompt: **UCF Prompt 61 — Geist/ISM Docs Overclaim Guard**.
+Recommended next prompt: **UCF Prompt 62 — Geist/ISM Readiness Refresh**.
 
-Prompt 60 is complete as bounded E2E determinism coverage around the Sleep-derived Geist/ISM candidate chain. Prompt 61 should audit documentation for overclaiming and keep the line explicitly below runtime Geist, ISM persistence, identity anchoring/finalization, Policy Ecology mutation, Evidence/Archive append, Gateway/action authority, and production readiness.
+Prompt 60 is complete as bounded E2E determinism coverage around the Sleep-derived Geist/ISM candidate chain. Prompt 61 adds the current overclaim guard below and keeps the line explicitly below runtime Geist, ISM persistence, identity anchoring/finalization, memory stabilization, Policy Ecology mutation, Evidence/Archive append, Gateway/action authority, and production readiness.
 
 ## Prompt 58 Closure Note
 
@@ -172,7 +172,7 @@ Prompt 59 implemented the expected Option B local boundary surface in `ucf-geist
 
 The boundary is a local candidate/read-model record only. It does not accept an `IsmStore`, does not call `upsert_anchor`, does not call `GeistKernel::ingest_macro`, does not append Evidence/Archive records, does not mutate policy, does not expose Gateway/action authority, does not stabilize memory, and does not create or finalize identity.
 
-Recommended next prompt: **UCF Prompt 61 — Geist/ISM Docs Overclaim Guard**.
+Recommended next prompt: **UCF Prompt 62 — Geist/ISM Readiness Refresh**.
 
 
 ## Prompt 60 Closure Note
@@ -181,4 +181,65 @@ Prompt 60 implemented bounded E2E determinism coverage in `domains/geist/crates/
 
 Prompt 60 did not activate runtime Geist, did not call `GeistKernel::ingest_macro`, did not use `IsmStore`, `InMemoryIsm`, or `upsert_anchor`, did not write or upsert ISM state, did not create identity anchors or finalize identity, did not stabilize memory, did not mutate policy, did not append Evidence/Archive records, did not expose Gateway/action authority, and did not change Minimal Spine v1.x, bounded Sleep, bounded Replay, or bounded Consolidation behavior.
 
-Recommended next prompt: **UCF Prompt 61 — Geist/ISM Docs Overclaim Guard**.
+Recommended next prompt: **UCF Prompt 62 — Geist/ISM Readiness Refresh**.
+
+## 10. Geist/ISM Overclaim Guard
+
+This section is the canonical Prompt 61 guard for current Geist/ISM documentation. Current allowed claims are deliberately bounded to the tested local chain:
+
+| Current bounded item | Guarded meaning |
+|---|---|
+| `MinimalSpineGeistProjectionCandidate` is implemented. | `GeistProjectionCandidate` is candidate-only and deterministic over bounded Sleep/Replay provenance. It is projection input handling, not runtime Geist. |
+| `MinimalSpineGeistProjectionAudit` is implemented. | `GeistProjectionAudit` is verify-only; PASS means local candidate consistency only. It is not `GeistApplied`. |
+| `MinimalSpineIsmCandidateBoundary` is implemented. | `ISMCandidateBoundary` is a local read-model/candidate boundary only. It is not persistent ISM. |
+| Bounded Geist/ISM E2E determinism is implemented. | The E2E path composes Sleep-derived candidate input, verify-only audit, and local ISM candidate boundary deterministically. It does not activate runtime, store, archive, policy, Gateway, identity, or production authority. |
+
+Negative guardrails for all current/planning docs:
+
+- This is not Geist runtime.
+- This is not `GeistApplied`.
+- This is not ISM write/upsert.
+- This is not `IsmStore::upsert_anchor`.
+- This is not `IdentityAnchor`.
+- This is not `IdentityFinalization`.
+- This is not memory stabilization.
+- This is not persistent self authority.
+- This is not Policy mutation.
+- This is not Evidence/Archive append.
+- This is not Gateway/action authority.
+- `IdentityAnchor` remains deferred.
+- ISM write/upsert remains deferred.
+- Evidence/Archive append remains deferred.
+
+## 11. Future Claim Checklist
+
+Before future docs can claim Geist runtime readiness:
+
+- Geist runtime prompt implemented.
+- Deterministic runtime tests pass.
+- No hidden ISM write/upsert.
+- No hidden identity finalization.
+- No hidden policy mutation.
+- Readiness refresh passes.
+
+Before future docs can claim ISM write/upsert:
+
+- Explicit ISM write/upsert authority prompt implemented.
+- `IsmStore` semantics defined.
+- Evidence/Archive provenance preserved if used.
+- Negative tests prove no identity anchor is created by upsert alone.
+
+Before future docs can claim `IdentityAnchor`:
+
+- Dedicated Identity Anchor authority roadmap/prompt implemented.
+- Anchor semantics defined.
+- Finalization criteria defined.
+- Human/governance/policy authority boundaries defined.
+- Negative tests prove no hidden anchor promotion.
+
+Before future docs can claim production Geist/ISM readiness:
+
+- Prod-profile readiness passes.
+- Runtime/ISM tests pass.
+- Evidence/Archive append contract is explicit if used.
+- Docs lint/readiness evidence is fresh.

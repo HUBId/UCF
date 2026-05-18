@@ -83,7 +83,7 @@ The v1.x scope is a minimal, deterministic, offline-testable integration basis. 
 | Compute | No real compute is required by v1.x. | Burn/Candle/LLM/LFM/JEPA/SAE/SSM/NSR or other real compute as a required v1.x dependency. | v1.x docs, router-hosted deterministic test path, and absence of required compute integration. |
 | Gateway write | No Gateway write authority exists in v1.x. | HTTP write, local write, archive append, evidence append, policy mutation, output materialization, or capability issuance through Gateway. | Gateway read-only tests and documented v1.1 boundary. |
 | Replay | v1.x validates deterministic replay in the router test only. | Replay Scheduler, macro replay trigger, Geist write, or scheduler-mediated output changes. | Router deterministic replay assertions and out-of-scope freeze text. |
-| Geist/ISM | Geist/ISM is out of v1.x scope. | Self-state authority, identity finalization, cognitive recursion claims, or Geist write path. | Current-state index overclaim rules and absence from v1.x integration tests. |
+| Geist/ISM | Geist/ISM runtime/store authority is out of Minimal Spine v1.x scope; the separate post-Sleep line currently proves only candidate-only projection, verify-only audit, local ISM candidate boundary, and bounded E2E determinism. | Self-state authority, runtime Geist, `GeistApplied`, ISM write/upsert, `IdentityAnchor`, IdentityFinalization, memory stabilization, persistent self authority, cognitive recursion claims, Policy mutation, Evidence/Archive append, Gateway/action authority, production readiness, or Geist write path. | Current-state index overclaim rules, Geist/ISM roadmap guard, and absence from v1.x integration tests. |
 | Blue-Brain/HH/Microcircuits/DBM | These areas are out of v1.x scope. | Production Blue-Brain, HH, biological microcircuit, DBM/HPA, vendor-chip, or full metabolic-layer claims. | Current-state index, module registry overclaim rules, and absence from v1.x tests/gates. |
 
 ## 5. Test / Gate Baseline
@@ -128,7 +128,7 @@ The v1.x freeze explicitly forbids these claims unless a future explicit prompt,
 - No full consolidation claim.
 - Post-freeze consolidation work is tracked separately in `docs/roadmap/full_consolidation_roadmap_boundary_audit.md`; it currently proves only bounded Micro/Meso explicit append/readback, Macro candidate, and local consolidation-level finalization, with no Replay/Sleep/Geist/ISM/identity/Gateway/capability production claim.
 - No Macro/Replay claim.
-- No Geist/ISM claim.
+- No Geist/ISM runtime, store, identity, memory-stabilization, Gateway/action, Policy mutation, Evidence/Archive append, or production readiness claim; post-freeze Geist/ISM docs may claim only the bounded candidate-only projection, verify-only audit, local ISM candidate boundary, and E2E determinism proven outside Minimal Spine v1.x.
 - No Gateway production/security claim.
 - No HTTP API claim unless implemented and tested in a future scope.
 - No capability issuance claim.

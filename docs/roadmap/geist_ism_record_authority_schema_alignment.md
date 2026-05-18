@@ -157,7 +157,7 @@ Prompt 57 must satisfy all of the following if it implements code:
 
 ## 9. Recommended Next Prompt
 
-**UCF Prompt 61 — Geist/ISM Docs Overclaim Guard**
+**UCF Prompt 62 — Geist/ISM Readiness Refresh**
 
 ## Prompt 57 Implementation Note - Candidate-Only Geist Projection
 
@@ -183,7 +183,7 @@ The audit is **verify-only**: it recomputes the projection digest, preserves the
 
 Prompt 58 intentionally does not reuse `SelfState`, does not call `GeistKernel::ingest_macro`, does not accept or call `IsmStore`, does not upsert anchors, does not append Evidence/Archive records, does not mutate policy, does not expose Gateway/action authority, and does not alter Minimal Spine v1.x, bounded Consolidation, bounded Replay, bounded Sleep, or gate criteria.
 
-Recommended next prompt: **UCF Prompt 61 — Geist/ISM Docs Overclaim Guard**.
+Recommended next prompt: **UCF Prompt 62 — Geist/ISM Readiness Refresh**.
 
 
 ## Prompt 59 Implementation Note - ISM Candidate Boundary Without Identity Finalization
@@ -198,7 +198,7 @@ Hard Prompt 59 flags are: `ism_candidate_only = true`, `ism_written = false`, `i
 
 Prompt 59 intentionally uses a local wrapper because existing ISM/anchor surfaces are too broad for this authority line. The schema gap remains: no canonical persistent ISM record schema or identity anchor schema is defined here. The local wrapper must not be promoted to persistent ISM, `IsmStore::upsert_anchor`, IdentityAnchor, IdentityFinalization, memory stabilization, policy mutation, Evidence/Archive append, Gateway/action authority, or Geist runtime activation without a later explicit prompt.
 
-Recommended next prompt: **UCF Prompt 61 — Geist/ISM Docs Overclaim Guard**.
+Recommended next prompt: **UCF Prompt 62 — Geist/ISM Readiness Refresh**.
 
 ## Prompt 60 Closure Note
 
