@@ -133,7 +133,7 @@ Inventory answers:
 | 57 | Self-State Projection Candidate from Sleep Boundary | **Complete in Prompt 57.** Implemented the first deterministic candidate builder from bounded Sleep provenance. | Candidate-only builder and negative tests in `domains/geist/crates/ucf-geist/tests/minimal_spine_geist_projection_candidate.rs`. | Stable digest, Sleep provenance preservation, PASS audit requirement, optional boundary matching, and forbidden authority flags. | No runtime Geist apply, no `GeistKernel::ingest_macro`, no ISM upsert, no identity anchor/finalization, no policy mutation, no Evidence/Archive append, no Gateway visibility. |
 | 58 | Geist Projection Verify-Only Audit Contract | **Complete in Prompt 58.** Added verify-only audit for projection candidates. | `MinimalSpineGeistProjectionAudit` API and tests in `domains/geist/crates/ucf-geist/tests/minimal_spine_geist_projection_audit.rs`. | Audit verifies projection digest consistency, Sleep/Replay provenance, token count, candidate-only flag, deterministic audit digest, and forbidden authority flags. | Verify-only; audit PASS is not GeistApplied, not ISM write/upsert, not identity anchor/finalization, not policy mutation, not Evidence/Archive append, not Gateway/runtime activation. |
 | 59 | ISM Candidate Boundary Without Identity Finalization | **Complete in Prompt 59.** Added local deterministic `MinimalSpineIsmCandidateBoundary` derived only from PASS Geist projection audits. | Boundary API and negative tests in `domains/geist/crates/ucf-geist/tests/minimal_spine_ism_candidate_boundary.rs`. | Boundary preserves Geist/Sleep/Replay provenance and deterministic digest while rejecting FAIL audits, zero required digests, zero token count, and empty sources. | No persistent ISM write, no `IsmStore::upsert_anchor`, no anchor authority, no identity finalization, no memory stabilization, no policy mutation, no Evidence/Archive append, no Gateway/action authority. |
-| 60 | Geist/ISM E2E Determinism | Validate deterministic candidate -> audit -> candidate-boundary flow. | Bounded E2E tests only. | Fresh-run determinism and stable canonical digests across repeated runs. | No runtime scheduler, no Evidence/Archive append, no Gateway visibility. |
+| 60 | Geist/ISM E2E Determinism | **Complete in Prompt 60.** Added bounded E2E coverage for Sleep-derived candidate -> audit -> ISM candidate boundary flow. | E2E test in `domains/geist/crates/ucf-geist/tests/minimal_spine_geist_ism_e2e.rs`. | Fresh-run determinism for candidate/audit/boundary digests and deterministic bytes; Sleep -> Geist -> ISM provenance continuity; PASS-before-boundary enforcement; FAIL/tampered audit rejection; hard-false side-effect flags. | No Geist runtime apply, no `GeistKernel::ingest_macro`, no ISM write/upsert, no `IsmStore::upsert_anchor`, no identity anchor/finalization, no memory stabilization, no policy mutation, no Evidence/Archive append, no Gateway/action authority. |
 | 61 | Geist/ISM Docs Overclaim Guard | Align docs with bounded Geist/ISM claims after implementation steps. | Docs-only cleanup. | Docs distinguish projection candidates from identity, ISM persistence, Sleep completion, and production readiness. | No readiness overclaim, no historical-doc deletion. |
 | 62 | Geist/ISM Readiness Refresh | Refresh validation evidence for the bounded line. | Validation and closure evidence only. | Fmt, docs lint, readiness spine, targeted tests, regression E2E tests, workspace tests and clippy where practical. | Do not commit generated `out/*.json`; stale reports cannot support readiness. |
 | 63 | Post-Geist Roadmap Selection: Runtime Scheduler vs Evidence Append vs Prod-Profile | Select next line after bounded Geist/ISM candidate work. | Roadmap selection only. | Primary, secondary, parallel, and deferred lines are explicit. | No runtime activation, Gateway write, or append unless explicitly selected later. |
@@ -155,9 +155,9 @@ Inventory answers:
 
 Prompt 56 is complete as documentation-only authority/schema alignment. The resulting schema alignment document is [`docs/roadmap/geist_ism_record_authority_schema_alignment.md`](geist_ism_record_authority_schema_alignment.md).
 
-Recommended next prompt: **UCF Prompt 60 — Geist/ISM E2E Determinism**.
+Recommended next prompt: **UCF Prompt 61 — Geist/ISM Docs Overclaim Guard**.
 
-Prompt 59 is complete as a local ISM candidate/read-model boundary. Prompt 60 should add Geist/ISM E2E determinism coverage around the candidate chain without writing or upserting ISM state, creating an IdentityAnchor, finalizing identity, mutating Policy Ecology, appending Evidence/Archive records, exposing Gateway/action authority, calling `GeistKernel::ingest_macro`, or changing Minimal Spine v1.x.
+Prompt 60 is complete as bounded E2E determinism coverage around the Sleep-derived Geist/ISM candidate chain. Prompt 61 should audit documentation for overclaiming and keep the line explicitly below runtime Geist, ISM persistence, identity anchoring/finalization, Policy Ecology mutation, Evidence/Archive append, Gateway/action authority, and production readiness.
 
 ## Prompt 58 Closure Note
 
@@ -172,4 +172,13 @@ Prompt 59 implemented the expected Option B local boundary surface in `ucf-geist
 
 The boundary is a local candidate/read-model record only. It does not accept an `IsmStore`, does not call `upsert_anchor`, does not call `GeistKernel::ingest_macro`, does not append Evidence/Archive records, does not mutate policy, does not expose Gateway/action authority, does not stabilize memory, and does not create or finalize identity.
 
-Recommended next prompt: **UCF Prompt 60 — Geist/ISM E2E Determinism**.
+Recommended next prompt: **UCF Prompt 61 — Geist/ISM Docs Overclaim Guard**.
+
+
+## Prompt 60 Closure Note
+
+Prompt 60 implemented bounded E2E determinism coverage in `domains/geist/crates/ucf-geist/tests/minimal_spine_geist_ism_e2e.rs`. The test builds a PASS SleepPlanAudit-derived Geist projection candidate, verifies it with the local projection audit, and builds an ISM candidate boundary only after the audit passes. It compares candidate, audit, and boundary digests and deterministic bytes across fresh runs; proves Sleep audit/candidate/boundary provenance and Replay token-count provenance flow through the chain; verifies FAIL/tampered audits cannot create an ISM candidate boundary; and asserts the candidate/audit/boundary remain side-effect-free.
+
+Prompt 60 did not activate runtime Geist, did not call `GeistKernel::ingest_macro`, did not use `IsmStore`, `InMemoryIsm`, or `upsert_anchor`, did not write or upsert ISM state, did not create identity anchors or finalize identity, did not stabilize memory, did not mutate policy, did not append Evidence/Archive records, did not expose Gateway/action authority, and did not change Minimal Spine v1.x, bounded Sleep, bounded Replay, or bounded Consolidation behavior.
+
+Recommended next prompt: **UCF Prompt 61 — Geist/ISM Docs Overclaim Guard**.
