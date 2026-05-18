@@ -202,3 +202,22 @@ Prompt 65 is now implemented as a bounded Replay audit/provenance append/readbac
 Prompt 65 does not implement runtime replay execution, a scheduler/queue/worker, Sleep, Geist/ISM, identity anchors/finalization, Gateway-visible replay semantics, capability issuance, real compute activation, Evidence/Archive authority changes, or a second event log.
 
 Recommended next prompt: **UCF Prompt 66 — Sleep Evidence/Archive Append Contract**.
+
+## 11. Prompt 66 Completion Note — Sleep Evidence/Archive Append Contract
+
+Prompt 66 is now implemented as a bounded Sleep audit/provenance append/readback contract.
+
+| Concern | Decision | Reason |
+|---|---|---|
+| Contract shape | One combined `MinimalSpineSleepAppendPayload` | Preserves Sleep candidate, verify-only audit, local applied-boundary, and upstream Replay provenance in one deterministic payload. |
+| Explicit helper | `append_minimal_spine_sleep_record` | Sleep builders, audits, and boundaries remain append-free; append happens only through the helper that takes `EvidenceStore`, `ArchiveStore`, and `ArchiveAppender` handles. |
+| Archive record kind | `RecordKind::Other(66)` | Avoids collision with Replay `Other(65)` and avoids reusing broad runtime-facing archive kinds or changing archive-store schema. |
+| Evidence payload format | `EvidenceEnvelope` with `ProofEnvelope.payload = MinimalSpineSleepAppendPayload::deterministic_bytes()` | Reuses existing Evidence authority and proof payload shape without adding a new protocol schema. |
+| Archive metadata | `payload_commit = payload.digest()`, `boundary_commit = sleep applied-boundary digest`, `cycle_id = 0`, `tier = 3`, `flags = 0` | Keeps metadata deterministic and readback-verifiable; flags intentionally carry no side-effect semantics. |
+| Preserved provenance | Sleep candidate digest, Sleep audit digest, Sleep applied-boundary digest, Replay audit digest, Replay schedule digest, optional Replay applied-boundary digest, token count, and source markers | Captures bounded Sleep/Replay provenance without claiming runtime Sleep execution. |
+| Boundary semantics | Audit/provenance persistence only | The payload hard-codes runtime execution, coordinator trigger/report/WAL/journal, SleepCompleted, Geist/ISM, identity, memory stabilization, and Gateway flags to false. |
+| Tests | `core/crates/ucf-sleep-coordinator/tests/minimal_spine_sleep_append.rs` | Proves explicit append, deterministic payload/readback, provenance preservation, rejected mismatches, append-free builders, no forbidden side effects, and no second event log. |
+
+Prompt 66 does not implement Sleep runtime apply, SleepCompleted, coordinator trigger/report/WAL/journal behavior, Replay runtime execution, Geist/ISM ingestion or writes, `IsmStore::upsert_anchor`, identity anchors/finalization, Gateway-visible Sleep semantics, capability issuance, real compute activation, Evidence/Archive authority changes, a second event log, or Minimal Spine v1.x changes.
+
+Recommended next prompt: **UCF Prompt 67 — Geist/ISM Evidence/Archive Append Contract**.

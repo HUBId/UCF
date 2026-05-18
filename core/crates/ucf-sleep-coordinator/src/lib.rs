@@ -4,7 +4,9 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use blake3::Hasher;
+use ucf_archive_store::{ArchiveAppender, ArchiveStore, RecordKind, RecordMeta};
 use ucf_bus::BusPublisher;
+use ucf_evidence::{EvidenceEnvelope, EvidenceStore};
 use ucf_policy_ecology::{ConsistencyVerdict, SleepPhaseGate};
 use ucf_predictive_coding::SurpriseBand;
 use ucf_replay::{
@@ -13,7 +15,8 @@ use ucf_replay::{
 };
 use ucf_rsa::{RsaEngine, SleepCoordinator, SleepReportReady};
 use ucf_structural_store::{StructuralCycleStats, StructuralDeltaProposal};
-use ucf_types::{Digest32, EvidenceId};
+use ucf_types::v1::spec::{Digest as ProtoDigest, ProofEnvelope};
+use ucf_types::{Digest32, EvidenceId, LogicalTime, WallTime};
 
 /// Version for local Minimal Spine SleepApplied boundary values.
 pub const MINIMAL_SPINE_SLEEP_APPLIED_BOUNDARY_VERSION: u32 = 1;
@@ -325,6 +328,216 @@ impl MinimalSpineSleepAppliedBoundary {
     }
 }
 
+/// Version for the explicit Minimal Spine Sleep append/readback contract payload.
+pub const MINIMAL_SPINE_SLEEP_APPEND_PAYLOAD_VERSION: u32 = 1;
+
+/// Explicit contract marker carried in the Sleep Evidence/Archive append payload.
+pub const MINIMAL_SPINE_SLEEP_APPEND_CONTRACT: &str = "minimal_spine_sleep_append_v1";
+
+/// Extension kind used for bounded Sleep append proof records in archive-store.
+///
+/// Prompt 66 allocates `RecordKind::Other(66)` for one bounded Sleep audit/provenance payload.
+/// This avoids colliding with Replay's `Other(65)`, avoids reusing broad runtime-facing archive
+/// kinds, and does not change archive-store schema or Minimal Spine v1.x authority.
+pub const MINIMAL_SPINE_SLEEP_APPEND_ARCHIVE_KIND: RecordKind = RecordKind::Other(66);
+
+/// Meaning marker for the explicit Sleep append contract.
+pub const MINIMAL_SPINE_SLEEP_APPEND_MEANING: &str =
+    "audit_provenance_persistence_only_no_sleep_runtime";
+
+/// Deterministic bounded Sleep append payload persisted through Evidence/Archive.
+///
+/// This payload is provenance only. It preserves digest links for bounded Sleep artifacts plus
+/// Replay provenance and carries explicit false boundary flags for runtime Sleep execution,
+/// coordinator trigger/report/WAL/journal behavior, SleepCompleted, Geist/ISM, identity, memory
+/// stabilization, and Gateway visibility.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineSleepAppendPayload {
+    pub version: u32,
+    pub append_contract: String,
+    pub sleep_plan_candidate_digest: Digest32,
+    pub sleep_plan_audit_digest: Digest32,
+    pub sleep_applied_boundary_digest: Digest32,
+    pub replay_audit_digest: Digest32,
+    pub replay_schedule_digest: Digest32,
+    pub replay_applied_boundary_digest: Option<Digest32>,
+    pub token_count: u32,
+    pub candidate_source: &'static str,
+    pub audit_source: &'static str,
+    pub applied_boundary_source: &'static str,
+    pub replay_source: &'static str,
+    pub source: &'static str,
+    pub runtime_executed: bool,
+    pub coordinator_triggered: bool,
+    pub coordinator_report_written: bool,
+    pub coordinator_wal_written: bool,
+    pub coordinator_journal_written: bool,
+    pub sleep_completed: bool,
+    pub geist_ingested: bool,
+    pub ism_written: bool,
+    pub identity_anchor: bool,
+    pub memory_stabilized: bool,
+    pub gateway_visible: bool,
+    pub evidence_archive_appended_meaning: &'static str,
+}
+
+impl MinimalSpineSleepAppendPayload {
+    pub fn from_artifacts(
+        candidate: &MinimalSpineSleepPlanCandidate,
+        audit: &MinimalSpineSleepPlanAudit,
+        boundary: &MinimalSpineSleepAppliedBoundary,
+    ) -> Result<Self, SleepAppendError> {
+        validate_minimal_spine_sleep_append_inputs(candidate, audit, boundary)?;
+        let payload = Self {
+            version: MINIMAL_SPINE_SLEEP_APPEND_PAYLOAD_VERSION,
+            append_contract: MINIMAL_SPINE_SLEEP_APPEND_CONTRACT.to_string(),
+            sleep_plan_candidate_digest: candidate.sleep_plan_digest,
+            sleep_plan_audit_digest: audit.audit_digest,
+            sleep_applied_boundary_digest: boundary.applied_boundary_digest,
+            replay_audit_digest: candidate.replay_audit_digest,
+            replay_schedule_digest: candidate.replay_schedule_digest,
+            replay_applied_boundary_digest: candidate.replay_applied_boundary_digest,
+            token_count: candidate.token_count,
+            candidate_source: candidate.source,
+            audit_source: audit.source,
+            applied_boundary_source: boundary.source,
+            replay_source: candidate.replay_source,
+            source: MINIMAL_SPINE_SLEEP_APPEND_CONTRACT,
+            runtime_executed: false,
+            coordinator_triggered: false,
+            coordinator_report_written: false,
+            coordinator_wal_written: false,
+            coordinator_journal_written: false,
+            sleep_completed: false,
+            geist_ingested: false,
+            ism_written: false,
+            identity_anchor: false,
+            memory_stabilized: false,
+            gateway_visible: false,
+            evidence_archive_appended_meaning: MINIMAL_SPINE_SLEEP_APPEND_MEANING,
+        };
+        if !payload.validate_links_nonzero() {
+            return Err(SleepAppendError::InvalidInput(
+                "append payload links must be non-empty/non-zero",
+            ));
+        }
+        Ok(payload)
+    }
+
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32_be(&mut out, self.version);
+        push_str32(&mut out, &self.append_contract);
+        push_digest32(&mut out, self.sleep_plan_candidate_digest);
+        push_digest32(&mut out, self.sleep_plan_audit_digest);
+        push_digest32(&mut out, self.sleep_applied_boundary_digest);
+        push_digest32(&mut out, self.replay_audit_digest);
+        push_digest32(&mut out, self.replay_schedule_digest);
+        match self.replay_applied_boundary_digest {
+            Some(digest) => {
+                out.push(1);
+                push_digest32(&mut out, digest);
+            }
+            None => out.push(0),
+        }
+        push_u32_be(&mut out, self.token_count);
+        push_str32(&mut out, self.candidate_source);
+        push_str32(&mut out, self.audit_source);
+        push_str32(&mut out, self.applied_boundary_source);
+        push_str32(&mut out, self.replay_source);
+        push_str32(&mut out, self.source);
+        out.push(u8::from(self.runtime_executed));
+        out.push(u8::from(self.coordinator_triggered));
+        out.push(u8::from(self.coordinator_report_written));
+        out.push(u8::from(self.coordinator_wal_written));
+        out.push(u8::from(self.coordinator_journal_written));
+        out.push(u8::from(self.sleep_completed));
+        out.push(u8::from(self.geist_ingested));
+        out.push(u8::from(self.ism_written));
+        out.push(u8::from(self.identity_anchor));
+        out.push(u8::from(self.memory_stabilized));
+        out.push(u8::from(self.gateway_visible));
+        push_str32(&mut out, self.evidence_archive_appended_meaning);
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_blake3_domain(
+            b"ucf.sleep.minimal_spine.append_payload.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+
+    pub fn validate_links_nonzero(&self) -> bool {
+        self.version == MINIMAL_SPINE_SLEEP_APPEND_PAYLOAD_VERSION
+            && self.append_contract == MINIMAL_SPINE_SLEEP_APPEND_CONTRACT
+            && !is_zero_digest(self.sleep_plan_candidate_digest)
+            && !is_zero_digest(self.sleep_plan_audit_digest)
+            && !is_zero_digest(self.sleep_applied_boundary_digest)
+            && !is_zero_digest(self.replay_audit_digest)
+            && !is_zero_digest(self.replay_schedule_digest)
+            && !self
+                .replay_applied_boundary_digest
+                .is_some_and(is_zero_digest)
+            && self.token_count > 0
+            && !self.candidate_source.is_empty()
+            && !self.audit_source.is_empty()
+            && !self.applied_boundary_source.is_empty()
+            && !self.replay_source.is_empty()
+            && !self.source.is_empty()
+            && !self.runtime_executed
+            && !self.coordinator_triggered
+            && !self.coordinator_report_written
+            && !self.coordinator_wal_written
+            && !self.coordinator_journal_written
+            && !self.sleep_completed
+            && !self.geist_ingested
+            && !self.ism_written
+            && !self.identity_anchor
+            && !self.memory_stabilized
+            && !self.gateway_visible
+            && self.evidence_archive_appended_meaning == MINIMAL_SPINE_SLEEP_APPEND_MEANING
+    }
+}
+
+/// Result of the explicit Minimal Spine Sleep append/readback contract.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineSleepAppendResult {
+    pub payload_digest: Digest32,
+    pub sleep_plan_candidate_digest: Digest32,
+    pub sleep_plan_audit_digest: Digest32,
+    pub sleep_applied_boundary_digest: Digest32,
+    pub replay_audit_digest: Digest32,
+    pub replay_schedule_digest: Digest32,
+    pub replay_applied_boundary_digest: Option<Digest32>,
+    pub token_count: u32,
+    pub appended_evidence_id: EvidenceId,
+    pub archive_key: Digest32,
+    pub archive_record_digest: Digest32,
+    pub readback_digest: Digest32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SleepAppendError {
+    InvalidInput(&'static str),
+    ReadbackMissing,
+    ReadbackMismatch,
+}
+
+impl std::fmt::Display for SleepAppendError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidInput(message) => {
+                write!(f, "invalid minimal spine sleep append input: {message}")
+            }
+            Self::ReadbackMissing => f.write_str("minimal spine sleep append readback missing"),
+            Self::ReadbackMismatch => f.write_str("minimal spine sleep append readback mismatch"),
+        }
+    }
+}
+
+impl std::error::Error for SleepAppendError {}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SleepAppliedBoundaryError {
     AuditStatusNotPass,
@@ -417,6 +630,263 @@ impl MinimalSpineSleepPlanAudit {
             &self.deterministic_bytes(),
         )
     }
+}
+
+/// Explicitly append bounded Sleep audit/provenance evidence and read it back.
+///
+/// This helper is the only Sleep append surface. It persists a deterministic provenance payload
+/// through the existing EvidenceStore and ArchiveStore APIs, then immediately verifies readback.
+/// It does not execute Sleep runtime behavior, trigger/report/write coordinator WAL or journal
+/// records, mark SleepCompleted, ingest into Geist/ISM, write identity anchors, expose Gateway
+/// semantics, create a second event log, or change Minimal Spine v1.x.
+pub fn append_minimal_spine_sleep_record<E, S>(
+    candidate: &MinimalSpineSleepPlanCandidate,
+    audit: &MinimalSpineSleepPlanAudit,
+    boundary: &MinimalSpineSleepAppliedBoundary,
+    evidence_store: &E,
+    archive_store: &S,
+    archive_appender: &mut ArchiveAppender,
+) -> Result<MinimalSpineSleepAppendResult, SleepAppendError>
+where
+    E: EvidenceStore,
+    S: ArchiveStore,
+{
+    let payload = MinimalSpineSleepAppendPayload::from_artifacts(candidate, audit, boundary)?;
+    let payload_bytes = payload.deterministic_bytes();
+    let payload_digest = payload.digest();
+    let appended_evidence_id = EvidenceId::new(format!(
+        "minimal-spine-sleep-append-{}",
+        hex::encode(payload_digest.as_bytes())
+    ));
+    let proof = ProofEnvelope {
+        envelope_id: format!(
+            "{}:{}",
+            MINIMAL_SPINE_SLEEP_APPEND_CONTRACT,
+            hex::encode(payload_digest.as_bytes())
+        ),
+        payload: payload_bytes,
+        payload_digest: Some(ProtoDigest {
+            algorithm: "blake3".to_string(),
+            value: payload_digest.as_bytes().to_vec(),
+            algo_id: None,
+            domain: None,
+            value_32: Some(payload_digest.as_bytes().to_vec()),
+        }),
+        vrf_tags: Vec::new(),
+        signature_ids: Vec::new(),
+    };
+    let evidence_envelope = EvidenceEnvelope {
+        evidence_id: appended_evidence_id.clone(),
+        proof: Some(proof),
+        fold_proof: None,
+        logical_time: LogicalTime::new(0),
+        wall_time: WallTime::new(0),
+    };
+
+    evidence_store.append(evidence_envelope);
+
+    let archive_record = archive_appender.build_record_with_commit(
+        MINIMAL_SPINE_SLEEP_APPEND_ARCHIVE_KIND,
+        payload_digest,
+        RecordMeta {
+            cycle_id: 0,
+            tier: 3,
+            flags: 0,
+            boundary_commit: boundary.applied_boundary_digest,
+        },
+    );
+    let archive_record_digest = archive_store.append(archive_record);
+    let readback = evidence_store
+        .get(appended_evidence_id.clone())
+        .ok_or(SleepAppendError::ReadbackMissing)?;
+    let readback_digest = digest_sleep_evidence_envelope(&readback);
+    let archive_readback = archive_store
+        .get(archive_record.key)
+        .ok_or(SleepAppendError::ReadbackMissing)?;
+    if archive_readback != archive_record {
+        return Err(SleepAppendError::ReadbackMismatch);
+    }
+
+    Ok(MinimalSpineSleepAppendResult {
+        payload_digest,
+        sleep_plan_candidate_digest: payload.sleep_plan_candidate_digest,
+        sleep_plan_audit_digest: payload.sleep_plan_audit_digest,
+        sleep_applied_boundary_digest: payload.sleep_applied_boundary_digest,
+        replay_audit_digest: payload.replay_audit_digest,
+        replay_schedule_digest: payload.replay_schedule_digest,
+        replay_applied_boundary_digest: payload.replay_applied_boundary_digest,
+        token_count: payload.token_count,
+        appended_evidence_id,
+        archive_key: archive_record.key,
+        archive_record_digest,
+        readback_digest,
+    })
+}
+
+fn validate_minimal_spine_sleep_append_inputs(
+    candidate: &MinimalSpineSleepPlanCandidate,
+    audit: &MinimalSpineSleepPlanAudit,
+    boundary: &MinimalSpineSleepAppliedBoundary,
+) -> Result<(), SleepAppendError> {
+    if candidate.sleep_plan_digest != candidate.digest() {
+        return Err(SleepAppendError::InvalidInput("candidate digest mismatch"));
+    }
+    if audit.status != MinimalSpineSleepPlanAuditStatus::Pass {
+        return Err(SleepAppendError::InvalidInput("audit status must be pass"));
+    }
+    if audit.audit_digest != audit.digest() {
+        return Err(SleepAppendError::InvalidInput("audit digest mismatch"));
+    }
+    if !audit.failure_reasons.is_empty() {
+        return Err(SleepAppendError::InvalidInput(
+            "pass audit must not have failure reasons",
+        ));
+    }
+    if boundary.applied_boundary_digest != boundary.digest() {
+        return Err(SleepAppendError::InvalidInput(
+            "applied boundary digest mismatch",
+        ));
+    }
+    if audit.sleep_plan_candidate_digest != candidate.sleep_plan_digest
+        || audit.recomputed_sleep_plan_candidate_digest != candidate.sleep_plan_digest
+    {
+        return Err(SleepAppendError::InvalidInput(
+            "audit must match candidate digest",
+        ));
+    }
+    if boundary.sleep_plan_audit_digest != audit.audit_digest
+        || boundary.sleep_plan_candidate_digest != candidate.sleep_plan_digest
+    {
+        return Err(SleepAppendError::InvalidInput(
+            "boundary must match audit and candidate digests",
+        ));
+    }
+    if candidate.replay_audit_digest != audit.replay_audit_digest
+        || candidate.replay_audit_digest != boundary.replay_audit_digest
+        || candidate.replay_schedule_digest != audit.replay_schedule_digest
+        || candidate.replay_schedule_digest != boundary.replay_schedule_digest
+        || candidate.replay_applied_boundary_digest != audit.replay_applied_boundary_digest
+        || candidate.replay_applied_boundary_digest != boundary.replay_applied_boundary_digest
+    {
+        return Err(SleepAppendError::InvalidInput(
+            "sleep artifacts must preserve replay provenance",
+        ));
+    }
+    if candidate.token_count != audit.token_count || candidate.token_count != boundary.token_count {
+        return Err(SleepAppendError::InvalidInput(
+            "token count must match candidate, audit, and boundary",
+        ));
+    }
+    if is_zero_digest(candidate.sleep_plan_digest)
+        || is_zero_digest(audit.audit_digest)
+        || is_zero_digest(boundary.applied_boundary_digest)
+        || is_zero_digest(candidate.replay_audit_digest)
+        || is_zero_digest(candidate.replay_schedule_digest)
+        || candidate
+            .replay_applied_boundary_digest
+            .is_some_and(is_zero_digest)
+        || candidate.token_count == 0
+    {
+        return Err(SleepAppendError::InvalidInput(
+            "append digests and token count must be non-zero",
+        ));
+    }
+    if candidate.source.is_empty()
+        || candidate.replay_source.is_empty()
+        || audit.source.is_empty()
+        || audit.candidate_source.is_empty()
+        || audit.replay_source.is_empty()
+        || boundary.source.is_empty()
+        || boundary.sleep_plan_audit_source.is_empty()
+        || boundary.candidate_source.is_empty()
+        || boundary.replay_source.is_empty()
+    {
+        return Err(SleepAppendError::InvalidInput(
+            "append source markers must be non-empty",
+        ));
+    }
+    if !candidate.candidate_only
+        || candidate.sleep_applied
+        || candidate.sleep_completed
+        || candidate.geist_ingested
+        || candidate.ism_written
+        || candidate.identity_anchor
+        || candidate.evidence_archive_appended
+        || candidate.gateway_visible
+        || !audit.candidate_only
+        || audit.sleep_applied
+        || audit.sleep_completed
+        || audit.geist_ingested
+        || audit.ism_written
+        || audit.identity_anchor
+        || audit.evidence_archive_appended
+        || audit.gateway_visible
+        || !boundary.sleep_subsystem_applied
+        || boundary.sleep_completed
+        || boundary.coordinator_runtime_triggered
+        || boundary.geist_ingested
+        || boundary.ism_written
+        || boundary.identity_anchor
+        || boundary.memory_stabilized
+        || boundary.evidence_archive_appended
+        || boundary.gateway_visible
+    {
+        return Err(SleepAppendError::InvalidInput(
+            "sleep append inputs must not carry forbidden side-effect flags",
+        ));
+    }
+    Ok(())
+}
+
+fn digest_sleep_evidence_envelope(envelope: &EvidenceEnvelope) -> Digest32 {
+    let mut out = Vec::new();
+    push_str32(&mut out, envelope.evidence_id.as_str());
+    match &envelope.proof {
+        Some(proof) => {
+            out.push(1);
+            push_str32(&mut out, &proof.envelope_id);
+            push_u32_be(
+                &mut out,
+                u32::try_from(proof.payload.len())
+                    .expect("minimal spine sleep append proof payload length fits u32"),
+            );
+            out.extend_from_slice(&proof.payload);
+            match &proof.payload_digest {
+                Some(digest) => {
+                    out.push(1);
+                    push_str32(&mut out, &digest.algorithm);
+                    push_u32_be(
+                        &mut out,
+                        u32::try_from(digest.value.len())
+                            .expect("minimal spine sleep append digest length fits u32"),
+                    );
+                    out.extend_from_slice(&digest.value);
+                    push_optional_u32_be(&mut out, digest.algo_id);
+                    push_optional_u32_be(&mut out, digest.domain);
+                    push_optional_bytes32(&mut out, digest.value_32.as_deref());
+                }
+                None => out.push(0),
+            }
+            push_u32_be(
+                &mut out,
+                u32::try_from(proof.vrf_tags.len())
+                    .expect("minimal spine sleep append vrf tag count fits u32"),
+            );
+            push_u32_be(
+                &mut out,
+                u32::try_from(proof.signature_ids.len())
+                    .expect("minimal spine sleep append signature id count fits u32"),
+            );
+            for signature_id in &proof.signature_ids {
+                push_str32(&mut out, signature_id);
+            }
+        }
+        None => out.push(0),
+    }
+    out.push(u8::from(envelope.fold_proof.is_some()));
+    out.extend_from_slice(&envelope.logical_time.tick.to_be_bytes());
+    out.extend_from_slice(&envelope.wall_time.unix_ms.to_be_bytes());
+    digest_blake3_domain(b"ucf.sleep.minimal_spine.append_readback.v1", &out)
 }
 
 /// Build a local SleepApplied boundary marker from a PASS verify-only SleepPlan audit.
@@ -776,6 +1246,31 @@ fn push_str32(out: &mut Vec<u8>, value: &str) {
     let len = u32::try_from(value.len()).expect("minimal spine sleep plan source length fits u32");
     push_u32_be(out, len);
     out.extend_from_slice(value.as_bytes());
+}
+
+fn push_optional_u32_be(out: &mut Vec<u8>, value: Option<u32>) {
+    match value {
+        Some(value) => {
+            out.push(1);
+            push_u32_be(out, value);
+        }
+        None => out.push(0),
+    }
+}
+
+fn push_optional_bytes32(out: &mut Vec<u8>, value: Option<&[u8]>) {
+    match value {
+        Some(value) => {
+            out.push(1);
+            push_u32_be(
+                out,
+                u32::try_from(value.len())
+                    .expect("minimal spine sleep append bytes length fits u32"),
+            );
+            out.extend_from_slice(value);
+        }
+        None => out.push(0),
+    }
 }
 
 fn digest_blake3_domain(domain: &[u8], bytes: &[u8]) -> Digest32 {
