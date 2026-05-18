@@ -12,6 +12,7 @@ use hex::FromHex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
+use ucf_archive_store::{ArchiveAppender, ArchiveStore, RecordKind, RecordMeta};
 use ucf_commit::commit_replay_token;
 use ucf_compute::ComputeSignalsSummary as RecomputedComputeSummary;
 use ucf_compute::{
@@ -23,12 +24,16 @@ use ucf_ess::v1::{
     AuditPayload, CapabilityIssuanceRecord, ExperienceKind, ExperiencePayload, ExperienceRecord,
     LfmSummaryRecord,
 };
+use ucf_evidence::{EvidenceEnvelope, EvidenceStore};
 use ucf_frames::v1::{
     ChannelCode, ComputeSignalsSummary, ControlFrame, CorrelationId, DecisionFrame, Intent,
     IntentId, IntentKind,
 };
 use ucf_types::consolidation::{MilestoneTier, ReplayScheduled, ReplayToken};
-use ucf_types::{quantize_unit, Digest32, CANONICAL_UNIT_QUANT_MAX};
+use ucf_types::v1::spec::{Digest as ProtoDigest, ProofEnvelope};
+use ucf_types::{
+    quantize_unit, Digest32, EvidenceId, LogicalTime, WallTime, CANONICAL_UNIT_QUANT_MAX,
+};
 
 const REPORT_CAP: usize = 1000;
 const REPLAY_DIVERGENCE_CAP: usize = 64;
@@ -228,6 +233,12 @@ pub enum ReplayError {
     InvalidMinimalSpineReplayScheduleInput(&'static str),
     #[error("invalid minimal spine replay applied boundary input: {0}")]
     InvalidMinimalSpineReplayAppliedBoundaryInput(&'static str),
+    #[error("invalid minimal spine replay append input: {0}")]
+    InvalidMinimalSpineReplayAppendInput(&'static str),
+    #[error("minimal spine replay append readback missing")]
+    MinimalSpineReplayAppendReadbackMissing,
+    #[error("minimal spine replay append readback mismatch")]
+    MinimalSpineReplayAppendReadbackMismatch,
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("json error: {0}")]
@@ -260,6 +271,396 @@ pub const MINIMAL_SPINE_REPLAY_APPLIED_BOUNDARY_VERSION: u32 = 1;
 /// Source marker used by local replay-subsystem applied boundary records.
 pub const MINIMAL_SPINE_REPLAY_APPLIED_BOUNDARY_SOURCE: &str =
     "minimal_spine_v1_replay_applied_local_boundary";
+
+/// Version for the explicit Minimal Spine replay append/readback contract payload.
+pub const MINIMAL_SPINE_REPLAY_APPEND_PAYLOAD_VERSION: u32 = 1;
+
+/// Explicit contract marker carried in the replay Evidence/Archive append payload.
+pub const MINIMAL_SPINE_REPLAY_APPEND_CONTRACT: &str = "minimal_spine_replay_append_v1";
+
+/// Extension kind used for bounded Replay append proof records in archive-store.
+///
+/// `RecordKind::ReplayToken` and `RecordKind::ReplayApplied` are existing broad protocol-facing
+/// kinds. Prompt 65 needs one bounded audit/provenance payload that wraps token, schedule, audit,
+/// and local applied-boundary digests without claiming runtime replay application. Therefore the
+/// contract allocates `Other(65)` instead of changing archive-store schema or reusing a broader
+/// runtime-facing kind.
+pub const MINIMAL_SPINE_REPLAY_APPEND_ARCHIVE_KIND: RecordKind = RecordKind::Other(65);
+
+/// Meaning marker for the explicit replay append contract.
+pub const MINIMAL_SPINE_REPLAY_APPEND_MEANING: &str =
+    "audit_provenance_persistence_only_no_replay_execution";
+
+/// Deterministic bounded Replay append payload persisted through Evidence/Archive.
+///
+/// This payload is provenance only. It preserves digest links for the bounded Replay artifacts and
+/// carries explicit false boundary flags for runtime replay execution, scheduler activation,
+/// Sleep, Geist/ISM, identity, and Gateway visibility.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineReplayAppendPayload {
+    pub version: u32,
+    pub append_contract: String,
+    pub replay_token_digests: Vec<Digest32>,
+    pub replay_schedule_digest: Digest32,
+    pub replay_audit_digest: Digest32,
+    pub replay_applied_boundary_digest: Digest32,
+    pub token_count: u32,
+    pub schedule_source: &'static str,
+    pub audit_source: &'static str,
+    pub applied_boundary_source: &'static str,
+    pub source: &'static str,
+    pub runtime_executed: bool,
+    pub scheduler_activated: bool,
+    pub sleep_triggered: bool,
+    pub geist_ingested: bool,
+    pub ism_written: bool,
+    pub identity_anchor: bool,
+    pub gateway_visible: bool,
+    pub evidence_archive_appended_meaning: &'static str,
+}
+
+impl MinimalSpineReplayAppendPayload {
+    pub fn from_artifacts(
+        schedule: &MinimalSpineReplayScheduleBuildOutput,
+        audit: &MinimalSpineReplayScheduleAudit,
+        boundary: &MinimalSpineReplayAppliedBoundary,
+    ) -> Result<Self, ReplayError> {
+        validate_minimal_spine_replay_append_inputs(schedule, audit, boundary)?;
+        let payload = Self {
+            version: MINIMAL_SPINE_REPLAY_APPEND_PAYLOAD_VERSION,
+            append_contract: MINIMAL_SPINE_REPLAY_APPEND_CONTRACT.to_string(),
+            replay_token_digests: schedule.replay_token_digests.clone(),
+            replay_schedule_digest: schedule.schedule_digest,
+            replay_audit_digest: audit.audit_digest,
+            replay_applied_boundary_digest: boundary.applied_boundary_digest,
+            token_count: schedule.token_count,
+            schedule_source: schedule.source,
+            audit_source: audit.source,
+            applied_boundary_source: boundary.source,
+            source: MINIMAL_SPINE_REPLAY_APPEND_CONTRACT,
+            runtime_executed: false,
+            scheduler_activated: false,
+            sleep_triggered: false,
+            geist_ingested: false,
+            ism_written: false,
+            identity_anchor: false,
+            gateway_visible: false,
+            evidence_archive_appended_meaning: MINIMAL_SPINE_REPLAY_APPEND_MEANING,
+        };
+        if !payload.validate_links_nonzero() {
+            return Err(ReplayError::InvalidMinimalSpineReplayAppendInput(
+                "append payload links must be non-empty/non-zero",
+            ));
+        }
+        Ok(payload)
+    }
+
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32_be(&mut out, self.version);
+        push_str32(&mut out, &self.append_contract);
+        push_digest_vec(&mut out, &self.replay_token_digests);
+        push_digest32(&mut out, self.replay_schedule_digest);
+        push_digest32(&mut out, self.replay_audit_digest);
+        push_digest32(&mut out, self.replay_applied_boundary_digest);
+        push_u32_be(&mut out, self.token_count);
+        push_str32(&mut out, self.schedule_source);
+        push_str32(&mut out, self.audit_source);
+        push_str32(&mut out, self.applied_boundary_source);
+        push_str32(&mut out, self.source);
+        out.push(u8::from(self.runtime_executed));
+        out.push(u8::from(self.scheduler_activated));
+        out.push(u8::from(self.sleep_triggered));
+        out.push(u8::from(self.geist_ingested));
+        out.push(u8::from(self.ism_written));
+        out.push(u8::from(self.identity_anchor));
+        out.push(u8::from(self.gateway_visible));
+        push_str32(&mut out, self.evidence_archive_appended_meaning);
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_sha256_domain(
+            b"ucf.replay.minimal_spine.append_payload.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+
+    pub fn validate_links_nonzero(&self) -> bool {
+        self.version == MINIMAL_SPINE_REPLAY_APPEND_PAYLOAD_VERSION
+            && self.append_contract == MINIMAL_SPINE_REPLAY_APPEND_CONTRACT
+            && !self.replay_token_digests.is_empty()
+            && self.replay_token_digests.len() == self.token_count as usize
+            && self
+                .replay_token_digests
+                .iter()
+                .all(|digest| !is_zero_digest(*digest))
+            && !is_zero_digest(self.replay_schedule_digest)
+            && !is_zero_digest(self.replay_audit_digest)
+            && !is_zero_digest(self.replay_applied_boundary_digest)
+            && self.token_count > 0
+            && !self.schedule_source.is_empty()
+            && !self.audit_source.is_empty()
+            && !self.applied_boundary_source.is_empty()
+            && !self.source.is_empty()
+            && !self.runtime_executed
+            && !self.scheduler_activated
+            && !self.sleep_triggered
+            && !self.geist_ingested
+            && !self.ism_written
+            && !self.identity_anchor
+            && !self.gateway_visible
+            && self.evidence_archive_appended_meaning == MINIMAL_SPINE_REPLAY_APPEND_MEANING
+    }
+}
+
+/// Result of the explicit Minimal Spine Replay append/readback contract.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineReplayAppendResult {
+    pub payload_digest: Digest32,
+    pub replay_token_digests: Vec<Digest32>,
+    pub replay_schedule_digest: Digest32,
+    pub replay_audit_digest: Digest32,
+    pub replay_applied_boundary_digest: Digest32,
+    pub token_count: u32,
+    pub appended_evidence_id: EvidenceId,
+    pub archive_key: Digest32,
+    pub archive_record_digest: Digest32,
+    pub readback_digest: Digest32,
+}
+
+/// Explicitly append bounded Replay audit/provenance evidence and read it back.
+///
+/// This helper is the only Replay append surface. It persists a deterministic provenance payload
+/// through the existing EvidenceStore and ArchiveStore APIs, then immediately verifies readback.
+/// It does not execute replay, activate a scheduler/queue/worker, trigger Sleep or Geist/ISM,
+/// write identity anchors, expose Gateway semantics, or create a second event log.
+pub fn append_minimal_spine_replay_record<E, S>(
+    schedule: &MinimalSpineReplayScheduleBuildOutput,
+    audit: &MinimalSpineReplayScheduleAudit,
+    boundary: &MinimalSpineReplayAppliedBoundary,
+    evidence_store: &E,
+    archive_store: &S,
+    archive_appender: &mut ArchiveAppender,
+) -> Result<MinimalSpineReplayAppendResult, ReplayError>
+where
+    E: EvidenceStore,
+    S: ArchiveStore,
+{
+    let payload = MinimalSpineReplayAppendPayload::from_artifacts(schedule, audit, boundary)?;
+    let payload_bytes = payload.deterministic_bytes();
+    let payload_digest = payload.digest();
+    let appended_evidence_id = EvidenceId::new(format!(
+        "minimal-spine-replay-append-{}",
+        hex::encode(payload_digest.as_bytes())
+    ));
+    let proof = ProofEnvelope {
+        envelope_id: format!(
+            "{}:{}",
+            MINIMAL_SPINE_REPLAY_APPEND_CONTRACT,
+            hex::encode(payload_digest.as_bytes())
+        ),
+        payload: payload_bytes,
+        payload_digest: Some(ProtoDigest {
+            algorithm: "sha256".to_string(),
+            value: payload_digest.as_bytes().to_vec(),
+            algo_id: None,
+            domain: None,
+            value_32: Some(payload_digest.as_bytes().to_vec()),
+        }),
+        vrf_tags: Vec::new(),
+        signature_ids: Vec::new(),
+    };
+    let evidence_envelope = EvidenceEnvelope {
+        evidence_id: appended_evidence_id.clone(),
+        proof: Some(proof),
+        fold_proof: None,
+        logical_time: LogicalTime::new(0),
+        wall_time: WallTime::new(0),
+    };
+
+    evidence_store.append(evidence_envelope);
+
+    let archive_record = archive_appender.build_record_with_commit(
+        MINIMAL_SPINE_REPLAY_APPEND_ARCHIVE_KIND,
+        payload_digest,
+        RecordMeta {
+            cycle_id: 0,
+            tier: 3,
+            flags: 0,
+            boundary_commit: boundary.applied_boundary_digest,
+        },
+    );
+    let archive_record_digest = archive_store.append(archive_record);
+    let readback = evidence_store
+        .get(appended_evidence_id.clone())
+        .ok_or(ReplayError::MinimalSpineReplayAppendReadbackMissing)?;
+    let readback_digest = digest_replay_evidence_envelope(&readback);
+    let archive_readback = archive_store
+        .get(archive_record.key)
+        .ok_or(ReplayError::MinimalSpineReplayAppendReadbackMissing)?;
+    if archive_readback != archive_record {
+        return Err(ReplayError::MinimalSpineReplayAppendReadbackMismatch);
+    }
+
+    Ok(MinimalSpineReplayAppendResult {
+        payload_digest,
+        replay_token_digests: payload.replay_token_digests,
+        replay_schedule_digest: payload.replay_schedule_digest,
+        replay_audit_digest: payload.replay_audit_digest,
+        replay_applied_boundary_digest: payload.replay_applied_boundary_digest,
+        token_count: payload.token_count,
+        appended_evidence_id,
+        archive_key: archive_record.key,
+        archive_record_digest,
+        readback_digest,
+    })
+}
+
+fn validate_minimal_spine_replay_append_inputs(
+    schedule: &MinimalSpineReplayScheduleBuildOutput,
+    audit: &MinimalSpineReplayScheduleAudit,
+    boundary: &MinimalSpineReplayAppliedBoundary,
+) -> Result<(), ReplayError> {
+    if schedule.replay_token_digests.is_empty() {
+        return Err(ReplayError::InvalidMinimalSpineReplayAppendInput(
+            "schedule token list must be non-empty",
+        ));
+    }
+    if schedule
+        .replay_token_digests
+        .iter()
+        .any(|digest| is_zero_digest(*digest))
+    {
+        return Err(ReplayError::InvalidMinimalSpineReplayAppendInput(
+            "schedule token digests must be non-zero",
+        ));
+    }
+    if schedule.schedule_digest != schedule.digest() {
+        return Err(ReplayError::InvalidMinimalSpineReplayAppendInput(
+            "schedule digest mismatch",
+        ));
+    }
+    if audit.status != MinimalSpineReplayAuditStatus::Pass {
+        return Err(ReplayError::InvalidMinimalSpineReplayAppendInput(
+            "audit status must be pass",
+        ));
+    }
+    if audit.audit_digest != audit.digest() {
+        return Err(ReplayError::InvalidMinimalSpineReplayAppendInput(
+            "audit digest mismatch",
+        ));
+    }
+    if audit.schedule_digest != schedule.schedule_digest
+        || audit.recomputed_schedule_digest != schedule.schedule_digest
+    {
+        return Err(ReplayError::InvalidMinimalSpineReplayAppendInput(
+            "audit must match schedule digest",
+        ));
+    }
+    if audit.token_count != schedule.token_count
+        || audit.token_digests != schedule.replay_token_digests
+    {
+        return Err(ReplayError::InvalidMinimalSpineReplayAppendInput(
+            "audit must preserve schedule token provenance",
+        ));
+    }
+    if boundary.applied_boundary_digest != boundary.digest() {
+        return Err(ReplayError::InvalidMinimalSpineReplayAppendInput(
+            "applied boundary digest mismatch",
+        ));
+    }
+    if boundary.audit_digest != audit.audit_digest
+        || boundary.schedule_digest != schedule.schedule_digest
+        || boundary.token_count != schedule.token_count
+    {
+        return Err(ReplayError::InvalidMinimalSpineReplayAppendInput(
+            "applied boundary must match audit and schedule provenance",
+        ));
+    }
+    if schedule.token_count == 0
+        || usize::try_from(schedule.token_count).ok() != Some(schedule.replay_token_digests.len())
+    {
+        return Err(ReplayError::InvalidMinimalSpineReplayAppendInput(
+            "token count must match non-empty token list",
+        ));
+    }
+    if schedule.applied
+        || schedule.sleep_cycle
+        || schedule.geist_ingested
+        || schedule.identity_anchor
+        || schedule.evidence_archive_appended
+        || audit.applied
+        || audit.replay_completed
+        || audit.sleep_cycle
+        || audit.geist_ingested
+        || audit.identity_anchor
+        || audit.evidence_archive_appended
+        || !boundary.replay_subsystem_applied
+        || boundary.geist_ingested
+        || boundary.ism_written
+        || boundary.identity_anchor
+        || boundary.sleep_completed
+        || boundary.evidence_archive_appended
+        || boundary.gateway_visible
+    {
+        return Err(ReplayError::InvalidMinimalSpineReplayAppendInput(
+            "replay append inputs must not carry forbidden side-effect flags",
+        ));
+    }
+    Ok(())
+}
+
+fn digest_replay_evidence_envelope(envelope: &EvidenceEnvelope) -> Digest32 {
+    let mut out = Vec::new();
+    push_str32(&mut out, envelope.evidence_id.as_str());
+    match &envelope.proof {
+        Some(proof) => {
+            out.push(1);
+            push_str32(&mut out, &proof.envelope_id);
+            push_u32_be(
+                &mut out,
+                u32::try_from(proof.payload.len())
+                    .expect("minimal spine replay append proof payload length fits u32"),
+            );
+            out.extend_from_slice(&proof.payload);
+            match &proof.payload_digest {
+                Some(digest) => {
+                    out.push(1);
+                    push_str32(&mut out, &digest.algorithm);
+                    push_u32_be(
+                        &mut out,
+                        u32::try_from(digest.value.len())
+                            .expect("minimal spine replay append digest length fits u32"),
+                    );
+                    out.extend_from_slice(&digest.value);
+                    push_optional_u32_be(&mut out, digest.algo_id);
+                    push_optional_u32_be(&mut out, digest.domain);
+                    push_optional_bytes32(&mut out, digest.value_32.as_deref());
+                }
+                None => out.push(0),
+            }
+            push_u32_be(
+                &mut out,
+                u32::try_from(proof.vrf_tags.len())
+                    .expect("minimal spine replay append vrf tag count fits u32"),
+            );
+            push_u32_be(
+                &mut out,
+                u32::try_from(proof.signature_ids.len())
+                    .expect("minimal spine replay append signature id count fits u32"),
+            );
+            for signature_id in &proof.signature_ids {
+                push_str32(&mut out, signature_id);
+            }
+        }
+        None => out.push(0),
+    }
+    out.push(u8::from(envelope.fold_proof.is_some()));
+    out.extend_from_slice(&envelope.logical_time.tick.to_be_bytes());
+    out.extend_from_slice(&envelope.wall_time.unix_ms.to_be_bytes());
+    digest_sha256_domain(b"ucf.replay.minimal_spine.append_readback.v1", &out)
+}
 
 /// PASS/FAIL status for the verify-only Minimal Spine replay schedule audit.
 ///
@@ -1023,6 +1424,41 @@ fn push_digest32(out: &mut Vec<u8>, digest: Digest32) {
 
 fn push_u32_be(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_be_bytes());
+}
+
+fn push_digest_vec(out: &mut Vec<u8>, digests: &[Digest32]) {
+    push_u32_be(
+        out,
+        u32::try_from(digests.len()).expect("minimal spine replay digest vector length fits u32"),
+    );
+    for digest in digests {
+        push_digest32(out, *digest);
+    }
+}
+
+fn push_optional_u32_be(out: &mut Vec<u8>, value: Option<u32>) {
+    match value {
+        Some(value) => {
+            out.push(1);
+            push_u32_be(out, value);
+        }
+        None => out.push(0),
+    }
+}
+
+fn push_optional_bytes32(out: &mut Vec<u8>, value: Option<&[u8]>) {
+    match value {
+        Some(value) => {
+            out.push(1);
+            push_u32_be(
+                out,
+                u32::try_from(value.len())
+                    .expect("minimal spine replay optional bytes length fits u32"),
+            );
+            out.extend_from_slice(value);
+        }
+        None => out.push(0),
+    }
 }
 
 fn push_str32(out: &mut Vec<u8>, value: &str) {

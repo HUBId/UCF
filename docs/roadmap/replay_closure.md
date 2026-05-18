@@ -104,3 +104,9 @@ Prompt 45 selection is now recorded in [`docs/roadmap/post_replay_roadmap_select
 Prompt 46 is now recorded in [`docs/roadmap/sleep_integration_roadmap_boundary_audit.md`](sleep_integration_roadmap_boundary_audit.md) as the Sleep next-line planning document. It keeps Sleep bounded to roadmap/schema-boundary planning and recommends **UCF Prompt 47 — Sleep Record Authority and Schema Alignment**.
 
 This recommendation is not approval to implement Sleep, Geist/ISM, production replay, identity finalization, Gateway writes, Evidence/Archive replay append, or runtime scheduler behavior. It is only the next planning selection after bounded Replay closure.
+
+## 9. Post-Closure Append/Readback Addendum
+
+A later bounded append/readback contract now exists for Replay audit/provenance persistence. The contract is implemented as `MinimalSpineReplayAppendPayload` plus the explicit `append_minimal_spine_replay_record` helper and is covered by `runtime/ucf-replay/tests/minimal_spine_replay_append.rs`.
+
+This addendum does not change the original bounded Replay closure claims: Replay token/schedule/audit/boundary builders remain deterministic and append-free, `ReplayAudit` remains verify-only, and `ReplayAppliedBoundary` remains local replay-subsystem bookkeeping. The append contract persists provenance through the existing Evidence/Archive APIs only; it does not execute replay, activate a runtime scheduler/queue/worker, trigger Sleep, ingest into Geist/ISM, write an identity anchor, expose Gateway semantics, create a second event log, or alter Minimal Spine v1.x.
