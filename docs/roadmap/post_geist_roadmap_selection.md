@@ -160,3 +160,6 @@ Reason: Prompt 64 keeps the first post-Geist step planning-only while defining a
 ## Prompt 64 Roadmap Audit Note
 
 Evidence/Archive append contract planning is now available as [`docs/roadmap/evidence_archive_append_contracts_roadmap_boundary_audit.md`](evidence_archive_append_contracts_roadmap_boundary_audit.md). The audit is roadmap/boundary-only: it does not implement Replay, Sleep, Geist/ISM, runtime, identity, Gateway, capability, real-compute, Evidence/Archive-authority, second-event-log, gate-criteria, or Minimal Spine v1.x behavior changes. It recommends **UCF Prompt 65 — Replay Evidence/Archive Append Contract** as the next implementation prompt, with explicit readback tests and the existing Evidence/Archive authority preserved.
+
+
+- Evidence/Archive bounded append/readback closure baseline is available at `docs/roadmap/evidence_archive_append_readback_closure.md` (with workspace-evidence caveat handling).

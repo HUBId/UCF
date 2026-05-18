@@ -323,3 +323,8 @@ Before future docs can claim production readiness:
 - Workspace evidence stable.
 - Docs lint/readiness reports fresh.
 - Runtime/protocol expectations explicit.
+
+
+## Prompt 70 status
+- Closure baseline: `docs/roadmap/evidence_archive_append_readback_closure.md`.
+- Status: partial closure with documented workspace-evidence caveat when `workspace-test-check` does not yield fresh report.
