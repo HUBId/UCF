@@ -3930,7 +3930,9 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ucf-archive",
+ "ucf-archive-store",
  "ucf-commit",
+ "ucf-evidence",
  "ucf-policy-ecology",
  "ucf-recursion-controller",
  "ucf-sleep-coordinator",

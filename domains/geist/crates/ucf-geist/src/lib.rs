@@ -4,15 +4,17 @@ use std::sync::Arc;
 
 use blake3::Hasher;
 use ucf_archive::ExperienceAppender;
+use ucf_archive_store::{ArchiveAppender, ArchiveStore, RecordKind, RecordMeta};
 use ucf_commit::commit_milestone_macro;
+use ucf_evidence::{EvidenceEnvelope, EvidenceStore};
 use ucf_policy_ecology::{ConsistencyReport, ConsistencyVerdict, DefaultPolicyEcology, GeistGate};
 use ucf_sleep_coordinator::{
     MinimalSpineSleepAppliedBoundary, MinimalSpineSleepPlanAudit, MinimalSpineSleepPlanAuditStatus,
     SleepStateHandle, SleepStateUpdater,
 };
 use ucf_types::consolidation::ReplayApplied;
-use ucf_types::v1::spec::{ExperienceRecord, MacroMilestone};
-use ucf_types::{Digest32, EvidenceId};
+use ucf_types::v1::spec::{Digest as ProtoDigest, ExperienceRecord, MacroMilestone, ProofEnvelope};
+use ucf_types::{Digest32, EvidenceId, LogicalTime, WallTime};
 
 const SELFSTATE_DOMAIN: u16 = 0x4753; // "GS" for Geist SelfState
 const DERIVED_DOMAIN: u16 = 0x4744; // "GD" for Geist Derived
@@ -461,6 +463,511 @@ impl MinimalSpineIsmCandidateBoundary {
             b"ucf.geist.minimal_spine.ism_candidate_boundary_from_geist_projection_audit.v1",
             &self.deterministic_bytes(),
         )
+    }
+}
+
+/// Version for the explicit Minimal Spine Geist/ISM Evidence/Archive append payload.
+pub const MINIMAL_SPINE_GEIST_ISM_APPEND_PAYLOAD_VERSION: u32 = 1;
+
+/// Explicit contract marker carried in the Geist/ISM Evidence/Archive append payload.
+pub const MINIMAL_SPINE_GEIST_ISM_APPEND_CONTRACT: &str = "minimal_spine_geist_ism_append_v1";
+
+/// Extension kind used for bounded Geist/ISM append proof records in archive-store.
+///
+/// Existing archive kinds do not include a bounded Geist/ISM audit/provenance wrapper. `IsmAnchor`
+/// would overclaim persistent ISM authority, and Replay/Sleep already allocate `Other(65)` and
+/// `Other(66)`. Prompt 67 therefore allocates `Other(67)` for this explicit append/readback
+/// contract without changing archive-store schema or Minimal Spine v1.x.
+pub const MINIMAL_SPINE_GEIST_ISM_APPEND_ARCHIVE_KIND: RecordKind = RecordKind::Other(67);
+
+/// Meaning marker for the explicit Geist/ISM append contract.
+pub const MINIMAL_SPINE_GEIST_ISM_APPEND_MEANING: &str =
+    "audit_provenance_persistence_only_no_geist_runtime_no_ism_write";
+
+/// Deterministic bounded Geist/ISM append payload persisted through Evidence/Archive.
+///
+/// This payload is provenance only. It preserves digest links for the bounded Geist projection
+/// candidate, verify-only audit, local ISM candidate boundary, and upstream Sleep/Replay artifacts.
+/// All runtime, ISM write/upsert, identity, memory, policy, and Gateway boundary flags are explicit
+/// false values.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineGeistIsmAppendPayload {
+    pub version: u32,
+    pub append_contract: String,
+    pub geist_projection_candidate_digest: Digest32,
+    pub geist_projection_audit_digest: Digest32,
+    pub ism_candidate_boundary_digest: Digest32,
+    pub sleep_plan_audit_digest: Digest32,
+    pub sleep_plan_candidate_digest: Digest32,
+    pub sleep_applied_boundary_digest: Option<Digest32>,
+    pub replay_audit_digest: Digest32,
+    pub replay_schedule_digest: Digest32,
+    pub token_count: u32,
+    pub candidate_source: &'static str,
+    pub audit_source: &'static str,
+    pub boundary_source: &'static str,
+    pub sleep_source: &'static str,
+    pub source: &'static str,
+    pub geist_runtime_applied: bool,
+    pub ism_written: bool,
+    pub ism_upserted: bool,
+    pub identity_anchor: bool,
+    pub identity_finalized: bool,
+    pub memory_stabilized: bool,
+    pub policy_mutated: bool,
+    pub gateway_visible: bool,
+    pub evidence_archive_appended_meaning: &'static str,
+}
+
+impl MinimalSpineGeistIsmAppendPayload {
+    pub fn from_artifacts(
+        candidate: &MinimalSpineGeistProjectionCandidate,
+        audit: &MinimalSpineGeistProjectionAudit,
+        boundary: &MinimalSpineIsmCandidateBoundary,
+    ) -> Result<Self, GeistIsmAppendError> {
+        validate_minimal_spine_geist_ism_append_inputs(candidate, audit, boundary)?;
+        let payload = Self {
+            version: MINIMAL_SPINE_GEIST_ISM_APPEND_PAYLOAD_VERSION,
+            append_contract: MINIMAL_SPINE_GEIST_ISM_APPEND_CONTRACT.to_string(),
+            geist_projection_candidate_digest: candidate.projection_digest,
+            geist_projection_audit_digest: audit.audit_digest,
+            ism_candidate_boundary_digest: boundary.ism_candidate_digest,
+            sleep_plan_audit_digest: candidate.sleep_plan_audit_digest,
+            sleep_plan_candidate_digest: candidate.sleep_plan_candidate_digest,
+            sleep_applied_boundary_digest: candidate.sleep_applied_boundary_digest,
+            replay_audit_digest: candidate.replay_audit_digest,
+            replay_schedule_digest: candidate.replay_schedule_digest,
+            token_count: candidate.token_count,
+            candidate_source: candidate.source,
+            audit_source: audit.source,
+            boundary_source: boundary.source,
+            sleep_source: candidate.sleep_source,
+            source: MINIMAL_SPINE_GEIST_ISM_APPEND_CONTRACT,
+            geist_runtime_applied: false,
+            ism_written: false,
+            ism_upserted: false,
+            identity_anchor: false,
+            identity_finalized: false,
+            memory_stabilized: false,
+            policy_mutated: false,
+            gateway_visible: false,
+            evidence_archive_appended_meaning: MINIMAL_SPINE_GEIST_ISM_APPEND_MEANING,
+        };
+        if !payload.validate_links_nonzero() {
+            return Err(GeistIsmAppendError::InvalidInput(
+                "append payload links must be non-empty/non-zero",
+            ));
+        }
+        Ok(payload)
+    }
+
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_u32_be(&mut out, self.version);
+        push_str32(&mut out, &self.append_contract);
+        push_digest32(&mut out, self.geist_projection_candidate_digest);
+        push_digest32(&mut out, self.geist_projection_audit_digest);
+        push_digest32(&mut out, self.ism_candidate_boundary_digest);
+        push_digest32(&mut out, self.sleep_plan_audit_digest);
+        push_digest32(&mut out, self.sleep_plan_candidate_digest);
+        match self.sleep_applied_boundary_digest {
+            Some(digest) => {
+                out.push(1);
+                push_digest32(&mut out, digest);
+            }
+            None => out.push(0),
+        }
+        push_digest32(&mut out, self.replay_audit_digest);
+        push_digest32(&mut out, self.replay_schedule_digest);
+        push_u32_be(&mut out, self.token_count);
+        push_str32(&mut out, self.candidate_source);
+        push_str32(&mut out, self.audit_source);
+        push_str32(&mut out, self.boundary_source);
+        push_str32(&mut out, self.sleep_source);
+        push_str32(&mut out, self.source);
+        out.push(u8::from(self.geist_runtime_applied));
+        out.push(u8::from(self.ism_written));
+        out.push(u8::from(self.ism_upserted));
+        out.push(u8::from(self.identity_anchor));
+        out.push(u8::from(self.identity_finalized));
+        out.push(u8::from(self.memory_stabilized));
+        out.push(u8::from(self.policy_mutated));
+        out.push(u8::from(self.gateway_visible));
+        push_str32(&mut out, self.evidence_archive_appended_meaning);
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        digest_blake3_domain(
+            b"ucf.geist.minimal_spine.geist_ism.append_payload.v1",
+            &self.deterministic_bytes(),
+        )
+    }
+
+    pub fn validate_links_nonzero(&self) -> bool {
+        self.version == MINIMAL_SPINE_GEIST_ISM_APPEND_PAYLOAD_VERSION
+            && self.append_contract == MINIMAL_SPINE_GEIST_ISM_APPEND_CONTRACT
+            && !is_zero_digest(self.geist_projection_candidate_digest)
+            && !is_zero_digest(self.geist_projection_audit_digest)
+            && !is_zero_digest(self.ism_candidate_boundary_digest)
+            && !is_zero_digest(self.sleep_plan_audit_digest)
+            && !is_zero_digest(self.sleep_plan_candidate_digest)
+            && !self
+                .sleep_applied_boundary_digest
+                .is_some_and(is_zero_digest)
+            && !is_zero_digest(self.replay_audit_digest)
+            && !is_zero_digest(self.replay_schedule_digest)
+            && self.token_count > 0
+            && !self.candidate_source.is_empty()
+            && !self.audit_source.is_empty()
+            && !self.boundary_source.is_empty()
+            && !self.sleep_source.is_empty()
+            && !self.source.is_empty()
+            && !self.geist_runtime_applied
+            && !self.ism_written
+            && !self.ism_upserted
+            && !self.identity_anchor
+            && !self.identity_finalized
+            && !self.memory_stabilized
+            && !self.policy_mutated
+            && !self.gateway_visible
+            && self.evidence_archive_appended_meaning == MINIMAL_SPINE_GEIST_ISM_APPEND_MEANING
+    }
+}
+
+/// Result of the explicit Minimal Spine Geist/ISM append/readback contract.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MinimalSpineGeistIsmAppendResult {
+    pub payload_digest: Digest32,
+    pub geist_projection_candidate_digest: Digest32,
+    pub geist_projection_audit_digest: Digest32,
+    pub ism_candidate_boundary_digest: Digest32,
+    pub sleep_plan_audit_digest: Digest32,
+    pub sleep_plan_candidate_digest: Digest32,
+    pub sleep_applied_boundary_digest: Option<Digest32>,
+    pub replay_audit_digest: Digest32,
+    pub replay_schedule_digest: Digest32,
+    pub token_count: u32,
+    pub appended_evidence_id: EvidenceId,
+    pub archive_key: Digest32,
+    pub archive_record_digest: Digest32,
+    pub readback_digest: Digest32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GeistIsmAppendError {
+    InvalidInput(&'static str),
+    ReadbackMissing,
+    ReadbackMismatch,
+}
+
+impl std::fmt::Display for GeistIsmAppendError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidInput(message) => {
+                write!(f, "invalid minimal spine Geist/ISM append input: {message}")
+            }
+            Self::ReadbackMissing => f.write_str("minimal spine Geist/ISM append readback missing"),
+            Self::ReadbackMismatch => {
+                f.write_str("minimal spine Geist/ISM append readback mismatch")
+            }
+        }
+    }
+}
+
+impl std::error::Error for GeistIsmAppendError {}
+
+/// Explicitly append a bounded Geist/ISM audit/provenance payload through Evidence/Archive.
+///
+/// This helper is the only append surface for the bounded Geist/ISM contract. It persists a
+/// deterministic payload and immediately reads back both stores. It does not apply Geist, call
+/// `GeistKernel::ingest_macro`, write/upsert ISM, create identity anchors, finalize identity,
+/// stabilize memory, mutate policy, expose Gateway/action authority, or create a second event log.
+pub fn append_minimal_spine_geist_ism_record<E, S>(
+    candidate: &MinimalSpineGeistProjectionCandidate,
+    audit: &MinimalSpineGeistProjectionAudit,
+    boundary: &MinimalSpineIsmCandidateBoundary,
+    evidence_store: &E,
+    archive_store: &S,
+    archive_appender: &mut ArchiveAppender,
+) -> Result<MinimalSpineGeistIsmAppendResult, GeistIsmAppendError>
+where
+    E: EvidenceStore,
+    S: ArchiveStore,
+{
+    let payload = MinimalSpineGeistIsmAppendPayload::from_artifacts(candidate, audit, boundary)?;
+    let payload_bytes = payload.deterministic_bytes();
+    let payload_digest = payload.digest();
+    let appended_evidence_id = EvidenceId::new(format!(
+        "minimal-spine-geist-ism-append-{}",
+        hex_encode(payload_digest.as_bytes())
+    ));
+    let proof = ProofEnvelope {
+        envelope_id: format!(
+            "{}:{}",
+            MINIMAL_SPINE_GEIST_ISM_APPEND_CONTRACT,
+            hex_encode(payload_digest.as_bytes())
+        ),
+        payload: payload_bytes,
+        payload_digest: Some(ProtoDigest {
+            algorithm: "blake3".to_string(),
+            value: payload_digest.as_bytes().to_vec(),
+            algo_id: None,
+            domain: None,
+            value_32: Some(payload_digest.as_bytes().to_vec()),
+        }),
+        vrf_tags: Vec::new(),
+        signature_ids: Vec::new(),
+    };
+    let evidence_envelope = EvidenceEnvelope {
+        evidence_id: appended_evidence_id.clone(),
+        proof: Some(proof),
+        fold_proof: None,
+        logical_time: LogicalTime::new(0),
+        wall_time: WallTime::new(0),
+    };
+
+    evidence_store.append(evidence_envelope);
+
+    let archive_record = archive_appender.build_record_with_commit(
+        MINIMAL_SPINE_GEIST_ISM_APPEND_ARCHIVE_KIND,
+        payload_digest,
+        RecordMeta {
+            cycle_id: 0,
+            tier: 3,
+            flags: 0,
+            boundary_commit: boundary.ism_candidate_digest,
+        },
+    );
+    let archive_record_digest = archive_store.append(archive_record);
+    let readback = evidence_store
+        .get(appended_evidence_id.clone())
+        .ok_or(GeistIsmAppendError::ReadbackMissing)?;
+    let readback_digest = digest_geist_ism_evidence_envelope(&readback);
+    let archive_readback = archive_store
+        .get(archive_record.key)
+        .ok_or(GeistIsmAppendError::ReadbackMissing)?;
+    if archive_readback != archive_record {
+        return Err(GeistIsmAppendError::ReadbackMismatch);
+    }
+
+    Ok(MinimalSpineGeistIsmAppendResult {
+        payload_digest,
+        geist_projection_candidate_digest: payload.geist_projection_candidate_digest,
+        geist_projection_audit_digest: payload.geist_projection_audit_digest,
+        ism_candidate_boundary_digest: payload.ism_candidate_boundary_digest,
+        sleep_plan_audit_digest: payload.sleep_plan_audit_digest,
+        sleep_plan_candidate_digest: payload.sleep_plan_candidate_digest,
+        sleep_applied_boundary_digest: payload.sleep_applied_boundary_digest,
+        replay_audit_digest: payload.replay_audit_digest,
+        replay_schedule_digest: payload.replay_schedule_digest,
+        token_count: payload.token_count,
+        appended_evidence_id,
+        archive_key: archive_record.key,
+        archive_record_digest,
+        readback_digest,
+    })
+}
+
+fn validate_minimal_spine_geist_ism_append_inputs(
+    candidate: &MinimalSpineGeistProjectionCandidate,
+    audit: &MinimalSpineGeistProjectionAudit,
+    boundary: &MinimalSpineIsmCandidateBoundary,
+) -> Result<(), GeistIsmAppendError> {
+    if audit.status != MinimalSpineGeistProjectionAuditStatus::Pass {
+        return Err(GeistIsmAppendError::InvalidInput(
+            "geist projection audit must pass",
+        ));
+    }
+    if audit.audit_digest != audit.digest() {
+        return Err(GeistIsmAppendError::InvalidInput(
+            "geist projection audit digest mismatch",
+        ));
+    }
+    if !audit.failure_reasons.is_empty() {
+        return Err(GeistIsmAppendError::InvalidInput(
+            "pass audit must not carry failure reasons",
+        ));
+    }
+    if candidate.projection_digest != candidate.digest() {
+        return Err(GeistIsmAppendError::InvalidInput(
+            "candidate projection digest mismatch",
+        ));
+    }
+    if audit.projection_digest != candidate.projection_digest
+        || audit.recomputed_projection_digest != candidate.projection_digest
+    {
+        return Err(GeistIsmAppendError::InvalidInput(
+            "audit/candidate projection mismatch",
+        ));
+    }
+    if boundary.ism_candidate_digest != boundary.digest() {
+        return Err(GeistIsmAppendError::InvalidInput(
+            "ISM candidate boundary digest mismatch",
+        ));
+    }
+    if boundary.geist_projection_audit_digest != audit.audit_digest
+        || boundary.geist_projection_digest != candidate.projection_digest
+    {
+        return Err(GeistIsmAppendError::InvalidInput(
+            "boundary/audit projection mismatch",
+        ));
+    }
+    if audit.sleep_plan_audit_digest != candidate.sleep_plan_audit_digest
+        || boundary.sleep_plan_audit_digest != candidate.sleep_plan_audit_digest
+        || audit.sleep_plan_candidate_digest != candidate.sleep_plan_candidate_digest
+        || boundary.sleep_plan_candidate_digest != candidate.sleep_plan_candidate_digest
+        || audit.sleep_applied_boundary_digest != candidate.sleep_applied_boundary_digest
+        || boundary.sleep_applied_boundary_digest != candidate.sleep_applied_boundary_digest
+        || audit.replay_audit_digest != candidate.replay_audit_digest
+        || boundary.replay_audit_digest != candidate.replay_audit_digest
+        || audit.replay_schedule_digest != candidate.replay_schedule_digest
+        || boundary.replay_schedule_digest != candidate.replay_schedule_digest
+        || audit.token_count != candidate.token_count
+        || boundary.token_count != candidate.token_count
+    {
+        return Err(GeistIsmAppendError::InvalidInput("provenance mismatch"));
+    }
+    if is_zero_digest(candidate.projection_digest)
+        || is_zero_digest(audit.audit_digest)
+        || is_zero_digest(boundary.ism_candidate_digest)
+        || is_zero_digest(candidate.sleep_plan_audit_digest)
+        || is_zero_digest(candidate.sleep_plan_candidate_digest)
+        || candidate
+            .sleep_applied_boundary_digest
+            .is_some_and(is_zero_digest)
+        || is_zero_digest(candidate.replay_audit_digest)
+        || is_zero_digest(candidate.replay_schedule_digest)
+    {
+        return Err(GeistIsmAppendError::InvalidInput(
+            "append inputs must use non-zero digests",
+        ));
+    }
+    if candidate.token_count == 0 {
+        return Err(GeistIsmAppendError::InvalidInput(
+            "token count must be non-zero",
+        ));
+    }
+    if candidate.source.is_empty()
+        || audit.source.is_empty()
+        || boundary.source.is_empty()
+        || candidate.sleep_source.is_empty()
+        || audit.candidate_source.is_empty()
+        || boundary.audit_source.is_empty()
+    {
+        return Err(GeistIsmAppendError::InvalidInput(
+            "append sources must be non-empty",
+        ));
+    }
+    if !candidate.candidate_only
+        || !audit.candidate_only
+        || !boundary.ism_candidate_only
+        || candidate.geist_applied
+        || audit.geist_applied
+        || candidate.ism_written
+        || audit.ism_written
+        || boundary.ism_written
+        || boundary.ism_upserted
+        || candidate.identity_anchor
+        || audit.identity_anchor
+        || boundary.identity_anchor
+        || candidate.identity_finalized
+        || audit.identity_finalized
+        || boundary.identity_finalized
+        || boundary.memory_stabilized
+        || candidate.policy_mutated
+        || audit.policy_mutated
+        || boundary.policy_mutated
+        || candidate.evidence_archive_appended
+        || audit.evidence_archive_appended
+        || boundary.evidence_archive_appended
+        || candidate.gateway_visible
+        || audit.gateway_visible
+        || boundary.gateway_visible
+    {
+        return Err(GeistIsmAppendError::InvalidInput(
+            "append inputs must not carry forbidden side-effect flags",
+        ));
+    }
+    Ok(())
+}
+
+fn digest_geist_ism_evidence_envelope(envelope: &EvidenceEnvelope) -> Digest32 {
+    let mut out = Vec::new();
+    push_str32(&mut out, envelope.evidence_id.as_str());
+    match &envelope.proof {
+        Some(proof) => {
+            out.push(1);
+            push_str32(&mut out, &proof.envelope_id);
+            push_u32_be(
+                &mut out,
+                u32::try_from(proof.payload.len())
+                    .expect("minimal spine Geist/ISM append proof payload length fits u32"),
+            );
+            out.extend_from_slice(&proof.payload);
+            match &proof.payload_digest {
+                Some(digest) => {
+                    out.push(1);
+                    push_str32(&mut out, &digest.algorithm);
+                    push_u32_be(
+                        &mut out,
+                        u32::try_from(digest.value.len())
+                            .expect("minimal spine Geist/ISM append digest length fits u32"),
+                    );
+                    out.extend_from_slice(&digest.value);
+                    push_optional_u32_be(&mut out, digest.algo_id);
+                    push_optional_u32_be(&mut out, digest.domain);
+                    push_optional_bytes32(&mut out, digest.value_32.as_deref());
+                }
+                None => out.push(0),
+            }
+            push_u32_be(
+                &mut out,
+                u32::try_from(proof.vrf_tags.len())
+                    .expect("minimal spine Geist/ISM append vrf tag count fits u32"),
+            );
+            push_u32_be(
+                &mut out,
+                u32::try_from(proof.signature_ids.len())
+                    .expect("minimal spine Geist/ISM append signature id count fits u32"),
+            );
+            for signature_id in &proof.signature_ids {
+                push_str32(&mut out, signature_id);
+            }
+        }
+        None => out.push(0),
+    }
+    out.push(u8::from(envelope.fold_proof.is_some()));
+    out.extend_from_slice(&envelope.logical_time.tick.to_be_bytes());
+    out.extend_from_slice(&envelope.wall_time.unix_ms.to_be_bytes());
+    digest_blake3_domain(
+        b"ucf.geist.minimal_spine.geist_ism.append_readback.v1",
+        &out,
+    )
+}
+
+fn push_optional_u32_be(out: &mut Vec<u8>, value: Option<u32>) {
+    match value {
+        Some(value) => {
+            out.push(1);
+            push_u32_be(out, value);
+        }
+        None => out.push(0),
+    }
+}
+
+fn push_optional_bytes32(out: &mut Vec<u8>, value: Option<&[u8]>) {
+    match value {
+        Some(value) => {
+            out.push(1);
+            push_u32_be(
+                out,
+                u32::try_from(value.len())
+                    .expect("minimal spine Geist/ISM append optional digest length fits u32"),
+            );
+            out.extend_from_slice(value);
+        }
+        None => out.push(0),
     }
 }
 
