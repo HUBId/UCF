@@ -119,3 +119,7 @@ Recommended next prompt: **UCF Prompt 63 — Post-Geist Roadmap Selection: Runti
 ## Prompt 63 Roadmap Selection Note
 
 Post-Geist next-line planning is available as [`docs/roadmap/post_geist_roadmap_selection.md`](post_geist_roadmap_selection.md). It selects Evidence/Archive Append Contracts for Replay/Sleep/Geist/ISM as the primary next roadmap line, Protocol Schema / Provenance Evolution as the secondary line, Prod-profile / Workspace Evidence Stability as a parallel validation line, and keeps Runtime Scheduler/Queue, Identity Anchor Authority, and Gateway Read API expansion deferred. The selection is planning-only and does not implement or claim Evidence/Archive append readiness, runtime activation, ISM write/upsert, IdentityAnchor, IdentityFinalization, Gateway write authority, production readiness, or Minimal Spine v1.x changes.
+
+## Evidence/Archive Append Roadmap Note
+
+The next Evidence/Archive planning line is documented in [`docs/roadmap/evidence_archive_append_contracts_roadmap_boundary_audit.md`](evidence_archive_append_contracts_roadmap_boundary_audit.md). This link is a next-line caveat only: bounded Geist/ISM remains candidate-only and verify-only here, with no Geist runtime activation, no ISM write/upsert, no `IsmStore::upsert_anchor` use, no IdentityAnchor, no IdentityFinalization, no Gateway authority, no Evidence/Archive append implementation in this closure, and no Minimal Spine v1.x change.
