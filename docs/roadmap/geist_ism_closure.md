@@ -26,6 +26,7 @@ Baseline links:
 - [`docs/roadmap/geist_ism_roadmap_boundary_audit.md`](geist_ism_roadmap_boundary_audit.md)
 - [`docs/roadmap/geist_ism_record_authority_schema_alignment.md`](geist_ism_record_authority_schema_alignment.md)
 - [`docs/minimal_spine_v1_freeze.md`](../minimal_spine_v1_freeze.md)
+- [`docs/roadmap/post_geist_roadmap_selection.md`](post_geist_roadmap_selection.md)
 
 ## 2. Completed Geist/ISM Layers
 
@@ -114,3 +115,7 @@ Baseline links:
 Prompt 62 produced passing targeted Geist/ISM, Sleep, Replay, Consolidation, workspace, clippy, docs-lint, readiness-spine, workspace-test evidence, and split-evidence readiness-gate results. The bounded Geist/ISM line can therefore close as a bounded candidate/audit/read-model line, not as runtime, persistent ISM, identity, memory-stabilization, Gateway, or production readiness.
 
 Recommended next prompt: **UCF Prompt 63 — Post-Geist Roadmap Selection: Runtime Scheduler vs Evidence Append vs Prod-Profile**.
+
+## Prompt 63 Roadmap Selection Note
+
+Post-Geist next-line planning is available as [`docs/roadmap/post_geist_roadmap_selection.md`](post_geist_roadmap_selection.md). It selects Evidence/Archive Append Contracts for Replay/Sleep/Geist/ISM as the primary next roadmap line, Protocol Schema / Provenance Evolution as the secondary line, Prod-profile / Workspace Evidence Stability as a parallel validation line, and keeps Runtime Scheduler/Queue, Identity Anchor Authority, and Gateway Read API expansion deferred. The selection is planning-only and does not implement or claim Evidence/Archive append readiness, runtime activation, ISM write/upsert, IdentityAnchor, IdentityFinalization, Gateway write authority, production readiness, or Minimal Spine v1.x changes.

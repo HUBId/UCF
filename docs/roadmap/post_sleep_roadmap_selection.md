@@ -179,3 +179,7 @@ Prompt 55 is available as [`docs/roadmap/geist_ism_roadmap_boundary_audit.md`](g
 Prompt 62 closure is available as [`docs/roadmap/geist_ism_closure.md`](geist_ism_closure.md). The bounded Geist/ISM line now has fresh PASS evidence for targeted Geist/ISM tests, Sleep/Replay/Consolidation E2E regressions, workspace tests, clippy, docs lint, readiness-spine, split workspace-test evidence, and readiness-gate with split evidence. The closure is bounded only: no Geist runtime, ISM write/upsert, identity anchor/finalization, memory stabilization, Evidence/Archive append, Policy mutation, Gateway/action authority, or production readiness is claimed.
 
 Recommended next prompt: **UCF Prompt 63 — Post-Geist Roadmap Selection: Runtime Scheduler vs Evidence Append vs Prod-Profile**.
+
+## Post-Geist Supersession Note
+
+Post-Geist next-line planning is now available as [`docs/roadmap/post_geist_roadmap_selection.md`](post_geist_roadmap_selection.md). That document supersedes this post-Sleep selection for next-line planning after bounded Geist/ISM closure. This post-Sleep document remains historical planning evidence for why the bounded Geist/ISM line was selected after Sleep closure.
