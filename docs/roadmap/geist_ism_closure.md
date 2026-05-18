@@ -1,5 +1,9 @@
 # UCF Geist/ISM Closure
 
+## Historical status note
+
+Historical status note: this closure predates Prompt 67 and Prompt 68. Geist/ISM Evidence/Archive append/readback now exists only as bounded audit/provenance persistence using `RecordKind::Other(67)`, and cross-layer Replay → Sleep → Geist/ISM readback E2E exists; this does not change the closure boundary and still does not imply Geist runtime, ISM write/upsert, IdentityAnchor, IdentityFinalization, memory stabilization, Gateway/action authority, production readiness, or a second event log.
+
 ## 0. Purpose
 
 - This closes the current bounded Geist/ISM work after Prompts 55-62.

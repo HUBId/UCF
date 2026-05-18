@@ -1,5 +1,9 @@
 # UCF Sleep Closure
 
+## Historical status note
+
+Historical status note: this closure predates Prompt 66. Sleep Evidence/Archive append/readback now exists only as bounded audit/provenance persistence using `RecordKind::Other(66)`; this does not change the closure boundary and still does not imply Sleep runtime activation, SleepCompleted, coordinator trigger/report/WAL/journal behavior, Gateway semantics, production readiness, or a second event log.
+
 ## 0. Purpose
 
 - This closes the current bounded Sleep work after Prompts 46-53.

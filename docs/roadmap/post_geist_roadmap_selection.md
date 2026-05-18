@@ -1,5 +1,9 @@
 # UCF Post-Geist Roadmap Selection
 
+## Historical status note
+
+Historical status note: this selection predates Prompts 65-68. The selected Evidence/Archive append/readback line now has bounded Replay, Sleep, Geist/ISM audit/provenance persistence and cross-layer readback E2E; this does not imply runtime scheduler readiness, identity authority, Gateway authority, production readiness, Evidence/Archive authority changes, a second event log, or Minimal Spine v1.x changes.
+
 ## 0. Purpose
 
 - Select the next line after bounded Geist/ISM closure.
