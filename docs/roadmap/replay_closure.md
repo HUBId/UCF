@@ -1,5 +1,9 @@
 # UCF Replay Closure
 
+## Historical status note
+
+Historical status note: this closure predates Prompt 65. Replay Evidence/Archive append/readback now exists only as bounded audit/provenance persistence using `RecordKind::Other(65)`; this does not change the closure boundary and still does not imply runtime replay execution, scheduler/queue/worker readiness, Gateway semantics, production readiness, or a second event log.
+
 ## 0. Purpose
 
 - This is the closure record for the current bounded Replay work completed through Prompt 44.

@@ -3,7 +3,8 @@
 ## 0. Purpose
 
 - This document is a roadmap and boundary audit only.
-- No append implementation is introduced here.
+- This document began as a roadmap and boundary audit before Prompts 65-68 landed; sections 10-14 are the current append/readback guard.
+- No append implementation is introduced by this document itself.
 - No Replay, Sleep, Geist, ISM, runtime, identity, Gateway, capability, real-compute, or production semantics are introduced here.
 - No Evidence/Archive authority is changed, no second event log is created, and Minimal Spine v1.x remains unchanged.
 - Future append work is limited to explicit audit/provenance persistence plus deterministic readback tests unless a later prompt changes policy intentionally.
@@ -78,8 +79,8 @@ Inventory answers:
 - Canonical `RecordKind` values exist for workspace, self-state, IIT/consistency/structural records, replay token/applied, ISM anchor, cycle plan, and output event.
 - Extension kinds exist via `RecordKind::Other(u16)`; current bounded consolidation uses `Other(28)` for micro and `Other(30)` for meso.
 - `payload_commit` is a deterministic payload-byte digest or supplied commit bound into the archive record key and root commit; `boundary_commit` is metadata included in root hashing and must be contract-specific.
-- No bounded Replay/Sleep/Geist/ISM append helpers exist yet; existing broad prototype surfaces must not be treated as those contracts.
-- Prompt 65 safe APIs: deterministic bounded Replay structs and their `deterministic_bytes`/digest methods, explicit `EvidenceStore` append/get implementations, explicit `ArchiveAppender` and typed `ArchiveStore` append/get/iter_kind/root_commit, and the micro/meso pattern.
+- Bounded Replay, Sleep, and Geist/ISM append helpers now exist from Prompts 65-67; they are audit/provenance persistence only and must not be treated as runtime, identity, Gateway, production, or second-event-log authority.
+- Prompt 65-67 safe APIs: deterministic bounded Replay/Sleep/Geist/ISM append payloads and their `deterministic_bytes`/digest methods, explicit `EvidenceStore` append/get implementations, explicit `ArchiveAppender` and typed `ArchiveStore` append/get/iter_kind/root_commit, and the micro/meso pattern.
 - Risky APIs: broad `ExperienceAppender` use without typed payloads, consolidation `run_sleep_replay` archive writes, sleep trigger/report append prototypes, `RecordKind::IsmAnchor` for candidate-only ISM, and `IsmStore::upsert_anchor`.
 
 ## 3. Existing Append Contract Inventory
@@ -91,9 +92,13 @@ Inventory answers:
 | Meso milestone append/readback | yes | `MinimalSpineMesoMilestoneAppendPayload` from `MinimalSpineMesoMilestoneBuildOutput` | `append_minimal_spine_meso_milestone` | Evidence `get` plus archive `get` verification | Evidence/Archive with consolidation adapter | Low; best pattern for aggregate provenance. |
 | Macro candidate/finalization append | no | Macro candidate and local finalization boundary | none for bounded contract | none | none yet | Medium; later only after Replay/Sleep/Geist append contracts are stable. |
 | Compute audit metadata append | no explicit bounded contract | Compute audit/report metadata, where present | none identified as bounded Minimal Spine contract | none | none yet | Medium; should remain outside Prompt 65-67. |
-| Broad Geist archive append prototype | no bounded contract | Existing Geist/ISM broad/runtime surfaces | no bounded explicit append helper | none | none for bounded line | Critical if reused; must stay out of Prompt 67. |
-| Sleep report append prototype | no bounded contract | Sleep trigger/report/RSA surfaces | broad/prototype report append path, not bounded SleepPlan append | prototype read/report surfaces | prototype only | High; must not imply Sleep runtime activation or SleepCompleted. |
-| Replay audit archive kind | partial/historical | `RecordKind::ReplayToken`, `RecordKind::ReplayApplied`; consolidation sleep replay writes | broad `ArchiveAppender` in consolidation runtime path | typed archive store `get`/`iter_kind`, if used | archive-store prototype, not bounded Replay authority | High; Prompt 65 must define explicit Replay bounded payloads instead of inheriting this surface. |
+| Bounded Replay append/readback | yes | `MinimalSpineReplayAppendPayload` | `append_minimal_spine_replay_record` | Evidence `get` plus archive `get` verification | Evidence/Archive only | Low if kept as audit/provenance persistence; high if read as runtime Replay execution. |
+| Bounded Sleep append/readback | yes | `MinimalSpineSleepAppendPayload` | `append_minimal_spine_sleep_record` | Evidence `get` plus archive `get` verification | Evidence/Archive only | Low if kept as audit/provenance persistence; high if read as SleepCompleted or coordinator activation. |
+| Bounded Geist/ISM append/readback | yes | `MinimalSpineGeistIsmAppendPayload` | `append_minimal_spine_geist_ism_record` | Evidence `get` plus archive `get` verification | Evidence/Archive only | Low if kept as audit/provenance persistence; high if read as ISM write/upsert or identity authority. |
+| Cross-layer readback E2E | yes | Replay → Sleep → Geist/ISM append/readback chain | Existing per-layer append helpers | Evidence/archive readback across all three layers | Evidence/Archive only | Low if kept as deterministic readback; high if read as runtime, Gateway, or production readiness. |
+| Broad Geist archive append prototype | no bounded authority | Existing Geist/ISM broad/runtime surfaces | no bounded explicit helper for runtime/store mutation | none | none for runtime/store mutation | Critical if reused; must stay out of bounded Prompt 67 claims. |
+| Sleep report append prototype | no bounded runtime authority | Sleep trigger/report/RSA surfaces | broad/prototype report append path, not bounded SleepPlan append | prototype read/report surfaces | prototype only | High; must not imply Sleep runtime activation or SleepCompleted. |
+| Replay audit archive kind | partial/historical | `RecordKind::ReplayToken`, `RecordKind::ReplayApplied`; consolidation sleep replay writes | broad `ArchiveAppender` in consolidation runtime path | typed archive store `get`/`iter_kind`, if used | archive-store prototype, not bounded Replay authority | High; bounded Replay uses `RecordKind::Other(65)` instead of inheriting this surface. |
 
 ## 4. Target Artifact Inventory
 
@@ -169,14 +174,14 @@ Inventory answers:
 
 ## 8. Open Questions
 
-- Which `RecordKind` ranges are reserved for Replay, Sleep, and Geist/ISM append records?
+- Historical status note: these questions were captured before Prompts 65-68. The current bounded allocations are `RecordKind::Other(65)`, `RecordKind::Other(66)`, and `RecordKind::Other(67)` for Replay, Sleep, and Geist/ISM audit/provenance append/readback respectively.
 - Should append payloads live beside source modules or in an archive adapter layer?
 - Should Replay/Sleep/Geist append helpers depend on archive/evidence directly or use adapter structs to reduce crate coupling?
 - How can protocol schema promotion be avoided too early while keeping payload contracts discoverable?
-- Should cross-layer readback include a manifest/bundle, or should Prompt 68 remain pure test aggregation over per-layer records?
+- Prompt 68 remained pure deterministic test aggregation over per-layer records; any manifest/bundle remains future work.
 - What remains out of scope until runtime scheduler or identity prompts, especially for ReplayApplied, SleepApplied, ISM candidate boundaries, and identity-adjacent names?
-- Should `RecordKind::ReplayToken` and `RecordKind::ReplayApplied` be used for bounded Replay append, or should Replay append initially use extension kinds to avoid confusion with broad prototype writes?
-- Should `RecordKind::IsmAnchor` remain entirely forbidden for Prompt 67 candidate-boundary records?
+- Bounded Replay append uses `RecordKind::Other(65)`; `RecordKind::ReplayToken` and `RecordKind::ReplayApplied` remain broad/prototype-facing and are not the bounded Prompt 65 authority.
+- `RecordKind::IsmAnchor` remains forbidden for Prompt 67 candidate-boundary records; bounded Geist/ISM append uses `RecordKind::Other(67)`.
 - How should `RecordMeta::flags` be partitioned so side-effect status bits are never inferred from append records?
 
 ## 9. Recommended Next Prompt
@@ -258,3 +263,63 @@ Prompt 68 is now implemented as a deterministic cross-layer Evidence/Archive rea
 Prompt 68 does not implement Replay execution, runtime scheduler/queue/worker behavior, Sleep runtime activation, coordinator trigger/report/WAL/journal behavior, Geist runtime activation, `GeistKernel::ingest_macro`, ISM write/upsert, `IsmStore::upsert_anchor`, `IdentityAnchor`, identity finalization, memory stabilization, policy mutation, Gateway write/read semantics, capability issuance, real compute activation, Evidence/Archive authority changes, a second event log, gate criteria changes, or Minimal Spine v1.x changes.
 
 Recommended next prompt: **UCF Prompt 69 — Evidence/Archive Docs Overclaim Guard**.
+
+
+## 14. Evidence/Archive Overclaim Guard
+
+This section is the canonical current-state guard for the Prompt 65-68 append/readback line.
+
+| Guard | Current bounded meaning |
+|---|---|
+| Replay append/readback implemented | Prompt 65 implements explicit Replay audit/provenance persistence and deterministic readback only. |
+| Sleep append/readback implemented | Prompt 66 implements explicit Sleep audit/provenance persistence and deterministic readback only. |
+| Geist/ISM append/readback implemented | Prompt 67 implements explicit Geist/ISM audit/provenance persistence and deterministic readback only. |
+| Cross-layer readback E2E implemented | Prompt 68 verifies deterministic Replay → Sleep → Geist/ISM Evidence/Archive readback continuity in `domains/geist/crates/ucf-geist/tests/minimal_spine_cross_layer_archive_readback.rs`. |
+| `RecordKind::Other(65)` allocated | Bounded Replay extension allocation; not `ReplayApplied` runtime execution authority. |
+| `RecordKind::Other(66)` allocated | Bounded Sleep extension allocation; not `SleepCompleted` or coordinator activation authority. |
+| `RecordKind::Other(67)` allocated | Bounded Geist/ISM extension allocation; not `RecordKind::IsmAnchor`, ISM write/upsert, or identity authority. |
+| Append/readback is audit/provenance persistence only | Readback verifies stored deterministic payload/provenance bytes, payload commits, boundary commits, record keys, kind counts, and root commits only. |
+| Not runtime execution | Replay execution, real compute activation, and action side effects are not introduced. |
+| Not scheduler/queue/worker | No runtime scheduler, queue, worker, background runner, or coordinator loop is introduced. |
+| Not `SleepCompleted` | Sleep append records do not mark Sleep completion, stabilization, or coordinator success. |
+| Not Geist runtime | Geist append records do not activate `GeistKernel::ingest_macro` or apply Geist state. |
+| Not ISM write/upsert | Geist/ISM append records do not call or imply `IsmStore::upsert_anchor` or persistent ISM mutation. |
+| Not `IdentityAnchor` | Append/readback records do not create or contain an identity anchor. |
+| Not `IdentityFinalization` | Append/readback records do not finalize identity. |
+| Not memory stabilization | Append/readback records do not claim stabilized memory or persistent self authority. |
+| Not Gateway/action authority | Append/readback records do not expose Gateway-visible action state, Gateway writes, or action authority. |
+| Not production readiness | Passing readback tests are not production-readiness evidence without later prod-profile gates. |
+| Not a second event log | Evidence/Archive remain the append/readback authority; the bounded records do not create another event-log authority. |
+| Evidence/Archive authority unchanged | Existing Evidence/Archive append/readback surfaces are reused with explicit bounded payloads. |
+| Minimal Spine v1.x unchanged | The Prompt 65-68 line does not modify frozen Minimal Spine v1.x behavior or scope. |
+
+## 15. Future Claim Checklist
+
+Before future docs can claim runtime scheduler readiness:
+
+- Runtime scheduler/queue prompt implemented.
+- Deterministic execution tests pass.
+- Append/readback provenance remains stable.
+- No hidden Gateway/action authority.
+- Readiness refresh passes.
+
+Before future docs can claim `IdentityAnchor`:
+
+- Dedicated IdentityAnchor authority roadmap/prompt implemented.
+- Append/readback provenance semantics are defined.
+- Governance/policy boundaries defined.
+- Negative tests against hidden anchor promotion.
+
+Before future docs can claim Gateway read visibility:
+
+- Gateway Read API prompt implemented.
+- Read-only semantics defined.
+- No write/action authority.
+- Evidence/Archive readback source clearly documented.
+
+Before future docs can claim production readiness:
+
+- Prod-profile readiness passes.
+- Workspace evidence stable.
+- Docs lint/readiness reports fresh.
+- Runtime/protocol expectations explicit.
