@@ -245,7 +245,7 @@ fn replay_pipeline_rejects_duplicate_or_invalid_inputs() {
 }
 
 #[test]
-fn replay_pipeline_does_not_append_or_schedule_runtime_queue() {
+fn replay_pipeline_builders_do_not_schedule_runtime_queue() {
     let run = run_pipeline();
 
     assert!(!run.audit.evidence_archive_appended);
@@ -253,10 +253,8 @@ fn replay_pipeline_does_not_append_or_schedule_runtime_queue() {
     assert!(!run.applied_boundary.gateway_visible);
 
     let replay_source = include_str!("../src/lib.rs");
-    assert!(!replay_source.contains("ArchiveStore"));
-    assert!(!replay_source.contains("EvidenceStore"));
-    assert!(!replay_source.contains("append_evidence"));
-    assert!(!replay_source.contains("append_archive"));
+    assert!(!replay_source.contains("RuntimeReplayApply"));
+    assert!(!replay_source.contains("ReplayWorker"));
     assert!(!replay_source.contains("RuntimeScheduler"));
     assert!(!replay_source.contains("BackgroundQueue"));
     assert!(!replay_source.contains("spawn_replay_worker"));

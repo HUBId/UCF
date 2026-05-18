@@ -243,10 +243,4 @@ fn replay_schedule_does_not_append_to_evidence_archive() {
 
     assert!(!schedule.evidence_archive_appended);
     assert!(!schedule.deterministic_bytes().is_empty());
-
-    let replay_source = include_str!("../src/lib.rs");
-    assert!(!replay_source.contains("ArchiveStore"));
-    assert!(!replay_source.contains("EvidenceStore"));
-    assert!(!replay_source.contains("append_evidence"));
-    assert!(!replay_source.contains("append_archive"));
 }

@@ -132,6 +132,4 @@ fn replay_applied_boundary_does_not_emit_broad_replay_applied_runtime() {
     let replay_source = include_str!("../src/lib.rs");
     assert!(!replay_source.contains("ReplayApplied {"));
     assert!(!replay_source.contains("apply_replay_effects"));
-    assert!(!replay_source.contains("ArchiveStore"));
-    assert!(!replay_source.contains("EvidenceStore"));
 }

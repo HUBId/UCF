@@ -195,10 +195,4 @@ fn replay_audit_does_not_append_to_evidence_archive() {
 
     assert!(!audit.evidence_archive_appended);
     assert!(!audit.deterministic_bytes().is_empty());
-
-    let replay_source = include_str!("../src/lib.rs");
-    assert!(!replay_source.contains("ArchiveStore"));
-    assert!(!replay_source.contains("EvidenceStore"));
-    assert!(!replay_source.contains("append_evidence"));
-    assert!(!replay_source.contains("append_archive"));
 }

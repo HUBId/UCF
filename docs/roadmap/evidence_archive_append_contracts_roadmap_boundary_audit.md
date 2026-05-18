@@ -184,3 +184,21 @@ Inventory answers:
 Recommended next prompt: **UCF Prompt 65 — Replay Evidence/Archive Append Contract**.
 
 Prompt 65 should start with Replay because Replay is the upstream provenance source for Sleep and Geist/ISM, has bounded token/schedule/audit/local-boundary records, and can define the first post-consolidation append pattern without runtime activation, identity semantics, ISM mutation, or Gateway authority.
+
+## 10. Prompt 65 Completion Note — Replay Evidence/Archive Append Contract
+
+Prompt 65 is now implemented as a bounded Replay audit/provenance append/readback contract.
+
+| Concern | Decision | Reason |
+|---|---|---|
+| Contract shape | One combined `MinimalSpineReplayAppendPayload` | Preserves token, schedule, audit, and local applied-boundary provenance in one deterministic payload and matches the bounded Replay E2E artifact shape. |
+| Explicit helper | `append_minimal_spine_replay_record` | Builders, audits, and boundaries remain append-free; append happens only through the helper that takes `EvidenceStore`, `ArchiveStore`, and `ArchiveAppender` handles. |
+| Archive record kind | `RecordKind::Other(65)` | Existing `ReplayToken` and `ReplayApplied` kinds are broader/prototype-facing. `Other(65)` documents this bounded Prompt 65 extension without changing archive-store schema. |
+| Evidence payload format | `EvidenceEnvelope` with `ProofEnvelope.payload = MinimalSpineReplayAppendPayload::deterministic_bytes()` | Reuses existing Evidence authority and proof payload shape without adding a new protocol schema. |
+| Archive metadata | `payload_commit = payload.digest()`, `boundary_commit = applied_boundary_digest`, `cycle_id = 0`, `tier = 3`, `flags = 0` | Keeps metadata deterministic and readback-verifiable; flags intentionally carry no side-effect semantics. |
+| Boundary semantics | Audit/provenance persistence only | The payload hard-codes runtime, scheduler, Sleep, Geist/ISM, identity, and Gateway flags to false. |
+| Tests | `runtime/ucf-replay/tests/minimal_spine_replay_append.rs` | Proves explicit append, deterministic payload/readback, provenance preservation, rejected mismatches, append-free builders, and no second event log. |
+
+Prompt 65 does not implement runtime replay execution, a scheduler/queue/worker, Sleep, Geist/ISM, identity anchors/finalization, Gateway-visible replay semantics, capability issuance, real compute activation, Evidence/Archive authority changes, or a second event log.
+
+Recommended next prompt: **UCF Prompt 66 — Sleep Evidence/Archive Append Contract**.
