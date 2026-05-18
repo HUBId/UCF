@@ -243,3 +243,11 @@ Before future docs can claim production Geist/ISM readiness:
 - Runtime/ISM tests pass.
 - Evidence/Archive append contract is explicit if used.
 - Docs lint/readiness evidence is fresh.
+
+## Prompt 62 Closure Note
+
+Prompt 62 is complete with a bounded closure baseline in [`docs/roadmap/geist_ism_closure.md`](geist_ism_closure.md). The validation run passed targeted Geist/ISM candidate, verify-only audit, local ISM candidate boundary, and bounded E2E determinism tests; Sleep, Replay, and Consolidation E2E regressions; workspace tests; clippy; docs lint; readiness-spine; split workspace-test evidence; and readiness-gate with the fresh split evidence.
+
+This closure remains bounded. It does not claim Geist runtime readiness, `GeistApplied`, ISM write/upsert, `IsmStore::upsert_anchor`, identity anchor, identity finalization, stable identity, memory stabilization, persistent self authority, Policy mutation, Evidence/Archive append, Gateway/action authority, or production Geist/ISM readiness. Workspace-test evidence stability remains an operational caveat across environments; a timeout or missing workspace-test report must not be treated as PASS.
+
+Recommended next prompt: **UCF Prompt 63 — Post-Geist Roadmap Selection: Runtime Scheduler vs Evidence Append vs Prod-Profile**.
