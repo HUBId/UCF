@@ -13,3 +13,6 @@ ucf-policy-ecology = { path = "../../../../core/crates/ucf-policy-ecology" }
 ucf-recursion-controller = { path = "../../../../core/crates/ucf-recursion-controller" }
 ucf-sleep-coordinator = { path = "../../../../core/crates/ucf-sleep-coordinator" }
 ucf-types = { path = "../../../../core/crates/ucf-types" }
+
+[dev-dependencies]
+ucf-replay = { path = "../../../../runtime/ucf-replay" }

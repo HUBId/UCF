@@ -240,3 +240,21 @@ Prompt 67 is now implemented as a bounded Geist/ISM audit/provenance append/read
 Prompt 67 does not implement Geist runtime apply, `GeistKernel::ingest_macro`, ISM write/upsert, `IsmStore::upsert_anchor`, `IdentityAnchor`, identity finalization, memory stabilization, policy mutation, Gateway-visible Geist/ISM semantics, capability issuance, real compute activation, Evidence/Archive authority changes, a second event log, or Minimal Spine v1.x changes.
 
 Recommended next prompt: **UCF Prompt 68 — Cross-Layer Evidence/Archive Readback E2E**.
+
+## 13. Prompt 68 Completion Note — Cross-Layer Evidence/Archive Readback E2E
+
+Prompt 68 is now implemented as a deterministic cross-layer Evidence/Archive readback E2E over the existing Replay, Sleep, and Geist/ISM append contracts.
+
+| Concern | Decision | Reason |
+|---|---|---|
+| Test path | `domains/geist/crates/ucf-geist/tests/minimal_spine_cross_layer_archive_readback.rs` | `ucf-geist` already owns the terminal bounded Geist/ISM append path and can assemble the full Replay → Sleep → Geist/ISM provenance chain with only a test-only `ucf-replay` dependency. |
+| Pipeline shape | Build Replay artifacts, explicitly append Replay, build Sleep from Replay provenance, explicitly append Sleep, build Geist/ISM from Sleep provenance, explicitly append Geist/ISM | Proves append ordering and cross-layer provenance continuity without introducing runtime execution or new append authority. |
+| Archive record kinds | Existing `RecordKind::Other(65)`, `RecordKind::Other(66)`, and `RecordKind::Other(67)` | Reuses the Prompt 65-67 allocations; no new append contract or archive schema/kind authority is introduced. |
+| Evidence readback | Each appended `EvidenceEnvelope` is read back and its proof payload is checked against deterministic payload bytes | Confirms deterministic Evidence readback only; this is not runtime, identity, Gateway, or production retention authority. |
+| Archive readback | Each appended archive record is read back by key, kind counts are checked with `iter_kind`, and root commits are compared across fresh runs | Confirms deterministic Archive readback only; no second event log is created. |
+| Determinism | Fresh in-memory Evidence/Archive stores produce identical payload digests, readback digests, archive record digests, archive keys, counts, and root commits | Keeps the proof offline, deterministic, and reproducible. |
+| Boundary semantics | Readback-only audit/provenance persistence | The E2E explicitly asserts no Replay runtime/scheduler, no Sleep runtime/coordinator completion, no Geist runtime, no ISM write/upsert, no identity anchor/finalization, no memory stabilization, no policy mutation, and no Gateway visibility/action semantics. |
+
+Prompt 68 does not implement Replay execution, runtime scheduler/queue/worker behavior, Sleep runtime activation, coordinator trigger/report/WAL/journal behavior, Geist runtime activation, `GeistKernel::ingest_macro`, ISM write/upsert, `IsmStore::upsert_anchor`, `IdentityAnchor`, identity finalization, memory stabilization, policy mutation, Gateway write/read semantics, capability issuance, real compute activation, Evidence/Archive authority changes, a second event log, gate criteria changes, or Minimal Spine v1.x changes.
+
+Recommended next prompt: **UCF Prompt 69 — Evidence/Archive Docs Overclaim Guard**.

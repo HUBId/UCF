@@ -3935,6 +3935,7 @@ dependencies = [
  "ucf-evidence",
  "ucf-policy-ecology",
  "ucf-recursion-controller",
+ "ucf-replay",
  "ucf-sleep-coordinator",
  "ucf-types",
 ]
