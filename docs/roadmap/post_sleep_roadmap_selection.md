@@ -170,6 +170,12 @@ Before each prompt in the selected line:
 
 ## 9. Next Prompt
 
-Recommended next prompt title: **UCF Prompt 56 — Geist/ISM Record Authority and Schema Alignment**.
+Recommended next prompt title: **UCF Prompt 63 — Post-Geist Roadmap Selection: Runtime Scheduler vs Evidence Append vs Prod-Profile**.
 
-Prompt 55 is now available as [`docs/roadmap/geist_ism_roadmap_boundary_audit.md`](geist_ism_roadmap_boundary_audit.md). It keeps the selected Geist/ISM line planning-only and recommends Prompt 56 as the first safe follow-up. Prompt 56 must align record authority and schema boundaries before any projection builder, ISM write/upsert, identity anchor, identity finalization, runtime activation, Gateway authority, Policy Ecology mutation, or Evidence/Archive append behavior.
+Prompt 55 is available as [`docs/roadmap/geist_ism_roadmap_boundary_audit.md`](geist_ism_roadmap_boundary_audit.md). It kept the selected Geist/ISM line planning-only and selected Prompt 56 as the first safe follow-up. Prompts 56-62 then completed the bounded candidate, verify-only audit, local ISM candidate boundary, E2E determinism, docs overclaim guard, and readiness refresh sequence without authorizing ISM write/upsert, identity anchor, identity finalization, runtime activation, Gateway authority, Policy Ecology mutation, or Evidence/Archive append behavior.
+
+## Prompt 62 Closure Note
+
+Prompt 62 closure is available as [`docs/roadmap/geist_ism_closure.md`](geist_ism_closure.md). The bounded Geist/ISM line now has fresh PASS evidence for targeted Geist/ISM tests, Sleep/Replay/Consolidation E2E regressions, workspace tests, clippy, docs lint, readiness-spine, split workspace-test evidence, and readiness-gate with split evidence. The closure is bounded only: no Geist runtime, ISM write/upsert, identity anchor/finalization, memory stabilization, Evidence/Archive append, Policy mutation, Gateway/action authority, or production readiness is claimed.
+
+Recommended next prompt: **UCF Prompt 63 — Post-Geist Roadmap Selection: Runtime Scheduler vs Evidence Append vs Prod-Profile**.
