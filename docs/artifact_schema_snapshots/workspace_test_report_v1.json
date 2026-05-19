@@ -9,11 +9,19 @@
     "status"
   ],
   "optional_fields": [
+    "cargo_command_duration_ms",
+    "cargo_command_started_at_utc",
+    "diagnostic_notes",
+    "last_phase",
     "phase_timings"
   ],
   "field_types": {
+    "cargo_command_duration_ms": "Option<u64>",
+    "cargo_command_started_at_utc": "Option<String>",
     "command_result": "WorkspaceTestCommandResult",
+    "diagnostic_notes": "Vec<String>",
     "duration_ms": "u64",
+    "last_phase": "Option<String>",
     "metadata": "ReportFreshnessMetadata",
     "phase_timings": "Vec<GatePhaseTiming>",
     "status": "GateStatus"

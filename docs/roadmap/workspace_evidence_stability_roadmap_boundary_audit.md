@@ -108,4 +108,4 @@
 - What is acceptable CI/local divergence?
 
 ## 9. Recommended Next Prompt
-UCF Prompt 73 — Workspace-Test-Check Phase Decomposition and Timing Report
+UCF Prompt 74 — Workspace Evidence Freshness Enforcement Tests
