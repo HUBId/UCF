@@ -240,3 +240,10 @@ Local API compatibility checks:
 See `docs/sdk_versioning.md` for semver and deprecation policy.
 
 - `docs/residual_free_continuity_v11.md`
+
+
+## Readiness claim boundary
+
+- This repository may produce passing **test-profile** readiness artifacts without claiming prod readiness.
+- `SKIP`, `TIMEOUT`, missing evidence, or stale `out/*.json` reports are not `PASS` and not current truth.
+- Prod-readiness claims require fresh split evidence (`workspace-test-check` + `readiness-gate --profile prod`) and explicit blocker closure.

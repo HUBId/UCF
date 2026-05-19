@@ -107,3 +107,47 @@ UCF Prompt 77 — Prod-Profile Required Records / Skips Audit
 ## 9. Prompt 77 Follow-up
 - Prompt 77 audit added: `docs/roadmap/prod_profile_required_records_skips_audit.md`.
 - Recommended next prompt: `UCF Prompt 78 — Prod-Profile Docs Overclaim Guard` (or `UCF Prompt 77A` for blocker planning first).
+
+
+## 10. Prod-Profile Overclaim Guard
+
+- Prod readiness is **not** claimed in this document.
+- Test-profile `PASS` is not prod-profile `PASS`.
+- `SKIP` is not `PASS`.
+- `TIMEOUT` is not `PASS`.
+- Missing workspace evidence is not `PASS`.
+- Stale reports are not current truth.
+- `cargo test --workspace` is useful but not a substitute for fresh `workspace-test-check` evidence.
+- Split-evidence `readiness-gate` requires a fresh `workspace_test_report.json`.
+- The prod backend feature requirement remains a blocker unless explicitly fixed and re-validated.
+- Required records/skips must be resolved or policy-waived before any prod-readiness claim.
+- Root `out/*.json` reports are generated artifacts; if stale, they are not self-validating truth.
+- Minimal Spine and bounded UCF lines are not production-readiness claims.
+
+## 11. Future Claim Checklist
+
+### Before claiming prod readiness
+- fresh workspace-test report exists and is `PASS`;
+- readiness-gate prod profile passes with split evidence;
+- `required_records` pass;
+- `required_stage_profile` pass;
+- feature-pack/backend feature requirements pass;
+- docs lint passes;
+- readiness-spine passes;
+- artifact schema check passes;
+- workspace tests pass;
+- clippy passes;
+- stale/root report caveats resolved;
+- SKIPs are classified and acceptable by prod policy;
+- prod blocker list is empty or explicitly waived by documented governance.
+
+### Before claiming release readiness
+- all prod-readiness criteria above;
+- CI/nightly pass on required OSes;
+- reports retained as CI artifacts;
+- versioned release evidence bundle exists;
+- no local stale reports are cited as current evidence.
+
+## 12. Recommended Next Prompt
+
+UCF Prompt 79 — Workspace/Prod Readiness Refresh
