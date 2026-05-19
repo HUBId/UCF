@@ -99,3 +99,9 @@ UCF Prompt 77A — Prod-Profile Blocker Fix Planning
 - Prompt 77A investigated and minimally fixed model-lifecycle snapshot drift by restoring an explicit second-slot declaration in `docs/series_state_snapshot.md`.
 - No prod-readiness claim was added or implied.
 - Prompt 78 remains the next step only after workspace + clippy validation is green.
+
+## 12. Prompt 77B Follow-up
+- Prompt 77B reran targeted model-lifecycle validation and confirmed `models_lifecycle` test scope green, including deterministic supported-slot-set digest checks.
+- Workspace test suite (`cargo test --workspace`) and workspace clippy (`cargo clippy --workspace --all-targets -- -D warnings`) completed successfully.
+- No gate/readiness/runtime semantics were changed.
+- No prod-readiness claim is made; Prompt 78 remains the recommended next prompt.
