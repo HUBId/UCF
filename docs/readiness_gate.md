@@ -49,7 +49,7 @@ The command is broad: it compiles and executes the full workspace test graph, in
 - report assembly,
 - report write.
 
-The generated report also records `phase_timings[]` for the metadata, Cargo command, and report assembly phases. If an external timeout kills the process, the last visible `[workspace-test-check] start:` line identifies the active phase. A timeout remains a failed/missing evidence condition and must not be treated as `PASS`.
+The generated report also records `phase_timings[]` for the metadata, Cargo command, and report assembly phases, plus additive diagnostic fields (`last_phase`, `cargo_command_started_at_utc`, `cargo_command_duration_ms`, `diagnostic_notes`). If an external timeout kills the process, the last visible `[workspace-test-check] start:` line identifies the active phase. A timeout remains a failed/missing evidence condition and must not be treated as `PASS`.
 
 ## Report schema
 

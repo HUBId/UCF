@@ -683,9 +683,9 @@ pub use world_shadow::{
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -2142,6 +2142,14 @@ pub struct WorkspaceTestReport {
     pub command_result: WorkspaceTestCommandResult,
     #[serde(default)]
     pub phase_timings: Vec<GatePhaseTiming>,
+    #[serde(default)]
+    pub last_phase: Option<String>,
+    #[serde(default)]
+    pub cargo_command_started_at_utc: Option<String>,
+    #[serde(default)]
+    pub cargo_command_duration_ms: Option<u64>,
+    #[serde(default)]
+    pub diagnostic_notes: Vec<String>,
 }
 
 impl Default for WorkspaceTestReport {
@@ -2152,6 +2160,10 @@ impl Default for WorkspaceTestReport {
             duration_ms: 0,
             command_result: WorkspaceTestCommandResult::default(),
             phase_timings: Vec::new(),
+            last_phase: None,
+            cargo_command_started_at_utc: None,
+            cargo_command_duration_ms: None,
+            diagnostic_notes: Vec::new(),
         }
     }
 }
@@ -2323,6 +2335,14 @@ impl Default for ReadinessGateReport {
 
 fn elapsed_ms(start: Instant) -> u64 {
     start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
+}
+
+fn utc_now_string() -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    format!("{now}Z")
 }
 
 fn gate_status_label(status: GateStatus) -> &'static str {
@@ -5748,12 +5768,11 @@ pub fn workspace_test_check(out: &Path) -> Result<WorkspaceTestReport, OpsError>
 
     eprintln!("[workspace-test-check] start: {WORKSPACE_TEST_CHECK_COMMAND}");
     let command_start = Instant::now();
-    let output = Command::new("cargo")
-        .args(["test", "--workspace", "--offline"])
-        .output();
+    let cargo_command_started_at_utc = utc_now_string();
+    let output = run_workspace_test_command_with_streaming();
     let command_duration_ms = elapsed_ms(command_start);
 
-    let (status, command_result) = match output {
+    let (status, command_result, diagnostic_notes) = match output {
         Ok(out) => {
             let success = out.status.success();
             (
@@ -5765,9 +5784,10 @@ pub fn workspace_test_check(out: &Path) -> Result<WorkspaceTestReport, OpsError>
                 WorkspaceTestCommandResult {
                     success,
                     exit_code: out.status.code(),
-                    stdout_tail: bounded_output_tail(&out.stdout),
-                    stderr_tail: bounded_output_tail(&out.stderr),
+                    stdout_tail: out.stdout_tail,
+                    stderr_tail: out.stderr_tail,
                 },
+                vec!["cargo output streamed to stderr; report stores bounded tails".to_string()],
             )
         }
         Err(err) => (
@@ -5778,6 +5798,7 @@ pub fn workspace_test_check(out: &Path) -> Result<WorkspaceTestReport, OpsError>
                 stdout_tail: String::new(),
                 stderr_tail: bounded_string(err.to_string(), 512),
             },
+            vec!["cargo command invocation failed before completion".to_string()],
         ),
     };
     push_gate_phase_timing(
@@ -5800,6 +5821,10 @@ pub fn workspace_test_check(out: &Path) -> Result<WorkspaceTestReport, OpsError>
         duration_ms,
         command_result,
         phase_timings,
+        last_phase: Some("report assembly".to_string()),
+        cargo_command_started_at_utc: Some(cargo_command_started_at_utc),
+        cargo_command_duration_ms: Some(command_duration_ms),
+        diagnostic_notes,
     };
     let report_assembly_duration_ms = elapsed_ms(report_assembly_start);
     push_gate_phase_timing(
@@ -5813,6 +5838,7 @@ pub fn workspace_test_check(out: &Path) -> Result<WorkspaceTestReport, OpsError>
     );
 
     eprintln!("[workspace-test-check] start: report write");
+    report.last_phase = Some("report write".to_string());
     let report_write_start = Instant::now();
     write_json(out, &report)?;
     let report_write_duration_ms = elapsed_ms(report_write_start);
@@ -5822,12 +5848,70 @@ pub fn workspace_test_check(out: &Path) -> Result<WorkspaceTestReport, OpsError>
     Ok(report)
 }
 
-fn bounded_output_tail(bytes: &[u8]) -> String {
-    let text = String::from_utf8_lossy(bytes);
-    let chars: Vec<char> = text.chars().collect();
-    let len = chars.len();
-    let start = len.saturating_sub(512);
-    chars[start..].iter().collect()
+struct StreamedCommandOutput {
+    status: std::process::ExitStatus,
+    stdout_tail: String,
+    stderr_tail: String,
+}
+
+fn run_workspace_test_command_with_streaming() -> Result<StreamedCommandOutput, OpsError> {
+    let mut child = Command::new("cargo")
+        .args(["test", "--workspace", "--offline"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| OpsError::Invalid("failed to capture cargo stdout".to_string()))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| OpsError::Invalid("failed to capture cargo stderr".to_string()))?;
+    let out_handle = thread::spawn(move || stream_reader(stdout, false));
+    let err_handle = thread::spawn(move || stream_reader(stderr, true));
+    let status = child.wait()?;
+    let stdout_tail = out_handle
+        .join()
+        .map_err(|_| OpsError::Invalid("stdout stream thread panicked".to_string()))?;
+    let stderr_tail = err_handle
+        .join()
+        .map_err(|_| OpsError::Invalid("stderr stream thread panicked".to_string()))?;
+    Ok(StreamedCommandOutput {
+        status,
+        stdout_tail,
+        stderr_tail,
+    })
+}
+
+fn stream_reader<R: std::io::Read>(reader: R, to_stderr: bool) -> String {
+    let mut tail = VecDeque::new();
+    let mut buf = BufReader::new(reader);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match buf.read_line(&mut line) {
+            Ok(0) => break,
+            Ok(_) => {
+                if to_stderr {
+                    eprint!("{line}");
+                } else {
+                    eprintln!("[workspace-test-check][stdout] {line}");
+                }
+                for ch in line.chars() {
+                    tail.push_back(ch);
+                    if tail.len() > 512 {
+                        tail.pop_front();
+                    }
+                }
+            }
+            Err(err) => {
+                eprintln!("[workspace-test-check] stream read error: {err}");
+                break;
+            }
+        }
+    }
+    tail.iter().collect()
 }
 
 fn check_workspace_tests() -> CheckResult {
@@ -22524,6 +22608,10 @@ C:\agent\file.rs:2"#,
                 status: GateStatus::Pass,
                 duration_ms: 42,
             }],
+            last_phase: Some("report write".to_string()),
+            cargo_command_started_at_utc: Some("121Z".to_string()),
+            cargo_command_duration_ms: Some(40),
+            diagnostic_notes: vec!["note".to_string()],
         };
 
         let check = validate_workspace_test_report(
@@ -22574,6 +22662,10 @@ C:\agent\file.rs:2"#,
                 status: GateStatus::Pass,
                 duration_ms: 42,
             }],
+            last_phase: Some("report write".to_string()),
+            cargo_command_started_at_utc: Some("121Z".to_string()),
+            cargo_command_duration_ms: Some(40),
+            diagnostic_notes: vec!["note".to_string()],
         };
 
         let check = validate_workspace_test_report(
@@ -22621,6 +22713,51 @@ C:\agent\file.rs:2"#,
         std::env::remove_var("CI");
         std::env::remove_var("UCF_SKIP_GATE_WORKSPACE_TESTS");
         assert_eq!(check.name, "build_workspace_tests");
+        assert_eq!(check.status, GateStatus::Fail);
+    }
+
+    #[test]
+    fn workspace_test_report_validation_ignores_diagnostics_for_pass_semantics() {
+        let current = ReportFreshnessMetadata {
+            report_version: "1".to_string(),
+            generated_at_utc: "123Z".to_string(),
+            command: "readiness-gate workspace-test evidence validation".to_string(),
+            git_head_full: "abc".to_string(),
+            git_head_short: "abc".to_string(),
+            git_branch: "work".to_string(),
+            git_dirty: false,
+            workspace_root: "/repo".to_string(),
+            repo_root: "/repo".to_string(),
+        };
+        let report = WorkspaceTestReport {
+            metadata: ReportFreshnessMetadata {
+                command: WORKSPACE_TEST_CHECK_COMMAND.to_string(),
+                generated_at_utc: "122Z".to_string(),
+                ..current.clone()
+            },
+            status: GateStatus::Fail,
+            duration_ms: 42,
+            command_result: WorkspaceTestCommandResult {
+                success: false,
+                exit_code: Some(101),
+                stdout_tail: "x".to_string(),
+                stderr_tail: "y".to_string(),
+            },
+            phase_timings: vec![GatePhaseTiming {
+                name: WORKSPACE_TEST_CHECK_COMMAND.to_string(),
+                status: GateStatus::Fail,
+                duration_ms: 42,
+            }],
+            last_phase: Some("cargo test --workspace --offline".to_string()),
+            cargo_command_started_at_utc: Some("121Z".to_string()),
+            cargo_command_duration_ms: Some(40),
+            diagnostic_notes: vec!["streamed".to_string()],
+        };
+        let check = validate_workspace_test_report(
+            Path::new("out/workspace_test_report.json"),
+            &report,
+            &current,
+        );
         assert_eq!(check.status, GateStatus::Fail);
     }
 
