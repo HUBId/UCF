@@ -108,4 +108,17 @@
 - What is acceptable CI/local divergence?
 
 ## 9. Recommended Next Prompt
-UCF Prompt 74 — Workspace Evidence Freshness Enforcement Tests
+UCF Prompt 75 — Readiness-Gate Split Evidence CI Alignment
+
+## 10. Prompt 74 Coverage Update
+
+Prompt 74 adds/extends deterministic `runtime/ucf-ops` tests so split-evidence workspace freshness rejects:
+
+- non-PASS workspace-test status,
+- wrong workspace command,
+- dirty-state mismatch against current repository state,
+- malformed/unreadable report content,
+- diagnostics-only/non-authoritative diagnostic field payloads,
+- stale or wrong-command split-evidence report paths.
+
+Fresh PASS evidence with canonical command (`cargo test --workspace --offline`) and matching HEAD/dirty metadata remains accepted. Gate semantics are unchanged and remain fail-closed for missing/stale/mismatched workspace evidence.
