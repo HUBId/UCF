@@ -151,3 +151,7 @@ UCF Prompt 77 — Prod-Profile Required Records / Skips Audit
 ## 12. Recommended Next Prompt
 
 UCF Prompt 79 — Workspace/Prod Readiness Refresh
+
+## Prompt 79S refresh link
+- Refresh document: `docs/roadmap/workspace_prod_readiness_refresh.md`.
+- Outcome snapshot: fresh workspace evidence PASS, test split PASS, prod split FAIL on backend feature requirement.
