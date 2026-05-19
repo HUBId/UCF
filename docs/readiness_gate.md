@@ -1,6 +1,6 @@
 # Readiness Gate v0 (Real Compute Ready)
 
-`ucf-ops readiness-gate` executes an offline, deterministic production-readiness checklist and writes a bounded JSON report.
+`ucf-ops readiness-gate` executes an offline, deterministic readiness checklist and writes a bounded JSON report. It is a gate artifact, not by itself a production-readiness claim.
 
 ## PASS semantics
 
@@ -31,6 +31,16 @@ cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.js
 
 The split report is accepted only when it is `PASS`, records `cargo test --workspace --offline`, and matches the current HEAD and dirty state. Missing, stale, mismatched, wrong-command, or non-PASS evidence fails `build_workspace_tests`; it is not a silent skip and is never treated as `PASS`. The commands exit with code `0` on `PASS` and `2` on `FAIL`.
 
+
+
+## Prod-profile overclaim guard
+
+- A `PASS` from `--profile test` is **not** a `--profile prod` pass.
+- `SKIP` is not `PASS`.
+- `TIMEOUT` is not `PASS`.
+- Missing `workspace_test_report` evidence is not `PASS`.
+- Stale reports (HEAD/dirty mismatch) are not current truth.
+- `cargo test --workspace` is useful validation, but not a substitute for fresh `workspace-test-check` split evidence when split mode is required.
 
 ## Workspace-test runtime diagnostics
 
