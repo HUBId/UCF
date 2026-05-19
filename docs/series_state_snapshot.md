@@ -84,5 +84,6 @@ Reference: `docs/next_10_prompts.md`
 ## Supported real-slot baseline for current stage
 - First supported slot: `world_jepa`.
 - Second supported slot in this stage: `sae`.
+- Second supported slot declaration: `sae`.
 - Supported scope remains authority-gated and evidence-bound.
 - Scope changes require explicit seal-complete closure-complete final-consolidated stabilized canonical governance inputs plus current supported-scope execution evidence.

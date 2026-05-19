@@ -94,3 +94,8 @@ UCF Prompt 78 — Prod-Profile Docs Overclaim Guard
 
 Alternative when blocker planning is required first:
 UCF Prompt 77A — Prod-Profile Blocker Fix Planning
+
+## 11. Prompt 77A Follow-up
+- Prompt 77A investigated and minimally fixed model-lifecycle snapshot drift by restoring an explicit second-slot declaration in `docs/series_state_snapshot.md`.
+- No prod-readiness claim was added or implied.
+- Prompt 78 remains the next step only after workspace + clippy validation is green.
