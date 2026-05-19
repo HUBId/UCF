@@ -78,3 +78,5 @@ Given workspace evidence caveat in this run, next prompt should be **Workspace E
 
 ## 9. Follow-up Planning Link
 - `docs/roadmap/post_archive_roadmap_selection.md`
+
+- Next-line caveated planning link: `docs/roadmap/workspace_evidence_stability_roadmap_boundary_audit.md` (roadmap/boundary only; no gate weakening, no timeout-as-pass).
