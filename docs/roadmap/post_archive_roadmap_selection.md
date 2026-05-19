@@ -102,3 +102,8 @@
 ## 9. Next Prompt
 - **Recommended next prompt:** UCF Prompt 72 — Workspace Evidence Stability Roadmap and Boundary Audit.
 - **Reason:** it directly addresses the current workspace-evidence caveat without widening runtime, Gateway, or identity authority semantics.
+
+
+## 10. Workspace Evidence Audit Availability
+- Workspace evidence roadmap/boundary audit is available at `docs/roadmap/workspace_evidence_stability_roadmap_boundary_audit.md`.
+- Recommended next prompt remains **UCF Prompt 73 — Workspace-Test-Check Phase Decomposition and Timing Report**.

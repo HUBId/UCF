@@ -247,3 +247,6 @@ Freshness check procedure:
 
 ## Post-Archive Planning
 - Current planning reference: `docs/roadmap/post_archive_roadmap_selection.md`.
+
+
+- Current planning link: `docs/roadmap/workspace_evidence_stability_roadmap_boundary_audit.md` (Workspace Evidence Stability / Prod-profile readiness boundary audit).
