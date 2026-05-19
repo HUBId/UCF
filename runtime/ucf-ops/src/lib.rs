@@ -5855,11 +5855,19 @@ struct StreamedCommandOutput {
 }
 
 fn run_workspace_test_command_with_streaming() -> Result<StreamedCommandOutput, OpsError> {
-    let mut child = Command::new("cargo")
+    let mut command = Command::new("cargo");
+    command
         .args(["test", "--workspace", "--offline"])
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
+        .stderr(Stdio::piped());
+    if cfg!(windows) {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        command.env(
+            "CARGO_TARGET_DIR",
+            repo_root.join("target/workspace-test-check"),
+        );
+    }
+    let mut child = command.spawn()?;
     let stdout = child
         .stdout
         .take()

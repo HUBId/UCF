@@ -11,7 +11,8 @@ Linux nightly executes:
 - `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 - `cargo run -p ucf-ops -- spec snapshot ...` and `diff -u docs/spec_snapshot.md ./out/spec_snapshot_nightly.md`
 - `cargo run -p ucf-ops -- goldens verify --all --os linux --report-out ./out/goldens_report.json`
-- `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json`
+- `cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json`
+- `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json --workdir ./.ucf_gate_nightly --workspace-test-report ./out/workspace_test_report.json`
 - `cargo run -p ucf-ops -- adversarial-run --suite v1 --out ./out/adversarial_report.json`
 - `cargo run -p ucf-ops -- drift report ... --out ./out/drift_report.json`
 - `cargo run -p ucf-ops -- nightly summarize --out ./out/nightly_summary.json`
@@ -56,7 +57,8 @@ cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
 cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out ./out/spec_snapshot_nightly.md
 diff -u docs/spec_snapshot.md ./out/spec_snapshot_nightly.md
 cargo run -p ucf-ops -- goldens verify --all --os linux --report-out ./out/goldens_report.json
-cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json --workdir ./.ucf_gate_nightly_local
+cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json
+cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json --workdir ./.ucf_gate_nightly_local --workspace-test-report ./out/workspace_test_report.json
 cargo run -p ucf-ops -- adversarial-run --suite v1 --out ./out/adversarial_report.json
 run_id=$(jq -r '.run_id' ./out/gate_report.json)
 cargo run -p ucf-ops -- drift report --run "$run_id" --windows 4 --out ./out/drift_report.json
