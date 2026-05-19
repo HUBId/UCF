@@ -102,3 +102,8 @@ Inventory rule: root `out/*.json` is freshness-bound, not auto-authoritative.
 
 ## 8. Recommended Next Prompt
 UCF Prompt 77 — Prod-Profile Required Records / Skips Audit
+
+
+## 9. Prompt 77 Follow-up
+- Prompt 77 audit added: `docs/roadmap/prod_profile_required_records_skips_audit.md`.
+- Recommended next prompt: `UCF Prompt 78 — Prod-Profile Docs Overclaim Guard` (or `UCF Prompt 77A` for blocker planning first).

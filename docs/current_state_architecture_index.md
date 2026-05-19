@@ -251,3 +251,5 @@ Freshness check procedure:
 
 
 - Current planning link: `docs/roadmap/workspace_evidence_stability_roadmap_boundary_audit.md` (Workspace Evidence Stability / Prod-profile readiness boundary audit).
+
+- Prod-profile planning reference: `docs/roadmap/prod_profile_required_records_skips_audit.md` (Prompt 77 required-records/SKIP audit).
