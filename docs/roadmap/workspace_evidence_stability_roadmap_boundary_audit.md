@@ -128,3 +128,7 @@ Fresh PASS evidence with canonical command (`cargo test --workspace --offline`) 
 
 - Prompt 76 inventory is now available at `docs/roadmap/prod_profile_readiness_inventory_gap_report.md`.
 - Recommended next step remains Prompt 77: **Prod-Profile Required Records / Skips Audit**.
+
+
+## Prompt 77 availability update
+- Available: `docs/roadmap/prod_profile_required_records_skips_audit.md` (required-records/SKIP audit).
