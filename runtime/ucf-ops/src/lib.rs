@@ -22683,6 +22683,148 @@ C:\agent\file.rs:2"#,
     }
 
     #[test]
+    fn workspace_test_report_validation_rejects_non_pass_status() {
+        let current = ReportFreshnessMetadata {
+            report_version: "1".to_string(),
+            generated_at_utc: "123Z".to_string(),
+            command: "readiness-gate workspace-test evidence validation".to_string(),
+            git_head_full: "abc".to_string(),
+            git_head_short: "abc".to_string(),
+            git_branch: "work".to_string(),
+            git_dirty: false,
+            workspace_root: "/repo".to_string(),
+            repo_root: "/repo".to_string(),
+        };
+        let report = WorkspaceTestReport {
+            metadata: ReportFreshnessMetadata {
+                command: WORKSPACE_TEST_CHECK_COMMAND.to_string(),
+                generated_at_utc: "122Z".to_string(),
+                ..current.clone()
+            },
+            status: GateStatus::Fail,
+            duration_ms: 42,
+            command_result: WorkspaceTestCommandResult {
+                success: false,
+                exit_code: Some(101),
+                stdout_tail: String::new(),
+                stderr_tail: String::new(),
+            },
+            phase_timings: vec![],
+            last_phase: Some("report assembly".to_string()),
+            cargo_command_started_at_utc: Some("121Z".to_string()),
+            cargo_command_duration_ms: Some(40),
+            diagnostic_notes: vec!["diagnostic-only".to_string()],
+        };
+
+        let check = validate_workspace_test_report(
+            Path::new("out/workspace_test_report.json"),
+            &report,
+            &current,
+        );
+        assert_eq!(check.status, GateStatus::Fail);
+        assert!(check
+            .failure_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("did not pass"));
+    }
+
+    #[test]
+    fn workspace_test_report_validation_rejects_wrong_command() {
+        let current = ReportFreshnessMetadata {
+            report_version: "1".to_string(),
+            generated_at_utc: "123Z".to_string(),
+            command: "readiness-gate workspace-test evidence validation".to_string(),
+            git_head_full: "abc".to_string(),
+            git_head_short: "abc".to_string(),
+            git_branch: "work".to_string(),
+            git_dirty: false,
+            workspace_root: "/repo".to_string(),
+            repo_root: "/repo".to_string(),
+        };
+        let report = WorkspaceTestReport {
+            metadata: ReportFreshnessMetadata {
+                command: "cargo test --workspace".to_string(),
+                generated_at_utc: "122Z".to_string(),
+                ..current.clone()
+            },
+            status: GateStatus::Pass,
+            duration_ms: 42,
+            command_result: WorkspaceTestCommandResult {
+                success: true,
+                exit_code: Some(0),
+                stdout_tail: String::new(),
+                stderr_tail: String::new(),
+            },
+            phase_timings: vec![],
+            last_phase: Some("report write".to_string()),
+            cargo_command_started_at_utc: Some("121Z".to_string()),
+            cargo_command_duration_ms: Some(40),
+            diagnostic_notes: vec!["wrong command".to_string()],
+        };
+
+        let check = validate_workspace_test_report(
+            Path::new("out/workspace_test_report.json"),
+            &report,
+            &current,
+        );
+        assert_eq!(check.status, GateStatus::Fail);
+        assert!(check
+            .failure_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("mandatory workspace test command"));
+    }
+
+    #[test]
+    fn workspace_test_report_validation_rejects_dirty_state_mismatch() {
+        let current = ReportFreshnessMetadata {
+            report_version: "1".to_string(),
+            generated_at_utc: "123Z".to_string(),
+            command: "readiness-gate workspace-test evidence validation".to_string(),
+            git_head_full: "abc".to_string(),
+            git_head_short: "abc".to_string(),
+            git_branch: "work".to_string(),
+            git_dirty: false,
+            workspace_root: "/repo".to_string(),
+            repo_root: "/repo".to_string(),
+        };
+        let report = WorkspaceTestReport {
+            metadata: ReportFreshnessMetadata {
+                command: WORKSPACE_TEST_CHECK_COMMAND.to_string(),
+                generated_at_utc: "122Z".to_string(),
+                git_dirty: true,
+                ..current.clone()
+            },
+            status: GateStatus::Pass,
+            duration_ms: 42,
+            command_result: WorkspaceTestCommandResult {
+                success: true,
+                exit_code: Some(0),
+                stdout_tail: String::new(),
+                stderr_tail: String::new(),
+            },
+            phase_timings: vec![],
+            last_phase: Some("report write".to_string()),
+            cargo_command_started_at_utc: Some("121Z".to_string()),
+            cargo_command_duration_ms: Some(40),
+            diagnostic_notes: vec![],
+        };
+
+        let check = validate_workspace_test_report(
+            Path::new("out/workspace_test_report.json"),
+            &report,
+            &current,
+        );
+        assert_eq!(check.status, GateStatus::Fail);
+        assert!(check
+            .failure_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("stale"));
+    }
+
+    #[test]
     fn workspace_test_report_validation_rejects_missing_report() {
         let dir = tempfile::tempdir().expect("tmp");
         let missing = dir.path().join("missing_workspace_test_report.json");
@@ -22696,6 +22838,22 @@ C:\agent\file.rs:2"#,
             .as_deref()
             .unwrap_or_default()
             .contains("missing"));
+    }
+
+    #[test]
+    fn workspace_test_report_validation_rejects_malformed_json() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let malformed = dir.path().join("workspace_test_report_bad.json");
+        std::fs::write(&malformed, "{not-valid-json").expect("write malformed");
+
+        let check = check_workspace_test_report(&malformed);
+        assert_eq!(check.name, "build_workspace_tests");
+        assert_eq!(check.status, GateStatus::Fail);
+        assert!(check
+            .failure_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("not valid JSON"));
     }
 
     #[test]
@@ -22758,6 +22916,48 @@ C:\agent\file.rs:2"#,
             &report,
             &current,
         );
+        assert_eq!(check.status, GateStatus::Fail);
+    }
+
+    #[test]
+    fn readiness_gate_split_workspace_report_rejects_stale_or_wrong_command() {
+        let current = report_freshness_metadata(
+            "readiness-gate workspace-test evidence validation".to_string(),
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."),
+        );
+        let dir = tempfile::tempdir().expect("tmp");
+        let report_path = dir.path().join("stale_wrong_workspace_test_report.json");
+        let report = WorkspaceTestReport {
+            metadata: ReportFreshnessMetadata {
+                command: "cargo test --workspace".to_string(),
+                generated_at_utc: "122Z".to_string(),
+                git_head_full: format!("{}-stale", current.git_head_full),
+                git_head_short: "stale".to_string(),
+                git_branch: current.git_branch.clone(),
+                git_dirty: current.git_dirty,
+                workspace_root: current.workspace_root.clone(),
+                repo_root: current.repo_root.clone(),
+                report_version: "1".to_string(),
+            },
+            status: GateStatus::Pass,
+            duration_ms: 5,
+            command_result: WorkspaceTestCommandResult {
+                success: true,
+                exit_code: Some(0),
+                stdout_tail: String::new(),
+                stderr_tail: String::new(),
+            },
+            phase_timings: vec![],
+            last_phase: Some("report write".to_string()),
+            cargo_command_started_at_utc: Some("121Z".to_string()),
+            cargo_command_duration_ms: Some(4),
+            diagnostic_notes: vec![],
+        };
+        std::fs::write(&report_path, serde_json::to_string(&report).expect("json")).expect("write");
+        std::env::set_var("UCF_GATE_WORKSPACE_TEST_REPORT", &report_path);
+
+        let check = check_workspace_tests();
+        std::env::remove_var("UCF_GATE_WORKSPACE_TEST_REPORT");
         assert_eq!(check.status, GateStatus::Fail);
     }
 
