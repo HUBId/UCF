@@ -122,3 +122,9 @@ Prompt 74 adds/extends deterministic `runtime/ucf-ops` tests so split-evidence w
 - stale or wrong-command split-evidence report paths.
 
 Fresh PASS evidence with canonical command (`cargo test --workspace --offline`) and matching HEAD/dirty metadata remains accepted. Gate semantics are unchanged and remain fail-closed for missing/stale/mismatched workspace evidence.
+
+
+## 11. Prompt 76 Inventory Update
+
+- Prompt 76 inventory is now available at `docs/roadmap/prod_profile_readiness_inventory_gap_report.md`.
+- Recommended next step remains Prompt 77: **Prod-Profile Required Records / Skips Audit**.
