@@ -79,6 +79,7 @@ pub mod reference_map;
 #[cfg(feature = "remote-compute")]
 pub mod remote_compute;
 pub mod risk_contract;
+pub mod runtime_contract;
 pub mod runtime_profile;
 pub mod service_surface;
 pub mod ssm;
@@ -484,6 +485,10 @@ pub use remote_compute::{
 pub use risk_contract::{
     clamp01, stable_budget_profile_id, validate_risk_signal, BackendProfileId, EvidenceRef,
     RiskSignal, SignalQuality,
+};
+pub use runtime_contract::{
+    OptionalRealRuntimeArtifactSpec, OptionalRealRuntimeCandidateContract,
+    OptionalRealRuntimeContractError, OptionalRealRuntimeFixtureSpec,
 };
 pub use runtime_profile::{DeploymentProfile, RuntimeDiagnosticFlags, RuntimeMode, RuntimeProfile};
 pub use service_surface::{
