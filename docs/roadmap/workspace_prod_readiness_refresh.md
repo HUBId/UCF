@@ -59,3 +59,5 @@
 ## 7. Next Roadmap Recommendation
 - Primary next step: **UCF Prompt 79A — Prod-Profile Blocker Fix Planning**.
 - Secondary only if workspace stability regresses later: **UCF Prompt 79B — Workspace Evidence Runtime Stability Hardening**.
+
+- Prompt 79A blocker plan: [prod_profile_backend_feature_blocker_plan.md](prod_profile_backend_feature_blocker_plan.md)
