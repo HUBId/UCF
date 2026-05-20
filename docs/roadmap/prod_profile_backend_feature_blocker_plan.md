@@ -98,3 +98,28 @@ cargo run -p ucf-ops --features backend-burn -- readiness-gate --profile prod --
 ### Next prompt recommendation
 - If prod split gate still fails: `UCF Prompt 79C — Prod Feature-Pack Mapping / Feature Propagation Fix`.
 - If prod split gate passes but closure still needed: `UCF Prompt 79D — Prod Readiness Refresh After Backend Lane Alignment`.
+
+## Prompt 79C — Feature Propagation / Mapping Analysis
+
+### Chosen option
+- **Option D** (current behavior intentional: prod remains blocked until runtime-capable backend lane exists).
+- Reason: the readiness gate failure text `compute backend disabled` is emitted by compute error surfaces and the prod bringup test contract still encodes burn feature gating as compile-lane prerequisite only; no code path in this prompt proves a runtime-capable backend in prod.
+
+### Code fix applied
+- **No runtime behavior change applied.**
+- **No gate semantics weakened.**
+- No `OptionalRealRuntime` claim/activation introduced.
+
+### Evidence and progression
+- `timeout 900s cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json` timed out in this run; therefore no fresh split workspace evidence was available.
+- Per freshness policy, no new prod split gate run was treated as authoritative PASS in this prompt.
+
+### Current blocker statement
+- Current prod lane remains blocked by backend enablement/runtime semantics in the existing gate/compute contracts; this prompt does **not** claim runtime burn inference.
+
+### No runtime inference claim
+- `BackendPackKind::BurnToyV1` identity remains `OptionalRealCompile` and non-production/non-runtime-inference in compute tests/contracts.
+- This prompt does not reinterpret compile-only identity as runtime-ready.
+
+### Next prompt recommendation
+- **UCF Prompt 79E — OptionalRealRuntime / Prod Compute Semantics Roadmap.**
