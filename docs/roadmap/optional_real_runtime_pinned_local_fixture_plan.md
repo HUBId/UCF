@@ -16,6 +16,7 @@
 
 Links:
 - [`docs/roadmap/optional_real_runtime_artifact_fixture_inventory.md`](optional_real_runtime_artifact_fixture_inventory.md)
+- [`docs/roadmap/optional_real_runtime_artifact_format_decision.md`](optional_real_runtime_artifact_format_decision.md)
 - [`docs/roadmap/optional_real_runtime_prod_compute_semantics_roadmap.md`](optional_real_runtime_prod_compute_semantics_roadmap.md)
 - OptionalRealRuntime contract tests:
   - [`runtime/ucf-compute/tests/optional_real_runtime_contract.rs`](../../runtime/ucf-compute/tests/optional_real_runtime_contract.rs)
@@ -139,5 +140,5 @@ runtime/ucf-compute/tests/fixtures/optional_real_runtime/
 - Whether contract satisfaction test lands before any runtime invocation hook or in same prompt.
 
 ## 9. Recommended Next Prompt
-- Preferred next: **UCF Prompt 79H2 — OptionalRealRuntime Artifact Format Decision**.
+- Preferred next: **UCF Prompt 79I-A — OptionalRealRuntime Fixture Files and Manifest Validation**.
 - Then: **UCF Prompt 79I — Deterministic OptionalRealRuntime Golden Test Implementation**.
