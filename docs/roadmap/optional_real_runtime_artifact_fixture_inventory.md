@@ -122,3 +122,21 @@ Reason: the primary gap is not code activation; it is a precise runtime-contract
 The Prompt 79F inventory was revalidated after cleanup of generated reports. Workspace tests and workspace clippy completed successfully. This does not change the OptionalRealRuntime status: OptionalRealRuntime remains absent and roadmap-only, backend-burn remains compile evidence only, and no prod-readiness claim is made.
 
 Recommended next prompt: UCF Prompt 79G — OptionalRealRuntime Backend Contract and Artifact Schema.
+
+## Prompt 79G — Contract/Schema Layer (Metadata-Only)
+
+Status: implemented as metadata contract types and tests; no runtime activation.
+
+Added contract types in `runtime/ucf-compute/src/runtime_contract.rs`:
+- `OptionalRealRuntimeArtifactSpec`
+- `OptionalRealRuntimeFixtureSpec`
+- `OptionalRealRuntimeCandidateContract`
+- `OptionalRealRuntimeContractError`
+
+Added validation test coverage in:
+- `runtime/ucf-compute/tests/optional_real_runtime_contract.rs`
+
+Boundary remains unchanged:
+- No backend promoted to `OptionalRealRuntime` in active mappings.
+- No runtime inference execution added.
+- `production_claim` remains forbidden for this contract.

@@ -99,3 +99,12 @@ Rationale: Prompt 79F inventory is now captured in [`docs/roadmap/optional_real_
 - no prod-readiness claim.
 - OptionalRealRuntime remains roadmap-only.
 - Recommended next prompt: UCF Prompt 79F — OptionalRealRuntime Artifact and Fixture Inventory.
+
+## Prompt 79G update
+
+A metadata-only OptionalRealRuntime candidate contract/schema layer now exists in
+`runtime/ucf-compute/src/runtime_contract.rs` with validation tests in
+`runtime/ucf-compute/tests/optional_real_runtime_contract.rs`.
+
+This update does not activate any runtime backend and does not change production readiness.
+Recommended next prompt remains: **UCF Prompt 79H — Pinned Local Runtime Artifact Fixture Plan**.
