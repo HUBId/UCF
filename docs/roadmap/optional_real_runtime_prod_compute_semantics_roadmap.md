@@ -85,9 +85,12 @@
 - Should `prod-compile` and `prod-runtime` be split profiles?
 
 ## 8. Recommended Next Prompt
-**UCF Prompt 79F — OptionalRealRuntime Artifact and Fixture Inventory**.
+**UCF Prompt 79G — OptionalRealRuntime Backend Contract and Artifact Schema**.
 
-Rationale: the immediate gap is artifact/fixture/runtime-evidence specification; runtime activation remains deferred and prod remains blocked until the full runtime evidence chain exists.
+Rationale: Prompt 79F inventory is now captured in [`docs/roadmap/optional_real_runtime_artifact_fixture_inventory.md`](optional_real_runtime_artifact_fixture_inventory.md), and the immediate next gap is contract/schema definition before any runtime-fixture implementation.
+
+## 8.1 Linked Inventory
+- [`docs/roadmap/optional_real_runtime_artifact_fixture_inventory.md`](optional_real_runtime_artifact_fixture_inventory.md)
 
 ## Prompt 79E-R — Validation Completion
 

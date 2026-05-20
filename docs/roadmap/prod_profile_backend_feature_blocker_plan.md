@@ -126,3 +126,7 @@ cargo run -p ucf-ops --features backend-burn -- readiness-gate --profile prod --
 
 ## Prompt 79E Follow-up
 - OptionalRealRuntime / prod compute semantics roadmap: [`docs/roadmap/optional_real_runtime_prod_compute_semantics_roadmap.md`](optional_real_runtime_prod_compute_semantics_roadmap.md).
+
+
+## OptionalRealRuntime Artifact/Fixture Planning Link
+- See [`docs/roadmap/optional_real_runtime_artifact_fixture_inventory.md`](optional_real_runtime_artifact_fixture_inventory.md) for the current artifact inventory and deterministic fixture prerequisites that keep prod blocked until OptionalRealRuntime evidence exists.
