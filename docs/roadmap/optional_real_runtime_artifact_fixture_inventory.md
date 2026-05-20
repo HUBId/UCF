@@ -22,6 +22,7 @@
 Related docs:
 - [`docs/roadmap/optional_real_runtime_prod_compute_semantics_roadmap.md`](optional_real_runtime_prod_compute_semantics_roadmap.md)
 - [`docs/roadmap/optional_real_runtime_pinned_local_fixture_plan.md`](optional_real_runtime_pinned_local_fixture_plan.md)
+- [`docs/roadmap/optional_real_runtime_artifact_format_decision.md`](optional_real_runtime_artifact_format_decision.md)
 - [`docs/roadmap/real_compute_optional_lane_closure.md`](real_compute_optional_lane_closure.md)
 - [`docs/roadmap/compute_feature_ci_matrix.md`](compute_feature_ci_matrix.md)
 
@@ -114,7 +115,7 @@ Related docs:
 - How should `production_claim=false` be preserved for first runtime fixture stages?
 
 ## 9. Recommended Next Prompt
-**UCF Prompt 79H2 — OptionalRealRuntime Artifact Format Decision** (or directly 79I if format is already approved).
+**UCF Prompt 79I-A — OptionalRealRuntime Fixture Files and Manifest Validation** (artifact format decision is now documented).
 
 Reason: Prompt 79H established the pinned-local fixture policy baseline; the remaining blocker before implementation is explicit artifact-format lock and then deterministic fixture/golden wiring.
 
