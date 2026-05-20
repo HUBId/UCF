@@ -257,3 +257,5 @@ Freshness check procedure:
 - Workspace/prod sequential refresh (Prompt 79S): `docs/roadmap/workspace_prod_readiness_refresh.md` (workspace PASS, test split PASS, prod split FAIL; no prod-readiness claim).
 
 - Prod backend feature blocker plan (Prompt 79A): [docs/roadmap/prod_profile_backend_feature_blocker_plan.md](roadmap/prod_profile_backend_feature_blocker_plan.md)
+
+| `docs/roadmap/optional_real_runtime_prod_compute_semantics_roadmap.md` | Current planning docs | yes (planning authority only) | Canonical roadmap for OptionalRealRuntime semantics while prod remains blocked on compute backend disabled/runtime gap. | `runtime/ucf-compute`, `runtime/ucf-ops`, CI/readiness docs | planning-boundary |
