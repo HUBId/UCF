@@ -132,3 +132,7 @@ Fresh PASS evidence with canonical command (`cargo test --workspace --offline`) 
 
 ## Prompt 77 availability update
 - Available: `docs/roadmap/prod_profile_required_records_skips_audit.md` (required-records/SKIP audit).
+
+## Prompt 79S refresh update
+- Available: `docs/roadmap/workspace_prod_readiness_refresh.md` (controlled lock recovery + sequential refresh evidence).
+- Current outcome: workspace evidence PASS, test split gate PASS, prod split gate FAIL (backend feature blocker); no prod-readiness claim.
