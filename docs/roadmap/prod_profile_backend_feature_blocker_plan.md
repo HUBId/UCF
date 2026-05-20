@@ -61,3 +61,40 @@ Choose Option D with A constraints:
 **UCF Prompt 79B — Prod Backend Feature Lane Alignment**.
 
 Rationale: current code/tests/docs indicate requirement is intentional; needed follow-up is lane/documentation/CI alignment, not immediate pack-remap.
+
+
+## Prompt 79B — Backend Feature Lane Alignment
+
+### Chosen option
+- Option C (readiness-gate docs + compute CI matrix alignment).
+- Rationale: keep `backend-burn` requirement unchanged and make the prod feature-lane invocation explicit without broad workflow churn in this prompt.
+
+### Implemented changes
+- `docs/readiness_gate.md` now documents the explicit prod split invocation using `cargo run -p ucf-ops --features backend-burn -- readiness-gate --profile prod ...` and states compile-only scope.
+- `docs/continuous_verification.md` now includes the prod backend feature-lane probe commands and a no-runtime-inference boundary note.
+- `docs/roadmap/compute_feature_ci_matrix.md` now includes a dedicated `prod-backend-feature-gate` lane row with exact commands and explicit non-runtime/non-production claim flags.
+
+### Feature-lane command set
+```bash
+cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json
+cargo run -p ucf-ops --features backend-burn -- readiness-gate --profile prod --out ./out/gate_report_prod_split.json --workdir ./.ucf_gate_prod --workspace-test-report ./out/workspace_test_report.json
+```
+
+### Validation outcome (Prompt 79B run)
+- See validation table in prompt report for exact command outcomes.
+- `backend-burn` requirement remains preserved and visible.
+- No runtime inference claim added.
+
+### Prod gate status
+- Prod gate in backend-burn feature context: validated in this prompt run (pass/fail recorded in report table).
+- If failing, blocker text is reported verbatim and carried forward.
+
+### Boundary statement
+- No OptionalRealRuntime activation/claim.
+- No real-compute runtime activation.
+- No gate weakening.
+- No production-readiness claim unless fresh prod split evidence passes.
+
+### Next prompt recommendation
+- If prod split gate still fails: `UCF Prompt 79C — Prod Feature-Pack Mapping / Feature Propagation Fix`.
+- If prod split gate passes but closure still needed: `UCF Prompt 79D — Prod Readiness Refresh After Backend Lane Alignment`.
