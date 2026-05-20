@@ -148,3 +148,11 @@ Boundary remains unchanged:
 The OptionalRealRuntime contract validation was completed after the previous long-running workspace-test phase. `cargo test --workspace` and workspace clippy completed successfully. This does not change runtime status: OptionalRealRuntime remains absent and roadmap-only, no backend is promoted, backend-burn remains compile evidence only, and no prod-readiness claim is made.
 
 Recommended next prompt: UCF Prompt 79H — Pinned Local Runtime Artifact Fixture Plan.
+
+## Prompt 79I-A — Inventory Update
+
+New static fixture/manifest inventory entries:
+- `runtime/ucf-compute/tests/fixtures/optional_real_runtime/` (synthetic tiny artifact + input + expected-output bytes + manifest)
+- `runtime/ucf-compute/tests/optional_real_runtime_fixture_manifest.rs` (deterministic SHA-256/size/boundary validation)
+
+Note: expected output digest is explicitly a planned synthetic digest and is not treated as runtime-inference proof.

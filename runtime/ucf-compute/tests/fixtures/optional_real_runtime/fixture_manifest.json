@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "artifact": {
+    "artifact_id": "tiny_local_artifact_v1",
+    "artifact_kind": "synthetic-binary",
+    "path": "artifact.fixture.bin",
+    "sha256": "43da36811d6f3c7915abafce9236a8f69cfb12eefc4074cf4317aa12f6e0d9cb",
+    "size_bytes": 114,
+    "source_note": "synthetic local fixture artifact generated for metadata/manifest validation only",
+    "license_note": "test-only synthetic fixture",
+    "local_only": true,
+    "network_required": false
+  },
+  "fixture": {
+    "fixture_id": "optional_real_runtime_fixture_v1",
+    "input_path": "input.fixture.json",
+    "input_sha256": "3eb2119d7a6e256362698fd7fd1bdf272ca7c11a49c7556e7ced273e75936db8",
+    "expected_output": {
+      "path": "expected_output.fixture.bytes",
+      "sha256": "1f6a1f72da390b322adcbb88411203ddf79a1242d214309eefc9d4380b7d7455",
+      "note": "planned synthetic expected output digest, not runtime proof"
+    },
+    "deterministic": true,
+    "max_runtime_ms": 200,
+    "max_memory_bytes": 8388608
+  },
+  "offline_by_default": true,
+  "external_service_required": false,
+  "production_claim": false,
+  "gateway_visible": false,
+  "policy_mutating": false
+}

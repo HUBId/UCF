@@ -189,3 +189,18 @@ If ambiguity remains on runtime invocation semantics: implement 79I as **fixture
 The artifact format decision validation was completed after the previous long-running workspace-test phase. `cargo test --workspace` and workspace clippy completed successfully. This does not change runtime status: OptionalRealRuntime remains absent and roadmap-only, no fixture files are implemented yet, no backend is promoted, and no prod-readiness claim is made.
 
 Recommended next prompt: UCF Prompt 79I-A — OptionalRealRuntime Fixture Files and Manifest Validation.
+
+## Prompt 79I-A — Fixture Files + Manifest Validation (Implemented)
+
+Status: implemented as static local fixture files plus deterministic manifest validation tests.
+
+Implemented paths:
+- Fixture directory: `runtime/ucf-compute/tests/fixtures/optional_real_runtime/`
+- Manifest: `runtime/ucf-compute/tests/fixtures/optional_real_runtime/fixture_manifest.json`
+- Validation tests: `runtime/ucf-compute/tests/optional_real_runtime_fixture_manifest.rs`
+
+Boundaries preserved:
+- No runtime inference execution.
+- No OptionalRealRuntime activation.
+- No production-readiness claim.
+- No backend promotion from existing Stub/Toy/Candle/Burn compile-only mappings.
