@@ -15,6 +15,7 @@
   - [`docs/roadmap/real_compute_optional_lane_closure.md`](real_compute_optional_lane_closure.md)
   - [`docs/roadmap/compute_backend_naming_boundary_plan.md`](compute_backend_naming_boundary_plan.md)
   - [`docs/roadmap/compute_feature_ci_matrix.md`](compute_feature_ci_matrix.md)
+  - [`docs/roadmap/optional_real_runtime_pinned_local_fixture_plan.md`](optional_real_runtime_pinned_local_fixture_plan.md)
 
 ## 2. Backend Identity Inventory
 

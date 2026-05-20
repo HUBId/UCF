@@ -21,6 +21,7 @@
 
 Related docs:
 - [`docs/roadmap/optional_real_runtime_prod_compute_semantics_roadmap.md`](optional_real_runtime_prod_compute_semantics_roadmap.md)
+- [`docs/roadmap/optional_real_runtime_pinned_local_fixture_plan.md`](optional_real_runtime_pinned_local_fixture_plan.md)
 - [`docs/roadmap/real_compute_optional_lane_closure.md`](real_compute_optional_lane_closure.md)
 - [`docs/roadmap/compute_feature_ci_matrix.md`](compute_feature_ci_matrix.md)
 
@@ -113,9 +114,9 @@ Related docs:
 - How should `production_claim=false` be preserved for first runtime fixture stages?
 
 ## 9. Recommended Next Prompt
-**UCF Prompt 79G — OptionalRealRuntime Backend Contract and Artifact Schema**.
+**UCF Prompt 79H2 — OptionalRealRuntime Artifact Format Decision** (or directly 79I if format is already approved).
 
-Reason: the primary gap is not code activation; it is a precise runtime-contract/artifact-schema boundary needed before introducing any pinned artifact fixture implementation work.
+Reason: Prompt 79H established the pinned-local fixture policy baseline; the remaining blocker before implementation is explicit artifact-format lock and then deterministic fixture/golden wiring.
 
 ## Prompt 79F-R — Validation Completion
 
