@@ -123,3 +123,6 @@ cargo run -p ucf-ops --features backend-burn -- readiness-gate --profile prod --
 
 ### Next prompt recommendation
 - **UCF Prompt 79E — OptionalRealRuntime / Prod Compute Semantics Roadmap.**
+
+## Prompt 79E Follow-up
+- OptionalRealRuntime / prod compute semantics roadmap: [`docs/roadmap/optional_real_runtime_prod_compute_semantics_roadmap.md`](optional_real_runtime_prod_compute_semantics_roadmap.md).
