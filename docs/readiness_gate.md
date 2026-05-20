@@ -33,6 +33,23 @@ The split report is accepted only when it is `PASS`, records `cargo test --works
 
 
 
+
+## Prod backend feature-lane invocation (compile-only gate context)
+
+`--profile prod` currently selects a backend pack path that requires the compile-time feature `backend-burn`. This is a **feature-lane requirement**, not a runtime-inference readiness claim.
+
+Use explicit split evidence plus a feature-enabled `ucf-ops` invocation:
+
+```bash
+cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json
+cargo run -p ucf-ops --features backend-burn -- readiness-gate --profile prod --out ./out/gate_report_prod_split.json --workdir ./.ucf_gate_prod --workspace-test-report ./out/workspace_test_report.json
+```
+
+Boundary notes:
+- Passing this lane proves only that prod-profile gate checks pass in the `backend-burn` compile feature context.
+- It does **not** enable or prove OptionalRealRuntime, real runtime scheduling, queue/worker services, or production runtime inference.
+- A fail (for example another prod check blocker) remains a fail and must be reported as such.
+
 ## Prod-profile overclaim guard
 
 - A `PASS` from `--profile test` is **not** a `--profile prod` pass.

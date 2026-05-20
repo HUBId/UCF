@@ -19,6 +19,13 @@ Linux nightly executes:
 
 Windows nightly executes a bounded subset (tests + docs lint + one golden).
 
+Prod backend feature-lane probe (explicit, compile-only context):
+- `cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json`
+- `cargo run -p ucf-ops --features backend-burn -- readiness-gate --profile prod --out ./out/gate_report_prod_split.json --workdir ./.ucf_gate_prod_nightly --workspace-test-report ./out/workspace_test_report.json`
+
+These commands validate prod-profile gate behavior in a `backend-burn` compile lane and are not runtime inference proof.
+
+
 ## How to interpret `nightly_summary.json`
 
 `ucf-ops nightly summarize` emits:
