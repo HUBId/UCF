@@ -155,3 +155,5 @@ UCF Prompt 79 — Workspace/Prod Readiness Refresh
 ## Prompt 79S refresh link
 - Refresh document: `docs/roadmap/workspace_prod_readiness_refresh.md`.
 - Outcome snapshot: fresh workspace evidence PASS, test split PASS, prod split FAIL on backend feature requirement.
+
+- Prompt 79A blocker plan: [prod_profile_backend_feature_blocker_plan.md](prod_profile_backend_feature_blocker_plan.md)

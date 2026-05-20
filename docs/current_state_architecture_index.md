@@ -255,3 +255,5 @@ Freshness check procedure:
 - Prod-profile planning reference: `docs/roadmap/prod_profile_required_records_skips_audit.md` (Prompt 77 required-records/SKIP audit).
 
 - Workspace/prod sequential refresh (Prompt 79S): `docs/roadmap/workspace_prod_readiness_refresh.md` (workspace PASS, test split PASS, prod split FAIL; no prod-readiness claim).
+
+- Prod backend feature blocker plan (Prompt 79A): [docs/roadmap/prod_profile_backend_feature_blocker_plan.md](roadmap/prod_profile_backend_feature_blocker_plan.md)
