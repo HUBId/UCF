@@ -180,3 +180,17 @@ Recommended next prompt:
 - Audit classification remains metadata-only planned/deferred (`RuntimeDeferred`) with no runtime inference claim and no production claim.
 - No backend is promoted to `OptionalRealRuntime`; OptionalRealRuntime remains absent as active runtime lane.
 - Recommended next prompt: **UCF Prompt 79I-C-lite — Runtime Invocation Boundary Planning**.
+
+## Prompt 79I-C-lite — Runtime Invocation Boundary Plan (Docs-only)
+
+Runtime invocation boundary planning is now documented in:
+- [`docs/roadmap/optional_real_runtime_invocation_boundary_plan.md`](optional_real_runtime_invocation_boundary_plan.md)
+
+This plan clarifies allowed invocation-owner/input/artifact/output/failure boundaries while preserving current constraints:
+- No runtime invocation execution.
+- No OptionalRealRuntime activation.
+- No backend promotion.
+- No production-readiness claim.
+
+Recommended next prompt:
+- **UCF Prompt 79K-lite — OptionalRealRuntime Invocation Boundary Contract Types**.
