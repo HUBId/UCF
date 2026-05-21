@@ -136,3 +136,7 @@ Fresh PASS evidence with canonical command (`cargo test --workspace --offline`) 
 ## Prompt 79S refresh update
 - Available: `docs/roadmap/workspace_prod_readiness_refresh.md` (controlled lock recovery + sequential refresh evidence).
 - Current outcome: workspace evidence PASS, test split gate PASS, prod split gate FAIL (backend feature blocker); no prod-readiness claim.
+
+## Platform-target note
+- This roadmap now treats Linux x86_64 as the required deployment/CI target boundary for workspace evidence stability.
+- Windows portability/readiness lanes are handled as declassification/removal follow-up scope via `docs/roadmap/linux_only_target_boundary_windows_portability_audit.md`, without weakening readiness semantics.

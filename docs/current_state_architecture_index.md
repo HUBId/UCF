@@ -70,6 +70,7 @@ Baseline commands used for this index: `pwd`, `git branch --show-current`, `git 
 | `docs/roadmap/compute_backend_naming_boundary_plan.md` | Current authoritative architecture docs | yes | Defines the canonical compute backend naming taxonomy and boundary cleanup plan for stub, toy, mock, optional-real, remote/external, experimental, deferred, and forbidden wording without changing backend behavior. | `runtime/ucf-compute`, `domains/ai-backends`, `core/crates/ucf-ai-port`, CI/docs | canonical-planning |
 | `docs/roadmap/compute_feature_ci_matrix.md` | Current authoritative architecture docs | yes | Defines the docs-only compute feature CI/check matrix for default no-real, stub, toy, optional-real compile-only, remote/external compile-only, link/audit, and docs/gates lanes without runtime or production claims. | `runtime/ucf-compute`, `domains/ai-backends`, `core/crates/ucf-ai-port`, `.github/workflows/*` | canonical-planning |
 | `docs/roadmap/real_compute_optional_lane_closure.md` | Current authoritative architecture docs | yes | Closes the current optional compute lane baseline for Prompts 16-24 under compile-only/non-production claims and records readiness-gate timeout-risk monitoring. | `runtime/ucf-compute`, `domains/ai-backends`, `core/crates/ucf-ai-port`, `runtime/ucf-ops` | canonical-planning-closure |
+| `docs/roadmap/linux_only_target_boundary_windows_portability_audit.md` | Current authoritative architecture docs | yes (planning authority only) | Defines Linux-only deployment/required-CI boundary, inventories Windows portability surfaces, and scopes safe declassification sequencing without weakening readiness semantics. | `.github/workflows`, `docs/continuous_verification.md`, `docs/readiness_gate.md`, `runtime/ucf-ops` | canonical-planning-boundary |
 | `docs/roadmap/optional_real_runtime_artifact_format_decision.md` | Current authoritative architecture docs | yes | Records the concrete local synthetic OptionalRealRuntime artifact/manifest format decision and deterministic SHA-256 digest semantics without runtime activation. | `runtime/ucf-compute`, `runtime/ucf-ops`, CI/docs | canonical-planning |
 | `docs/feature_matrix.md` | Current authoritative architecture docs | yes | Defines supported feature lanes and must be read with tests. | `runtime/ucf-compute`, backend crates, CI lanes | canonical |
 | `docs/blue_brain_authority_chain_status_map.md` | Current authoritative architecture docs | qualified | Current only for Blue-Brain document authority boundaries, not for global UCF capability claims. | Blue-Brain docs and bridge crates | advisory-boundary |
@@ -252,6 +253,7 @@ Freshness check procedure:
 
 
 - Current planning link: `docs/roadmap/workspace_evidence_stability_roadmap_boundary_audit.md` (Workspace Evidence Stability / Prod-profile readiness boundary audit).
+- Current platform-scope planning link: `docs/roadmap/linux_only_target_boundary_windows_portability_audit.md` (Linux-only target boundary and Windows portability declassification audit).
 
 - Prod-profile planning reference: `docs/roadmap/prod_profile_required_records_skips_audit.md` (Prompt 77 required-records/SKIP audit).
 
