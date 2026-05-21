@@ -142,3 +142,18 @@ runtime/ucf-compute/tests/fixtures/optional_real_runtime/
 ## 9. Recommended Next Prompt
 - Preferred next: **UCF Prompt 79I-A — OptionalRealRuntime Fixture Files and Manifest Validation**.
 - Then: **UCF Prompt 79I — Deterministic OptionalRealRuntime Golden Test Implementation**.
+
+## Prompt 79I-A — Implementation Linkage
+
+Implemented fixture artifacts (local/offline only):
+- `runtime/ucf-compute/tests/fixtures/optional_real_runtime/artifact.fixture.bin`
+- `runtime/ucf-compute/tests/fixtures/optional_real_runtime/input.fixture.json`
+- `runtime/ucf-compute/tests/fixtures/optional_real_runtime/expected_output.fixture.bytes`
+- `runtime/ucf-compute/tests/fixtures/optional_real_runtime/fixture_manifest.json`
+- `runtime/ucf-compute/tests/fixtures/optional_real_runtime/README.md`
+
+Implemented validator:
+- `runtime/ucf-compute/tests/optional_real_runtime_fixture_manifest.rs`
+
+Recommended next prompt:
+- **UCF Prompt 79I-B — Deterministic OptionalRealRuntime Planned Golden Contract**.

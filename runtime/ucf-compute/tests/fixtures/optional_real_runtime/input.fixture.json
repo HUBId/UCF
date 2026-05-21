@@ -1,0 +1,7 @@
+{
+  "fixture_id": "optional_real_runtime_fixture_v1",
+  "input_schema": "ucf.optional_real_runtime.input_fixture.v1",
+  "prompt": "deterministic local fixture input",
+  "tokens": [1, 2, 3, 5, 8],
+  "note": "metadata-only fixture; no runtime inference"
+}
