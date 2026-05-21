@@ -11,24 +11,17 @@ fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(FIXTURE_DIR)
 }
 
-fn manifest_path() -> PathBuf {
-    fixture_dir().join("fixture_manifest.json")
-}
-
 fn read_manifest() -> serde_json::Value {
-    let bytes = fs::read(manifest_path()).expect("manifest file must exist");
+    let bytes =
+        fs::read(fixture_dir().join("fixture_manifest.json")).expect("manifest file must exist");
     serde_json::from_slice(&bytes).expect("manifest json must parse")
 }
 
-fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
+fn sha256_hex(path: &Path) -> String {
+    let bytes = fs::read(path).expect("fixture file must exist");
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    hasher.finalize().into()
-}
-
-fn sha256_file(path: &Path) -> [u8; 32] {
-    let bytes = fs::read(path).expect("fixture file must exist");
-    sha256_bytes(&bytes)
+    hex::encode(hasher.finalize())
 }
 
 fn hex32(s: &str) -> [u8; 32] {
@@ -36,82 +29,94 @@ fn hex32(s: &str) -> [u8; 32] {
     bytes.try_into().expect("sha256 must be 32 bytes")
 }
 
-#[test]
-fn optional_real_runtime_fixture_metadata_links_into_output_and_audit_without_runtime() {
-    let manifest = read_manifest();
-    let manifest_bytes = fs::read(manifest_path()).expect("manifest bytes");
-    let manifest_digest = sha256_bytes(&manifest_bytes);
-    let manifest_digest_hex = hex::encode(manifest_digest);
+fn digest_bytes(domain: &[u8], bytes: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(domain);
+    hasher.update(bytes);
+    hasher.finalize().into()
+}
 
-    let artifact_digest = hex32(manifest["artifact"]["sha256"].as_str().unwrap());
-    let input_digest = hex32(manifest["fixture"]["input_sha256"].as_str().unwrap());
+#[test]
+fn optional_real_runtime_fixture_link_and_audit_are_metadata_only() {
+    let manifest = read_manifest();
+    let fixture_manifest_digest = digest_bytes(
+        b"ucf.compute.optional_real_runtime.fixture_manifest.v1",
+        &fs::read(fixture_dir().join("fixture_manifest.json")).expect("manifest bytes"),
+    );
+    let artifact_digest = hex32(
+        manifest["artifact"]["sha256"]
+            .as_str()
+            .expect("artifact digest"),
+    );
+    let input_digest = hex32(
+        manifest["fixture"]["input_sha256"]
+            .as_str()
+            .expect("input digest"),
+    );
     let planned_expected_output_digest = hex32(
         manifest["fixture"]["expected_output"]["sha256"]
             .as_str()
-            .unwrap(),
+            .expect("expected output digest"),
     );
 
     let expected_output_path = fixture_dir().join(
         manifest["fixture"]["expected_output"]["path"]
             .as_str()
-            .unwrap(),
+            .expect("expected output path"),
     );
     assert_eq!(
-        planned_expected_output_digest,
-        sha256_file(&expected_output_path)
+        sha256_hex(&expected_output_path),
+        hex::encode(planned_expected_output_digest)
     );
 
-    let fixture_output_reference_digest = sha256_bytes(
-        format!(
-            "ucf.optional_real_runtime.fixture_output_reference.v1:{}:{}",
-            manifest_digest_hex,
-            manifest["fixture"]["fixture_id"].as_str().unwrap()
-        )
-        .as_bytes(),
+    let fixture_output_reference_digest = digest_bytes(
+        b"ucf.compute.optional_real_runtime.fixture_output_reference.v1",
+        &[
+            &fixture_manifest_digest[..],
+            &artifact_digest[..],
+            &input_digest[..],
+        ]
+        .concat(),
     );
+    assert_ne!(fixture_output_reference_digest, [0; 32]);
 
-    let backend_identity = BackendIdentity::optional_real_compile("local_fixture_runtime_metadata");
-    let link_source = format!(
-        "optional_real_runtime_fixture_metadata|manifest_sha256={}|artifact_sha256={}|input_sha256={}|planned_expected_output_sha256={}",
-        manifest_digest_hex,
-        hex::encode(artifact_digest),
-        hex::encode(input_digest),
-        hex::encode(planned_expected_output_digest),
-    );
+    let backend_identity =
+        BackendIdentity::optional_real_compile("optional_real_runtime_fixture_metadata");
+    assert_eq!(backend_identity.class, BackendClass::OptionalRealCompile);
+    assert!(!backend_identity.claims_runtime_real_inference());
+    assert!(!backend_identity.production_claim);
 
     let link = ComputeOutputLink::derived(
         fixture_output_reference_digest,
         planned_expected_output_digest,
         backend_identity,
-        link_source,
+        "optional_real_runtime_fixture_manifest_planned_golden_v1",
     )
-    .with_output_record_id("fixture-output-reference-only-non-authoritative");
+    .with_output_record_id("fixture_output_reference_digest")
+    .with_output_record_bytes_digest(fixture_manifest_digest);
 
-    assert_eq!(link.backend_class, BackendClass::OptionalRealCompile);
     assert!(link.metadata_only);
     assert!(!link.output_record_authority);
-    assert!(!link.runtime_inference_supported);
-    assert!(link.no_real_runtime);
-    assert!(!link.production_claim);
     assert!(!link.minimal_spine_required);
-    assert_ne!(link.output_record_digest, [0; 32]);
     assert_eq!(link.compute_result_digest, planned_expected_output_digest);
+    assert_eq!(link.output_record_digest, fixture_output_reference_digest);
+    assert_eq!(link.backend_class, BackendClass::OptionalRealCompile);
+    assert!(link.no_real_runtime);
+    assert!(!link.runtime_inference_supported);
+    assert!(!link.production_claim);
 
-    let link_digest_a = link.link_digest();
-    let link_digest_b = link.clone().link_digest();
-    assert_eq!(link_digest_a, link_digest_b);
+    let link_digest = link.link_digest();
+    assert_eq!(link_digest, link.clone().link_digest());
 
     let audit = ComputeAuditRecord::from_link(
         &link,
         ComputeAuditStatus::RuntimeDeferred,
-        "optional-real-runtime-fixture-planned-golden-audit-v1",
+        "optional-real-runtime-fixture-planned-golden-metadata-only",
     )
-    .expect("audit record");
+    .expect("audit from planned-golden fixture link");
 
-    assert_eq!(audit.backend_class, BackendClass::OptionalRealCompile);
     assert_eq!(audit.audit_status, ComputeAuditStatus::RuntimeDeferred);
-    assert_eq!(audit.output_record_digest, fixture_output_reference_digest);
-    assert_eq!(audit.compute_output_link_digest, link_digest_a);
+    assert_eq!(audit.compute_output_link_digest, link_digest);
     assert_eq!(audit.compute_result_digest, planned_expected_output_digest);
     assert!(!audit.runtime_inference_claim);
     assert!(!audit.production_claim);
@@ -120,7 +125,11 @@ fn optional_real_runtime_fixture_metadata_links_into_output_and_audit_without_ru
     assert!(!audit.minimal_spine_required);
     assert!(audit.metadata_only());
 
-    let audit_digest_a = audit.audit_digest();
-    let audit_digest_b = audit.clone().audit_digest();
-    assert_eq!(audit_digest_a, audit_digest_b);
+    let audit_digest = audit.audit_digest();
+    assert_eq!(audit_digest, audit.clone().audit_digest());
+
+    let readme = fs::read_to_string(fixture_dir().join("README.md")).expect("readme must exist");
+    assert!(readme.contains("No runtime inference execution"));
+    assert!(readme.contains("No OptionalRealRuntime activation"));
+    assert!(readme.contains("No production-readiness claim"));
 }

@@ -172,3 +172,11 @@ Recommended next prompt:
 - `ComputeAuditRecord` is demonstrated to capture this linkage with non-runtime/non-production metadata-only status and deterministic audit digest.
 - Boundaries preserved: no runtime invocation, no OptionalRealRuntime activation, no backend promotion, no prod-readiness claim.
 - Recommended next prompt: **UCF Prompt 79I-C-lite — Runtime Invocation Boundary Planning**.
+
+## Prompt 79J-lite Update — Fixture Link/Audit Metadata
+
+- Added targeted fixture/planned-golden metadata linkage validation using `ComputeOutputLink` and `ComputeAuditRecord` without runtime invocation.
+- Linkage includes fixture manifest digest reference plus pinned artifact/input/planned-output digest chain.
+- Audit classification remains metadata-only planned/deferred (`RuntimeDeferred`) with no runtime inference claim and no production claim.
+- No backend is promoted to `OptionalRealRuntime`; OptionalRealRuntime remains absent as active runtime lane.
+- Recommended next prompt: **UCF Prompt 79I-C-lite — Runtime Invocation Boundary Planning**.
