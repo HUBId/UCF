@@ -54,18 +54,3 @@ jobs:
             out/adversarial_report.json
             out/goldens_report.json
             out/drift_report.json
-
-  windows-nightly:
-    runs-on: windows-latest
-    timeout-minutes: 25
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cargo test workspace
-        run: cargo test --workspace --all-targets
-      - name: Docs lint
-        run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
-      - name: Golden verify (single scenario)
-        run: cargo run -p ucf-ops -- goldens verify --scenario golden_a --os windows

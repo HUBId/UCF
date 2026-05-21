@@ -140,3 +140,11 @@ Fresh PASS evidence with canonical command (`cargo test --workspace --offline`) 
 ## Platform-target note
 - This roadmap now treats Linux x86_64 as the required deployment/CI target boundary for workspace evidence stability.
 - Windows portability/readiness lanes are handled as declassification/removal follow-up scope via `docs/roadmap/linux_only_target_boundary_windows_portability_audit.md`, without weakening readiness semantics.
+
+
+## Prompt 79W2 status update
+
+- Prompt 79W2 status: complete.
+- Workspace evidence stability now treats Linux x86_64 (`ubuntu-latest`) as the required CI/deployment target boundary.
+- Windows CI/readiness/smoke lanes are declassified from required status (unsupported/deferred), without changing split-evidence strictness.
+- This update does not assert production readiness or release readiness.

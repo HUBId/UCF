@@ -6,7 +6,7 @@ The nightly pipeline runs scheduled, deterministic, offline-first verification a
 
 Primary workflow: `.github/workflows/nightly_verify.yml`.
 
-Linux nightly executes:
+Linux nightly executes on the required CI target `ubuntu-latest` (Linux x86_64):
 - `cargo test --workspace --all-targets`
 - `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 - `cargo run -p ucf-ops -- spec snapshot ...` and `diff -u docs/spec_snapshot.md ./out/spec_snapshot_nightly.md`
@@ -17,13 +17,17 @@ Linux nightly executes:
 - `cargo run -p ucf-ops -- drift report ... --out ./out/drift_report.json`
 - `cargo run -p ucf-ops -- nightly summarize --out ./out/nightly_summary.json`
 
-Windows nightly executes a bounded subset (tests + docs lint + one golden).
-
 Prod backend feature-lane probe (explicit, compile-only context):
 - `cargo run -p ucf-ops -- workspace-test-check --out ./out/workspace_test_report.json`
 - `cargo run -p ucf-ops --features backend-burn -- readiness-gate --profile prod --out ./out/gate_report_prod_split.json --workdir ./.ucf_gate_prod_nightly --workspace-test-report ./out/workspace_test_report.json`
 
 These commands validate prod-profile gate behavior in a `backend-burn` compile lane and are not runtime inference proof.
+
+Platform scope boundary (Prompt 79W/79W2):
+- Required CI/deployment target: Linux x86_64 (`ubuntu-latest`).
+- Windows is unsupported/deferred for CI/readiness and has no required nightly lane.
+- macOS, if used by developers locally, is best-effort convenience only and not a required gate target.
+- WSL2 is a developer workaround, not a formal supported target.
 
 
 ## How to interpret `nightly_summary.json`

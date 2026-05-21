@@ -2,6 +2,13 @@
 
 `ucf-ops readiness-gate` executes an offline, deterministic readiness checklist and writes a bounded JSON report. It is a gate artifact, not by itself a production-readiness claim.
 
+
+## Platform scope
+
+Readiness evidence in this repository is defined against the required Linux target (Linux x86_64 / `ubuntu-latest`).
+Windows smoke/readiness lanes are unsupported/deferred and are not required gate evidence.
+Split evidence policy remains unchanged: when split mode is used, fresh `workspace-test-check` evidence is mandatory.
+
 ## PASS semantics
 
 `status=PASS` means all hard checks in the report passed for the current repository state and fixture set:
