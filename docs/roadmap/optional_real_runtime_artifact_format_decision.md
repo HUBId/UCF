@@ -227,3 +227,17 @@ Boundaries preserved:
 - `ComputeAuditRecord` captures this linkage as planned/deferred metadata (`RuntimeDeferred`) with runtime/prod claims still false.
 - This remains non-runtime, non-promoted, and non-production-readiness evidence.
 - Recommended next prompt: **UCF Prompt 79I-C-lite — Runtime Invocation Boundary Planning** (preferred before runtime-gate wiring).
+
+## Prompt 79I-C-lite — Runtime Invocation Boundary Plan (Docs-only)
+
+A dedicated runtime invocation boundary planning document was added:
+- [`docs/roadmap/optional_real_runtime_invocation_boundary_plan.md`](optional_real_runtime_invocation_boundary_plan.md)
+
+Scope remains unchanged:
+- No runtime invocation execution.
+- No OptionalRealRuntime activation.
+- No backend promotion.
+- No prod readiness claim.
+
+Recommended next prompt:
+- **UCF Prompt 79K-lite — OptionalRealRuntime Invocation Boundary Contract Types**.
