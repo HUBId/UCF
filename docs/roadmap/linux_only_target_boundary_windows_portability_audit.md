@@ -93,3 +93,5 @@ Recommended wording:
 
 ## 7. Recommended Next Prompt
 - UCF Prompt 79W2 — Windows CI/Readiness Declassification and Linux-Only Docs Alignment.
+
+- Prompt 79W3 follow-up verification: active CI/nightly workflows and support docs remain aligned to Linux-required target; Windows remains unsupported/deferred; no prod-readiness claim introduced.
