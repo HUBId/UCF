@@ -157,3 +157,10 @@ Implemented validator:
 
 Recommended next prompt:
 - **UCF Prompt 79I-B — Deterministic OptionalRealRuntime Planned Golden Contract**.
+
+## Prompt 79I-B-lite — Planned Golden Contract (Implemented)
+
+- Added explicit planned deterministic golden-contract tests for `expected_output.fixture.bytes` digest semantics.
+- Contract semantics now explicitly assert: digest exists, digest is deterministic, and digest validation is metadata/static only (not runtime inference proof).
+- No backend invocation, no OptionalRealRuntime activation, no backend promotion, and no prod-readiness claim were introduced.
+- Recommended next prompt: **UCF Prompt 79J-lite — OptionalRealRuntime ComputeOutputLink / Audit Metadata Integration** (alternative: **UCF Prompt 79I-C-lite — Runtime Invocation Boundary Planning**).
