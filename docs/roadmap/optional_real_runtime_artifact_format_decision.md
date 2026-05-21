@@ -211,3 +211,11 @@ Boundaries preserved:
 - The planned golden digest is validated as deterministic and present, but this remains **not runtime inference proof**.
 - This change is **not OptionalRealRuntime activation**, does not promote any backend, and does not claim prod readiness.
 - Recommended next prompt: **UCF Prompt 79J-lite — OptionalRealRuntime ComputeOutputLink / Audit Metadata Integration** (alternative: **UCF Prompt 79I-C-lite — Runtime Invocation Boundary Planning**).
+
+## Prompt 79J-lite — ComputeOutputLink / Audit Metadata Integration (Implemented)
+
+- Added metadata-only linkage coverage proving `ComputeOutputLink` + `ComputeAuditRecord` can reference OptionalRealRuntime fixture/planned-golden digests without runtime invocation.
+- Integration records fixture-manifest digest context plus artifact/input/planned-expected-output digest references as static metadata in link source semantics.
+- Audit recording remains metadata-only with no runtime inference claim, no production claim, and no evidence/archive authority.
+- No backend is executed, no backend is promoted to OptionalRealRuntime, and this does not claim prod readiness.
+- Recommended next prompt: **UCF Prompt 79I-C-lite — Runtime Invocation Boundary Planning** (alternative: **UCF Prompt 79K-lite — Prod Compute Runtime Gate Wiring Plan**).

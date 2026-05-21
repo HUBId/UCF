@@ -164,3 +164,11 @@ Recommended next prompt:
 - Contract semantics now explicitly assert: digest exists, digest is deterministic, and digest validation is metadata/static only (not runtime inference proof).
 - No backend invocation, no OptionalRealRuntime activation, no backend promotion, and no prod-readiness claim were introduced.
 - Recommended next prompt: **UCF Prompt 79J-lite — OptionalRealRuntime ComputeOutputLink / Audit Metadata Integration** (alternative: **UCF Prompt 79I-C-lite — Runtime Invocation Boundary Planning**).
+
+## Prompt 79J-lite — ComputeOutputLink / Audit Metadata Integration (Implemented)
+
+- Added targeted fixture-link/audit test coverage for metadata-only OptionalRealRuntime planned-golden linkage.
+- `ComputeOutputLink` now demonstrated (via test) to carry planned expected output digest as `compute_result_digest` with a deterministic synthetic non-authoritative output reference digest.
+- `ComputeAuditRecord` is demonstrated to capture this linkage with non-runtime/non-production metadata-only status and deterministic audit digest.
+- Boundaries preserved: no runtime invocation, no OptionalRealRuntime activation, no backend promotion, no prod-readiness claim.
+- Recommended next prompt: **UCF Prompt 79I-C-lite — Runtime Invocation Boundary Planning**.
