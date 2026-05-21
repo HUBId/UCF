@@ -219,3 +219,11 @@ Boundaries preserved:
 - Audit recording remains metadata-only with no runtime inference claim, no production claim, and no evidence/archive authority.
 - No backend is executed, no backend is promoted to OptionalRealRuntime, and this does not claim prod readiness.
 - Recommended next prompt: **UCF Prompt 79I-C-lite — Runtime Invocation Boundary Planning** (alternative: **UCF Prompt 79K-lite — Prod Compute Runtime Gate Wiring Plan**).
+
+## Prompt 79J-lite Update — ComputeOutputLink / Audit Metadata Integration
+
+- Metadata-only linkage now covers fixture manifest digest, artifact digest, input digest, and planned expected output digest for OptionalRealRuntime fixture/planned-golden surfaces.
+- `ComputeOutputLink` can reference planned fixture digests for static metadata traces without output/evidence authority transfer.
+- `ComputeAuditRecord` captures this linkage as planned/deferred metadata (`RuntimeDeferred`) with runtime/prod claims still false.
+- This remains non-runtime, non-promoted, and non-production-readiness evidence.
+- Recommended next prompt: **UCF Prompt 79I-C-lite — Runtime Invocation Boundary Planning** (preferred before runtime-gate wiring).
