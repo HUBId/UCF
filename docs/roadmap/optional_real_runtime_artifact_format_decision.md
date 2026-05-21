@@ -204,3 +204,10 @@ Boundaries preserved:
 - No OptionalRealRuntime activation.
 - No production-readiness claim.
 - No backend promotion from existing Stub/Toy/Candle/Burn compile-only mappings.
+
+## Prompt 79I-B-lite — Planned Golden Contract (Implemented)
+
+- Added explicit planned-golden contract coverage for `expected_output.fixture.bytes` as deterministic bytes digest metadata.
+- The planned golden digest is validated as deterministic and present, but this remains **not runtime inference proof**.
+- This change is **not OptionalRealRuntime activation**, does not promote any backend, and does not claim prod readiness.
+- Recommended next prompt: **UCF Prompt 79J-lite — OptionalRealRuntime ComputeOutputLink / Audit Metadata Integration** (alternative: **UCF Prompt 79I-C-lite — Runtime Invocation Boundary Planning**).
