@@ -27,7 +27,7 @@ Current Geist/ISM claims are bounded to `GeistProjectionCandidate` candidate-onl
 - Spec snapshot: `cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out docs/spec_snapshot.md`
 - Docs lint (CI-blocking): `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 
-## Portability/docs gate (Linux + Windows, v18 refresh)
+## Portability/docs gate (Linux required target, v18 refresh)
 - `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 - `cargo run -p ucf-ops -- audit path-scan`
 - `cargo run -p ucf-ops -- audit hardware-scan`
