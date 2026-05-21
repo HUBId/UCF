@@ -1,6 +1,6 @@
-# Portability Gate v19 Refresh (Linux + Windows)
+# Portability Gate v19 Refresh (Linux Required Target)
 
-`Portability Gate` blocks merges when core runtime/ops checks are not cross-platform safe.
+`Portability Gate` blocks merges when core runtime/ops checks are not Linux-target safe on the required CI target (`ubuntu-latest`, Linux x86_64).
 
 ## What is checked
 
@@ -48,7 +48,7 @@
      - `cargo run -p ucf-ops -- operator report --out ./out/operator_report.json`
      - `cargo run -p ucf-ops -- portability check --out ./out/portability.json`
      - `cargo run -p ucf-ops -- portability report --out ./out/portability_report.json`
-   - Windows lane:
+   - Windows lane (historical reference; unsupported/deferred and not required):
      - `cargo test --workspace --all-targets`
      - `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
      - `cargo run -p ucf-ops -- audit path-scan`
@@ -446,7 +446,7 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 - **SKIP**: optional backend/report path unavailable; command section is non-blocking and must emit explicit skip reason.
 - **SKIP**: bounded readiness context unavailable (for example readiness spine emits only bounded-context drift categories in smoke mode); command section is non-blocking and must emit explicit skip reason.
 - **SKIP**: bounded remediation context unavailable (for example remediation spine reports only `MISSING_SURFACE` / `UNKNOWN_CONDITION_MAPPING` categories in smoke mode); command section is non-blocking and must emit explicit skip reason.
-- Required docs/path/hardware/schema checks are expected to `PASS` on supported Linux/Windows setups.
+- Required docs/path/hardware/schema checks are expected to `PASS` on the required Linux target (`ubuntu-latest`, Linux x86_64).
 
 
 - **`exports normalize-check` failed**
@@ -497,7 +497,7 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 
 ## v19 closure refresh (bounded smoke extension)
 
-- Added bounded Linux/Windows portability smoke coverage for:
+- Added bounded portability smoke coverage (historically validated across Linux/Windows; current required target is Linux-only) for:
   - `governance-closure-sweep`
   - `models supported-scope-execute-v14`
   - `readiness-closure-sweep`
@@ -526,7 +526,7 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 
 ## v20 portability/docs refresh (seal + supported-scope execution v15)
 
-- Added bounded Linux/Windows portability smoke coverage for:
+- Added bounded portability smoke coverage (historically validated across Linux/Windows; current required target is Linux-only) for:
   - `governance-seal-sweep`
   - `models supported-scope-execute-v15`
   - `readiness-seal-sweep`
