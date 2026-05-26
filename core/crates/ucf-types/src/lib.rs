@@ -436,7 +436,7 @@ impl fmt::Display for Digest32 {
 
 impl fmt::Debug for Digest32 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Digest32({})", self)
+        write!(f, "Digest32({self})")
     }
 }
 
