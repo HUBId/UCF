@@ -106,7 +106,7 @@
 - P2 alignment is now available at `docs/roadmap/policy_record_authority_schema_alignment.md`.
 - P3 and P4 are complete; candidate-only policy constraint evaluation (`PolicyContextV1` + `PolicyEvaluationCandidateV1`) is implemented with targeted tests in `ucf-policy-ecology`.
 - P5 is complete; verify-only policy audit (`PolicyVerifyAuditV1`) is implemented with deterministic digest + boundary-failure reporting in `ucf-policy-ecology`.
-- Recommended next step: **P7 — Policy Readiness Refresh**.
+- Recommended next step: **P7 — Policy Readiness Refresh** (complete; see `docs/roadmap/policy_ecology_closure.md`).
 
 ## Policy Ecology Overclaim Guard
 
@@ -165,4 +165,7 @@ Before claiming production readiness:
 - How to test no mutation?
 
 ## 9. Recommended Next Prompt
-UCF Prompt P7 — Policy Readiness Refresh
+UCF Prompt POST-P — Post-Policy Roadmap Selection
+
+## 10. Closure Link
+- Bounded Policy Ecology closure baseline: `docs/roadmap/policy_ecology_closure.md`.
