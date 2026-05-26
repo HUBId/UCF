@@ -103,7 +103,8 @@
 ## 7. Current Status
 - Policy Ecology is **not yet implemented** as a bounded typed top-down read-only layer (`PolicyFieldV1` etc.).
 - Current work here is planning-only and boundary-audit only.
-- Next step: **P2 — Policy Record Authority and Schema Alignment**.
+- P2 alignment is now available at `docs/roadmap/policy_record_authority_schema_alignment.md`.
+- Recommended next step: **P3 — Read-Only Policy Field Contract**.
 
 ## 8. Open Questions
 - Which crate owns `PolicyField`?
@@ -116,4 +117,4 @@
 - How to test no mutation?
 
 ## 9. Recommended Next Prompt
-UCF Prompt P2 — Policy Record Authority and Schema Alignment
+UCF Prompt P3 — Read-Only Policy Field Contract
