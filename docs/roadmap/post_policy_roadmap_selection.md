@@ -73,3 +73,9 @@ Scoring notes: 1–5 per criterion. Higher authority/runtime risk reduces score 
 
 ## 7. Recommended Next Prompt
 - **EAQ1 — Evidence/Archive Query Layer Roadmap and Boundary Audit**.
+
+## 8. EAQ1 Status Update
+
+| Prompt | Title | Status | Link |
+|---|---|---|---|
+| EAQ1 | Evidence/Archive Query Layer Roadmap and Boundary Audit | complete (roadmap/boundary audit) | `docs/roadmap/evidence_archive_query_layer_roadmap_boundary_audit.md` |

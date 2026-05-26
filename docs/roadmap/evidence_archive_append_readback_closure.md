@@ -80,3 +80,5 @@ Given workspace evidence caveat in this run, next prompt should be **Workspace E
 - `docs/roadmap/post_archive_roadmap_selection.md`
 
 - Next-line caveated planning link: `docs/roadmap/workspace_evidence_stability_roadmap_boundary_audit.md` (roadmap/boundary only; no gate weakening, no timeout-as-pass).
+
+- Query-layer follow-up roadmap/boundary audit: `docs/roadmap/evidence_archive_query_layer_roadmap_boundary_audit.md` (EAQ1; planning only, read-only semantics, no append/runtime/Gateway authority).
