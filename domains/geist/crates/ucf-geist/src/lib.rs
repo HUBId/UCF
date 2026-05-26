@@ -480,6 +480,135 @@ pub const MINIMAL_SPINE_GEIST_ISM_APPEND_CONTRACT: &str = "minimal_spine_geist_i
 /// contract without changing archive-store schema or Minimal Spine v1.x.
 pub const MINIMAL_SPINE_GEIST_ISM_APPEND_ARCHIVE_KIND: RecordKind = RecordKind::Other(67);
 
+/// Queryable bounded append/readback kinds for EAQ3 cross-layer read-model candidate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EvidenceArchiveQueryableKindV1 {
+    ReplayAppendV1,
+    SleepAppendV1,
+    GeistIsmAppendV1,
+}
+
+impl EvidenceArchiveQueryableKindV1 {
+    pub const fn record_kind(self) -> RecordKind {
+        match self {
+            Self::ReplayAppendV1 => RecordKind::Other(65),
+            Self::SleepAppendV1 => RecordKind::Other(66),
+            Self::GeistIsmAppendV1 => RecordKind::Other(67),
+        }
+    }
+
+    fn canonical_tag(self) -> u8 {
+        match self {
+            Self::ReplayAppendV1 => 65,
+            Self::SleepAppendV1 => 66,
+            Self::GeistIsmAppendV1 => 67,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CrossLayerReadbackQueryCandidateStatusV1 {
+    Complete,
+    MissingRecord,
+    Mismatch,
+}
+
+impl CrossLayerReadbackQueryCandidateStatusV1 {
+    fn code(self) -> u8 {
+        match self {
+            Self::Complete => 0,
+            Self::MissingRecord => 1,
+            Self::Mismatch => 2,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EvidenceArchiveQueryRecordRefV1 {
+    pub kind: EvidenceArchiveQueryableKindV1,
+    pub archive_key_digest: Digest32,
+    pub evidence_id_digest: Digest32,
+    pub payload_digest: Digest32,
+    pub archive_record_digest: Digest32,
+    pub readback_digest: Digest32,
+    pub root_commit_digest: Option<Digest32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CrossLayerReadbackQueryCandidateV1 {
+    pub records: Vec<EvidenceArchiveQueryRecordRefV1>,
+    pub status: CrossLayerReadbackQueryCandidateStatusV1,
+    pub failures: Vec<String>,
+}
+
+impl CrossLayerReadbackQueryCandidateV1 {
+    pub fn new(
+        records: Vec<EvidenceArchiveQueryRecordRefV1>,
+        status: CrossLayerReadbackQueryCandidateStatusV1,
+        failures: Vec<String>,
+    ) -> Self {
+        Self {
+            records,
+            status,
+            failures,
+        }
+    }
+
+    pub const fn read_model_only(&self) -> bool {
+        true
+    }
+    pub const fn append_authority(&self) -> bool {
+        false
+    }
+    pub const fn gateway_authority(&self) -> bool {
+        false
+    }
+    pub const fn identity_authority(&self) -> bool {
+        false
+    }
+    pub const fn evidence_archive_write_authority(&self) -> bool {
+        false
+    }
+    pub const fn runtime_authority(&self) -> bool {
+        false
+    }
+
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(b"ucf.geist.evidence_archive_query_candidate.v1");
+        payload.push(self.status.code());
+        payload.extend_from_slice(&(self.failures.len() as u32).to_be_bytes());
+        for failure in &self.failures {
+            let bytes = failure.as_bytes();
+            payload.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+            payload.extend_from_slice(bytes);
+        }
+        payload.extend_from_slice(&(self.records.len() as u32).to_be_bytes());
+        for record in &self.records {
+            payload.push(record.kind.canonical_tag());
+            payload.extend_from_slice(record.archive_key_digest.as_bytes());
+            payload.extend_from_slice(record.evidence_id_digest.as_bytes());
+            payload.extend_from_slice(record.payload_digest.as_bytes());
+            payload.extend_from_slice(record.archive_record_digest.as_bytes());
+            payload.extend_from_slice(record.readback_digest.as_bytes());
+            match record.root_commit_digest {
+                Some(digest) => {
+                    payload.push(1);
+                    payload.extend_from_slice(digest.as_bytes());
+                }
+                None => payload.push(0),
+            }
+        }
+        payload
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        let mut hasher = Hasher::new();
+        hasher.update(&self.deterministic_bytes());
+        Digest32::new(*hasher.finalize().as_bytes())
+    }
+}
+
 /// Meaning marker for the explicit Geist/ISM append contract.
 pub const MINIMAL_SPINE_GEIST_ISM_APPEND_MEANING: &str =
     "audit_provenance_persistence_only_no_geist_runtime_no_ism_write";

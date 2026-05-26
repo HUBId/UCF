@@ -46,18 +46,19 @@ impl PartitionPlan {
         let mut expected_start = 0u32;
         for (idx, partition) in self.partitions.iter().enumerate() {
             if !seen_ids.insert(partition.id) {
-                return Err(format!("duplicate partition id {}", partition.id));
+                return Err(format!("duplicate partition id {id}", id = partition.id));
             }
             if partition.neuron_end < partition.neuron_start {
                 return Err(format!(
-                    "partition {} has invalid range {}..{}",
-                    idx, partition.neuron_start, partition.neuron_end
+                    "partition {idx} has invalid range {start}..{end}",
+                    start = partition.neuron_start,
+                    end = partition.neuron_end
                 ));
             }
             if partition.neuron_start != expected_start {
                 return Err(format!(
-                    "partition {} starts at {}, expected {}",
-                    idx, partition.neuron_start, expected_start
+                    "partition {idx} starts at {start}, expected {expected_start}",
+                    start = partition.neuron_start
                 ));
             }
             expected_start = partition.neuron_end;
@@ -65,8 +66,7 @@ impl PartitionPlan {
 
         if expected_start != neuron_count {
             return Err(format!(
-                "partitions end at {}, expected {}",
-                expected_start, neuron_count
+                "partitions end at {expected_start}, expected {neuron_count}"
             ));
         }
 

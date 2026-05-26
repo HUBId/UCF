@@ -119,8 +119,8 @@ Placement decision (current recommendation):
 - Bounded append/readback exists for Replay/Sleep/Geist/ISM.
 - Cross-layer readback E2E exists.
 - EAQ2 alignment is now documented in `docs/roadmap/evidence_archive_query_record_authority_schema_alignment.md`.
-- Query layer is not yet implemented.
-- Next step: EAQ3.
+- EAQ3 query candidate implemented in `ucf-geist` with bounded `Other(65/66/67)` read-model metadata and deterministic digest surface.
+- Next step: EAQ4 verify-only query audit contract.
 
 ## 8. Open Questions
 - Which crate owns query types?
@@ -133,4 +133,4 @@ Placement decision (current recommendation):
 - How to avoid identity overclaim?
 
 ## 9. Recommended Next Prompt
-UCF Prompt EAQ2 — Query Record Authority and Read-Only Semantics Alignment
+UCF Prompt EAQ4 — Cross-Layer Query Verify-Only Audit Contract
