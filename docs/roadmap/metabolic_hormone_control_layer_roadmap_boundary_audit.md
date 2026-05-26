@@ -100,7 +100,7 @@ Answers (M1):
 - M4 completed: extracted deterministic advisory-only mapping `derive_hormone_modulation_output_v1(state)` with targeted modulation semantic/boundary tests in `domains/ucf-neuromod/tests/hormone_modulation_v1.rs`.
 - M5 completed: added deterministic bounded candidate-only replay/sleep mapping in `domains/ucf-neuromod/src/replay_sleep_candidate_v1.rs` with targeted tests in `domains/ucf-neuromod/tests/replay_sleep_candidate_v1.rs`.
 - M6 completed: verify-only metabolic audit contract added in `domains/ucf-neuromod/src/metabolic_audit_v1.rs` with targeted tests in `domains/ucf-neuromod/tests/metabolic_audit_v1.rs` and no runtime authority expansion.
-- Next step: `UCF Prompt M7 — Metabolic Docs Overclaim Guard`.
+- M8 completed: bounded metabolic closure baseline documented in `docs/roadmap/metabolic_hormone_control_layer_closure.md` with targeted neuromod tests + strict docs lint validation and no authority expansion claims.
 
 ## 8. Open Questions
 - Which crate owns `HormoneState`?
@@ -113,7 +113,7 @@ Answers (M1):
 - How to keep Geist/ISM write out of scope?
 
 ## 9. Recommended Next Prompt
-UCF Prompt M7 — Metabolic Docs Overclaim Guard
+UCF Prompt POST-M — Post-Metabolic Roadmap Selection
 
 ## 10. Metabolic/Hormone Overclaim Guard
 
@@ -146,7 +146,7 @@ Before claiming runtime metabolic control:
 - Deterministic loop bounds are specified and test-covered.
 - Negative evidence confirms no hidden policy mutation path.
 - Negative evidence confirms no hidden Gateway/action authority path.
-- Readiness refresh pass is completed (recommend: **UCF Prompt M8 — Metabolic Readiness Refresh**).
+- Readiness refresh pass is completed (M8 complete; see `docs/roadmap/metabolic_hormone_control_layer_closure.md`).
 
 Before claiming Replay/Sleep integration:
 - Explicit candidate-to-domain handoff contract is approved.
