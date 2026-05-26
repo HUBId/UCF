@@ -106,7 +106,53 @@
 - P2 alignment is now available at `docs/roadmap/policy_record_authority_schema_alignment.md`.
 - P3 and P4 are complete; candidate-only policy constraint evaluation (`PolicyContextV1` + `PolicyEvaluationCandidateV1`) is implemented with targeted tests in `ucf-policy-ecology`.
 - P5 is complete; verify-only policy audit (`PolicyVerifyAuditV1`) is implemented with deterministic digest + boundary-failure reporting in `ucf-policy-ecology`.
-- Recommended next step: **P6 — Policy Docs Overclaim Guard**.
+- Recommended next step: **P7 — Policy Readiness Refresh**.
+
+## Policy Ecology Overclaim Guard
+
+Allowed current claims:
+- PolicyFieldV1 read-only snapshot exists.
+- PolicyConstraintV1 typed constraints exist.
+- PolicyEvaluationCandidateV1 candidate-only evaluation exists.
+- PolicyVerifyAuditV1 verify-only audit exists.
+- Deterministic digests exist for bounded local policy records.
+
+Forbidden claims:
+- Runtime enforcement engine.
+- Action approval.
+- Gateway/action authority.
+- Lower-layer policy mutation.
+- Human governance replacement.
+- IdentityAnchor or IdentityFinalization.
+- ISM write/upsert.
+- Evidence/Archive append.
+- Production/prod readiness.
+- Autonomous governance.
+
+## Future Claim Checklist
+
+Before claiming runtime enforcement:
+- dedicated runtime enforcement prompt implemented.
+- action/gateway boundaries defined.
+- negative tests proving no hidden mutation/action authority.
+- readiness refresh.
+
+Before claiming governance update:
+- human-authorized update process.
+- versioning.
+- immutable snapshot transition semantics.
+- audit trail.
+- no lower-layer write.
+
+Before claiming Gateway integration:
+- read-only or action-authority semantics explicitly defined.
+- no hidden approve/execute.
+- Gateway docs updated.
+
+Before claiming production readiness:
+- full readiness refresh in stable environment.
+- prod profile criteria.
+- full workspace/clippy evidence.
 
 ## 8. Open Questions
 - Which crate owns `PolicyField`?
@@ -119,4 +165,4 @@
 - How to test no mutation?
 
 ## 9. Recommended Next Prompt
-UCF Prompt P6 — Policy Docs Overclaim Guard
+UCF Prompt P7 — Policy Readiness Refresh
