@@ -57,6 +57,7 @@ Tie-break: E is selected primary because it reduces cross-line governance ambigu
 | Prompt | Title | Goal | Guardrails |
 |---|---|---|---|
 | P1 | Policy Ecology Roadmap and Boundary Audit | Define policy-ecology bounded scope, authority boundaries, and dependencies. | No policy mutation implementation; docs/roadmap only. |
+| P1 status | Policy Ecology Roadmap and Boundary Audit completed | Roadmap/audit available at `docs/roadmap/policy_ecology_roadmap_boundary_audit.md`. | Planning-only artifact; no runtime authority implementation. |
 | P2 | Policy Record Authority and Schema Alignment | Align policy record ownership/schema boundaries across docs/specs. | No record runtime migration behavior; no gateway authority changes. |
 | P3 | Read-Only Policy Field Contract | Specify immutable top-down read-only policy field contract. | No write path, no self-grant, no capability issuance activation. |
 | P4 | Policy Constraint Evaluation Candidate | Define deterministic candidate-level constraint evaluation shape. | Candidate/verify-only; no runtime decision loop activation. |
