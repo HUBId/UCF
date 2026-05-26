@@ -97,7 +97,8 @@ Answers (M1):
 - Bounded deterministic `HormoneStateV1` contract is implemented in `domains/ucf-neuromod/src/hormone_state_v1.rs` with targeted tests in `domains/ucf-neuromod/tests/hormone_state_v1.rs`.
 - M3 implemented bounded deterministic update rules in `domains/ucf-neuromod/src/hormone_update_v1.rs` with targeted tests in `domains/ucf-neuromod/tests/hormone_update_v1.rs`.
 - Replay/Sleep/Geist mapping and runtime scheduler integration remain explicitly deferred.
-- Next step: `UCF Prompt M4 — Hormone Modulation Output Mapping`.
+- M4 completed: extracted deterministic advisory-only mapping `derive_hormone_modulation_output_v1(state)` with targeted modulation semantic/boundary tests in `domains/ucf-neuromod/tests/hormone_modulation_v1.rs`.
+- Next step: `UCF Prompt M5 — Replay/Sleep Priority Candidate Mapping`.
 
 ## 8. Open Questions
 - Which crate owns `HormoneState`?
@@ -110,4 +111,4 @@ Answers (M1):
 - How to keep Geist/ISM write out of scope?
 
 ## 9. Recommended Next Prompt
-UCF Prompt M4 — Hormone Modulation Output Mapping
+UCF Prompt M5 — Replay/Sleep Priority Candidate Mapping

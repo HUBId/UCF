@@ -177,45 +177,54 @@ pub fn update_hormone_state_v1(
     };
 
     let next_state = HormoneStateV1::new_clamped(next_raw);
-    let modulation_output = derive_modulation_output(next_state, clamp_min, clamp_max);
+    let modulation_output = derive_hormone_modulation_output_v1(&next_state);
     (next_state, modulation_output)
 }
 
-fn derive_modulation_output(
-    state: HormoneStateV1,
-    clamp_min: i64,
-    clamp_max: i64,
-) -> HormoneModulationOutputV1 {
+/// Derives an advisory-only modulation vector from a bounded hormone state.
+///
+/// Semantics are deterministic and integer-only and must not be interpreted as
+/// runtime, gateway, policy, identity, archive, or evidence authority.
+pub fn derive_hormone_modulation_output_v1(state: &HormoneStateV1) -> HormoneModulationOutputV1 {
+    let clamp_min = i64::from(NormalizedHormoneLevelV1::MIN);
+    let clamp_max = i64::from(NormalizedHormoneLevelV1::MAX);
+
     let attention_gain = clamp(
-        i64::from(state.dopamine_like.as_units()) + (i64::from(state.arousal_like.as_units()) / 5)
-            - (i64::from(state.sleep_pressure.as_units()) / 5),
+        i64::from(state.dopamine_like.as_units())
+            + (i64::from(state.novelty_pressure.as_units()) / 4)
+            + (i64::from(state.arousal_like.as_units()) / 5)
+            - (i64::from(state.cortisol_like.as_units()) / 5),
         clamp_min,
         clamp_max,
     );
     let learning_rate_multiplier = clamp(
-        i64::from(state.serotonin_like.as_units())
+        i64::from(state.dopamine_like.as_units())
             + (i64::from(state.novelty_pressure.as_units()) / 4)
+            + (i64::from(state.serotonin_like.as_units()) / 6)
             - (i64::from(state.cortisol_like.as_units()) / 4),
         clamp_min,
         clamp_max,
     );
     let replay_priority_multiplier = clamp(
         i64::from(state.novelty_pressure.as_units())
-            + (i64::from(state.sleep_pressure.as_units()) / 3)
-            + (i64::from(state.cortisol_like.as_units()) / 6),
+            + (i64::from(state.stability_pressure.as_units()) / 5)
+            + (i64::from(state.arousal_like.as_units()) / 5)
+            - (i64::from(state.cortisol_like.as_units()) / 8),
         clamp_min,
         clamp_max,
     );
     let noise_scale = clamp(
         i64::from(state.cortisol_like.as_units()) + (i64::from(state.arousal_like.as_units()) / 6)
-            - (i64::from(state.stability_pressure.as_units()) / 5),
+            - (i64::from(state.stability_pressure.as_units()) / 5)
+            - (i64::from(state.serotonin_like.as_units()) / 8),
         clamp_min,
         clamp_max,
     );
     let consolidation_gate = clamp(
         i64::from(state.stability_pressure.as_units())
             + (i64::from(state.serotonin_like.as_units()) / 5)
-            - (i64::from(state.cortisol_like.as_units()) / 5),
+            - (i64::from(state.cortisol_like.as_units()) / 5)
+            - (i64::from(state.novelty_pressure.as_units()) / 8),
         clamp_min,
         clamp_max,
     );
@@ -225,9 +234,9 @@ fn derive_modulation_output(
         clamp_max - clamp_min,
     );
     let risk_damping = clamp(
-        i64::from(state.stability_pressure.as_units())
-            - (i64::from(state.cortisol_like.as_units()) / 2)
-            + (i64::from(state.serotonin_like.as_units()) / 5),
+        i64::from(state.cortisol_like.as_units())
+            + (i64::from(state.stability_pressure.as_units()) / 4)
+            + (i64::from(state.serotonin_like.as_units()) / 8),
         clamp_min,
         clamp_max,
     );
