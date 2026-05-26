@@ -214,7 +214,7 @@ Baseline commands: `pwd`, `git branch --show-current`, `git status --short`, `gi
 - Hardening tests are needed first for: archive-vs-ESS authority, router minimal route contract, policy pack decision binding, evidence append/archive round trip, gateway inclusion, and any compute hook.
 - Claims to avoid: production real compute, completed Blue-Brain execution, biological microcircuit fidelity, HH runtime integration, immutable policy enforcement without gate evidence, and full cognitive autonomy.
 
-- Policy Ecology authority/schema alignment for the next bounded step is documented in `docs/roadmap/policy_record_authority_schema_alignment.md` (P2); treat protocol policy records as primitives/prototypes; P3 read-only contract landed locally in `core/crates/ucf-policy-ecology/src/policy_field_v1.rs` with targeted tests; P4 candidate-only evaluation contract landed in `core/crates/ucf-policy-ecology/src/policy_evaluation_candidate_v1.rs` with targeted tests.
+- Policy Ecology authority/schema alignment for the next bounded step is documented in `docs/roadmap/policy_record_authority_schema_alignment.md` (P2); treat protocol policy records as primitives/prototypes; P3 read-only contract landed locally in `core/crates/ucf-policy-ecology/src/policy_field_v1.rs` with targeted tests; P4 candidate-only evaluation contract landed in `core/crates/ucf-policy-ecology/src/policy_evaluation_candidate_v1.rs` with targeted tests.; P5 verify-only audit contract landed in `core/crates/ucf-policy-ecology/src/policy_verify_audit_v1.rs` with targeted tests.
 
 ## 10. Maintenance Rules
 
