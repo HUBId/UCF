@@ -251,6 +251,7 @@ Freshness check procedure:
 
 
 ## Post-Archive Planning
+- Post-metabolic planning reference: `docs/roadmap/post_metabolic_roadmap_selection.md`.
 - Current planning reference: `docs/roadmap/post_archive_roadmap_selection.md`.
 
 

@@ -80,3 +80,6 @@ Recommended: **Option A** first.
 - Option B: `UCF Prompt M9 — Replay/Sleep Handoff Boundary Roadmap`.
 
 Rationale: close bounded metabolic lane governance-first before opening new handoff authority boundaries.
+
+## 8. Post-Metabolic Selection Link
+- Follow-up selection document: `docs/roadmap/post_metabolic_roadmap_selection.md`.
