@@ -114,3 +114,51 @@ Answers (M1):
 
 ## 9. Recommended Next Prompt
 UCF Prompt M7 — Metabolic Docs Overclaim Guard
+
+## 10. Metabolic/Hormone Overclaim Guard
+
+Allowed current claims:
+- `HormoneStateV1` exists.
+- Deterministic update rules exist (`update_hormone_state_v1`).
+- Advisory-only modulation output exists (`derive_hormone_modulation_output_v1`).
+- Replay/Sleep candidate hints exist (`derive_replay_sleep_candidates_v1`).
+- Verify-only metabolic audit exists (`verify_metabolic_candidates_v1`, `MetabolicVerifyAuditV1`).
+- All listed surfaces are bounded deterministic metadata/candidate/audit-only contracts and do not activate runtime authority.
+
+Forbidden claims:
+- Full hormone/metabolic control loop.
+- Runtime scheduler activation (including queue/worker paths).
+- Replay execution/apply runtime authority.
+- Sleep execution/runtime authority.
+- `SleepCompleted` runtime semantics.
+- Geist/ISM write/upsert authority.
+- Policy mutation authority.
+- Gateway/action authority.
+- Identity anchor/finalization authority.
+- Evidence/Archive append authority from the metabolic lane.
+- Production/prod-readiness claims for metabolic control.
+- Human-equivalent emotional-system claims.
+
+## 11. Future Claim Checklist
+
+Before claiming runtime metabolic control:
+- Runtime scheduler prompt is implemented and merged.
+- Deterministic loop bounds are specified and test-covered.
+- Negative evidence confirms no hidden policy mutation path.
+- Negative evidence confirms no hidden Gateway/action authority path.
+- Readiness refresh pass is completed (recommend: **UCF Prompt M8 — Metabolic Readiness Refresh**).
+
+Before claiming Replay/Sleep integration:
+- Explicit candidate-to-domain handoff contract is approved.
+- No `ReplayApplied`/`SleepCompleted` claim is made without a dedicated authority prompt.
+- Negative tests prove no hidden scheduler path is introduced.
+
+Before claiming Geist/ISM integration:
+- Dedicated projection prompt is implemented.
+- No ISM write/upsert is enabled without an explicit authority prompt.
+- Identity semantics remain excluded unless explicitly promoted later.
+
+Before claiming production readiness:
+- Full readiness refresh is completed.
+- Workspace test/clippy evidence is produced in a stable environment.
+- Prod-profile criteria are satisfied and documented.
