@@ -214,6 +214,8 @@ Baseline commands: `pwd`, `git branch --show-current`, `git status --short`, `gi
 - Hardening tests are needed first for: archive-vs-ESS authority, router minimal route contract, policy pack decision binding, evidence append/archive round trip, gateway inclusion, and any compute hook.
 - Claims to avoid: production real compute, completed Blue-Brain execution, biological microcircuit fidelity, HH runtime integration, immutable policy enforcement without gate evidence, and full cognitive autonomy.
 
+- Policy Ecology authority/schema alignment for the next bounded step is documented in `docs/roadmap/policy_record_authority_schema_alignment.md` (P2); treat current policy records as primitives/prototypes until P3 read-only contract lands.
+
 ## 10. Maintenance Rules
 
 - Update this registry whenever a crate is added/removed, a module changes public API or feature lanes, a stub/mock/toy path is promoted, a docs-only/deferred/historical area becomes code-backed, or Minimal Spine scope changes.
