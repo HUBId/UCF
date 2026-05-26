@@ -115,6 +115,8 @@ Answers (M1):
 ## 9. Recommended Next Prompt
 UCF Prompt POST-M — Post-Metabolic Roadmap Selection
 
+Post-M selection output: `docs/roadmap/post_metabolic_roadmap_selection.md`.
+
 ## 10. Metabolic/Hormone Overclaim Guard
 
 Allowed current claims:
