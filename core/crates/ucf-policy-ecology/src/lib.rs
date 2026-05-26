@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+pub mod policy_field_v1;
+
 use ucf_crypto as _;
 use ucf_types::v1::spec::ExperienceRecord;
 use ucf_types::Digest32;
@@ -253,6 +255,10 @@ fn parse_decision_class_from_payload(payload: &[u8]) -> Option<u16> {
     }
     None
 }
+
+pub use policy_field_v1::{
+    PolicyConstraintKindV1, PolicyConstraintV1, PolicyFieldErrorV1, PolicyFieldV1,
+};
 
 #[cfg(test)]
 mod tests {

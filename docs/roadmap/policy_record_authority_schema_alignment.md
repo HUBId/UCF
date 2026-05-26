@@ -93,9 +93,9 @@ Phase-2 required answers:
 | Tests prove read-only/no mutation/no action authority | yes | Targeted tests in `ucf-policy-ecology`; no full workspace expansion required. |
 
 ## 7. Current Status
-- Policy Ecology bounded `PolicyFieldV1` implementation is not yet present.
+- Policy Ecology bounded `PolicyFieldV1` implementation is now present in `core/crates/ucf-policy-ecology/src/policy_field_v1.rs` with immutable/read-only validation and deterministic digest bytes.
 - Existing policy-related surfaces are protocol primitives, local prototypes, and audit/supporting docs.
-- Next step is P3 (Read-Only Policy Field Contract).
+- P3 (Read-Only Policy Field Contract) is implemented with targeted tests in `core/crates/ucf-policy-ecology/tests/policy_field_v1.rs`.
 
 ## 8. Open Questions
 - Should protocol promote local policy records later after P3/P4 stabilization?
@@ -106,4 +106,4 @@ Phase-2 required answers:
 - What checks prevent gateway/action authority from being inferred by naming or API shape?
 
 ## 9. Recommended Next Prompt
-UCF Prompt P3 — Read-Only Policy Field Contract
+UCF Prompt P4 — Policy Constraint Evaluation Candidate
