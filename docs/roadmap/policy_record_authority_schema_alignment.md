@@ -109,3 +109,7 @@ Phase-2 required answers:
 
 ## 9. Recommended Next Prompt
 UCF Prompt P6 — Policy Docs Overclaim Guard
+
+
+## Policy Ecology Closure Link
+- Bounded closure baseline (P7): `docs/roadmap/policy_ecology_closure.md`.
