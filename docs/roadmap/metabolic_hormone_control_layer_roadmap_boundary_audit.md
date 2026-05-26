@@ -83,7 +83,7 @@ Answers (M1):
 
 | Prompt | Title | Goal | Acceptance criteria | Guardrails |
 |---|---|---|---|---|
-| M2 | Deterministic HormoneState v1 Contract | Add bounded type contract and invariants only. | `HormoneStateV1`/`HormoneInputFrameV1`/`HormoneUpdateConfigV1` types + deterministic invariants + unit tests. | No runtime loops, no policy/gateway/identity/archive authority. |
+| M2 | Deterministic HormoneState v1 Contract | Add bounded type contract and invariants only. | ✅ `HormoneStateV1` + `NormalizedHormoneLevelV1` fixed-point contract added with deterministic invariants and targeted tests (`domains/ucf-neuromod/tests/hormone_state_v1.rs`). | No runtime loops, no policy/gateway/identity/archive authority. |
 | M3 | Hormone Update Rules v1 | Define deterministic update mapping and clamps/decay. | `update_hormone_state_v1` deterministic tests incl. clamp/decay edge cases. | No wall-clock randomness, no scheduler activation. |
 | M4 | Hormone Modulation Output Mapping | Map state to advisory modulation outputs. | `HormoneModulationOutputV1` mapping with bounded multipliers + docs/tests. | Advisory-only; no direct action/policy decisions. |
 | M5 | Replay/Sleep Priority Candidate Mapping | Connect modulation outputs to candidate builders only. | Candidate-only mapping for replay priority/sleep pressure, with boundary tests. | No replay/sleep scheduler authority, no SleepCompleted semantics. |
@@ -94,7 +94,8 @@ Answers (M1):
 ## 7. Current Status
 - Metabolic/Hormone control not fully integrated.
 - Bounded deterministic minimal-spine neuromod metadata envelope exists, plus experimental neuromod v0 state/rules/scheduler.
-- Next step: bounded deterministic `HormoneStateV1` contract.
+- Bounded deterministic `HormoneStateV1` contract is now implemented in `domains/ucf-neuromod/src/hormone_state_v1.rs` with targeted tests in `domains/ucf-neuromod/tests/hormone_state_v1.rs`.
+- Next step: `UCF Prompt M3 — Hormone Update Rules v1`.
 
 ## 8. Open Questions
 - Which crate owns `HormoneState`?
