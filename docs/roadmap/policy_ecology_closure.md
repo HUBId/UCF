@@ -69,3 +69,4 @@
 
 ## 7. Next Roadmap Recommendation
 - UCF Prompt POST-P — Post-Policy Roadmap Selection
+- Selection result: `docs/roadmap/post_policy_roadmap_selection.md` (primary: Evidence/Archive Read API / Query Layer).
