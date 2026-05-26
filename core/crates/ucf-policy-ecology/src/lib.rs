@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+pub mod policy_field_v1;
+
 use ucf_crypto as _;
 use ucf_types::v1::spec::ExperienceRecord;
 use ucf_types::Digest32;
@@ -305,3 +307,7 @@ mod tests {
         assert!(!ecology.allow_ism_upsert(&report));
     }
 }
+
+pub use policy_field_v1::{
+    PolicyConstraintKindV1, PolicyConstraintV1, PolicyFieldErrorV1, PolicyFieldV1,
+};

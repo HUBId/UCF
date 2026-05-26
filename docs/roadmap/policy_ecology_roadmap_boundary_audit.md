@@ -101,10 +101,10 @@
 | P7 | Policy Readiness Refresh | Run targeted formatting/docs checks for policy docs line. | fmt/docs lint clean for touched artifacts and links. | No full-workspace expansion claims. |
 
 ## 7. Current Status
-- Policy Ecology is **not yet implemented** as a bounded typed top-down read-only layer (`PolicyFieldV1` etc.).
+- Policy Ecology now includes a bounded typed top-down read-only layer (`PolicyFieldV1` / `PolicyConstraintV1`) in `ucf-policy-ecology` as a local contract surface.
 - Current work here is planning-only and boundary-audit only.
 - P2 alignment is now available at `docs/roadmap/policy_record_authority_schema_alignment.md`.
-- Recommended next step: **P3 — Read-Only Policy Field Contract**.
+- P3 is complete; recommended next step: **P4 — Policy Constraint Evaluation Candidate**.
 
 ## 8. Open Questions
 - Which crate owns `PolicyField`?
@@ -117,4 +117,4 @@
 - How to test no mutation?
 
 ## 9. Recommended Next Prompt
-UCF Prompt P3 — Read-Only Policy Field Contract
+UCF Prompt P4 — Policy Constraint Evaluation Candidate
