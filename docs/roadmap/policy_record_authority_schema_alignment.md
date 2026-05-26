@@ -97,6 +97,7 @@ Phase-2 required answers:
 - Existing policy-related surfaces are protocol primitives, local prototypes, and audit/supporting docs.
 - P3 (Read-Only Policy Field Contract) is implemented with targeted tests in `core/crates/ucf-policy-ecology/tests/policy_field_v1.rs`.
 - P4 (Policy Constraint Evaluation Candidate) is implemented with `PolicyContextV1`, `PolicyEvaluationCandidateV1`, and `evaluate_policy_constraints_v1(...)` in `core/crates/ucf-policy-ecology/src/policy_evaluation_candidate_v1.rs`, covered by `core/crates/ucf-policy-ecology/tests/policy_evaluation_candidate_v1.rs`.
+- P5 (Policy Verify-Only Audit Contract) is implemented with `PolicyVerifyAuditStatusV1`, `PolicyVerifyAuditFailureV1`, `PolicyVerifyAuditV1`, and `verify_policy_evaluation_v1(...)` in `core/crates/ucf-policy-ecology/src/policy_verify_audit_v1.rs`, covered by `core/crates/ucf-policy-ecology/tests/policy_verify_audit_v1.rs`.
 
 ## 8. Open Questions
 - Should protocol promote local policy records later after P3/P4 stabilization?
@@ -107,4 +108,4 @@ Phase-2 required answers:
 - What checks prevent gateway/action authority from being inferred by naming or API shape?
 
 ## 9. Recommended Next Prompt
-UCF Prompt P5 — Policy Verify-Only Audit Contract
+UCF Prompt P6 — Policy Docs Overclaim Guard

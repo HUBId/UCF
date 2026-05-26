@@ -105,7 +105,8 @@
 - Current work here is planning-only and boundary-audit only.
 - P2 alignment is now available at `docs/roadmap/policy_record_authority_schema_alignment.md`.
 - P3 and P4 are complete; candidate-only policy constraint evaluation (`PolicyContextV1` + `PolicyEvaluationCandidateV1`) is implemented with targeted tests in `ucf-policy-ecology`.
-- Recommended next step: **P5 — Policy Verify-Only Audit Contract**.
+- P5 is complete; verify-only policy audit (`PolicyVerifyAuditV1`) is implemented with deterministic digest + boundary-failure reporting in `ucf-policy-ecology`.
+- Recommended next step: **P6 — Policy Docs Overclaim Guard**.
 
 ## 8. Open Questions
 - Which crate owns `PolicyField`?
@@ -118,4 +119,4 @@
 - How to test no mutation?
 
 ## 9. Recommended Next Prompt
-UCF Prompt P4 — Policy Constraint Evaluation Candidate
+UCF Prompt P6 — Policy Docs Overclaim Guard

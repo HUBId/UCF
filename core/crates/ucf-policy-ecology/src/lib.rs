@@ -2,6 +2,7 @@
 
 pub mod policy_evaluation_candidate_v1;
 pub mod policy_field_v1;
+pub mod policy_verify_audit_v1;
 
 use ucf_crypto as _;
 use ucf_types::v1::spec::ExperienceRecord;
@@ -263,6 +264,10 @@ pub use policy_evaluation_candidate_v1::{
 };
 pub use policy_field_v1::{
     PolicyConstraintKindV1, PolicyConstraintV1, PolicyFieldErrorV1, PolicyFieldV1,
+};
+pub use policy_verify_audit_v1::{
+    verify_policy_evaluation_v1, PolicyVerifyAuditFailureV1, PolicyVerifyAuditStatusV1,
+    PolicyVerifyAuditV1,
 };
 
 #[cfg(test)]
