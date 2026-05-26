@@ -104,7 +104,8 @@
 - Policy Ecology now includes a bounded typed top-down read-only layer (`PolicyFieldV1` / `PolicyConstraintV1`) in `ucf-policy-ecology` as a local contract surface.
 - Current work here is planning-only and boundary-audit only.
 - P2 alignment is now available at `docs/roadmap/policy_record_authority_schema_alignment.md`.
-- P3 is complete; recommended next step: **P4 — Policy Constraint Evaluation Candidate**.
+- P3 and P4 are complete; candidate-only policy constraint evaluation (`PolicyContextV1` + `PolicyEvaluationCandidateV1`) is implemented with targeted tests in `ucf-policy-ecology`.
+- Recommended next step: **P5 — Policy Verify-Only Audit Contract**.
 
 ## 8. Open Questions
 - Which crate owns `PolicyField`?

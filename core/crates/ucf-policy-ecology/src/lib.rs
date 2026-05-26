@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod policy_evaluation_candidate_v1;
 pub mod policy_field_v1;
 
 use ucf_crypto as _;
@@ -256,6 +257,10 @@ fn parse_decision_class_from_payload(payload: &[u8]) -> Option<u16> {
     None
 }
 
+pub use policy_evaluation_candidate_v1::{
+    evaluate_policy_constraints_v1, PolicyContextV1, PolicyEvaluationCandidateStatusV1,
+    PolicyEvaluationCandidateV1, PolicyViolationV1,
+};
 pub use policy_field_v1::{
     PolicyConstraintKindV1, PolicyConstraintV1, PolicyFieldErrorV1, PolicyFieldV1,
 };
