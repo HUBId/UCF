@@ -256,6 +256,10 @@ fn parse_decision_class_from_payload(payload: &[u8]) -> Option<u16> {
     None
 }
 
+pub use policy_field_v1::{
+    PolicyConstraintKindV1, PolicyConstraintV1, PolicyFieldErrorV1, PolicyFieldV1,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -307,7 +311,3 @@ mod tests {
         assert!(!ecology.allow_ism_upsert(&report));
     }
 }
-
-pub use policy_field_v1::{
-    PolicyConstraintKindV1, PolicyConstraintV1, PolicyFieldErrorV1, PolicyFieldV1,
-};
