@@ -92,8 +92,9 @@ EAQ2 decision: docs-first (Option C), with EAQ3 expected to implement a candidat
 
 ## 7. Current Status
 - Bounded append/readback exists for Replay/Sleep/Geist/ISM (`Other(65/66/67)`).
-- Query candidate/read-model for Evidence/Archive query layer is not yet implemented.
-- Next step is EAQ3 candidate definition and bounded implementation.
+- EAQ3 implemented in `domains/geist/crates/ucf-geist/src/lib.rs` with `EvidenceArchiveQueryableKindV1`, `EvidenceArchiveQueryRecordRefV1`, and `CrossLayerReadbackQueryCandidateV1` plus deterministic `deterministic_bytes()`/`digest()` read-model-only surface.
+- Targeted coverage added in `domains/geist/crates/ucf-geist/tests/evidence_archive_query_candidate_v1.rs`.
+- Next step is EAQ4 verify-only query audit contract.
 
 ## 8. Open Questions
 - Which crate owns query candidates?
@@ -105,4 +106,4 @@ EAQ2 decision: docs-first (Option C), with EAQ3 expected to implement a candidat
 - How to keep identity semantics deferred?
 
 ## 9. Recommended Next Prompt
-UCF Prompt EAQ3 — Replay/Sleep/Geist/ISM Readback Query Candidate
+UCF Prompt EAQ4 — Cross-Layer Query Verify-Only Audit Contract
