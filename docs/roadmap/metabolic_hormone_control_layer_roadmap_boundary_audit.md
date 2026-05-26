@@ -94,8 +94,10 @@ Answers (M1):
 ## 7. Current Status
 - Metabolic/Hormone control not fully integrated.
 - Bounded deterministic minimal-spine neuromod metadata envelope exists, plus experimental neuromod v0 state/rules/scheduler.
-- Bounded deterministic `HormoneStateV1` contract is now implemented in `domains/ucf-neuromod/src/hormone_state_v1.rs` with targeted tests in `domains/ucf-neuromod/tests/hormone_state_v1.rs`.
-- Next step: `UCF Prompt M3 — Hormone Update Rules v1`.
+- Bounded deterministic `HormoneStateV1` contract is implemented in `domains/ucf-neuromod/src/hormone_state_v1.rs` with targeted tests in `domains/ucf-neuromod/tests/hormone_state_v1.rs`.
+- M3 implemented bounded deterministic update rules in `domains/ucf-neuromod/src/hormone_update_v1.rs` with targeted tests in `domains/ucf-neuromod/tests/hormone_update_v1.rs`.
+- Replay/Sleep/Geist mapping and runtime scheduler integration remain explicitly deferred.
+- Next step: `UCF Prompt M4 — Hormone Modulation Output Mapping`.
 
 ## 8. Open Questions
 - Which crate owns `HormoneState`?
@@ -108,4 +110,4 @@ Answers (M1):
 - How to keep Geist/ISM write out of scope?
 
 ## 9. Recommended Next Prompt
-UCF Prompt M2 — Deterministic HormoneState v1 Contract
+UCF Prompt M4 — Hormone Modulation Output Mapping
