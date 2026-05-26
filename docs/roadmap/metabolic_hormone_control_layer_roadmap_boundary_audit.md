@@ -86,7 +86,7 @@ Answers (M1):
 | M2 | Deterministic HormoneState v1 Contract | Add bounded type contract and invariants only. | ✅ `HormoneStateV1` + `NormalizedHormoneLevelV1` fixed-point contract added with deterministic invariants and targeted tests (`domains/ucf-neuromod/tests/hormone_state_v1.rs`). | No runtime loops, no policy/gateway/identity/archive authority. |
 | M3 | Hormone Update Rules v1 | Define deterministic update mapping and clamps/decay. | `update_hormone_state_v1` deterministic tests incl. clamp/decay edge cases. | No wall-clock randomness, no scheduler activation. |
 | M4 | Hormone Modulation Output Mapping | Map state to advisory modulation outputs. | `HormoneModulationOutputV1` mapping with bounded multipliers + docs/tests. | Advisory-only; no direct action/policy decisions. |
-| M5 | Replay/Sleep Priority Candidate Mapping | Connect modulation outputs to candidate builders only. | Candidate-only mapping for replay priority/sleep pressure, with boundary tests. | No replay/sleep scheduler authority, no SleepCompleted semantics. |
+| M5 | Replay/Sleep Priority Candidate Mapping | Connect modulation outputs to candidate builders only. | ✅ Completed: `MetabolicReplayPriorityCandidateV1`, `MetabolicSleepPressureCandidateV1`, `MetabolicReplaySleepCandidatesV1`, and `derive_replay_sleep_candidates_v1(...)` added with boundary tests in `domains/ucf-neuromod/tests/replay_sleep_candidate_v1.rs`. | No replay/sleep scheduler authority, no SleepCompleted semantics. |
 | M6 | Metabolic Verify-Only Audit Contract | Add deterministic audit record contract for hormone updates/modulations. | Verify-only audit type + deterministic digest + no append/write authority tests. | No Evidence/Archive append, no ISM upsert, no gateway visibility. |
 | M7 | Metabolic Docs Overclaim Guard | Harden docs/index/registry to prevent capability overclaim. | Updated docs with explicit non-goals and boundary assertions. | No behavior change. |
 | M8 | Metabolic Readiness Refresh | Targeted readiness/docs checks for metabolic lane artifacts. | Targeted checks pass; docs lint clean; no full runtime claims. | No production-readiness claim, no runtime activation. |
@@ -98,7 +98,8 @@ Answers (M1):
 - M3 implemented bounded deterministic update rules in `domains/ucf-neuromod/src/hormone_update_v1.rs` with targeted tests in `domains/ucf-neuromod/tests/hormone_update_v1.rs`.
 - Replay/Sleep/Geist mapping and runtime scheduler integration remain explicitly deferred.
 - M4 completed: extracted deterministic advisory-only mapping `derive_hormone_modulation_output_v1(state)` with targeted modulation semantic/boundary tests in `domains/ucf-neuromod/tests/hormone_modulation_v1.rs`.
-- Next step: `UCF Prompt M5 — Replay/Sleep Priority Candidate Mapping`.
+- M5 completed: added deterministic bounded candidate-only replay/sleep mapping in `domains/ucf-neuromod/src/replay_sleep_candidate_v1.rs` with targeted tests in `domains/ucf-neuromod/tests/replay_sleep_candidate_v1.rs`.
+- Next step: `UCF Prompt M6 — Metabolic Verify-Only Audit Contract`.
 
 ## 8. Open Questions
 - Which crate owns `HormoneState`?
