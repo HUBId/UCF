@@ -118,8 +118,9 @@ Placement decision (current recommendation):
 ## 7. Current Status
 - Bounded append/readback exists for Replay/Sleep/Geist/ISM.
 - Cross-layer readback E2E exists.
+- EAQ2 alignment is now documented in `docs/roadmap/evidence_archive_query_record_authority_schema_alignment.md`.
 - Query layer is not yet implemented.
-- Next step: EAQ2.
+- Next step: EAQ3.
 
 ## 8. Open Questions
 - Which crate owns query types?

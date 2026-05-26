@@ -226,3 +226,6 @@ Baseline commands: `pwd`, `git branch --show-current`, `git status --short`, `gi
 - Generated `out/*.json` reports should normally remain uncommitted unless a repo policy or release workflow explicitly requires them.
 
 | Policy Ecology (P1 roadmap boundary audit) | `docs/roadmap/policy_ecology_roadmap_boundary_audit.md`; `docs/roadmap/policy_ecology_closure.md`; `core/crates/ucf-policy-ecology`; `domains/policy-gateway/crates/ucf-policy-gateway`; `protocol/crates/ucf-protocol` | docs-first boundary audit + bounded closure baseline complete; existing crate/types remain bounded and non-authoritative for runtime action enforcement | docs-only (roadmap/closure) + partial (existing bounded crate/types) | no policy mutation; no runtime enforcement engine; no Gateway/action authority; no identity anchor/finalization; no ISM write/upsert; no Evidence/Archive append changes; no Minimal Spine v1.x change; no prod-readiness claim |
+
+
+- EAQ2 query authority alignment note: `docs/roadmap/evidence_archive_query_record_authority_schema_alignment.md` confirms query-line ownership is still planning-only, bounded to read primitives and `RecordKind::Other(65/66/67)` metadata; append/gateway/identity authority remains deferred/forbidden until EAQ3.

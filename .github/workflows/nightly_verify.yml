@@ -12,8 +12,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain 1.88.0
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt --component clippy
+          rustup default 1.88.0
+          rustc -V
+          cargo -V
       - name: Cargo test workspace
         run: cargo test --workspace --all-targets
       - name: Docs lint
