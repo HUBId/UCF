@@ -336,7 +336,7 @@ fn normalized_reason_strings(codes: &[i32]) -> Vec<String> {
     normalized_reason_code_list(codes, ReasonSet::DEFAULT_MAX_LEN)
         .into_iter()
         .filter_map(|code| ReasonCode::try_from(code).ok())
-        .map(|code| format!("{:?}", code))
+        .map(|code| format!("{code:?}"))
         .collect()
 }
 
