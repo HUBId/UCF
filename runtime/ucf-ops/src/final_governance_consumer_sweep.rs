@@ -247,7 +247,7 @@ fn derive_final_authority(
     bytes.extend_from_slice(entry_prefix.as_bytes());
     bytes.extend_from_slice(governance_authority_prefix.as_bytes());
     bytes.extend_from_slice(covered_consumer_count.to_string().as_bytes());
-    bytes.extend_from_slice(format!("{:?}", authority_status).as_bytes());
+    bytes.extend_from_slice(format!("{authority_status:?}").as_bytes());
 
     FinalGovernanceConsumerAuthorityV1 {
         applied_supported_set_digest_prefix: scope_prefix.to_string(),

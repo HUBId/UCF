@@ -273,7 +273,7 @@ fn derive_final_readiness_authority(
     bytes.extend_from_slice(spine_prefix.as_bytes());
     bytes.extend_from_slice(readiness_authority_prefix.as_bytes());
     bytes.extend_from_slice(covered_consumer_count.to_string().as_bytes());
-    bytes.extend_from_slice(format!("{:?}", authority_status).as_bytes());
+    bytes.extend_from_slice(format!("{authority_status:?}").as_bytes());
     FinalReadinessConsumerAuthorityV1 {
         applied_supported_set_digest_prefix: scope_prefix.to_string(),
         canonical_governance_entry_digest_prefix: entry_prefix.to_string(),

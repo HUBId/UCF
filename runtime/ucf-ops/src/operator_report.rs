@@ -463,7 +463,7 @@ fn normalize_eligibility_from_snapshot(
                 .as_ref()
                 .or(slot.denials.shadow.as_ref())
                 .or(slot.denials.probe.as_ref())
-                .map(|v| format!("{:?}", v)),
+                .map(|v| format!("{v:?}")),
         })
         .collect::<Vec<_>>();
     slots.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));

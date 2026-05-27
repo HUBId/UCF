@@ -7565,7 +7565,7 @@ pub fn apply_hot_reload_if_safe(
     if current.profile != updated.profile {
         reasons.push(ConfigReloadReasonCode::ManifestChanged);
     }
-    reasons.sort_by(|a, b| format!("{:?}", a).cmp(&format!("{:?}", b)));
+    reasons.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
     reasons.dedup();
     if reasons.is_empty() {
         let mut applied = updated.clone();
