@@ -523,6 +523,52 @@ impl CrossLayerReadbackQueryCandidateStatusV1 {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CrossLayerReadbackQueryAuditStatusV1 {
+    Pass,
+    Fail,
+    CandidateMissingRecord,
+    CandidateMismatch,
+}
+
+impl CrossLayerReadbackQueryAuditStatusV1 {
+    fn code(self) -> u8 {
+        match self {
+            Self::Pass => 0,
+            Self::Fail => 1,
+            Self::CandidateMissingRecord => 2,
+            Self::CandidateMismatch => 3,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CrossLayerReadbackQueryAuditFailureV1 {
+    EmptyCandidate,
+    CandidateMissingRecord,
+    CandidateMismatch,
+    UnboundedKind,
+    AppendWriteAuthorityPresent,
+    GatewayAuthorityPresent,
+    IdentityAuthorityPresent,
+    RuntimeAuthorityPresent,
+}
+
+impl CrossLayerReadbackQueryAuditFailureV1 {
+    fn code(self) -> u8 {
+        match self {
+            Self::EmptyCandidate => 1,
+            Self::CandidateMissingRecord => 2,
+            Self::CandidateMismatch => 3,
+            Self::UnboundedKind => 4,
+            Self::AppendWriteAuthorityPresent => 5,
+            Self::GatewayAuthorityPresent => 6,
+            Self::IdentityAuthorityPresent => 7,
+            Self::RuntimeAuthorityPresent => 8,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EvidenceArchiveQueryRecordRefV1 {
     pub kind: EvidenceArchiveQueryableKindV1,
@@ -607,6 +653,124 @@ impl CrossLayerReadbackQueryCandidateV1 {
         hasher.update(&self.deterministic_bytes());
         Digest32::new(*hasher.finalize().as_bytes())
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CrossLayerReadbackQueryVerifyAuditV1 {
+    pub status: CrossLayerReadbackQueryAuditStatusV1,
+    pub failures: Vec<CrossLayerReadbackQueryAuditFailureV1>,
+    pub candidate_digest: Digest32,
+    pub record_count: u32,
+    pub audit_digest: Digest32,
+}
+
+impl CrossLayerReadbackQueryVerifyAuditV1 {
+    pub const fn verify_only(&self) -> bool {
+        true
+    }
+    pub const fn read_model_only(&self) -> bool {
+        true
+    }
+    pub const fn append_write_authority(&self) -> bool {
+        false
+    }
+    pub const fn gateway_authority(&self) -> bool {
+        false
+    }
+    pub const fn identity_authority(&self) -> bool {
+        false
+    }
+    pub const fn runtime_authority(&self) -> bool {
+        false
+    }
+    pub const fn is_pass(&self) -> bool {
+        matches!(self.status, CrossLayerReadbackQueryAuditStatusV1::Pass)
+    }
+
+    pub fn deterministic_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"ucf.geist.cross_layer_readback_query_verify_audit.v1");
+        out.push(self.status.code());
+        out.extend_from_slice(&(self.failures.len() as u32).to_be_bytes());
+        for failure in &self.failures {
+            out.push(failure.code());
+        }
+        out.extend_from_slice(self.candidate_digest.as_bytes());
+        out.extend_from_slice(&self.record_count.to_be_bytes());
+        out
+    }
+
+    pub fn digest(&self) -> Digest32 {
+        let mut hasher = Hasher::new();
+        hasher.update(&self.deterministic_bytes());
+        Digest32::new(*hasher.finalize().as_bytes())
+    }
+}
+
+pub fn verify_cross_layer_readback_query_candidate_v1(
+    candidate: &CrossLayerReadbackQueryCandidateV1,
+) -> CrossLayerReadbackQueryVerifyAuditV1 {
+    let mut failures = Vec::new();
+    if candidate.records.is_empty() {
+        failures.push(CrossLayerReadbackQueryAuditFailureV1::EmptyCandidate);
+    }
+    if matches!(
+        candidate.status,
+        CrossLayerReadbackQueryCandidateStatusV1::MissingRecord
+    ) {
+        failures.push(CrossLayerReadbackQueryAuditFailureV1::CandidateMissingRecord);
+    }
+    if matches!(
+        candidate.status,
+        CrossLayerReadbackQueryCandidateStatusV1::Mismatch
+    ) {
+        failures.push(CrossLayerReadbackQueryAuditFailureV1::CandidateMismatch);
+    }
+    if candidate.append_authority() || candidate.evidence_archive_write_authority() {
+        failures.push(CrossLayerReadbackQueryAuditFailureV1::AppendWriteAuthorityPresent);
+    }
+    if candidate.gateway_authority() {
+        failures.push(CrossLayerReadbackQueryAuditFailureV1::GatewayAuthorityPresent);
+    }
+    if candidate.identity_authority() {
+        failures.push(CrossLayerReadbackQueryAuditFailureV1::IdentityAuthorityPresent);
+    }
+    if candidate.runtime_authority() {
+        failures.push(CrossLayerReadbackQueryAuditFailureV1::RuntimeAuthorityPresent);
+    }
+    if candidate
+        .records
+        .iter()
+        .any(|record| !matches!(record.kind.record_kind(), RecordKind::Other(65..=67)))
+    {
+        failures.push(CrossLayerReadbackQueryAuditFailureV1::UnboundedKind);
+    }
+
+    let status = if failures.is_empty() {
+        CrossLayerReadbackQueryAuditStatusV1::Pass
+    } else {
+        match candidate.status {
+            CrossLayerReadbackQueryCandidateStatusV1::MissingRecord => {
+                CrossLayerReadbackQueryAuditStatusV1::CandidateMissingRecord
+            }
+            CrossLayerReadbackQueryCandidateStatusV1::Mismatch => {
+                CrossLayerReadbackQueryAuditStatusV1::CandidateMismatch
+            }
+            CrossLayerReadbackQueryCandidateStatusV1::Complete => {
+                CrossLayerReadbackQueryAuditStatusV1::Fail
+            }
+        }
+    };
+
+    let mut audit = CrossLayerReadbackQueryVerifyAuditV1 {
+        status,
+        failures,
+        candidate_digest: candidate.digest(),
+        record_count: candidate.records.len() as u32,
+        audit_digest: Digest32::new([0; 32]),
+    };
+    audit.audit_digest = audit.digest();
+    audit
 }
 
 /// Meaning marker for the explicit Geist/ISM append contract.
