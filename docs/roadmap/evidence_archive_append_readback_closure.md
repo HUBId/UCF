@@ -82,3 +82,4 @@ Given workspace evidence caveat in this run, next prompt should be **Workspace E
 - Next-line caveated planning link: `docs/roadmap/workspace_evidence_stability_roadmap_boundary_audit.md` (roadmap/boundary only; no gate weakening, no timeout-as-pass).
 
 - Query-layer follow-up roadmap/boundary audit: `docs/roadmap/evidence_archive_query_layer_roadmap_boundary_audit.md` (EAQ1; planning only, read-only semantics, no append/runtime/Gateway authority).
+- Query-line continuity note: EAQ3/EAQ4 add bounded read-model query candidate + verify-only audit over `Other(65/66/67)` only; this is documentation/readback hardening and does not grant Gateway/API/action/identity/runtime/prod-readiness authority.

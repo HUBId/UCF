@@ -134,4 +134,49 @@ Placement decision (current recommendation):
 - How to avoid identity overclaim?
 
 ## 9. Recommended Next Prompt
-UCF Prompt EAQ4 — Cross-Layer Query Verify-Only Audit Contract
+UCF Prompt EAQ6 — Query Readiness Refresh
+
+## 10. Evidence/Archive Query Overclaim Guard
+
+Allowed current claims:
+- Evidence/Archive Query Candidate exists.
+- Query Candidate is read-model-only.
+- Query Candidate is bounded to Other(65/66/67).
+- Query Verify Audit exists.
+- Query Audit is verify-only.
+- Deterministic query/audit digests exist.
+
+Forbidden claims:
+- Gateway Read API implemented.
+- Gateway action authority.
+- Append/write/mutate/delete.
+- Runtime execution or scheduler.
+- Replay/Sleep/Geist execution.
+- Identity/ISM authority.
+- Evidence/Archive authority change.
+- Second event log.
+- Production/prod readiness.
+- Query visibility as approval.
+
+## 11. Future Claim Checklist
+
+Before claiming Gateway Read API:
+- dedicated Gateway read prompt implemented.
+- read-only semantics enforced.
+- no action/write authority.
+- negative tests for no hidden approval/execution.
+
+Before claiming production query readiness:
+- full readiness refresh in stable environment.
+- full workspace/clippy evidence.
+- prod-profile criteria if applicable.
+
+Before claiming identity/ISM query:
+- dedicated identity/ISM query authority prompt.
+- no hidden IsmStore write/upsert.
+- no IdentityAnchor implication.
+
+Before claiming query-as-index:
+- index semantics defined.
+- no second event log.
+- provenance mismatch handling.
