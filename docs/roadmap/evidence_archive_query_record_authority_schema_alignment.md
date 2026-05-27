@@ -97,6 +97,8 @@ EAQ2 decision: docs-first (Option C), with EAQ3 expected to implement a candidat
 - EAQ4 implemented with `CrossLayerReadbackQueryVerifyAuditV1` and `verify_cross_layer_readback_query_candidate_v1` in `domains/geist/crates/ucf-geist/src/lib.rs`, with targeted coverage in `domains/geist/crates/ucf-geist/tests/evidence_archive_query_audit_v1.rs`.
 - Recommended next step: EAQ5 query docs overclaim guard.
 
+- EAQ6 closure link: `docs/roadmap/evidence_archive_query_layer_closure.md` captures the bounded query closure baseline and targeted validation without expanding authority.
+
 ## 8. Open Questions
 - Which crate owns query candidates?
 - Should query own cross-layer semantics or only store-level references?
