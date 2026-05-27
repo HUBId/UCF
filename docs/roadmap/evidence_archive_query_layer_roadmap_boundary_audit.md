@@ -120,7 +120,8 @@ Placement decision (current recommendation):
 - Cross-layer readback E2E exists.
 - EAQ2 alignment is now documented in `docs/roadmap/evidence_archive_query_record_authority_schema_alignment.md`.
 - EAQ3 query candidate implemented in `ucf-geist` with bounded `Other(65/66/67)` read-model metadata and deterministic digest surface.
-- Next step: EAQ4 verify-only query audit contract.
+- EAQ4 verify-only query audit contract is now implemented in `domains/geist/crates/ucf-geist/src/lib.rs` with targeted tests in `domains/geist/crates/ucf-geist/tests/evidence_archive_query_audit_v1.rs`.
+- Next step: EAQ5 query docs overclaim guard.
 
 ## 8. Open Questions
 - Which crate owns query types?

@@ -1594,7 +1594,7 @@ pub fn replay_records(records: &[ExperienceRecord], spec: &ReplaySpec) -> Replay
                         pressure_abs: None,
                         pass: false,
                         reasons: vec![DriftReason::BackendUnavailable {
-                            backend_profile: format!("{:?}", backend_kind),
+                            backend_profile: format!("{backend_kind:?}"),
                         }],
                     },
                     status: ReplayStatus::Unreplayable,

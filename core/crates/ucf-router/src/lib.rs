@@ -3410,7 +3410,7 @@ impl Router {
             outputs.commit, outputs.decision.commit, outputs.applied_params_root, proposal_flag
         )
         .into_bytes();
-        let record_id = format!("rsa-{}", cycle_id);
+        let record_id = format!("rsa-{cycle_id}");
         let record = build_compact_record(record_id, cycle_id, "rsa", payload);
         self.archive.append(record);
     }
@@ -3783,7 +3783,7 @@ impl Router {
     }
 
     fn append_sle_outputs_record(&self, cycle_id: u64, outputs: &SleOutputs) {
-        let record_id = format!("sle-{}", cycle_id);
+        let record_id = format!("sle-{cycle_id}");
         let mut payload = Vec::with_capacity(Digest32::LEN * 2 + 3);
         payload.extend_from_slice(outputs.reflection.commit.as_bytes());
         payload.push(outputs.reflection.class as u8);
@@ -5793,8 +5793,7 @@ impl Router {
         node_count: usize,
     ) {
         let payload = format!(
-            "graph={};pulses={};outputs={};pulse_count={pulse_count};nodes={node_count}",
-            graph_commit, pulses_root, outputs_commit
+            "graph={graph_commit};pulses={pulses_root};outputs={outputs_commit};pulse_count={pulse_count};nodes={node_count}",
         )
         .into_bytes();
         let record_id = format!(
@@ -5843,7 +5842,7 @@ impl Router {
             SandboxVerdict::Allow => "ALLOW",
             SandboxVerdict::Deny { reason } => reason.as_str(),
         };
-        let summary = format!("SANDBOX=DENY {}", reason);
+        let summary = format!("SANDBOX=DENY {reason}");
         self.publish_workspace_signal(WorkspaceSignal {
             kind: SignalKind::Risk,
             priority: 9500,

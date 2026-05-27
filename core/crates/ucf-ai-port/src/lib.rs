@@ -893,7 +893,7 @@ mod tests {
         let expected = activation_view_from_outputs(&normalized, &inference.outputs);
 
         assert_eq!(view, expected);
-        let debug = format!("{:?}", view);
+        let debug = format!("{view:?}");
         assert!(!debug.contains("ok"));
     }
 

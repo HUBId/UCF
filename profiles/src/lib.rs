@@ -40,10 +40,7 @@ where
         "M1_RESTRICTED" | "M1" => Ok(ProfileState::M1Restricted),
         "M2_QUARANTINE" | "M2" => Ok(ProfileState::M2Quarantine),
         "M3_FORENSIC" | "M3" => Ok(ProfileState::M3Forensic),
-        other => Err(de::Error::custom(format!(
-            "unknown profile state: {}",
-            other
-        ))),
+        other => Err(de::Error::custom(format!("unknown profile state: {other}"))),
     }
 }
 
