@@ -3086,7 +3086,7 @@ pub fn v1_gate(workdir: &Path, out: &Path) -> Result<V1GateReportV1, OpsError> {
                 if !matches!(status, ProbeStatus::Ok | ProbeStatus::Disabled) {
                     all_pass = false;
                 }
-                evidence.push((format!("probe_{}", slot.as_str()), format!("{:?}", status)));
+                evidence.push((format!("probe_{}", slot.as_str()), format!("{status:?}")));
             }
             checks.push(v1_gate_check(
                 "probes_dummy_pass",
@@ -17186,7 +17186,7 @@ fn diff_i64(a: &BTreeMap<String, i64>, b: &BTreeMap<String, i64>) -> Vec<String>
             let av = a.get(&k);
             let bv = b.get(&k);
             if av != bv {
-                Some(format!("{k}: {:?} -> {:?}", av, bv))
+                Some(format!("{k}: {av:?} -> {bv:?}"))
             } else {
                 None
             }
@@ -17203,7 +17203,7 @@ fn diff_str(a: &BTreeMap<String, String>, b: &BTreeMap<String, String>) -> Vec<S
             let av = a.get(&k);
             let bv = b.get(&k);
             if av != bv {
-                Some(format!("{k}: {:?} -> {:?}", av, bv))
+                Some(format!("{k}: {av:?} -> {bv:?}"))
             } else {
                 None
             }

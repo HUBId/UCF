@@ -394,7 +394,7 @@ fn derive_sweep(
     bytes.extend_from_slice(ctx.canonical_execution_reality_digest_prefix.as_bytes());
     bytes.extend_from_slice(covered_readiness_consumer_count.to_string().as_bytes());
     bytes.extend_from_slice(residual_readiness_path_count.to_string().as_bytes());
-    bytes.extend_from_slice(format!("{:?}", readiness_lock_status).as_bytes());
+    bytes.extend_from_slice(format!("{readiness_lock_status:?}").as_bytes());
 
     ReadinessLockSweepV1 {
         applied_supported_set_digest_prefix: ctx.applied_supported_set_digest_prefix.clone(),
