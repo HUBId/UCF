@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     fs::create_dir(&snapshot_dir)?;
     fs::create_dir(&restore_dir)?;
 
-    println!("📦 Preparing baseline state in {:?}", data_dir);
+    println!("📦 Preparing baseline state in {data_dir:?}");
     let state = FirewoodState::open(data_dir.to_str().expect("utf8 path"))?;
     state.put(b"alpha".to_vec(), b"1".to_vec());
     state.put(b"beta".to_vec(), b"2".to_vec());
@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     fs::copy(&wal_path, snapshot_dir.join("firewood.wal"))?;
     drop(state);
 
-    println!("⚠️  Corrupting WAL at {:?}", wal_path);
+    println!("⚠️  Corrupting WAL at {wal_path:?}");
     let metadata = fs::metadata(&wal_path)?;
     let truncated_len = metadata.len().saturating_sub(1);
     let file = OpenOptions::new().write(true).open(&wal_path)?;
@@ -123,10 +123,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     );
 
-    println!(
-        "🧪 Restoring snapshot into {:?} and replaying history",
-        restore_dir
-    );
+    println!("🧪 Restoring snapshot into {restore_dir:?} and replaying history");
     fs::copy(
         snapshot_dir.join("firewood.wal"),
         restore_dir.join("firewood.wal"),
