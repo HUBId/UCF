@@ -119,7 +119,7 @@ impl WorkerManager {
         let mut child = Command::new(bin)
             .env(
                 "UCF_WORKER_STAGE",
-                format!("{:?}", stage).to_ascii_lowercase(),
+                format!("{stage:?}").to_ascii_lowercase(),
             )
             .env("UCF_WORKER_NETWORK", "disabled")
             .env(

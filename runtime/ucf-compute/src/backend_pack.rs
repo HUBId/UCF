@@ -113,7 +113,7 @@ impl FixtureManager {
         };
         if bytes.len() > MAX_FIXTURE_BYTES {
             return Err(ComputeError::InvalidInput {
-                reason: format!("fixture too large: {:?}", id),
+                reason: format!("fixture too large: {id:?}"),
             });
         }
         let digest: [u8; 32] = Sha256::digest(bytes).into();

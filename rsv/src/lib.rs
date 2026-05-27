@@ -146,7 +146,7 @@ fn frame_has_critical_reason(frame: &SignalFrame, unlock_present: bool) -> bool 
                 break;
             }
 
-            if format!("{:?}", reason).starts_with("RcRxCt") {
+            if format!("{reason:?}").starts_with("RcRxCt") {
                 critical = true;
                 break;
             }

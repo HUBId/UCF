@@ -1898,10 +1898,7 @@ impl CanonicalComputeEntryPoint {
         if source_mode != current_mode {
             issues.push(ReplayPreflightIssue {
                 code: ReplayPreflightIssueCode::LocalRemoteConstraintMismatch,
-                detail: format!(
-                    "current runtime execution mode changed from {:?} to {:?}",
-                    source_mode, current_mode
-                ),
+                detail: format!("current runtime execution mode changed from {source_mode:?} to {current_mode:?}"),
             });
             issues.push(ReplayPreflightIssue {
                 code: ReplayPreflightIssueCode::AlternativeContextWithCaveats,
@@ -2047,8 +2044,7 @@ impl CanonicalComputeEntryPoint {
             issues.as_slice(),
         );
         let constrained_backend_device_context = Some(format!(
-            "source={};current={}",
-            source_readiness, current_readiness_context
+            "source={source_readiness};current={current_readiness_context}"
         ));
         ComputeReplayPreflight {
             source_job_id: source.job_id,
@@ -2791,7 +2787,7 @@ impl CanonicalComputeEntryPoint {
                         None,
                         RuntimeOperationSnapshotEffect::SnapshotMayBeStaleUntilRefresh,
                         "drain scheduler run queue".to_string(),
-                        format!("accepted; draining up to {} scheduler cycles", max_jobs),
+                        format!("accepted; draining up to {max_jobs} scheduler cycles"),
                         format!("drain_scheduler accepted with max_jobs={max_jobs}{caveat_suffix}"),
                         Vec::new(),
                     );
@@ -6073,7 +6069,7 @@ fn derive_live_backend_device_readiness_context(
     } else {
         "cold"
     };
-    format!("{:?}:cpu:{warmup}", lane).to_ascii_lowercase()
+    format!("{lane:?}:cpu:{warmup}").to_ascii_lowercase()
 }
 
 fn readiness_state_token(context: &str) -> &str {

@@ -408,18 +408,18 @@ impl PersistedJobRecord {
                     runtime_remaining_work_units: summary.runtime_remaining_work_units,
                     dominant_stage: summary
                         .dominant_stage
-                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                        .map(|stage| format!("{stage:?}").to_ascii_lowercase()),
                     dominant_stage_share_bps: summary.dominant_stage_share_bps,
                     dominant_work_stage: summary
                         .dominant_work_stage
-                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                        .map(|stage| format!("{stage:?}").to_ascii_lowercase()),
                     dominant_work_stage_share_bps: summary.dominant_work_stage_share_bps,
                     degraded_stage: summary
                         .degraded_stage
-                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                        .map(|stage| format!("{stage:?}").to_ascii_lowercase()),
                     fallback_stage: summary
                         .fallback_stage
-                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                        .map(|stage| format!("{stage:?}").to_ascii_lowercase()),
                     degraded_stage_count: summary.degraded_stage_count,
                     retry_attempts: summary.retry_attempts,
                     redispatched_to_local: summary.redispatched_to_local,
@@ -464,21 +464,21 @@ impl PersistedJobRecord {
                 .map(|hotspot| PersistedHotspotSummary {
                     slowest_stage: hotspot
                         .slowest_stage
-                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                        .map(|stage| format!("{stage:?}").to_ascii_lowercase()),
                     dominant_stage: hotspot
                         .dominant_stage
-                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                        .map(|stage| format!("{stage:?}").to_ascii_lowercase()),
                     dominant_stage_share_bps: hotspot.dominant_stage_share_bps,
                     dominant_work_stage: hotspot
                         .dominant_work_stage
-                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                        .map(|stage| format!("{stage:?}").to_ascii_lowercase()),
                     dominant_work_stage_share_bps: hotspot.dominant_work_stage_share_bps,
                     degraded_stage: hotspot
                         .degraded_stage
-                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                        .map(|stage| format!("{stage:?}").to_ascii_lowercase()),
                     fallback_stage: hotspot
                         .fallback_stage
-                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                        .map(|stage| format!("{stage:?}").to_ascii_lowercase()),
                     degraded_stage_count: hotspot.degraded_stage_count,
                     skipped_stage_count: hotspot.skipped_stage_count,
                     unavailable_stage_count: hotspot.unavailable_stage_count,
@@ -955,7 +955,7 @@ fn derive_backend_device_readiness_context(
     } else {
         "cold"
     };
-    format!("{:?}:cpu:{warmup}", lane).to_ascii_lowercase()
+    format!("{lane:?}:cpu:{warmup}").to_ascii_lowercase()
 }
 
 fn derive_replay_readiness_caveat(
