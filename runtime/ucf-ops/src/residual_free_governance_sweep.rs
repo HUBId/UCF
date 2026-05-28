@@ -306,7 +306,7 @@ fn derive_authority(
     bytes.extend_from_slice(final_governance_residual_sweep_digest_prefix.as_bytes());
     bytes.extend_from_slice(covered_consumer_count.to_string().as_bytes());
     bytes.extend_from_slice(residual_path_count.to_string().as_bytes());
-    bytes.extend_from_slice(format!("{:?}", authority_status).as_bytes());
+    bytes.extend_from_slice(format!("{authority_status:?}").as_bytes());
 
     ResidualFreeGovernanceConsumerAuthorityV1 {
         applied_supported_set_digest_prefix: applied_supported_set_digest_prefix.to_string(),

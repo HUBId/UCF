@@ -232,3 +232,5 @@ Baseline commands: `pwd`, `git branch --show-current`, `git status --short`, `gi
 
 - EAQ3 query candidate update: `domains/geist/crates/ucf-geist/src/lib.rs` now includes a bounded read-only `CrossLayerReadbackQueryCandidateV1` model over `RecordKind::Other(65/66/67)` metadata with deterministic bytes/digest and explicit no-authority flags; targeted tests live in `domains/geist/crates/ucf-geist/tests/evidence_archive_query_candidate_v1.rs`.
 - EAQ4/EAQ5 query guard update: `CrossLayerReadbackQueryVerifyAuditV1` is verify-only and read-model-only; the query line is explicitly not a Gateway read API, not action authority, not identity/ISM authority, not append/write authority, and not a production-readiness signal.
+
+- EAQ6 minimal closure note: `docs/roadmap/evidence_archive_query_layer_closure.md` records targeted query-line validation (candidate/audit/cross-layer readback + `ucf-geist --all-targets` + docs lint) and reaffirms forbidden claims (Gateway API, append/write, action/identity/runtime/prod readiness).

@@ -359,7 +359,7 @@ fn derive_authority(
     bytes.extend_from_slice(expected.canonical_bundle_spine_digest_prefix.as_bytes());
     bytes.extend_from_slice(expected.canonical_bundle_authority_digest_prefix.as_bytes());
     bytes.extend_from_slice(covered_consumer_count.to_string().as_bytes());
-    bytes.extend_from_slice(format!("{:?}", authority_status).as_bytes());
+    bytes.extend_from_slice(format!("{authority_status:?}").as_bytes());
 
     FinalBundleConsumerAuthorityV1 {
         applied_supported_set_digest_prefix: expected.applied_supported_set_digest_prefix.clone(),

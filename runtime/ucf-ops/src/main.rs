@@ -1701,7 +1701,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         report
                             .denial_code
                             .as_ref()
-                            .map(|c| format!("{:?}", c))
+                            .map(|c| format!("{c:?}"))
                             .or_else(|| report.rationale_codes.first().cloned())
                             .unwrap_or_else(|| "NONE".to_string())
                     );
@@ -2345,7 +2345,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("out={}", out.display());
                     println!("status={:?}", report.status);
                     if !report.mismatch_categories.is_empty() {
-                        println!("mismatch_categories={}", report.mismatch_categories.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(","));
+                        println!("mismatch_categories={}", report.mismatch_categories.iter().map(|v| format!("{v:?}")).collect::<Vec<_>>().join(","));
                     }
                     if !report.remediation_codes.is_empty() {
                         println!("remediation_codes={}", report.remediation_codes.join(","));
@@ -2446,7 +2446,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     report
                         .mismatch_categories
                         .iter()
-                        .map(|v| format!("{:?}", v))
+                        .map(|v| format!("{v:?}"))
                         .collect::<Vec<_>>()
                         .join(",")
                 );
@@ -4103,7 +4103,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 .match_rules
                                 .mismatch_categories
                                 .iter()
-                                .map(|v| format!("{:?}", v))
+                                .map(|v| format!("{v:?}"))
                                 .collect::<Vec<_>>()
                                 .join(",")
                         );
@@ -4468,7 +4468,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             e.parent_run_id.as_deref().unwrap_or("none"),
                             e.resume_reason
                                 .as_ref()
-                                .map(|r| format!("{:?}", r))
+                                .map(|r| format!("{r:?}"))
                                 .unwrap_or_else(|| "none".to_string()),
                             e.policy_bundle_hash_prefix,
                             e.pack_digest_prefix,
@@ -4505,7 +4505,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             e.parent_run_id.as_deref().unwrap_or("none"),
                             e.resume_reason
                                 .as_ref()
-                                .map(|r| format!("{:?}", r))
+                                .map(|r| format!("{r:?}"))
                                 .unwrap_or_else(|| "none".to_string()),
                             e.policy_bundle_hash_prefix,
                             e.pack_digest_prefix,

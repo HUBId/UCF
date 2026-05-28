@@ -439,15 +439,11 @@ fn e2e_real_compute_onboarding_v0_chain_and_invariants() {
 
     assert!(
         stress_avg_pressure >= baseline_avg_pressure,
-        "stress pressure {} < baseline {}",
-        stress_avg_pressure,
-        baseline_avg_pressure
+        "stress pressure {stress_avg_pressure} < baseline {baseline_avg_pressure}"
     );
     assert!(
         stress_avg_risk >= baseline_avg_risk,
-        "stress risk {} < baseline {}",
-        stress_avg_risk,
-        baseline_avg_risk
+        "stress risk {stress_avg_risk} < baseline {baseline_avg_risk}"
     );
     assert!(
         stress.budget_exceeded_ticks > 0,

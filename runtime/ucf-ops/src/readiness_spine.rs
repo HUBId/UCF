@@ -739,7 +739,7 @@ pub fn derive_canonical_readiness_authority_v2(
     bytes.extend_from_slice(canonical_governance_entry_digest_prefix.as_bytes());
     bytes.extend_from_slice(canonical_readiness_spine_digest_prefix.as_bytes());
     bytes.extend_from_slice(covered_surface_count.to_string().as_bytes());
-    bytes.extend_from_slice(format!("{:?}", authority_status).as_bytes());
+    bytes.extend_from_slice(format!("{authority_status:?}").as_bytes());
     CanonicalReadinessAuthorityV2 {
         schema_version: 2,
         applied_supported_set_digest_prefix: applied_supported_set_digest_prefix.to_string(),

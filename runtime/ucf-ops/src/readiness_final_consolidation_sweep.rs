@@ -374,7 +374,7 @@ fn derive_sweep(
     bytes.extend_from_slice(ctx.readiness_stabilization_sweep_digest_prefix.as_bytes());
     bytes.extend_from_slice(covered_consumer_count.to_string().as_bytes());
     bytes.extend_from_slice(residual_path_count.to_string().as_bytes());
-    bytes.extend_from_slice(format!("{:?}", consolidation_status).as_bytes());
+    bytes.extend_from_slice(format!("{consolidation_status:?}").as_bytes());
 
     ReadinessFinalConsolidationSweepV1 {
         applied_supported_set_digest_prefix: ctx.applied_supported_set_digest_prefix.clone(),

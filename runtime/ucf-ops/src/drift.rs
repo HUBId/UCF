@@ -125,11 +125,11 @@ pub fn drift_report(
     let world_windows_path = workdir
         .join("reports")
         .join("world_vljepa")
-        .join(format!("{}_windows.jsonl", run_id));
+        .join(format!("{run_id}_windows.jsonl"));
     let world_alarms_path = workdir
         .join("reports")
         .join("world_vljepa")
-        .join(format!("{}_alarms.jsonl", run_id));
+        .join(format!("{run_id}_alarms.jsonl"));
     let mut world_windows = read_jsonl::<WorldShadowWindowStats>(&world_windows_path)?;
     let _world_alarm_records = read_jsonl::<WorldDriftAlarmRecord>(&world_alarms_path)?;
     world_windows.sort_by_key(|w| w.window_id);

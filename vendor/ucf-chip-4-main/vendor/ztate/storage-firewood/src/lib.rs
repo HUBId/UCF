@@ -39,7 +39,7 @@ mod tests {
 
     fn temp_dir(name: &str) -> String {
         let mut dir = env::temp_dir();
-        dir.push(format!("firewood-{}", name));
+        dir.push(format!("firewood-{name}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("create temp dir");
         dir.to_string_lossy().into_owned()

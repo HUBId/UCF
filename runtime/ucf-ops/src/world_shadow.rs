@@ -113,8 +113,8 @@ pub fn world_shadow_report(
     out: &Path,
 ) -> Result<WorldShadowReport, OpsError> {
     let base = workdir.join("reports").join("world_vljepa");
-    let window_path = base.join(format!("{}_windows.jsonl", run_id));
-    let alarm_path = base.join(format!("{}_alarms.jsonl", run_id));
+    let window_path = base.join(format!("{run_id}_windows.jsonl"));
+    let alarm_path = base.join(format!("{run_id}_alarms.jsonl"));
     let mut win = read_jsonl::<WorldShadowWindowStats>(&window_path)?;
     let alarms = read_jsonl::<WorldDriftAlarmRecord>(&alarm_path)?;
     win.sort_by_key(|w| w.window_id);

@@ -388,7 +388,7 @@ mod tests {
         let mut sn = SubstantiaNigra::new();
         let mut reasons = ReasonSet::default();
         for idx in 0..20 {
-            reasons.insert(format!("InsulaReason{:02}", idx));
+            reasons.insert(format!("InsulaReason{idx:02}"));
         }
         let isv = IsvSnapshot {
             integrity: IntegrityState::Fail,

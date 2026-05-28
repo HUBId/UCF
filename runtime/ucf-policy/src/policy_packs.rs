@@ -763,10 +763,7 @@ unknown = 1
             let b = std::fs::read(dir.path().join(f)).expect("read");
             let d = sha256(&b);
             let h = hex_lower(d);
-            lines.push_str(&format!(
-                "[[files]]\npath = \"{}\"\nsha256 = \"{}\"\n\n",
-                f, h
-            ));
+            lines.push_str(&format!("[[files]]\npath = \"{f}\"\nsha256 = \"{h}\"\n\n"));
             pairs.push((f.to_string(), d));
         }
         pairs.sort_by(|a, b| a.0.cmp(&b.0));
@@ -776,7 +773,7 @@ unknown = 1
             dig.update(d);
         }
         let pack_digest = hex_lower(dig.finalize().into());
-        lines.push_str(&format!("pack_digest = \"{}\"\n", pack_digest));
+        lines.push_str(&format!("pack_digest = \"{pack_digest}\"\n"));
         std::fs::write(dir.path().join("pack_manifest.toml"), lines).expect("manifest");
 
         assert!(load_and_merge_policy_graph(base, Some(dir.path())).is_err());
@@ -827,10 +824,9 @@ unknown = 1
                 let b = std::fs::read(dir.path().join(f)).expect("read");
                 let d = sha256(&b);
                 let h = hex_lower(d);
-                lines.push_str(&format!(
-                    "[[files]]\npath = \"{}\"\nsha256 = \"{}\"\n\n",
-                    f, h
-                ));
+        lines.push_str(&format!(
+            "[[files]]\npath = \"{f}\"\nsha256 = \"{h}\"\n\n"
+        ));
                 pairs.push((f.to_string(), d));
             }
             pairs.sort_by(|a, b| a.0.cmp(&b.0));
@@ -840,7 +836,7 @@ unknown = 1
                 dig.update(d);
             }
             let pack_digest = hex_lower(dig.finalize().into());
-            lines.push_str(&format!("pack_digest = \"{}\"\n", pack_digest));
+    lines.push_str(&format!("pack_digest = \"{pack_digest}\"\n"));
             std::fs::write(dir.path().join("pack_manifest.toml"), lines).expect("manifest");
 
             let _ = load_and_merge_policy_graph(base, Some(dir.path()));

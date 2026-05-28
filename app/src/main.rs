@@ -50,8 +50,8 @@ fn format_snapshot(snapshot: &RegulationSnapshot) -> String {
             snapshot.overlays.novelty_lock
         ),
         format!("deescalation_lock: {}", snapshot.deescalation_lock),
-        format!("control_frame_digest: {}", digest),
-        format!("evidence_refs: {}", evidence),
+        format!("control_frame_digest: {digest}"),
+        format!("evidence_refs: {evidence}"),
         format!(
             "rsv: integrity={} threat={} policy_pressure={} arousal={} stability={}",
             format_integrity(snapshot.rsv_summary.integrity),

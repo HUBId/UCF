@@ -123,6 +123,9 @@ Placement decision (current recommendation):
 - EAQ4 verify-only query audit contract is now implemented in `domains/geist/crates/ucf-geist/src/lib.rs` with targeted tests in `domains/geist/crates/ucf-geist/tests/evidence_archive_query_audit_v1.rs`.
 - Next step: EAQ5 query docs overclaim guard.
 
+
+- EAQ6 complete: bounded query closure baseline is documented in `docs/roadmap/evidence_archive_query_layer_closure.md` with targeted validation evidence and explicit no-overclaim boundaries (no Gateway API, no append/write, no action/identity/runtime/prod authority claim).
+
 ## 8. Open Questions
 - Which crate owns query types?
 - Should query layer live in archive-store, `ucf-ops`, gateway, or a new crate?
@@ -134,7 +137,7 @@ Placement decision (current recommendation):
 - How to avoid identity overclaim?
 
 ## 9. Recommended Next Prompt
-UCF Prompt EAQ6 — Query Readiness Refresh
+UCF Prompt EAQ7 — Post-Query Roadmap Selection
 
 ## 10. Evidence/Archive Query Overclaim Guard
 

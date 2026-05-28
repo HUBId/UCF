@@ -154,10 +154,7 @@ fn spec_snapshot_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsError> {
     Ok(DocsLintCheck {
         name: "spec_snapshot".to_string(),
         status: DocsLintStatus::Fail,
-        detail: format!(
-            "docs/spec_snapshot.md differs from regenerated snapshot at line {}",
-            diff
-        ),
+        detail: format!("docs/spec_snapshot.md differs from regenerated snapshot at line {diff}"),
         remediation: Some(
             "run: cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out docs/spec_snapshot.md && git add docs/spec_snapshot.md"
                 .to_string(),
