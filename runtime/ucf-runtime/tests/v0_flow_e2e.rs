@@ -147,7 +147,7 @@ fn run_v0_flow(enable_hooks: bool) -> FlowRunSummary {
         let mut first_audit = true;
 
         for record in &trail {
-            assert!(format!("{:?}", record).len() <= 16_384);
+            assert!(format!("{record:?}").len() <= 16_384);
             match record.kind {
                 ExperienceKind::SignalBundle => {
                     saw_signal_bundle = true;
