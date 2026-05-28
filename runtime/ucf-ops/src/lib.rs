@@ -1640,13 +1640,11 @@ fn run_probe_for_slot(
     {
         final_quality = StageQuality::DegradedFallback;
         notes = bounded_note(&format!(
-            "tail_guard_exceeded p50={}ms p95={}ms budget={}ms",
-            p50, p95, PROBE_BUDGET_MS
+            "tail_guard_exceeded p50={p50}ms p95={p95}ms budget={PROBE_BUDGET_MS}ms"
         ));
     } else if final_status == ProbeStatus::Ok && notes.is_empty() {
         notes = bounded_note(&format!(
-            "latency p50={}ms p95={}ms budget={}ms",
-            p50, p95, PROBE_BUDGET_MS
+            "latency p50={p50}ms p95={p95}ms budget={PROBE_BUDGET_MS}ms"
         ));
     }
 
@@ -7667,7 +7665,7 @@ pub fn troubleshoot(
         issues.push(TroubleshootIssue {
             source: "gateway_abuse".to_string(),
             severity: "high".to_string(),
-            detail: format!("detected {} denied tool invocations", abuse_count),
+            detail: format!("detected {abuse_count} denied tool invocations"),
             next_command: "ucf-ops security verify-chain --from 0 --to 18446744073709551615"
                 .to_string(),
         });
@@ -10081,12 +10079,12 @@ fn ensure_policy_bundle_root() -> Result<(), OpsError> {
     }
     let mut normalized = String::from("version = \"v1\"\n");
     if !bundle.is_empty() {
-        normalized.push_str(&format!("bundle_sha256 = \"{}\"\n\n", bundle));
+        normalized.push_str(&format!("bundle_sha256 = \"{bundle}\"\n\n"));
     }
     for (path, sha) in &files {
         normalized.push_str("[[files]]\n");
-        normalized.push_str(&format!("path = \"{}\"\n", path));
-        normalized.push_str(&format!("sha256 = \"{}\"\n\n", sha));
+        normalized.push_str(&format!("path = \"{path}\"\n"));
+        normalized.push_str(&format!("sha256 = \"{sha}\"\n\n"));
     }
     fs::write("policies/manifest.toml", normalized)?;
     for name in [
@@ -11158,9 +11156,9 @@ pub fn release_signoff_validate(
                 id: item.id,
                 ok,
                 detail: if ok {
-                    format!("artifact {} present", expected)
+                    format!("artifact {expected} present")
                 } else {
-                    format!("artifact {} missing", expected)
+                    format!("artifact {expected} missing")
                 },
             });
         } else {
@@ -11403,7 +11401,7 @@ pub fn release_build_rc(
     pack_entries.insert("RC_MANIFEST.json".to_string(), manifest_bytes.clone());
     pack_entries.insert(
         "RC_MANIFEST.sig".to_string(),
-        format!("{}\n", signature).into_bytes(),
+        format!("{signature}\n").into_bytes(),
     );
     insert_tree_entries(&args.out.join("bundle"), "bundle", &mut pack_entries)?;
     insert_tree_entries(&reports_dir, "reports", &mut pack_entries)?;

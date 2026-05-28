@@ -1335,8 +1335,7 @@ pub fn models_stage(slot: ModelSlot, src_dir: &Path) -> Result<StageResult, OpsE
     let model_path = src_dir.join(MODEL_FILE_NAME);
     if !model_path.exists() {
         return Err(OpsError::Invalid(format!(
-            "required {} missing",
-            MODEL_FILE_NAME
+            "required {MODEL_FILE_NAME} missing"
         )));
     }
     let source_entries = collect_file_entries(src_dir)?;
@@ -8889,11 +8888,11 @@ fn read_second_slot_parity_report(
         workdir
             .join("out")
             .join(rid)
-            .join(format!("{}_parity_report.json", slot_id))
+            .join(format!("{slot_id}_parity_report.json"))
     });
     let default_path = workdir
         .join("out")
-        .join(format!("{}_parity_report.json", slot_id));
+        .join(format!("{slot_id}_parity_report.json"));
     run_path
         .into_iter()
         .chain(std::iter::once(default_path))
@@ -9569,8 +9568,7 @@ pub fn models_probe_slot(
             .join(&active_hash);
         if !promoted.exists() {
             return Err(OpsError::Invalid(format!(
-                "UCF_OPS_MODELS_PROBE_ACTIVE_HASH_MISSING: {}",
-                active_hash
+                "UCF_OPS_MODELS_PROBE_ACTIVE_HASH_MISSING: {active_hash}"
             )));
         }
         (ProbeMode::Active, Some(promoted), Some(active_hash))
