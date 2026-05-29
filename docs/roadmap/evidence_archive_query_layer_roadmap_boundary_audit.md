@@ -112,7 +112,7 @@ Placement decision (current recommendation):
 | EAQ3 | Replay/Sleep/Geist/ISM Readback Query Candidate | Define bounded query-candidate schema over `Other(65/66/67)` records. | Deterministic candidate schema + bounded-kind allowlist documented. | Candidate/readback only; no scheduler/worker activation; no ISM write/upsert. |
 | EAQ4 | Cross-Layer Query Verify-Only Audit Contract | Define deterministic verify-only audit contract for query outputs. | Verify audit failure taxonomy + deterministic rules documented. | Verify-only; no enforcement/action approval. |
 | EAQ5 | Query Docs Overclaim Guard | Add explicit overclaim guard for query line wording. | Docs checklist preventing authority/runtime/prod overclaim. | Docs-only hardening; no behavior changes. |
-| EAQ6 | Query Readiness Refresh | Run targeted docs/format validation for query artifacts. | Required docs checks pass with fresh report metadata. | No full-workspace claims; no prod-readiness claim. |
+| EAQ6 | Query Readiness Refresh | Run targeted docs/format validation for query artifacts. | Complete: bounded closure baseline is documented in `docs/roadmap/evidence_archive_query_layer_closure.md`. | No full-workspace claims; no prod-readiness claim. |
 | EAQ7 | Post-Query Roadmap Selection | Re-rank next line after query-boundary closure. | Selection matrix + next prompt recommendation documented. | Planning-only; no runtime/authority rollout. |
 
 ## 7. Current Status
@@ -121,7 +121,8 @@ Placement decision (current recommendation):
 - EAQ2 alignment is now documented in `docs/roadmap/evidence_archive_query_record_authority_schema_alignment.md`.
 - EAQ3 query candidate implemented in `ucf-geist` with bounded `Other(65/66/67)` read-model metadata and deterministic digest surface.
 - EAQ4 verify-only query audit contract is now implemented in `domains/geist/crates/ucf-geist/src/lib.rs` with targeted tests in `domains/geist/crates/ucf-geist/tests/evidence_archive_query_audit_v1.rs`.
-- Next step: EAQ5 query docs overclaim guard.
+- EAQ5 query docs overclaim guard is complete.
+- EAQ6 bounded query readiness refresh is complete in `docs/roadmap/evidence_archive_query_layer_closure.md`.
 
 ## 8. Open Questions
 - Which crate owns query types?
@@ -134,7 +135,9 @@ Placement decision (current recommendation):
 - How to avoid identity overclaim?
 
 ## 9. Recommended Next Prompt
-UCF Prompt EAQ6 — Query Readiness Refresh
+UCF Prompt EAQ7 — Post-Query Roadmap Selection
+
+Closure baseline: `docs/roadmap/evidence_archive_query_layer_closure.md`.
 
 ## 10. Evidence/Archive Query Overclaim Guard
 
