@@ -203,14 +203,14 @@ fn world_shadow_report_reads_bounded_windows() {
         r#"{"window_id":1,"start_t":512,"end_t":1023,"ticks":512,"latency_mean_ms":1.0,"latency_p95_ms":2.0,"error_mean_q":100,"error_p95_q":120,"error_delta_mean_q":10,"error_delta_p95_q":20,"invalid_rate":0.0,"saturation_rate":0.0}"#,
     ];
     fs::write(
-        report_dir.join(format!("{}_windows.jsonl", run_id)),
+        report_dir.join(format!("{run_id}_windows.jsonl")),
         windows.join(
             "
 ",
         ),
     )
     .expect("windows");
-    fs::write(report_dir.join(format!("{}_alarms.jsonl", run_id)), "").expect("alarms");
+    fs::write(report_dir.join(format!("{run_id}_alarms.jsonl")), "").expect("alarms");
     fs::create_dir_all(dir.path().join("runs")).expect("runs");
     fs::write(
         dir.path().join("runs").join(format!("{run_id}.json")),

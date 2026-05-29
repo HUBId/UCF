@@ -361,7 +361,7 @@ fn derive_sweep(
     bytes.extend_from_slice(ctx.primary_semantics_closure_sweep_digest_prefix.as_bytes());
     bytes.extend_from_slice(covered_surface_count.to_string().as_bytes());
     bytes.extend_from_slice(residual_path_count.to_string().as_bytes());
-    bytes.extend_from_slice(format!("{:?}", seal_status).as_bytes());
+    bytes.extend_from_slice(format!("{seal_status:?}").as_bytes());
 
     PrimarySemanticsSealSweepV1 {
         canonical_governance_entry_digest_prefix: ctx

@@ -357,7 +357,7 @@ fn derive_sweep(
     );
     bytes.extend_from_slice(covered_surface_count.to_string().as_bytes());
     bytes.extend_from_slice(residual_path_count.to_string().as_bytes());
-    bytes.extend_from_slice(format!("{:?}", closure_status).as_bytes());
+    bytes.extend_from_slice(format!("{closure_status:?}").as_bytes());
 
     PrimarySemanticsClosureSweepV1 {
         canonical_governance_entry_digest_prefix: ctx

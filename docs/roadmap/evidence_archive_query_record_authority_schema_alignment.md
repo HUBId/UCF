@@ -95,7 +95,8 @@ EAQ2 decision: docs-first (Option C), with EAQ3 expected to implement a candidat
 - EAQ3 implemented in `domains/geist/crates/ucf-geist/src/lib.rs` with `EvidenceArchiveQueryableKindV1`, `EvidenceArchiveQueryRecordRefV1`, and `CrossLayerReadbackQueryCandidateV1` plus deterministic `deterministic_bytes()`/`digest()` read-model-only surface.
 - Targeted coverage added in `domains/geist/crates/ucf-geist/tests/evidence_archive_query_candidate_v1.rs`.
 - EAQ4 implemented with `CrossLayerReadbackQueryVerifyAuditV1` and `verify_cross_layer_readback_query_candidate_v1` in `domains/geist/crates/ucf-geist/src/lib.rs`, with targeted coverage in `domains/geist/crates/ucf-geist/tests/evidence_archive_query_audit_v1.rs`.
-- Recommended next step: EAQ5 query docs overclaim guard.
+- EAQ5 query docs overclaim guard is complete in `docs/roadmap/evidence_archive_query_layer_roadmap_boundary_audit.md`.
+- EAQ6 bounded query closure baseline is documented in `docs/roadmap/evidence_archive_query_layer_closure.md`.
 
 ## 8. Open Questions
 - Which crate owns query candidates?
@@ -106,5 +107,12 @@ EAQ2 decision: docs-first (Option C), with EAQ3 expected to implement a candidat
 - How to avoid creating a second event log?
 - How to keep identity semantics deferred?
 
-## 9. Recommended Next Prompt
-UCF Prompt EAQ4 — Cross-Layer Query Verify-Only Audit Contract
+## 9. EAQ6 Closure Link
+
+- Current bounded Evidence/Archive query closure baseline: `docs/roadmap/evidence_archive_query_layer_closure.md`.
+- Closure remains read-model-only and verify-only for the bounded `Other(65/66/67)` line.
+- Closure does not claim Gateway Read API, append/write authority, action authority, identity/ISM authority, runtime scheduler execution, a second event log, or prod readiness.
+
+## 10. Recommended Next Prompt
+
+UCF Prompt EAQ7 — Post-Query Roadmap Selection

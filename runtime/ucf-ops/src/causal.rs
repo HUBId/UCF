@@ -125,7 +125,7 @@ pub fn event_id_for_record(
 ) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"UCF:EVENT_ID:v1");
-    hasher.update(format!("{:?}", event_type).as_bytes());
+    hasher.update(format!("{event_type:?}").as_bytes());
     hasher.update(run_id.as_bytes());
     hasher.update(t.to_le_bytes());
     hasher.update(primary_record_digest);

@@ -240,7 +240,7 @@ fn derive_authority_v2(
     bytes.extend_from_slice(applied_context_digest_prefix.as_bytes());
     bytes.extend_from_slice(canonical_governance_entry_digest_prefix.as_bytes());
     bytes.extend_from_slice(covered_surface_count.to_string().as_bytes());
-    bytes.extend_from_slice(format!("{:?}", authority_status).as_bytes());
+    bytes.extend_from_slice(format!("{authority_status:?}").as_bytes());
 
     Ok(CanonicalGovernanceEntryAuthorityV2 {
         schema_version: 2,

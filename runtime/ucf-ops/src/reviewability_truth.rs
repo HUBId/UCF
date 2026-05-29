@@ -117,8 +117,7 @@ pub fn derive_slot_reviewability_truths_from_active(
             .find(|s| &s.slot_id == slot_id)
             .ok_or_else(|| {
                 OpsError::Invalid(format!(
-                    "APPLIED_SCOPE_SLOT_TRUTH_MISSING: backend missing slot {}",
-                    slot_id
+                    "APPLIED_SCOPE_SLOT_TRUTH_MISSING: backend missing slot {slot_id}"
                 ))
             })?;
         let active_slot = active
@@ -127,8 +126,7 @@ pub fn derive_slot_reviewability_truths_from_active(
             .find(|s| &s.slot_id == slot_id)
             .ok_or_else(|| {
                 OpsError::Invalid(format!(
-                    "APPLIED_SCOPE_SLOT_TRUTH_MISSING: active missing slot {}",
-                    slot_id
+                    "APPLIED_SCOPE_SLOT_TRUTH_MISSING: active missing slot {slot_id}"
                 ))
             })?;
         let mut remediation = BTreeSet::new();
@@ -196,8 +194,7 @@ pub fn derive_slot_reviewability_truths(
             .find(|slot| &slot.slot_id == slot_id)
             .ok_or_else(|| {
                 OpsError::Invalid(format!(
-                    "APPLIED_SCOPE_SLOT_TRUTH_MISSING: backend missing slot {}",
-                    slot_id
+                    "APPLIED_SCOPE_SLOT_TRUTH_MISSING: backend missing slot {slot_id}"
                 ))
             })?;
         let active_slot = active
@@ -206,8 +203,7 @@ pub fn derive_slot_reviewability_truths(
             .find(|slot| &slot.slot_id == slot_id)
             .ok_or_else(|| {
                 OpsError::Invalid(format!(
-                    "APPLIED_SCOPE_SLOT_TRUTH_MISSING: active missing slot {}",
-                    slot_id
+                    "APPLIED_SCOPE_SLOT_TRUTH_MISSING: active missing slot {slot_id}"
                 ))
             })?;
 
