@@ -505,7 +505,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     );
                     for (name, prefix) in report.digest_prefixes {
-                        println!("digest_prefix_{}={}", name, prefix);
+                        println!("digest_prefix_{name}={prefix}");
                     }
                     println!(
                         "fixed_point_summary=count:{} risk_q:{} pressure_q:{} surprise_q:{} uncertainty_q:{}",
@@ -518,7 +518,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("out={}", out.display());
                     if !report.deterministic_within_os {
                         for remedy in report.remediation {
-                            println!("remedy: {}", remedy);
+                            println!("remedy: {remedy}");
                         }
                         std::process::exit(2);
                     }
@@ -1313,7 +1313,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 .as_ref()
                                 .or(slot.denials.shadow.as_ref())
                                 .or(slot.denials.probe.as_ref())
-                                .map(|v| format!(" reason={:?}", v))
+                                .map(|v| format!(" reason={v:?}"))
                                 .unwrap_or_default(),
                         );
                     }
@@ -1701,7 +1701,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         report
                             .denial_code
                             .as_ref()
-                            .map(|c| format!("{:?}", c))
+                            .map(|c| format!("{c:?}"))
                             .or_else(|| report.rationale_codes.first().cloned())
                             .unwrap_or_else(|| "NONE".to_string())
                     );
@@ -1726,7 +1726,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         .map(|s| format!("{:?}", s.backend_support.candle))
                         .unwrap_or_else(|| "Unknown".to_string());
                     println!("slot={}", resolution.slot_id);
-                    println!("candle_support_state={}", candle_state);
+                    println!("candle_support_state={candle_state}");
                     println!("burn_resolution={:?}", resolution.resolution);
                     println!("burn_support_state={:?}", resolution.support_state);
                     println!("rationale_codes={}", resolution.rationale_codes.join(","));
@@ -2345,7 +2345,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("out={}", out.display());
                     println!("status={:?}", report.status);
                     if !report.mismatch_categories.is_empty() {
-                        println!("mismatch_categories={}", report.mismatch_categories.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(","));
+                        println!("mismatch_categories={}", report.mismatch_categories.iter().map(|v| format!("{v:?}")).collect::<Vec<_>>().join(","));
                     }
                     if !report.remediation_codes.is_empty() {
                         println!("remediation_codes={}", report.remediation_codes.join(","));
@@ -2446,7 +2446,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     report
                         .mismatch_categories
                         .iter()
-                        .map(|v| format!("{:?}", v))
+                        .map(|v| format!("{v:?}"))
                         .collect::<Vec<_>>()
                         .join(",")
                 );
@@ -4103,7 +4103,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 .match_rules
                                 .mismatch_categories
                                 .iter()
-                                .map(|v| format!("{:?}", v))
+                                .map(|v| format!("{v:?}"))
                                 .collect::<Vec<_>>()
                                 .join(",")
                         );
@@ -4468,7 +4468,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             e.parent_run_id.as_deref().unwrap_or("none"),
                             e.resume_reason
                                 .as_ref()
-                                .map(|r| format!("{:?}", r))
+                                .map(|r| format!("{r:?}"))
                                 .unwrap_or_else(|| "none".to_string()),
                             e.policy_bundle_hash_prefix,
                             e.pack_digest_prefix,
@@ -4505,7 +4505,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             e.parent_run_id.as_deref().unwrap_or("none"),
                             e.resume_reason
                                 .as_ref()
-                                .map(|r| format!("{:?}", r))
+                                .map(|r| format!("{r:?}"))
                                 .unwrap_or_else(|| "none".to_string()),
                             e.policy_bundle_hash_prefix,
                             e.pack_digest_prefix,
@@ -4623,7 +4623,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
             for (kind, reason) in status.issuance_denies {
-                println!("deny kind={} reason={}", kind, reason);
+                println!("deny kind={kind} reason={reason}");
             }
         }
         _ => {

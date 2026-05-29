@@ -286,7 +286,7 @@ fn observe_rule(
             let path = workdir
                 .join("reports")
                 .join("world_vljepa")
-                .join(format!("{}_alarms.jsonl", run_id));
+                .join(format!("{run_id}_alarms.jsonl"));
             let mut alarms = load_jsonl::<DriftAlarmRecordV1>(&path)?;
             alarms.retain(|a| a.severity == "SEVERE");
             alarms.sort_by(|a, b| a.alarm_id.cmp(&b.alarm_id));

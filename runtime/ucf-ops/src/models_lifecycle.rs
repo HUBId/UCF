@@ -1335,8 +1335,7 @@ pub fn models_stage(slot: ModelSlot, src_dir: &Path) -> Result<StageResult, OpsE
     let model_path = src_dir.join(MODEL_FILE_NAME);
     if !model_path.exists() {
         return Err(OpsError::Invalid(format!(
-            "required {} missing",
-            MODEL_FILE_NAME
+            "required {MODEL_FILE_NAME} missing"
         )));
     }
     let source_entries = collect_file_entries(src_dir)?;
@@ -1554,7 +1553,7 @@ pub fn models_eligibility(
 
     let mut digest_source = Vec::new();
     digest_source.extend_from_slice(ELIGIBILITY_SCHEMA_VERSION.to_string().as_bytes());
-    digest_source.extend_from_slice(format!("{:?}", overall_status).as_bytes());
+    digest_source.extend_from_slice(format!("{overall_status:?}").as_bytes());
     digest_source.extend_from_slice(policy_graph_digest_prefix.as_bytes());
     digest_source.extend_from_slice(generated_from.shadow_ready_report_digest.as_bytes());
     digest_source.extend_from_slice(generated_from.active_evidence_report_digest.as_bytes());
@@ -1622,7 +1621,7 @@ pub fn models_consistency_check(
         ]
         .into_iter()
         .flatten()
-        .filter_map(|r| map_denial_reason_to_code(Some(r)).map(|c| format!("{:?}", c)))
+        .filter_map(|r| map_denial_reason_to_code(Some(r)).map(|c| format!("{c:?}")))
         .collect::<Vec<_>>();
         reasons.sort();
         reasons.dedup();
@@ -1906,7 +1905,7 @@ pub fn models_shadow_ready(
     let generated_at = now_secs();
     let mut digest_source = Vec::new();
     digest_source.extend_from_slice(SHADOW_READY_SCHEMA_VERSION.to_string().as_bytes());
-    digest_source.extend_from_slice(format!("{:?}", overall_status).as_bytes());
+    digest_source.extend_from_slice(format!("{overall_status:?}").as_bytes());
     for slot in &slot_reports {
         digest_source.extend_from_slice(slot.evidence_digest.as_bytes());
     }
@@ -2171,7 +2170,7 @@ fn evaluate_active_evidence(
     } else {
         b"0"
     });
-    digest_source.extend_from_slice(format!("{:?}", drift_status).as_bytes());
+    digest_source.extend_from_slice(format!("{drift_status:?}").as_bytes());
     digest_source.extend_from_slice(
         policy
             .freshness_compare_max_age_ticks
@@ -2537,14 +2536,14 @@ fn derive_unified_eligibility_status(
         Err(denied) => (
             false,
             map_denial_reason_to_code(Some(&format!("{:?}", denied.code)))
-                .map(|c| format!("{:?}", c))
+                .map(|c| format!("{c:?}"))
                 .or(Some(format!("{:?}", denied.code))),
             shadow.latest_drift_status.clone(),
         ),
     };
 
     let denial_reason_shadow = map_denial_reason_to_code(shadow.denial_reason_code.as_deref())
-        .map(|c| format!("{:?}", c))
+        .map(|c| format!("{c:?}"))
         .or(shadow.denial_reason_code.clone());
 
     let mut remediation_codes = [
@@ -2569,8 +2568,8 @@ fn derive_unified_eligibility_status(
     digest_source.extend_from_slice(snapshot.latest_probe_report_digest_prefix.as_bytes());
     digest_source.extend_from_slice(snapshot.latest_shadow_ready_digest_prefix.as_bytes());
     digest_source.extend_from_slice(snapshot.latest_active_evidence_digest_prefix.as_bytes());
-    digest_source.extend_from_slice(format!("{:?}", drift_status).as_bytes());
-    digest_source.extend_from_slice(format!("{:?}", burn_support_state).as_bytes());
+    digest_source.extend_from_slice(format!("{drift_status:?}").as_bytes());
+    digest_source.extend_from_slice(format!("{burn_support_state:?}").as_bytes());
     digest_source.extend_from_slice(if burn_parity_present { b"1" } else { b"0" });
     for code in &remediation_codes {
         digest_source.extend_from_slice(code.as_bytes());
@@ -2610,9 +2609,9 @@ fn unified_eligibility_from_backend_snapshot(
         BackendSupportStateV1::NotConfigured => OptionalBackendSupportStateV1::NotConfigured,
     };
     let burn_resolution = slot.burn_resolution.clone();
-    let denial_reason_probe = slot.denials.probe.as_ref().map(|d| format!("{:?}", d));
-    let denial_reason_shadow = slot.denials.shadow.as_ref().map(|d| format!("{:?}", d));
-    let denial_reason_active = slot.denials.active.as_ref().map(|d| format!("{:?}", d));
+    let denial_reason_probe = slot.denials.probe.as_ref().map(|d| format!("{d:?}"));
+    let denial_reason_shadow = slot.denials.shadow.as_ref().map(|d| format!("{d:?}"));
+    let denial_reason_active = slot.denials.active.as_ref().map(|d| format!("{d:?}"));
 
     let mut digest_source = Vec::new();
     digest_source.extend_from_slice(slot.slot_id.as_bytes());
@@ -2641,7 +2640,7 @@ fn unified_eligibility_from_backend_snapshot(
             .as_bytes(),
     );
     digest_source.extend_from_slice(format!("{:?}", slot.evidence.latest_drift_status).as_bytes());
-    digest_source.extend_from_slice(format!("{:?}", burn_support_state).as_bytes());
+    digest_source.extend_from_slice(format!("{burn_support_state:?}").as_bytes());
     digest_source.extend_from_slice(format!("{:?}", burn_resolution.resolution).as_bytes());
     digest_source.extend_from_slice(burn_resolution.evidence_digest.as_bytes());
     digest_source.extend_from_slice(
@@ -3052,7 +3051,7 @@ pub fn models_active_review_snapshot(
                     .as_ref()
                     .or(slot.denials.shadow.as_ref())
                     .or(slot.denials.probe.as_ref())
-                    .map(|code| format!("{:?}", code))
+                    .map(|code| format!("{code:?}"))
             };
 
             let mut evidence = ActiveReviewEvidenceV1 {
@@ -3288,7 +3287,7 @@ pub fn models_active_review_snapshot(
     digest_source.extend_from_slice(backend_snapshot.supported_slot_set_digest.as_bytes());
     digest_source.extend_from_slice(backend_snapshot.policy_graph_digest_prefix.as_bytes());
     digest_source.extend_from_slice(backend_snapshot.manifest_digest_prefix.as_bytes());
-    digest_source.extend_from_slice(format!("{:?}", overall_review_status).as_bytes());
+    digest_source.extend_from_slice(format!("{overall_review_status:?}").as_bytes());
     digest_source.extend_from_slice(signoff_alignment.status_code.as_bytes());
     digest_source.extend_from_slice(if signoff_alignment.aligned {
         b"1"
@@ -3517,7 +3516,7 @@ pub fn models_supported_scope_reevaluate(
     );
     digest_source.extend_from_slice(prefix_hex(&applied_set.set_digest, 16).as_bytes());
     digest_source.extend_from_slice(prefix_hex(&policy.policy_digest, 16).as_bytes());
-    digest_source.extend_from_slice(format!("{:?}", reevaluation_decision).as_bytes());
+    digest_source.extend_from_slice(format!("{reevaluation_decision:?}").as_bytes());
     if let Some(slot) = chosen_candidate_slot.as_ref() {
         digest_source.extend_from_slice(slot.as_bytes());
     }
@@ -4340,8 +4339,8 @@ pub fn models_supported_scope_decision(
     digest_bytes.extend_from_slice(execution.governance_seal_sweep_digest_prefix.as_bytes());
     digest_bytes.extend_from_slice(prefix_hex(&governance_lock.sweep.lock_digest, 16).as_bytes());
     digest_bytes.extend_from_slice(prefix_hex(&current_set.set_digest, 16).as_bytes());
-    digest_bytes.extend_from_slice(format!("{:?}", decision_status).as_bytes());
-    digest_bytes.extend_from_slice(format!("{:?}", decision_reason_code).as_bytes());
+    digest_bytes.extend_from_slice(format!("{decision_status:?}").as_bytes());
+    digest_bytes.extend_from_slice(format!("{decision_reason_code:?}").as_bytes());
     if let Some(slot) = winning_candidate_slot.as_ref() {
         digest_bytes.extend_from_slice(slot.as_bytes());
     }
@@ -4636,7 +4635,7 @@ fn validate_scope_execution_v3(
     digest_source.extend_from_slice(policy_prefix.as_bytes());
     digest_source.extend_from_slice(reeval_prefix.as_bytes());
     digest_source.extend_from_slice(canonical_digest_prefix.as_bytes());
-    digest_source.extend_from_slice(format!("{:?}", execution_decision).as_bytes());
+    digest_source.extend_from_slice(format!("{execution_decision:?}").as_bytes());
     if let Some(slot) = chosen_candidate_slot.as_ref() {
         digest_source.extend_from_slice(slot.as_bytes());
     }
@@ -4853,7 +4852,7 @@ fn validate_scope_execution_v4(
     if let Some(prior) = prior_scope_execution_digest_prefix.as_ref() {
         digest_source.extend_from_slice(prior.as_bytes());
     }
-    digest_source.extend_from_slice(format!("{:?}", execution_decision).as_bytes());
+    digest_source.extend_from_slice(format!("{execution_decision:?}").as_bytes());
     if let Some(slot) = chosen_candidate_slot.as_ref() {
         digest_source.extend_from_slice(slot.as_bytes());
     }
@@ -5071,7 +5070,7 @@ fn validate_scope_execution_v5(
     if let Some(prior) = prior_scope_execution_digest_prefix.as_ref() {
         digest_source.extend_from_slice(prior.as_bytes());
     }
-    digest_source.extend_from_slice(format!("{:?}", execution_decision).as_bytes());
+    digest_source.extend_from_slice(format!("{execution_decision:?}").as_bytes());
     if let Some(slot) = chosen_candidate_slot.as_ref() {
         digest_source.extend_from_slice(slot.as_bytes());
     }
@@ -5309,7 +5308,7 @@ fn validate_scope_execution_v6(
     if let Some(prior) = prior_scope_execution_digest_prefix.as_ref() {
         digest_source.extend_from_slice(prior.as_bytes());
     }
-    digest_source.extend_from_slice(format!("{:?}", execution_decision).as_bytes());
+    digest_source.extend_from_slice(format!("{execution_decision:?}").as_bytes());
     if let Some(slot) = chosen_candidate_slot.as_ref() {
         digest_source.extend_from_slice(slot.as_bytes());
     }
@@ -5568,7 +5567,7 @@ fn validate_scope_execution_v7(
     if let Some(prior) = prior_scope_execution_digest_prefix.as_ref() {
         digest_source.extend_from_slice(prior.as_bytes());
     }
-    digest_source.extend_from_slice(format!("{:?}", execution_decision).as_bytes());
+    digest_source.extend_from_slice(format!("{execution_decision:?}").as_bytes());
     if let Some(slot) = chosen_candidate_slot.as_ref() {
         digest_source.extend_from_slice(slot.as_bytes());
     }
@@ -5855,7 +5854,7 @@ fn validate_scope_execution_v8(
     if let Some(prior) = prior_scope_execution_digest_prefix.as_ref() {
         digest_source.extend_from_slice(prior.as_bytes());
     }
-    digest_source.extend_from_slice(format!("{:?}", execution_decision).as_bytes());
+    digest_source.extend_from_slice(format!("{execution_decision:?}").as_bytes());
     if let Some(slot) = chosen_candidate_slot.as_ref() {
         digest_source.extend_from_slice(slot.as_bytes());
     }
@@ -6166,7 +6165,7 @@ fn validate_scope_execution_v9(
     if let Some(prior) = prior_scope_execution_digest_prefix.as_ref() {
         digest_source.extend_from_slice(prior.as_bytes());
     }
-    digest_source.extend_from_slice(format!("{:?}", execution_decision).as_bytes());
+    digest_source.extend_from_slice(format!("{execution_decision:?}").as_bytes());
     if let Some(slot) = chosen_candidate_slot.as_ref() {
         digest_source.extend_from_slice(slot.as_bytes());
     }
@@ -6502,7 +6501,7 @@ fn validate_scope_execution_v10(
     if let Some(prior) = prior_scope_execution_digest_prefix.as_ref() {
         digest_source.extend_from_slice(prior.as_bytes());
     }
-    digest_source.extend_from_slice(format!("{:?}", execution_decision).as_bytes());
+    digest_source.extend_from_slice(format!("{execution_decision:?}").as_bytes());
     if let Some(slot) = chosen_candidate_slot.as_ref() {
         digest_source.extend_from_slice(slot.as_bytes());
     }
@@ -6862,7 +6861,7 @@ fn validate_scope_execution_v11(
     if let Some(prior) = prior_scope_execution_digest_prefix.as_ref() {
         digest_source.extend_from_slice(prior.as_bytes());
     }
-    digest_source.extend_from_slice(format!("{:?}", execution_decision).as_bytes());
+    digest_source.extend_from_slice(format!("{execution_decision:?}").as_bytes());
     if let Some(slot) = chosen_candidate_slot.as_ref() {
         digest_source.extend_from_slice(slot.as_bytes());
     }
@@ -7247,7 +7246,7 @@ fn validate_scope_execution_v12(
     if let Some(prior) = prior_scope_execution_digest_prefix.as_ref() {
         digest_source.extend_from_slice(prior.as_bytes());
     }
-    digest_source.extend_from_slice(format!("{:?}", execution_decision).as_bytes());
+    digest_source.extend_from_slice(format!("{execution_decision:?}").as_bytes());
     if let Some(slot) = chosen_candidate_slot.as_ref() {
         digest_source.extend_from_slice(slot.as_bytes());
     }
@@ -7482,7 +7481,7 @@ fn validate_scope_execution_v13(
     if let Some(prior) = prior_scope_execution_digest_prefix.as_ref() {
         digest_source.extend_from_slice(prior.as_bytes());
     }
-    digest_source.extend_from_slice(format!("{:?}", execution_decision).as_bytes());
+    digest_source.extend_from_slice(format!("{execution_decision:?}").as_bytes());
     if let Some(slot) = chosen_candidate_slot.as_ref() {
         digest_source.extend_from_slice(slot.as_bytes());
     }
@@ -7701,7 +7700,7 @@ fn validate_scope_execution_v14(
     if let Some(prior) = prior_scope_execution_digest_prefix.as_ref() {
         digest_source.extend_from_slice(prior.as_bytes());
     }
-    digest_source.extend_from_slice(format!("{:?}", execution_decision).as_bytes());
+    digest_source.extend_from_slice(format!("{execution_decision:?}").as_bytes());
     if let Some(slot) = chosen_candidate_slot.as_ref() {
         digest_source.extend_from_slice(slot.as_bytes());
     }
@@ -7924,7 +7923,7 @@ fn validate_scope_execution_v15(
     if let Some(prior) = prior_scope_execution_digest_prefix.as_ref() {
         digest_source.extend_from_slice(prior.as_bytes());
     }
-    digest_source.extend_from_slice(format!("{:?}", execution_decision).as_bytes());
+    digest_source.extend_from_slice(format!("{execution_decision:?}").as_bytes());
     if let Some(slot) = chosen_candidate_slot.as_ref() {
         digest_source.extend_from_slice(slot.as_bytes());
     }
@@ -8693,7 +8692,7 @@ fn build_supported_real_slot_set_v2(
     );
     digest_source.extend_from_slice(prefix_hex(policy_digest, 16).as_bytes());
     digest_source.extend_from_slice(prefix_hex(previous_set_digest, 16).as_bytes());
-    digest_source.extend_from_slice(format!("{:?}", decision).as_bytes());
+    digest_source.extend_from_slice(format!("{decision:?}").as_bytes());
     for slot in &slots {
         digest_source.extend_from_slice(slot.as_bytes());
     }
@@ -8861,7 +8860,7 @@ fn select_supported_slot_set_policy_v2(
     for slot in &candidate_slots_considered {
         digest_source.extend_from_slice(slot.as_bytes());
     }
-    digest_source.extend_from_slice(format!("{:?}", decision).as_bytes());
+    digest_source.extend_from_slice(format!("{decision:?}").as_bytes());
     if let Some(chosen) = chosen_candidate_slot.as_ref() {
         digest_source.extend_from_slice(chosen.as_bytes());
     }
@@ -8889,11 +8888,11 @@ fn read_second_slot_parity_report(
         workdir
             .join("out")
             .join(rid)
-            .join(format!("{}_parity_report.json", slot_id))
+            .join(format!("{slot_id}_parity_report.json"))
     });
     let default_path = workdir
         .join("out")
-        .join(format!("{}_parity_report.json", slot_id));
+        .join(format!("{slot_id}_parity_report.json"));
     run_path
         .into_iter()
         .chain(std::iter::once(default_path))
@@ -8963,8 +8962,8 @@ fn burn_support_resolution_from_state(
 
     let mut digest_source = Vec::new();
     digest_source.extend_from_slice(slot.as_str().as_bytes());
-    digest_source.extend_from_slice(format!("{:?}", resolution).as_bytes());
-    digest_source.extend_from_slice(format!("{:?}", support_state).as_bytes());
+    digest_source.extend_from_slice(format!("{resolution:?}").as_bytes());
+    digest_source.extend_from_slice(format!("{support_state:?}").as_bytes());
     for code in &rationale_codes {
         digest_source.extend_from_slice(code.as_bytes());
     }
@@ -9366,12 +9365,12 @@ fn build_shadow_ready_evidence(
     digest_source.extend_from_slice(target_hash.as_bytes());
     digest_source.extend_from_slice(manifest_digest_prefix.as_bytes());
     digest_source.extend_from_slice(latest_probe_report_digest_prefix.as_bytes());
-    digest_source.extend_from_slice(format!("{:?}", latest_probe_status).as_bytes());
+    digest_source.extend_from_slice(format!("{latest_probe_status:?}").as_bytes());
     digest_source.extend_from_slice(latest_compare_window_digest_prefix.as_bytes());
     digest_source.extend_from_slice(if compare_window_present { b"1" } else { b"0" });
-    digest_source.extend_from_slice(format!("{:?}", compare_freshness).as_bytes());
+    digest_source.extend_from_slice(format!("{compare_freshness:?}").as_bytes());
     digest_source.extend_from_slice(if no_impact_verified { b"1" } else { b"0" });
-    digest_source.extend_from_slice(format!("{:?}", drift_status).as_bytes());
+    digest_source.extend_from_slice(format!("{drift_status:?}").as_bytes());
     digest_source.extend_from_slice(if shadow_ready { b"1" } else { b"0" });
     if let Some(reason) = denial_reason_code.as_ref() {
         digest_source.extend_from_slice(reason.as_bytes());
@@ -9569,8 +9568,7 @@ pub fn models_probe_slot(
             .join(&active_hash);
         if !promoted.exists() {
             return Err(OpsError::Invalid(format!(
-                "UCF_OPS_MODELS_PROBE_ACTIVE_HASH_MISSING: {}",
-                active_hash
+                "UCF_OPS_MODELS_PROBE_ACTIVE_HASH_MISSING: {active_hash}"
             )));
         }
         (ProbeMode::Active, Some(promoted), Some(active_hash))

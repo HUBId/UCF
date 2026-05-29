@@ -323,7 +323,7 @@ fn derive_residual_sweep(
     bytes.extend_from_slice(final_consumer_prefix.as_bytes());
     bytes.extend_from_slice(covered_consumer_count.to_string().as_bytes());
     bytes.extend_from_slice(residual_path_count.to_string().as_bytes());
-    bytes.extend_from_slice(format!("{:?}", sweep_status).as_bytes());
+    bytes.extend_from_slice(format!("{sweep_status:?}").as_bytes());
     FinalReadinessResidualSweepV1 {
         applied_supported_set_digest_prefix: applied_scope_prefix.to_string(),
         canonical_governance_entry_digest_prefix: entry_prefix.to_string(),
